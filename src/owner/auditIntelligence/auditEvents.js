@@ -22,6 +22,7 @@ const { buildUserIntelligenceSectionEmbed, buildCommandCenterSetup } = require('
 const wired = new WeakSet();
 const routingSessions = new Map();
 const monitoringSessions = new Map();
+const structureSessions = new Map();
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const ROUTE_LABELS = {
   default: 'Guild Events / Default',
@@ -65,28 +66,32 @@ const stickerState = (sticker) => sticker ? { id: sticker.id, name: sticker.name
 const scheduledEventState = (event) => event ? { id: event.id, name: event.name, description: event.description || null, channelId: event.channelId || null, creatorId: event.creatorId || null, status: event.status, privacyLevel: event.privacyLevel, entityType: event.entityType, scheduledStartAt: event.scheduledStartAt?.toISOString?.() || null, scheduledEndAt: event.scheduledEndAt?.toISOString?.() || null, entityMetadata: event.entityMetadata || null } : null;
 
 function ownerIds() { return security.getBotOwnerIds(); }
-function routingKey(interaction) { return `${interaction.guildId}:${interaction.user?.id || 'unknown'}`; }
-function getRoutingSession(interaction) { return routingSessions.get(routingKey(interaction)) || { sourceGuildId: null, routeKey: 'default' }; }
-function setRoutingSession(interaction, patch) {
-  const next = { ...getRoutingSession(interaction), ...patch };
-  routingSessions.set(routingKey(interaction), next);
-  return next;
-}
-function monitoringKey(interaction) { return `${interaction.guildId}:${interaction.user?.id || 'unknown'}`; }
-function getMonitoringSession(interaction) { return monitoringSessions.get(monitoringKey(interaction)) || { sourceGuildId: null, family: 'members' }; }
-function setMonitoringSession(interaction, patch) {
-  const next = { ...getMonitoringSession(interaction), ...patch };
-  monitoringSessions.set(monitoringKey(interaction), next);
-  return next;
-}
-function configuredGuild(client, id) {
-  return client.guilds.cache.get(String(id || '')) || null;
-}
+function sessionKey(interaction) { return `${interaction.guildId}:${interaction.user?.id || 'unknown'}`; }
+function getRoutingSession(interaction) { return routingSessions.get(sessionKey(interaction)) || { sourceGuildId: null, routeKey: 'default' }; }
+function setRoutingSession(interaction, patch) { const next = { ...getRoutingSession(interaction), ...patch }; routingSessions.set(sessionKey(interaction), next); return next; }
+function getMonitoringSession(interaction) { return monitoringSessions.get(sessionKey(interaction)) || { sourceGuildId: null, family: 'members' }; }
+function setMonitoringSession(interaction, patch) { const next = { ...getMonitoringSession(interaction), ...patch }; monitoringSessions.set(sessionKey(interaction), next); return next; }
+function getStructureSession(interaction) { return structureSessions.get(sessionKey(interaction)) || { sourceGuildId: null }; }
+function setStructureSession(interaction, patch) { const next = { ...getStructureSession(interaction), ...patch }; structureSessions.set(sessionKey(interaction), next); return next; }
+function configuredGuild(client, id) { return client.guilds.cache.get(String(id || '')) || null; }
 function sourceGuildOptions(client, destinationId) {
   return [...client.guilds.cache.values()]
     .filter((guild) => guild.id !== String(destinationId || ''))
     .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')))
     .slice(0, 25);
+}
+function sourceGuildSelect(customId, placeholder, sourceGuilds, selectedId) {
+  return new StringSelectMenuBuilder()
+    .setCustomId(customId)
+    .setPlaceholder(placeholder)
+    .setMinValues(1)
+    .setMaxValues(1)
+    .addOptions(sourceGuilds.map((guild) => ({
+      label: String(guild.name || guild.id).slice(0, 100),
+      value: guild.id,
+      description: `Guild ID: ${guild.id}`.slice(0, 100),
+      default: guild.id === selectedId,
+    })));
 }
 function routeSummary(config, sourceGuildId) {
   const routes = config.guilds?.[String(sourceGuildId || '')]?.routes || {};
@@ -101,71 +106,31 @@ function monitoringSummary(config, sourceGuildId) {
 function buildRoutingPanel(client, interaction) {
   const config = auditStore.getConfig();
   const session = getRoutingSession(interaction);
-  const destinationId = String(config.commandCenter?.guildId || '');
-  const sourceGuilds = sourceGuildOptions(client, destinationId);
+  const sourceGuilds = sourceGuildOptions(client, config.commandCenter?.guildId);
   const selectedGuild = configuredGuild(client, session.sourceGuildId);
   const embed = new EmbedBuilder()
     .setColor(0x5865F2)
     .setTitle('📡 Audit Intelligence Routing')
-    .setDescription(selectedGuild
-      ? `Configure where **${selectedGuild.name}** audit events are mirrored inside this private server. Individual user intelligence channels remain intact.`
-      : 'Choose a source guild to configure. Individual user intelligence channels remain intact; these routes control the guild/event-family mirrors.')
+    .setDescription(selectedGuild ? `Configure where **${selectedGuild.name}** audit events are mirrored inside this private server. Individual user intelligence channels remain intact.` : 'Choose a source guild to configure.')
     .addFields(
       { name: 'Source Guild', value: selectedGuild ? `**${selectedGuild.name}**\n\`${selectedGuild.id}\`` : 'Not selected', inline: true },
       { name: 'Route Type', value: ROUTE_LABELS[session.routeKey] || ROUTE_LABELS.default, inline: true },
       { name: 'Current Routing', value: selectedGuild ? routeSummary(config, selectedGuild.id) : 'Select a guild first.', inline: false },
     )
     .setFooter({ text: 'Goliath Command Center • Routing • Owner only' });
-
   const rows = [];
-  if (sourceGuilds.length) {
-    const guildSelect = new StringSelectMenuBuilder()
-      .setCustomId('owner:commandcenter:routing:guild')
-      .setPlaceholder('1. Select source guild')
-      .setMinValues(1)
-      .setMaxValues(1)
-      .addOptions(sourceGuilds.map((guild) => ({
-        label: String(guild.name || guild.id).slice(0, 100),
-        value: guild.id,
-        description: `Guild ID: ${guild.id}`.slice(0, 100),
-        default: guild.id === session.sourceGuildId,
-      })));
-    rows.push(new ActionRowBuilder().addComponents(guildSelect));
-  }
+  if (sourceGuilds.length) rows.push(new ActionRowBuilder().addComponents(sourceGuildSelect('owner:commandcenter:routing:guild', '1. Select source guild', sourceGuilds, session.sourceGuildId)));
   if (selectedGuild) {
-    const routeSelect = new StringSelectMenuBuilder()
-      .setCustomId('owner:commandcenter:routing:type')
-      .setPlaceholder('2. Select audit event family')
-      .setMinValues(1)
-      .setMaxValues(1)
-      .addOptions(Object.entries(ROUTE_LABELS).map(([value, label]) => ({
-        label,
-        value,
-        default: value === session.routeKey,
-      })));
+    const routeSelect = new StringSelectMenuBuilder().setCustomId('owner:commandcenter:routing:type').setPlaceholder('2. Select audit event family').setMinValues(1).setMaxValues(1).addOptions(Object.entries(ROUTE_LABELS).map(([value, label]) => ({ label, value, default: value === session.routeKey })));
     rows.push(new ActionRowBuilder().addComponents(routeSelect));
-
-    const channelSelect = new ChannelSelectMenuBuilder()
-      .setCustomId('owner:commandcenter:routing:channel')
-      .setPlaceholder(`3. Choose destination for ${ROUTE_LABELS[session.routeKey] || 'route'}`)
-      .setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
-      .setMinValues(1)
-      .setMaxValues(1);
+    const channelSelect = new ChannelSelectMenuBuilder().setCustomId('owner:commandcenter:routing:channel').setPlaceholder(`3. Choose destination for ${ROUTE_LABELS[session.routeKey] || 'route'}`).setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setMinValues(1).setMaxValues(1);
     rows.push(new ActionRowBuilder().addComponents(channelSelect));
-
-    const resetButton = new ButtonBuilder()
-      .setCustomId('owner:commandcenter:routing:reset')
-      .setLabel('Reset This Route')
-      .setStyle(ButtonStyle.Secondary);
-    const backButton = new ButtonBuilder()
-      .setCustomId('owner:commandcenter:refresh')
-      .setLabel('Back / Refresh Home')
-      .setStyle(ButtonStyle.Secondary);
+    const resetButton = new ButtonBuilder().setCustomId('owner:commandcenter:routing:reset').setLabel('Reset This Route').setStyle(ButtonStyle.Secondary);
+    const backButton = new ButtonBuilder().setCustomId('owner:commandcenter:refresh').setLabel('Back / Refresh Home').setStyle(ButtonStyle.Secondary);
     rows.push(new ActionRowBuilder().addComponents(resetButton, backButton));
   }
   return { embeds: [embed], components: rows, allowedMentions: { parse: [] } };
 }
-
 function buildMonitoringPanel(client, interaction) {
   const config = auditStore.getConfig();
   const session = getMonitoringSession(interaction);
@@ -174,13 +139,10 @@ function buildMonitoringPanel(client, interaction) {
   const guildConfig = selectedGuild ? (config.guilds?.[selectedGuild.id] || {}) : {};
   const monitoring = guildConfig.monitoring && typeof guildConfig.monitoring === 'object' ? guildConfig.monitoring : {};
   const selectedEnabled = monitoring[session.family] !== false;
-
   const embed = new EmbedBuilder()
     .setColor(0x5865F2)
     .setTitle('👁️ Audit Intelligence Monitoring')
-    .setDescription(selectedGuild
-      ? `Control which **${selectedGuild.name}** events are mirrored into your private Audit Intelligence server. Captured intelligence remains stored even when a mirror family is disabled.`
-      : 'Choose a source guild to configure. All monitoring families default to enabled.')
+    .setDescription(selectedGuild ? `Control which **${selectedGuild.name}** events are mirrored into your private Audit Intelligence server. Captured intelligence remains stored even when a mirror family is disabled.` : 'Choose a source guild to configure. All monitoring families default to enabled.')
     .addFields(
       { name: 'Source Guild', value: selectedGuild ? `**${selectedGuild.name}**\n\`${selectedGuild.id}\`` : 'Not selected', inline: true },
       { name: 'Selected Family', value: MONITOR_LABELS[session.family] || MONITOR_LABELS.members, inline: true },
@@ -188,55 +150,52 @@ function buildMonitoringPanel(client, interaction) {
       { name: 'Monitoring Status', value: selectedGuild ? monitoringSummary(config, selectedGuild.id) : 'Select a guild first.', inline: false },
     )
     .setFooter({ text: 'Goliath Command Center • Monitoring • Owner only' });
-
   const rows = [];
-  if (sourceGuilds.length) {
-    const guildSelect = new StringSelectMenuBuilder()
-      .setCustomId('owner:commandcenter:monitoring:guild')
-      .setPlaceholder('1. Select source guild')
-      .setMinValues(1)
-      .setMaxValues(1)
-      .addOptions(sourceGuilds.map((guild) => ({
-        label: String(guild.name || guild.id).slice(0, 100),
-        value: guild.id,
-        description: `Guild ID: ${guild.id}`.slice(0, 100),
-        default: guild.id === session.sourceGuildId,
-      })));
-    rows.push(new ActionRowBuilder().addComponents(guildSelect));
-  }
-
+  if (sourceGuilds.length) rows.push(new ActionRowBuilder().addComponents(sourceGuildSelect('owner:commandcenter:monitoring:guild', '1. Select source guild', sourceGuilds, session.sourceGuildId)));
   if (selectedGuild) {
-    const familySelect = new StringSelectMenuBuilder()
-      .setCustomId('owner:commandcenter:monitoring:family')
-      .setPlaceholder('2. Select monitoring family')
-      .setMinValues(1)
-      .setMaxValues(1)
-      .addOptions(Object.entries(MONITOR_LABELS).map(([value, label]) => ({
-        label,
-        value,
-        default: value === session.family,
-      })));
+    const familySelect = new StringSelectMenuBuilder().setCustomId('owner:commandcenter:monitoring:family').setPlaceholder('2. Select monitoring family').setMinValues(1).setMaxValues(1).addOptions(Object.entries(MONITOR_LABELS).map(([value, label]) => ({ label, value, default: value === session.family })));
     rows.push(new ActionRowBuilder().addComponents(familySelect));
-
-    const toggleFamily = new ButtonBuilder()
-      .setCustomId('owner:commandcenter:monitoring:toggle')
-      .setLabel(selectedEnabled ? 'Disable Selected' : 'Enable Selected')
-      .setStyle(selectedEnabled ? ButtonStyle.Danger : ButtonStyle.Success);
-    const toggleGuild = new ButtonBuilder()
-      .setCustomId('owner:commandcenter:monitoring:guild-toggle')
-      .setLabel(guildConfig.enabled === false ? 'Resume Guild' : 'Pause Guild')
-      .setStyle(guildConfig.enabled === false ? ButtonStyle.Success : ButtonStyle.Danger);
-    const enableAll = new ButtonBuilder()
-      .setCustomId('owner:commandcenter:monitoring:all-on')
-      .setLabel('Enable All')
-      .setStyle(ButtonStyle.Secondary);
-    const backButton = new ButtonBuilder()
-      .setCustomId('owner:commandcenter:refresh')
-      .setLabel('Back / Refresh Home')
-      .setStyle(ButtonStyle.Secondary);
+    const toggleFamily = new ButtonBuilder().setCustomId('owner:commandcenter:monitoring:toggle').setLabel(selectedEnabled ? 'Disable Selected' : 'Enable Selected').setStyle(selectedEnabled ? ButtonStyle.Danger : ButtonStyle.Success);
+    const toggleGuild = new ButtonBuilder().setCustomId('owner:commandcenter:monitoring:guild-toggle').setLabel(guildConfig.enabled === false ? 'Resume Guild' : 'Pause Guild').setStyle(guildConfig.enabled === false ? ButtonStyle.Success : ButtonStyle.Danger);
+    const enableAll = new ButtonBuilder().setCustomId('owner:commandcenter:monitoring:all-on').setLabel('Enable All').setStyle(ButtonStyle.Secondary);
+    const backButton = new ButtonBuilder().setCustomId('owner:commandcenter:refresh').setLabel('Back / Refresh Home').setStyle(ButtonStyle.Secondary);
     rows.push(new ActionRowBuilder().addComponents(toggleFamily, toggleGuild, enableAll, backButton));
   }
-
+  return { embeds: [embed], components: rows, allowedMentions: { parse: [] } };
+}
+async function buildStructurePanel(client, interaction) {
+  const config = auditStore.getConfig();
+  const session = getStructureSession(interaction);
+  const sourceGuilds = sourceGuildOptions(client, config.commandCenter?.guildId);
+  const selectedGuild = configuredGuild(client, session.sourceGuildId);
+  const report = selectedGuild ? await auditRouter.inspectStructure(client, selectedGuild) : null;
+  const status = !report ? 'Select a guild first.' : report.healthy ? '🟢 Healthy' : report.systemChannel ? '🟠 Attention required' : '⚪ Not provisioned';
+  const placement = !report?.systemChannel ? 'Not provisioned' : report.systemChannel.parentId ? `<#${report.systemChannel.id}> inside a category` : `<#${report.systemChannel.id}> uncategorised`;
+  const issues = report?.issues?.length ? report.issues.map((issue) => `• ${issue}`).join('\n') : 'None';
+  const categories = report?.categories?.length ? report.categories.map((category) => `• **${category.name}** — ${category.childCount} channel(s)`).join('\n') : 'None / owner-managed placement';
+  const embed = new EmbedBuilder()
+    .setColor(report?.healthy ? 0x57F287 : report?.systemChannel ? 0xFEE75C : 0x5865F2)
+    .setTitle('📁 Audit Intelligence Structure')
+    .setDescription(selectedGuild ? `Inspect and safely provision/repair **${selectedGuild.name}**. Goliath identifies resources by internal markers, so renamed or moved channels remain valid.` : 'Choose a source guild to inspect or provision.')
+    .addFields(
+      { name: 'Source Guild', value: selectedGuild ? `**${selectedGuild.name}**\n\`${selectedGuild.id}\`` : 'Not selected', inline: true },
+      { name: 'Status', value: status, inline: true },
+      { name: 'Guild Events', value: placement, inline: false },
+      { name: 'User Intelligence Channels', value: report ? String(report.userChannelCount) : '—', inline: true },
+      { name: 'Categories In Use', value: report ? String(report.categoryCount) : '—', inline: true },
+      { name: 'Missing Routes', value: report ? String(report.missingRouteCount) : '—', inline: true },
+      { name: 'Detected Categories', value: categories.slice(0, 1024), inline: false },
+      { name: 'Issues', value: issues.slice(0, 1024), inline: false },
+    )
+    .setFooter({ text: 'Goliath Command Center • Structure • Owner only • Repair never renames or moves valid resources' });
+  const rows = [];
+  if (sourceGuilds.length) rows.push(new ActionRowBuilder().addComponents(sourceGuildSelect('owner:commandcenter:structure:guild', '1. Select source guild', sourceGuilds, session.sourceGuildId)));
+  if (selectedGuild) {
+    const repairButton = new ButtonBuilder().setCustomId('owner:commandcenter:structure:repair').setLabel(report?.systemChannel ? 'Repair Structure' : 'Provision Structure').setStyle(report?.healthy ? ButtonStyle.Secondary : ButtonStyle.Primary);
+    const rescanButton = new ButtonBuilder().setCustomId('owner:commandcenter:structure:rescan').setLabel('Rescan').setStyle(ButtonStyle.Secondary);
+    const backButton = new ButtonBuilder().setCustomId('owner:commandcenter:refresh').setLabel('Back / Refresh Home').setStyle(ButtonStyle.Secondary);
+    rows.push(new ActionRowBuilder().addComponents(repairButton, rescanButton, backButton));
+  }
   return { embeds: [embed], components: rows, allowedMentions: { parse: [] } };
 }
 
@@ -258,7 +217,6 @@ async function ensurePrivateCommandRegistration(client, guildId) {
     return true;
   } catch (error) { console.warn('[Audit Intelligence] Private /commandcenter registration failed:', error?.message || error); return false; }
 }
-
 async function sendCommandCenterSetupDm(client) {
   const ownerId = security.getBotOwnerId();
   if (!ownerId) { console.warn('[Audit Intelligence] Command Center bootstrap skipped: no configured Goliath owner.'); return false; }
@@ -269,7 +227,6 @@ async function sendCommandCenterSetupDm(client) {
   await dm.send(buildCommandCenterSetup(client)).catch((error) => console.warn('[Audit Intelligence] Command Center setup DM failed:', error?.message || error));
   return true;
 }
-
 async function initializeCommandCenter(client) {
   const config = auditStore.getConfig();
   const guildId = String(config.commandCenter?.guildId || '');
@@ -287,7 +244,6 @@ async function handleCommandCenterInteraction(client, interaction) {
     if (!interaction.replied && !interaction.deferred) await interaction.reply({ content: '❌ Owner-only control.', flags: MessageFlags.Ephemeral }).catch(() => null);
     return true;
   }
-
   if (customId === 'owner:commandcenter:destination' && interaction.isStringSelectMenu?.()) {
     const guildId = String(interaction.values?.[0] || '');
     const guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
@@ -301,117 +257,77 @@ async function handleCommandCenterInteraction(client, interaction) {
     await interaction.update({ content: registered ? `✅ **Goliath Command Center secured.**\n\nDestination: **${guild.name}**\n/commandcenter is registered **only** in that server.${link ? `\n\nOpen: ${link}` : ''}` : `⚠️ Command Center channels were prepared in **${guild.name}**, but private command registration needs attention.`, embeds: [], components: [] }).catch(() => null);
     return true;
   }
-
   const config = auditStore.getConfig();
   if (!config.commandCenter?.guildId || String(interaction.guildId || '') !== String(config.commandCenter.guildId)) {
     if (!interaction.replied && !interaction.deferred) await interaction.reply({ content: '❌ This control is only valid inside your private Goliath Command Center server.', flags: MessageFlags.Ephemeral }).catch(() => null);
     return true;
   }
-
   if (customId === 'owner:commandcenter:refresh' && interaction.isButton?.()) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch(() => null);
     const context = await auditRouter.ensureCommandCenter(client, interaction.guild);
     await interaction.editReply({ content: context ? '✅ Command Center refreshed.' : '❌ Command Center refresh failed.' }).catch(() => null);
     return true;
   }
-
   if (customId === 'owner:commandcenter:routing' && interaction.isButton?.()) {
-    routingSessions.set(routingKey(interaction), { sourceGuildId: null, routeKey: 'default' });
-    await interaction.reply({ ...buildRoutingPanel(client, interaction), flags: MessageFlags.Ephemeral }).catch(() => null);
-    return true;
+    routingSessions.set(sessionKey(interaction), { sourceGuildId: null, routeKey: 'default' });
+    await interaction.reply({ ...buildRoutingPanel(client, interaction), flags: MessageFlags.Ephemeral }).catch(() => null); return true;
   }
-  if (customId === 'owner:commandcenter:routing:guild' && interaction.isStringSelectMenu?.()) {
-    setRoutingSession(interaction, { sourceGuildId: interaction.values?.[0] || null, routeKey: 'default' });
-    await interaction.update(buildRoutingPanel(client, interaction)).catch(() => null);
-    return true;
-  }
-  if (customId === 'owner:commandcenter:routing:type' && interaction.isStringSelectMenu?.()) {
-    const routeKey = String(interaction.values?.[0] || 'default');
-    setRoutingSession(interaction, { routeKey: ROUTE_LABELS[routeKey] ? routeKey : 'default' });
-    await interaction.update(buildRoutingPanel(client, interaction)).catch(() => null);
-    return true;
-  }
+  if (customId === 'owner:commandcenter:routing:guild' && interaction.isStringSelectMenu?.()) { setRoutingSession(interaction, { sourceGuildId: interaction.values?.[0] || null, routeKey: 'default' }); await interaction.update(buildRoutingPanel(client, interaction)).catch(() => null); return true; }
+  if (customId === 'owner:commandcenter:routing:type' && interaction.isStringSelectMenu?.()) { const routeKey = String(interaction.values?.[0] || 'default'); setRoutingSession(interaction, { routeKey: ROUTE_LABELS[routeKey] ? routeKey : 'default' }); await interaction.update(buildRoutingPanel(client, interaction)).catch(() => null); return true; }
   if (customId === 'owner:commandcenter:routing:channel' && interaction.isChannelSelectMenu?.()) {
-    const session = getRoutingSession(interaction);
-    if (!session.sourceGuildId) { await interaction.reply({ content: '❌ Select a source guild first.', flags: MessageFlags.Ephemeral }).catch(() => null); return true; }
-    const channelId = String(interaction.values?.[0] || '');
-    const current = auditStore.getConfig();
-    const existing = current.guilds?.[session.sourceGuildId] || {};
-    auditStore.updateConfig({ guilds: { [session.sourceGuildId]: { ...existing, enabled: existing.enabled !== false, mode: 'custom', routes: { ...(existing.routes || {}), [session.routeKey]: channelId } } } });
-    await interaction.update(buildRoutingPanel(client, interaction)).catch(() => null);
-    return true;
+    const session = getRoutingSession(interaction); if (!session.sourceGuildId) return true;
+    const current = auditStore.getConfig(); const existing = current.guilds?.[session.sourceGuildId] || {};
+    auditStore.updateConfig({ guilds: { [session.sourceGuildId]: { ...existing, enabled: existing.enabled !== false, mode: 'custom', routes: { ...(existing.routes || {}), [session.routeKey]: String(interaction.values?.[0] || '') } } } });
+    await interaction.update(buildRoutingPanel(client, interaction)).catch(() => null); return true;
   }
   if (customId === 'owner:commandcenter:routing:reset' && interaction.isButton?.()) {
-    const session = getRoutingSession(interaction);
-    if (!session.sourceGuildId) return true;
-    const current = auditStore.getConfig();
-    const existing = current.guilds?.[session.sourceGuildId] || {};
-    const routes = { ...(existing.routes || {}) };
-    delete routes[session.routeKey];
+    const session = getRoutingSession(interaction); if (!session.sourceGuildId) return true;
+    const current = auditStore.getConfig(); const existing = current.guilds?.[session.sourceGuildId] || {}; const routes = { ...(existing.routes || {}) }; delete routes[session.routeKey];
     auditStore.updateConfig({ guilds: { [session.sourceGuildId]: { ...existing, routes, mode: Object.keys(routes).length ? 'custom' : 'auto' } } });
-    await interaction.update(buildRoutingPanel(client, interaction)).catch(() => null);
-    return true;
+    await interaction.update(buildRoutingPanel(client, interaction)).catch(() => null); return true;
   }
-
-  if (customId === 'owner:commandcenter:monitoring' && interaction.isButton?.()) {
-    monitoringSessions.set(monitoringKey(interaction), { sourceGuildId: null, family: 'members' });
-    await interaction.reply({ ...buildMonitoringPanel(client, interaction), flags: MessageFlags.Ephemeral }).catch(() => null);
-    return true;
-  }
-  if (customId === 'owner:commandcenter:monitoring:guild' && interaction.isStringSelectMenu?.()) {
-    setMonitoringSession(interaction, { sourceGuildId: interaction.values?.[0] || null, family: 'members' });
-    await interaction.update(buildMonitoringPanel(client, interaction)).catch(() => null);
-    return true;
-  }
-  if (customId === 'owner:commandcenter:monitoring:family' && interaction.isStringSelectMenu?.()) {
-    const family = String(interaction.values?.[0] || 'members');
-    setMonitoringSession(interaction, { family: MONITOR_LABELS[family] ? family : 'members' });
-    await interaction.update(buildMonitoringPanel(client, interaction)).catch(() => null);
-    return true;
-  }
+  if (customId === 'owner:commandcenter:monitoring' && interaction.isButton?.()) { monitoringSessions.set(sessionKey(interaction), { sourceGuildId: null, family: 'members' }); await interaction.reply({ ...buildMonitoringPanel(client, interaction), flags: MessageFlags.Ephemeral }).catch(() => null); return true; }
+  if (customId === 'owner:commandcenter:monitoring:guild' && interaction.isStringSelectMenu?.()) { setMonitoringSession(interaction, { sourceGuildId: interaction.values?.[0] || null, family: 'members' }); await interaction.update(buildMonitoringPanel(client, interaction)).catch(() => null); return true; }
+  if (customId === 'owner:commandcenter:monitoring:family' && interaction.isStringSelectMenu?.()) { const family = String(interaction.values?.[0] || 'members'); setMonitoringSession(interaction, { family: MONITOR_LABELS[family] ? family : 'members' }); await interaction.update(buildMonitoringPanel(client, interaction)).catch(() => null); return true; }
   if (customId === 'owner:commandcenter:monitoring:toggle' && interaction.isButton?.()) {
-    const session = getMonitoringSession(interaction);
-    if (!session.sourceGuildId) return true;
-    const current = auditStore.getConfig();
-    const existing = current.guilds?.[session.sourceGuildId] || {};
-    const monitoring = { ...(existing.monitoring || {}) };
-    monitoring[session.family] = monitoring[session.family] === false;
-    auditStore.updateConfig({ guilds: { [session.sourceGuildId]: { ...existing, monitoring } } });
-    await interaction.update(buildMonitoringPanel(client, interaction)).catch(() => null);
-    return true;
+    const session = getMonitoringSession(interaction); if (!session.sourceGuildId) return true;
+    const current = auditStore.getConfig(); const existing = current.guilds?.[session.sourceGuildId] || {}; const monitoring = { ...(existing.monitoring || {}) }; monitoring[session.family] = monitoring[session.family] === false;
+    auditStore.updateConfig({ guilds: { [session.sourceGuildId]: { ...existing, monitoring } } }); await interaction.update(buildMonitoringPanel(client, interaction)).catch(() => null); return true;
   }
   if (customId === 'owner:commandcenter:monitoring:guild-toggle' && interaction.isButton?.()) {
-    const session = getMonitoringSession(interaction);
-    if (!session.sourceGuildId) return true;
-    const current = auditStore.getConfig();
-    const existing = current.guilds?.[session.sourceGuildId] || {};
-    auditStore.updateConfig({ guilds: { [session.sourceGuildId]: { ...existing, enabled: existing.enabled === false } } });
-    await interaction.update(buildMonitoringPanel(client, interaction)).catch(() => null);
-    return true;
+    const session = getMonitoringSession(interaction); if (!session.sourceGuildId) return true;
+    const current = auditStore.getConfig(); const existing = current.guilds?.[session.sourceGuildId] || {};
+    auditStore.updateConfig({ guilds: { [session.sourceGuildId]: { ...existing, enabled: existing.enabled === false } } }); await interaction.update(buildMonitoringPanel(client, interaction)).catch(() => null); return true;
   }
   if (customId === 'owner:commandcenter:monitoring:all-on' && interaction.isButton?.()) {
-    const session = getMonitoringSession(interaction);
-    if (!session.sourceGuildId) return true;
-    const current = auditStore.getConfig();
-    const existing = current.guilds?.[session.sourceGuildId] || {};
-    const monitoring = Object.fromEntries(Object.keys(MONITOR_LABELS).map((key) => [key, true]));
-    auditStore.updateConfig({ guilds: { [session.sourceGuildId]: { ...existing, enabled: true, monitoring } } });
-    await interaction.update(buildMonitoringPanel(client, interaction)).catch(() => null);
-    return true;
+    const session = getMonitoringSession(interaction); if (!session.sourceGuildId) return true;
+    const current = auditStore.getConfig(); const existing = current.guilds?.[session.sourceGuildId] || {}; const monitoring = Object.fromEntries(Object.keys(MONITOR_LABELS).map((key) => [key, true]));
+    auditStore.updateConfig({ guilds: { [session.sourceGuildId]: { ...existing, enabled: true, monitoring } } }); await interaction.update(buildMonitoringPanel(client, interaction)).catch(() => null); return true;
   }
-
-  if (interaction.isButton?.()) {
-    await interaction.reply({ content: 'ℹ️ This Command Center section is ready for the next structure/health build phase.', flags: MessageFlags.Ephemeral }).catch(() => null);
-    return true;
+  if (customId === 'owner:commandcenter:structure' && interaction.isButton?.()) {
+    structureSessions.set(sessionKey(interaction), { sourceGuildId: null });
+    await interaction.reply({ ...(await buildStructurePanel(client, interaction)), flags: MessageFlags.Ephemeral }).catch(() => null); return true;
   }
+  if (customId === 'owner:commandcenter:structure:guild' && interaction.isStringSelectMenu?.()) {
+    const sourceGuildId = String(interaction.values?.[0] || ''); setStructureSession(interaction, { sourceGuildId });
+    const current = auditStore.getConfig(); const existing = current.guilds?.[sourceGuildId] || {};
+    auditStore.updateConfig({ guilds: { [sourceGuildId]: { enabled: existing.enabled !== false, mode: existing.mode || 'auto', ...existing } } });
+    await interaction.update(await buildStructurePanel(client, interaction)).catch(() => null); return true;
+  }
+  if (customId === 'owner:commandcenter:structure:rescan' && interaction.isButton?.()) { await interaction.update(await buildStructurePanel(client, interaction)).catch(() => null); return true; }
+  if (customId === 'owner:commandcenter:structure:repair' && interaction.isButton?.()) {
+    const session = getStructureSession(interaction); const sourceGuild = configuredGuild(client, session.sourceGuildId); if (!sourceGuild) return true;
+    await interaction.deferUpdate().catch(() => null);
+    await auditRouter.repairStructure(client, sourceGuild);
+    await interaction.editReply(await buildStructurePanel(client, interaction)).catch(() => null); return true;
+  }
+  if (interaction.isButton?.()) { await interaction.reply({ content: 'ℹ️ This Command Center section is ready for the next health build phase.', flags: MessageFlags.Ephemeral }).catch(() => null); return true; }
   return false;
 }
 
 function auditChannelContext(channel) {
-  const topic = String(channel?.topic || '');
-  const userMatch = topic.match(/GOLIATH_AUDIT_USER:(\d+):(\d+)/);
-  if (!userMatch) return null;
-  return { sourceGuildId: userMatch[1], userId: userMatch[2] };
+  const userMatch = String(channel?.topic || '').match(/GOLIATH_AUDIT_USER:(\d+):(\d+)/);
+  return userMatch ? { sourceGuildId: userMatch[1], userId: userMatch[2] } : null;
 }
 function interactionKind(interaction) {
   if (interaction?.isChatInputCommand?.()) return 'command';
