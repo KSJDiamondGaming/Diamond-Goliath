@@ -116,9 +116,43 @@ function buildCommandCenterHome(client, guild, config = {}) {
     ),
     new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId('owner:commandcenter:intelligence').setLabel('User Intelligence').setEmoji('🔎').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId('owner:commandcenter:guild-intelligence').setLabel('Guild Intelligence').setEmoji('🏰').setStyle(ButtonStyle.Primary),
     ),
   ];
   return { embeds: [embed], components: rows, allowedMentions: { parse: [] } };
+}
+
+function buildGuildIntelligenceEmbed(guild, stored = {}, guildConfig = {}, structure = {}) {
+  const members = guild?.memberCount ?? guild?.members?.cache?.size ?? 0;
+  const cachedMembers = guild?.members?.cache ? [...guild.members.cache.values()] : [];
+  const bots = cachedMembers.filter((member) => member.user?.bot).length;
+  const humans = Math.max(0, Number(members || 0) - bots);
+  const roles = Math.max(0, Number(guild?.roles?.cache?.size || 0) - 1);
+  const channels = Number(guild?.channels?.cache?.size || 0);
+  const categories = guild?.channels?.cache ? [...guild.channels.cache.values()].filter((channel) => channel.type === 4).length : 0;
+  const disabledFamilies = Object.entries(guildConfig.monitoring || {}).filter(([, enabled]) => enabled === false).map(([key]) => key);
+  const routes = Object.keys(guildConfig.routes || {}).length;
+  const eventTypes = Object.entries(stored.eventTypes || {}).sort((a, b) => Number(b[1]) - Number(a[1])).slice(0, 8);
+  const topEvents = eventTypes.length ? eventTypes.map(([type, count]) => `• \`${type}\` — **${count}**`).join('\n') : 'No stored events yet.';
+  const structureState = structure.healthy === true ? '🟢 Healthy' : structure.systemChannel ? '🟠 Attention required' : '⚪ Not provisioned';
+
+  return new EmbedBuilder()
+    .setColor(structure.healthy === false ? 0xFEE75C : COLORS.intelligence)
+    .setTitle(`🏰 Guild Intelligence • ${guild?.name || stored.guildName || stored.guildId || 'Unknown Guild'}`)
+    .setDescription('Owner-only combined live Discord state and Goliath Audit Intelligence history.')
+    .addFields(
+      { name: 'Guild', value: `**${guild?.name || stored.guildName || 'Unknown'}**\n\`${guild?.id || stored.guildId || 'Unknown'}\``, inline: true },
+      { name: 'Owner', value: guild?.ownerId ? `<@${guild.ownerId}>\n\`${guild.ownerId}\`` : 'Unknown', inline: true },
+      { name: 'Created', value: discordTime(guild?.createdAt, 'F'), inline: true },
+      { name: 'Members', value: `Total: **${members}**\nHumans: **${humans}**\nBots cached: **${bots}**`, inline: true },
+      { name: 'Structure', value: `Channels: **${channels}**\nCategories: **${categories}**\nRoles: **${roles}**`, inline: true },
+      { name: 'Security', value: `Verification: **${guild?.verificationLevel ?? 'Unknown'}**\nContent filter: **${guild?.explicitContentFilter ?? 'Unknown'}**`, inline: true },
+      { name: 'Goliath History', value: `Events: **${stored.eventCount || 0}**\nFirst observed: ${discordTime(stored.firstObservedAt, 'F')}\nLast event: ${discordTime(stored.lastEventAt, 'R')}`, inline: false },
+      { name: 'Audit Configuration', value: `${guildConfig.enabled === false ? '⏸️ Monitoring paused' : '▶️ Monitoring active'}\nDisabled families: **${disabledFamilies.length ? disabledFamilies.join(', ') : 'None'}**\nCustom routes: **${routes}**\nStructure: **${structureState}**`, inline: false },
+      { name: 'Top Recorded Event Types', value: topEvents.slice(0, 1024), inline: false },
+    )
+    .setFooter({ text: 'Goliath Command Center • Guild Intelligence • Owner only' })
+    .setTimestamp();
 }
 
 function buildUserIntelligenceEmbed(report, sourceGuild) {
@@ -242,6 +276,7 @@ module.exports = {
   buildAuditEmbed,
   buildCommandCenterSetup,
   buildCommandCenterHome,
+  buildGuildIntelligenceEmbed,
   buildUserIntelligenceEmbed,
   buildUserIntelligenceControls,
   buildUserIntelligenceSectionEmbed,
