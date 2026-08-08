@@ -1,10 +1,12 @@
 'use strict';
 
 const crypto = require('crypto');
-const { AuditLogEvent } = require('discord.js');
+const { AuditLogEvent, Events } = require('discord.js');
 const auditStore = require('./auditStore');
 const auditRouter = require('./auditRouter');
 const { snapshotMember, snapshotUser } = require('./userIntelligence');
+
+const outputCaptureWired = new WeakSet();
 
 const AUDIT_ACTIONS = {
   'role.create': AuditLogEvent.RoleCreate,
@@ -46,6 +48,76 @@ const AUDIT_ACTIONS = {
 function id() { return `AUD-${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`; }
 function plain(value) { return value === undefined ? undefined : JSON.parse(JSON.stringify(value)); }
 function actor(user) { return user ? { id: user.id, username: user.username || null, globalName: user.globalName || null, bot: Boolean(user.bot) } : null; }
+
+function outputMessageState(message) {
+  if (!message) return null;
+  return {
+    id: message.id || null,
+    channelId: message.channelId || null,
+    content: message.content || null,
+    createdAt: message.createdAt?.toISOString?.() || null,
+    editedAt: message.editedAt?.toISOString?.() || null,
+    pinned: Boolean(message.pinned),
+    webhookId: message.webhookId || null,
+    interaction: message.interactionMetadata ? plain(message.interactionMetadata) : null,
+    embeds: (message.embeds || []).slice(0, 10).map((embed) => {
+      try { return typeof embed?.toJSON === 'function' ? embed.toJSON() : plain(embed); }
+      catch { return null; }
+    }).filter(Boolean),
+    attachments: [...(message.attachments?.values?.() || [])].slice(0, 25).map((item) => ({
+      id: item.id || null,
+      name: item.name || null,
+      contentType: item.contentType || null,
+      description: item.description || null,
+      size: item.size ?? null,
+      url: item.url || null,
+    })),
+    components: (message.components || []).slice(0, 5).map((row) => {
+      try { return typeof row?.toJSON === 'function' ? row.toJSON() : plain(row); }
+      catch { return null; }
+    }).filter(Boolean),
+    reference: message.reference ? plain(message.reference) : null,
+  };
+}
+
+function ensureGoliathOutputCapture(client) {
+  if (!client || outputCaptureWired.has(client)) return false;
+  outputCaptureWired.add(client);
+
+  client.on(Events.MessageCreate, (message) => {
+    try {
+      if (!message?.guild || !client.user?.id) return;
+      if (String(message.guild.id) === String(auditRouter.getOwnerAuditGuildId() || '')) return;
+      if (String(message.author?.id || '') !== String(client.user.id)) return;
+
+      const payload = outputMessageState(message);
+      captureGoliathAction(client, {
+        type: 'goliath.output.message',
+        category: 'goliath',
+        action: 'send',
+        title: 'Goliath Output Sent',
+        icon: '📤',
+        guild: message.guild,
+        channel: message.channel || null,
+        actor: actor(client.user),
+        target: { id: message.id, label: `Message ${message.id}` },
+        summary: `Goliath sent a message in <#${message.channelId}>.`,
+        result: 'Success',
+        after: payload,
+        metadata: {
+          outputType: 'message',
+          embedCount: payload?.embeds?.length || 0,
+          attachmentCount: payload?.attachments?.length || 0,
+          componentRowCount: payload?.components?.length || 0,
+        },
+      }).catch((error) => console.warn('[Audit Intelligence] Goliath output capture failed:', error?.message || error));
+    } catch (error) {
+      console.warn('[Audit Intelligence] Goliath output listener failed:', error?.message || error);
+    }
+  });
+
+  return true;
+}
 
 async function correlate(guild, type, targetId, observedAt = Date.now(), options = {}) {
   const action = AUDIT_ACTIONS[type];
@@ -125,6 +197,7 @@ function confirmGoliathOutcome(client, event, correlation) {
 }
 
 async function capture(client, input = {}) {
+  ensureGoliathOutputCapture(client);
   const event = normalize(input);
   const guild = input.guild || input.member?.guild || input.channel?.guild || client?.guilds?.cache?.get?.(event.guildId) || null;
   let correlation = null;
@@ -156,4 +229,12 @@ function captureGoliathAction(client, input = {}) {
   return capture(client, { ...input, source: 'Goliath', category: input.category || 'goliath', action: input.action || 'execute' });
 }
 
-module.exports = { capture, captureGoliathAction, correlate, normalize, confirmGoliathOutcome };
+module.exports = {
+  capture,
+  captureGoliathAction,
+  correlate,
+  normalize,
+  confirmGoliathOutcome,
+  ensureGoliathOutputCapture,
+  outputMessageState,
+};
