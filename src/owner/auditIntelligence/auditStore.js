@@ -7,11 +7,54 @@ const { getRuntimePaths } = require('../../config/runtimePaths');
 const paths = getRuntimePaths(process.env.BOT_MODE || 'DEV');
 const root = path.join(paths.data, 'audit');
 const HISTORY_LIMIT = 100;
+const CONFIG_FILE = path.join(root, 'config.json');
 
 function ensure(dir) { fs.mkdirSync(dir, { recursive: true }); return dir; }
 function readJson(file, fallback = {}) { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return fallback; } }
 function writeJson(file, value) { ensure(path.dirname(file)); fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`, 'utf8'); }
 function monthKey(date = new Date()) { return date.toISOString().slice(0, 7); }
+function defaultConfig() {
+  return {
+    version: 1,
+    commandCenter: {
+      guildId: null,
+      categoryId: null,
+      channelId: null,
+      messageId: null,
+    },
+    autoProvision: true,
+    guilds: {},
+  };
+}
+function getConfig() {
+  const current = readJson(CONFIG_FILE, defaultConfig());
+  return {
+    ...defaultConfig(),
+    ...current,
+    commandCenter: { ...defaultConfig().commandCenter, ...(current.commandCenter || {}) },
+    guilds: current.guilds && typeof current.guilds === 'object' ? current.guilds : {},
+  };
+}
+function saveConfig(config) {
+  const next = {
+    ...defaultConfig(),
+    ...(config || {}),
+    commandCenter: { ...defaultConfig().commandCenter, ...(config?.commandCenter || {}) },
+    guilds: config?.guilds && typeof config.guilds === 'object' ? config.guilds : {},
+  };
+  writeJson(CONFIG_FILE, next);
+  return next;
+}
+function updateConfig(patch = {}) {
+  const current = getConfig();
+  const next = {
+    ...current,
+    ...patch,
+    commandCenter: patch.commandCenter ? { ...current.commandCenter, ...patch.commandCenter } : current.commandCenter,
+    guilds: patch.guilds ? { ...current.guilds, ...patch.guilds } : current.guilds,
+  };
+  return saveConfig(next);
+}
 function pushUnique(items, value, key = (item) => JSON.stringify(item), limit = HISTORY_LIMIT) {
   if (value === undefined || value === null) return items;
   const list = Array.isArray(items) ? items : [];
@@ -269,4 +312,4 @@ function getUser(userId) { return readJson(path.join(root, 'users', `${String(us
 function getGuild(guildId) { return readJson(path.join(root, 'guilds', `${String(guildId)}.json`), null); }
 function getRoot() { return root; }
 
-module.exports = { appendEvent, getUser, getGuild, getRoot };
+module.exports = { appendEvent, getUser, getGuild, getRoot, getConfig, saveConfig, updateConfig };
