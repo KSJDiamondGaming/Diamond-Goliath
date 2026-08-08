@@ -3,6 +3,7 @@
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, MessageFlags, StringSelectMenuBuilder } = require('discord.js');
 
 const guildIntelligenceWired = new WeakSet();
+const actorIntelligenceWired = new WeakSet();
 
 const COLORS = {
   create: 0x57F287,
@@ -242,8 +243,72 @@ function ensureGuildIntelligenceControls(client) {
   });
 }
 
+function buildActorIntelligenceEmbed(userId, stored = {}) {
+  const actions = Array.isArray(stored.actorHistory) ? stored.actorHistory : [];
+  const guilds = new Set(actions.map((item) => item.guildId).filter(Boolean));
+  const categories = {};
+  for (const item of actions) {
+    const key = String(item.category || 'system');
+    categories[key] = Number(categories[key] || 0) + 1;
+  }
+  const categorySummary = Object.entries(categories)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([name, count]) => `• **${name}** — ${count}`)
+    .join('\n') || 'No actions recorded.';
+  const lines = actions.slice(-20).reverse().map((item) => {
+    const guild = item.guildName || item.guildId || 'Unknown guild';
+    const target = item.target?.id ? `<@${item.target.id}>` : item.target?.label || item.target?.name || item.target?.id || 'Unknown target';
+    const channel = item.channelId ? ` in <#${item.channelId}>` : '';
+    const reason = item.reason ? ` — ${String(item.reason).slice(0, 100)}` : '';
+    const operation = item.operationId ? ` • op \`${item.operationId}\`` : '';
+    return `${discordTime(item.timestamp, 'R')} • \`${item.type || 'action'}\` • **${guild}** • ${target}${channel}${reason}${operation}`;
+  });
+
+  return new EmbedBuilder()
+    .setColor(COLORS.intelligence)
+    .setTitle('👤 Actor Intelligence • Actions Performed')
+    .setDescription(lines.length ? lines.join('\n').slice(0, 4000) : 'No actions performed by this user have been recorded yet.')
+    .addFields(
+      { name: 'Actor', value: `<@${userId}>\n\`${userId}\``, inline: true },
+      { name: 'Recorded Actions', value: `\`${actions.length}\``, inline: true },
+      { name: 'Guilds Acted In', value: `\`${guilds.size}\``, inline: true },
+      { name: 'Action Categories', value: categorySummary.slice(0, 1024), inline: false },
+    )
+    .setFooter({ text: 'Goliath Actor Intelligence • Newest 20 actions shown • Owner only' })
+    .setTimestamp();
+}
+
+function ensureActorIntelligenceControls(client) {
+  if (!client || actorIntelligenceWired.has(client)) return;
+  actorIntelligenceWired.add(client);
+  client.on('interactionCreate', async (interaction) => {
+    if (String(interaction?.customId || '') !== 'owner:audit:actions' || !interaction.isButton?.()) return;
+    const security = require('../../core/security/securityCore');
+    const auditStore = require('./auditStore');
+    if (!security.isBotOwner(interaction.user?.id)) {
+      if (!interaction.replied && !interaction.deferred) await interaction.reply({ content: '❌ Owner-only control.', flags: MessageFlags.Ephemeral }).catch(() => null);
+      return;
+    }
+    const config = auditStore.getConfig();
+    if (!config.commandCenter?.guildId || String(interaction.guildId || '') !== String(config.commandCenter.guildId)) {
+      if (!interaction.replied && !interaction.deferred) await interaction.reply({ content: '❌ Actor Intelligence is only available inside your private Goliath Command Center server.', flags: MessageFlags.Ephemeral }).catch(() => null);
+      return;
+    }
+    const match = String(interaction.channel?.topic || '').match(/GOLIATH_AUDIT_USER:(\d+):(\d+)/);
+    if (!match) {
+      if (!interaction.replied && !interaction.deferred) await interaction.reply({ content: '❌ This is not a Goliath user intelligence channel.', flags: MessageFlags.Ephemeral }).catch(() => null);
+      return;
+    }
+    const userId = match[2];
+    const stored = auditStore.getUser(userId) || {};
+    await interaction.reply({ embeds: [buildActorIntelligenceEmbed(userId, stored)], flags: MessageFlags.Ephemeral, allowedMentions: { parse: [] } }).catch(() => null);
+  });
+}
+
 function buildCommandCenterHome(client, guild, config = {}) {
   ensureGuildIntelligenceControls(client);
+  ensureActorIntelligenceControls(client);
   const monitored = Object.keys(config.guilds && typeof config.guilds === 'object' ? config.guilds : {})
     .filter((guildId) => String(guildId) !== String(guild?.id || config.commandCenter?.guildId || ''))
     .length;
@@ -363,6 +428,7 @@ function buildUserIntelligenceControls() {
       new ButtonBuilder().setCustomId('owner:audit:roles').setLabel('Roles').setEmoji('🎭').setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId('owner:audit:voice').setLabel('Voice').setEmoji('🔊').setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId('owner:audit:timeline').setLabel('Timeline').setEmoji('🕒').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId('owner:audit:actions').setLabel('Actions Performed').setEmoji('👤').setStyle(ButtonStyle.Primary),
     ),
   ];
 }
