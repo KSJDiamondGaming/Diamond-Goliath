@@ -7,6 +7,9 @@ const auditRouter = require('./auditRouter');
 const { snapshotMember, snapshotUser } = require('./userIntelligence');
 
 const outputCaptureWired = new WeakSet();
+const recentOperations = new Map();
+const OPERATION_WINDOW_MS = 15000;
+const OPERATION_MAX_PER_GUILD = 50;
 
 const AUDIT_ACTIONS = {
   'role.create': AuditLogEvent.RoleCreate,
@@ -46,8 +49,121 @@ const AUDIT_ACTIONS = {
 };
 
 function id() { return `AUD-${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`; }
+function operationId() { return `OP-${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`; }
 function plain(value) { return value === undefined ? undefined : JSON.parse(JSON.stringify(value)); }
 function actor(user) { return user ? { id: user.id, username: user.username || null, globalName: user.globalName || null, bot: Boolean(user.bot) } : null; }
+
+function operationReferences(metadata = {}) {
+  const refs = new Set();
+  const visit = (value) => {
+    if (value === null || value === undefined) return;
+    if (Array.isArray(value)) return value.forEach(visit);
+    if (typeof value === 'object') return Object.values(value).forEach(visit);
+    const text = String(value);
+    if (/^\d{15,22}$/.test(text)) refs.add(text);
+  };
+  visit(metadata.options);
+  visit(metadata.values);
+  return [...refs];
+}
+
+function pruneOperations(guildId, now = Date.now()) {
+  const key = String(guildId || '');
+  if (!key) return [];
+  const active = (recentOperations.get(key) || [])
+    .filter((item) => now - item.createdAt <= OPERATION_WINDOW_MS)
+    .slice(-OPERATION_MAX_PER_GUILD);
+  if (active.length) recentOperations.set(key, active);
+  else recentOperations.delete(key);
+  return active;
+}
+
+function registerOperation(event) {
+  if (!event?.guildId || !String(event.type || '').startsWith('goliath.interaction.')) return null;
+  const op = {
+    operationId: operationId(),
+    createdAt: new Date(event.timestamp).getTime() || Date.now(),
+    guildId: String(event.guildId),
+    channelId: event.channel?.id ? String(event.channel.id) : null,
+    actorId: event.actor?.id || event.user?.id || null,
+    triggerEventId: event.eventId,
+    triggerType: event.type,
+    triggerLabel: event.target?.label || null,
+    references: operationReferences(event.metadata),
+  };
+  const active = pruneOperations(op.guildId, op.createdAt);
+  active.push(op);
+  recentOperations.set(op.guildId, active.slice(-OPERATION_MAX_PER_GUILD));
+  event.metadata = {
+    ...(event.metadata || {}),
+    operation: {
+      operationId: op.operationId,
+      role: 'trigger',
+      confidence: 'direct',
+      evidence: 'Goliath interaction created the operation',
+    },
+  };
+  return op;
+}
+
+function findOperationForOutput(event) {
+  if (!event?.guildId) return null;
+  const now = new Date(event.timestamp).getTime() || Date.now();
+  const channelId = event.channel?.id ? String(event.channel.id) : null;
+  const candidates = pruneOperations(event.guildId, now)
+    .filter((item) => now >= item.createdAt && now - item.createdAt <= 10000)
+    .filter((item) => !channelId || !item.channelId || item.channelId === channelId)
+    .sort((a, b) => b.createdAt - a.createdAt);
+  if (!candidates.length) return null;
+  const exactChannel = candidates.find((item) => channelId && item.channelId === channelId);
+  const op = exactChannel || (candidates.length === 1 ? candidates[0] : null);
+  if (!op) return null;
+  return {
+    op,
+    confidence: exactChannel ? 'high' : 'medium',
+    evidence: exactChannel ? 'Same guild/channel within 10 seconds' : 'Single recent operation in guild',
+  };
+}
+
+function findOperationForConfirmedOutcome(event) {
+  if (!event?.guildId) return null;
+  const now = new Date(event.timestamp).getTime() || Date.now();
+  const targetId = event.target?.id || event.user?.id || null;
+  const candidates = pruneOperations(event.guildId, now)
+    .filter((item) => now >= item.createdAt && now - item.createdAt <= 8000)
+    .sort((a, b) => b.createdAt - a.createdAt);
+  if (!candidates.length) return null;
+
+  if (targetId) {
+    const targetMatches = candidates.filter((item) => item.references.includes(String(targetId)));
+    if (targetMatches.length === 1) {
+      return { op: targetMatches[0], confidence: 'high', evidence: 'Interaction target matches confirmed Discord outcome target' };
+    }
+  }
+
+  if (candidates.length === 1) {
+    return { op: candidates[0], confidence: 'medium', evidence: 'Single Goliath operation within 8 seconds of confirmed outcome' };
+  }
+  return null;
+}
+
+function attachOperation(event, match, role) {
+  if (!event || !match?.op) return false;
+  event.metadata = {
+    ...(event.metadata || {}),
+    operation: {
+      operationId: match.op.operationId,
+      role,
+      confidence: match.confidence,
+      evidence: match.evidence,
+      triggerEventId: match.op.triggerEventId,
+      triggerType: match.op.triggerType,
+      triggerLabel: match.op.triggerLabel,
+      triggeredBy: match.op.actorId,
+    },
+  };
+  return true;
+}
 
 function outputMessageState(message) {
   if (!message) return null;
@@ -214,7 +330,15 @@ async function capture(client, input = {}) {
     correlation = event.metadata.auditLog;
   }
 
-  confirmGoliathOutcome(client, event, correlation);
+  const confirmedGoliath = confirmGoliathOutcome(client, event, correlation);
+
+  if (String(event.type || '').startsWith('goliath.interaction.')) {
+    registerOperation(event);
+  } else if (event.type === 'goliath.output.message') {
+    attachOperation(event, findOperationForOutput(event), 'output');
+  } else if (confirmedGoliath) {
+    attachOperation(event, findOperationForConfirmedOutcome(event), 'outcome');
+  }
 
   try {
     auditStore.appendEvent(event);
@@ -237,4 +361,7 @@ module.exports = {
   confirmGoliathOutcome,
   ensureGoliathOutputCapture,
   outputMessageState,
+  registerOperation,
+  findOperationForOutput,
+  findOperationForConfirmedOutcome,
 };
