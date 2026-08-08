@@ -118,6 +118,7 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           password: ${{ secrets.VPS_PASSWORD }}
           port: 22
+          command_timeout: 20m
           envs: ENVIRONMENT,TARGET_BRANCH,DEPLOY_SCRIPT,APP_DIR,RUNTIME_DIR,PM2_NAME,EXPECTED_SHA,FORCE_COMMAND_SYNC
           script: |
             set -euo pipefail
@@ -189,7 +190,7 @@ jobs:
             fi
 
             if [ "$NEED_COMMAND_SYNC" = true ]; then
-              BOT_MODE="$ENVIRONMENT" COMMAND_SYNC_DELETE_STALE=true COMMAND_SYNC_UPDATE_EXISTING=true node scripts/goliath.js sync-commands "$ENVIRONMENT"
+              BOT_MODE="$ENVIRONMENT" COMMAND_SYNC_DELETE_STALE=true COMMAND_SYNC_UPDATE_EXISTING=true node -e "require('./src/core/commandRegistry/syncCommands').syncCommands().then(() => process.exit(0)).catch((error) => { console.error(error); process.exit(1); })"
             fi
 
             if [ "$NEED_APP_RELOAD" = true ]; then
