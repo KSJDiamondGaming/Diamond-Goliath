@@ -1,0 +1,44 @@
+name: Fix Embed Studio Width Anchor Once
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - '.github/workflows/fix-embed-width-unbreakable-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply unbreakable width anchor
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('src/modules/messageStudio/embed/embedPanel.js')
+          s = p.read_text()
+          old = '''  const media = extractMediaLines(replaceVars(p.description, i));\n  const widthAnchor = "\\u2800".repeat(64);\n  const description = trim(media.description, 4096 - widthAnchor.length - 2);\n  if (description) e.setDescription(`${description}\\n\\n${widthAnchor}`);\n  else e.setDescription(widthAnchor);\n'''
+          new = '''  const media = extractMediaLines(replaceVars(p.description, i));\n  const widthAnchorUnit = "\\u2800\\u2060";\n  const widthAnchor = widthAnchorUnit.repeat(56) + "\\u2800";\n  const description = trim(media.description, 4096 - widthAnchor.length - 2);\n  if (description) e.setDescription(`${description}\\n\\n${widthAnchor}`);\n  else e.setDescription(widthAnchor);\n'''
+          if old not in s:
+              raise SystemExit('Target Embed Studio width anchor block not found; refusing unsafe patch.')
+          p.write_text(s.replace(old, new, 1))
+          PY
+          node --check src/modules/messageStudio/embed/embedPanel.js
+      - name: Commit fix and remove one-shot workflow
+        run: |
+          rm -f .github/workflows/fix-embed-width-unbreakable-once.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/modules/messageStudio/embed/embedPanel.js .github/workflows/fix-embed-width-unbreakable-once.yml
+          git commit -m "fix(embed): prevent width anchor wrapping"
+          git pull --rebase origin dev
+          git push origin dev
