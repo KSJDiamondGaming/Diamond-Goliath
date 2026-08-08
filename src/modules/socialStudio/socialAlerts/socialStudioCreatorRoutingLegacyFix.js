@@ -75,7 +75,7 @@ function payload(i) {
         value: storageId,
         description: creator.alertChannelId ? 'Creator-specific automatic-post channel set' : 'Uses server routing',
         default: storageId === state.creatorId,
-      }))));
+      })))));
   }
 
   if (selected) {
