@@ -162,7 +162,7 @@ function payload(i) {
   const components = [row(userMenu)];
 
   if (s.targetUserId) {
-    components.push(row(new StringSelectMenuBuilder()
+    const typeMenu = new StringSelectMenuBuilder()
       .setCustomId(`${P}type`)
       .setPlaceholder('2. Choose the content type')
       .setMinValues(1)
@@ -174,7 +174,8 @@ function payload(i) {
           ? 'Send every content type for this user to one channel.'
           : `Override only ${TYPE_LABELS[type] || type} posts.`,
         default: type === s.type,
-      })))));
+      })));
+    components.push(row(typeMenu));
 
     const channel = new ChannelSelectMenuBuilder()
       .setCustomId(`${P}channel`)
@@ -193,8 +194,6 @@ function payload(i) {
     ));
   }
 
-  // Discord allows at most five top-level component rows. With a selected user
-  // these are: user selector, content selector, channel selector, actions, nav.
   components.push(row(button('social:channels', '⬅️ Channels'), button('social:main', '🏠 Social Studio')));
 
   return {
