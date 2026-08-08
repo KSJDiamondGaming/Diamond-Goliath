@@ -25,8 +25,18 @@ function collect(target) {
   });
 }
 
+function isDashboardModule(file) {
+  const relative = path.relative(ROOT, file).replace(/\\/g, '/');
+  return relative.startsWith('src/dashboard/');
+}
+
 test('all active server-side JavaScript parses successfully', () => {
-  const files = ROOTS.flatMap(collect);
+  // The dashboard is a Vite/React ESM application. `node --check` inherits the
+  // root CommonJS package mode and therefore reports valid dashboard `import`,
+  // `export`, and `import.meta` syntax as errors. Vite validates those sources
+  // in the separate dashboard build step, so this test intentionally checks
+  // only Node/server-side JavaScript.
+  const files = ROOTS.flatMap(collect).filter((file) => !isDashboardModule(file));
   const failures = [];
 
   for (const file of files) {
