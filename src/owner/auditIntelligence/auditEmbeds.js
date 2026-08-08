@@ -11,6 +11,7 @@ const COLORS = {
   voice: 0x3498DB,
   message: 0x95A5A6,
   system: 0x2F3136,
+  intelligence: 0x5865F2,
 };
 
 function family(event) {
@@ -28,6 +29,13 @@ function compact(value, max = 950) {
   if (value === null || value === undefined || value === '') return 'None';
   const text = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
   return text.length > max ? `${text.slice(0, max - 3)}...` : text;
+}
+
+function discordTime(value, style = 'F') {
+  if (!value) return 'Unknown';
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Unknown';
+  return `<t:${Math.floor(date.getTime() / 1000)}:${style}>`;
 }
 
 function buildAuditEmbed(event) {
@@ -57,4 +65,44 @@ function buildAuditEmbed(event) {
   return embed;
 }
 
-module.exports = { buildAuditEmbed };
+function buildUserIntelligenceEmbed(report, sourceGuild) {
+  const profile = report?.profile || {};
+  const summary = report?.summary || {};
+  const history = report?.history || {};
+  const guildState = (report?.currentState?.guilds || []).find((item) => String(item.guildId) === String(sourceGuild?.id));
+  const member = guildState?.member || null;
+  const latestNames = [...new Set([
+    profile.displayName,
+    profile.globalName,
+    profile.username,
+    ...(history.displayNames || []).slice(-5).reverse(),
+    ...(history.names || []).slice(-5).reverse(),
+  ].filter(Boolean))].slice(0, 8);
+  const roles = (member?.roles || []).slice(0, 12).map((role) => role.name).join(', ') || 'None / not currently in guild';
+  const status = member ? 'Current member' : 'Not currently present';
+
+  return new EmbedBuilder()
+    .setColor(COLORS.intelligence)
+    .setTitle('🔎 Goliath User Intelligence')
+    .setDescription(`Live owner-only intelligence summary for <@${report.userId}> in **${sourceGuild?.name || 'Unknown Guild'}**.`)
+    .addFields(
+      { name: 'User', value: `<@${report.userId}>\n\`${report.userId}\``, inline: true },
+      { name: 'Status', value: status, inline: true },
+      { name: 'Bot', value: profile.bot === true ? 'Yes' : profile.bot === false ? 'No' : 'Unknown', inline: true },
+      { name: 'Account Created', value: discordTime(profile.accountCreatedAt, 'F'), inline: true },
+      { name: 'First Seen by Goliath', value: discordTime(summary.firstObservedAt, 'F'), inline: true },
+      { name: 'Last Seen by Goliath', value: discordTime(summary.lastObservedAt, 'R'), inline: true },
+      { name: 'Joined This Guild', value: discordTime(member?.joinedAt, 'F'), inline: true },
+      { name: 'Known Guilds', value: `\`${summary.knownGuildCount || 0}\``, inline: true },
+      { name: 'Recorded Events', value: `\`${summary.eventCount || 0}\``, inline: true },
+      { name: 'Moderation History', value: `\`${summary.moderationCount || 0}\` events`, inline: true },
+      { name: 'Role Changes', value: `\`${summary.roleChangeCount || 0}\``, inline: true },
+      { name: 'Voice Events', value: `\`${summary.voiceEventCount || 0}\``, inline: true },
+      { name: 'Current Roles', value: compact(roles), inline: false },
+      { name: 'Known Names', value: latestNames.length ? compact(latestNames.join(' • ')) : 'None recorded', inline: false },
+    )
+    .setFooter({ text: `Goliath User Intelligence • ${report.userId}` })
+    .setTimestamp(new Date(report.generatedAt || Date.now()));
+}
+
+module.exports = { buildAuditEmbed, buildUserIntelligenceEmbed };
