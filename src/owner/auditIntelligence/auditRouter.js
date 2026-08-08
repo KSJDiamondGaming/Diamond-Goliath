@@ -69,6 +69,12 @@ function findGuildCategories(ownerGuild, sourceGuild) {
     .sort((a, b) => a.rawPosition - b.rawPosition);
 }
 
+function isSourceGuildCategory(category, sourceGuild) {
+  if (!category || category.type !== ChannelType.GuildCategory) return false;
+  const base = categoryBaseName(sourceGuild);
+  return category.name === base || category.name.startsWith(`${base}-`);
+}
+
 async function ensureGuildCategory(ownerGuild, sourceGuild, preferredPage = 1) {
   const existing = findGuildCategories(ownerGuild, sourceGuild);
   const preferredName = categoryName(sourceGuild, preferredPage);
@@ -114,7 +120,7 @@ async function ensureAuditContext(client, sourceGuild) {
   if (!ownerGuild) return null;
 
   let systemChannel = findSystemChannel(ownerGuild, sourceGuild);
-  let category = systemChannel?.parent?.type === ChannelType.GuildCategory ? systemChannel.parent : null;
+  let category = isSourceGuildCategory(systemChannel?.parent, sourceGuild) ? systemChannel.parent : null;
 
   if (!category) category = await ensureGuildCategory(ownerGuild, sourceGuild, 1);
   systemChannel = await ensureSystemChannel(ownerGuild, sourceGuild, category);
