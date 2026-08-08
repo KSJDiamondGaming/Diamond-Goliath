@@ -326,6 +326,15 @@ async function handle(interaction) {
   const id = String(interaction?.customId || '');
   capture(interaction);
 
+  // Manual provider checks are owned by src/events/client/socialStudioMonitor.js.
+  // Returning handled here prevents the generic Social Studio panel router from
+  // also processing the same interaction and emitting a false Unknown interaction.
+  if (
+    id === `${P}account:check`
+    || id.startsWith(`${P}account:check:`)
+    || id.startsWith(`${P}creator:check:`)
+  ) return true;
+
   if ([
     `${P}automation:interval`,
     `${P}automation:dupes`,
