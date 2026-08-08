@@ -43,6 +43,17 @@ function button(id, label, style = ButtonStyle.Secondary) {
   return new ButtonBuilder().setCustomId(id).setLabel(label).setStyle(style);
 }
 
+function normalizeQuietTime(value) {
+  let text = String(value || '').trim().replace(/\s+/g, '').replace('.', ':');
+  if (/^\d{3,4}$/.test(text)) text = `${text.slice(0, -2)}:${text.slice(-2)}`;
+  const match = text.match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (!Number.isInteger(hours) || hours < 0 || hours > 23 || !Number.isInteger(minutes) || minutes < 0 || minutes > 59) return null;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+}
+
 function creatorEditModal(creator) {
   return new ModalBuilder()
     .setCustomId(`${P}creator:update:${creator.creatorId}`)
@@ -272,12 +283,12 @@ async function handleMonitoringAction(interaction, id) {
     }
     if (interaction.isModalSubmit?.()) {
       const enabledRaw = String(interaction.fields.getTextInputValue('enabled') || '').trim().toLowerCase();
-      const start = String(interaction.fields.getTextInputValue('start') || '').trim();
-      const end = String(interaction.fields.getTextInputValue('end') || '').trim();
+      const start = normalizeQuietTime(interaction.fields.getTextInputValue('start'));
+      const end = normalizeQuietTime(interaction.fields.getTextInputValue('end'));
       const timezone = String(interaction.fields.getTextInputValue('timezone') || '').trim();
       if (!['yes', 'no'].includes(enabledRaw)) throw new Error('Quiet Hours enabled must be yes or no.');
-      if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(start) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(end)) {
-        throw new Error('Quiet Hours times must use HH:MM, for example 23:00.');
+      if (!start || !end) {
+        throw new Error('Quiet Hours times must be valid 24-hour times, for example 23:00 and 08:00.');
       }
       if (!timezone) throw new Error('Quiet Hours timezone is required.');
       config.settings.quietHours = {
