@@ -313,6 +313,30 @@ function updateUserIndex(userId, event) {
 
 function getUser(userId) { return readJson(path.join(root, 'users', `${String(userId)}.json`), null); }
 function getGuild(guildId) { return readJson(path.join(root, 'guilds', `${String(guildId)}.json`), null); }
+function getGuildEvents(guildId, options = {}) {
+  const dir = path.join(root, 'events', String(guildId || ''));
+  if (!guildId || !fs.existsSync(dir)) return [];
+  const limit = Math.min(100, Math.max(1, Number(options.limit || 25)));
+  const category = options.category ? String(options.category) : null;
+  const prefix = options.typePrefix ? String(options.typePrefix) : null;
+  const files = fs.readdirSync(dir)
+    .filter((name) => /^\d{4}-\d{2}\.jsonl$/.test(name))
+    .sort()
+    .reverse();
+  const found = [];
+  for (const name of files) {
+    const lines = fs.readFileSync(path.join(dir, name), 'utf8').split(/\r?\n/).filter(Boolean).reverse();
+    for (const line of lines) {
+      let event;
+      try { event = JSON.parse(line); } catch { continue; }
+      if (category && String(event.category || 'system') !== category) continue;
+      if (prefix && !String(event.type || '').startsWith(prefix)) continue;
+      found.push(event);
+      if (found.length >= limit) return found;
+    }
+  }
+  return found;
+}
 function getRoot() { return root; }
 
-module.exports = { appendEvent, getUser, getGuild, getRoot, getConfig, saveConfig, updateConfig };
+module.exports = { appendEvent, getUser, getGuild, getGuildEvents, getRoot, getConfig, saveConfig, updateConfig };
