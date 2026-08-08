@@ -29,6 +29,9 @@ function profileMarker(messageId) { return `GOLIATH_AUDIT_PROFILE:${messageId}`;
 function categoryBaseName(sourceGuild) { return `audit-${slug(sourceGuild.name, 'guild').slice(0, 70)}-${String(sourceGuild.id).slice(-6)}`.slice(0, 100); }
 function categoryName(sourceGuild, page = 1) { const base = categoryBaseName(sourceGuild); return page <= 1 ? base : `${base}-${page}`.slice(0, 100); }
 function categoryChildCount(ownerGuild, categoryId) { return ownerGuild.channels.cache.filter((channel) => channel.parentId === categoryId).size; }
+function findCommandCenterChannel(guild) {
+  return guild?.channels?.cache?.find((channel) => channel.type === ChannelType.GuildText && String(channel.topic || '').includes('GOLIATH_COMMAND_CENTER')) || null;
+}
 async function getOwnerGuild(client) {
   const ownerGuildId = getOwnerAuditGuildId();
   if (!ownerGuildId || !client?.guilds?.cache) return null;
@@ -43,6 +46,7 @@ async function ensureCommandCenter(client, ownerGuild = null) {
   if (!guild) return null;
   let channel = config.commandCenter?.channelId ? guild.channels.cache.get(config.commandCenter.channelId) : null;
   if (!channel && config.commandCenter?.channelId) channel = await guild.channels.fetch(config.commandCenter.channelId).catch(() => null);
+  if (!channel || channel.type !== ChannelType.GuildText) channel = findCommandCenterChannel(guild);
   let category = channel?.parent?.type === ChannelType.GuildCategory ? channel.parent : null;
   if (!channel || channel.type !== ChannelType.GuildText) {
     category = config.commandCenter?.categoryId ? guild.channels.cache.get(config.commandCenter.categoryId) : null;
@@ -271,7 +275,7 @@ async function inspectHealth(client) {
   if (!commandCenter.guildId) issues.push('Command Center destination is not configured');
   if (!ownerGuild) issues.push('Command Center destination guild is unavailable to Goliath');
   if (ownerGuild) {
-    commandChannel = commandCenter.channelId ? ownerGuild.channels.cache.get(String(commandCenter.channelId)) || await ownerGuild.channels.fetch(String(commandCenter.channelId)).catch(() => null) : null;
+    commandChannel = commandCenter.channelId ? ownerGuild.channels.cache.get(String(commandCenter.channelId)) || await ownerGuild.channels.fetch(String(commandCenter.channelId)).catch(() => null) : findCommandCenterChannel(ownerGuild);
     if (!commandChannel?.isTextBased?.()) issues.push('Command Center channel is missing or unavailable');
     if (commandChannel) {
       commandPermissions = viewState(commandChannel, ownerGuild);
@@ -308,17 +312,7 @@ async function inspectHealth(client) {
     if (guildConfig.enabled === false) guildIssues.push('Guild monitoring is paused');
     if (disabledFamilies.length) guildIssues.push(`${disabledFamilies.length} monitoring family/families disabled`);
     if (!structure?.healthy) guildIssues.push(...(structure?.issues || ['Audit structure is unavailable']));
-    guildReports.push({
-      guildId: sourceGuild.id,
-      guildName: sourceGuild.name,
-      available: true,
-      enabled: guildConfig.enabled !== false,
-      disabledFamilies,
-      mode: guildConfig.mode || 'auto',
-      structure,
-      healthy: guildIssues.length === 0,
-      issues: guildIssues,
-    });
+    guildReports.push({ guildId: sourceGuild.id, guildName: sourceGuild.name, available: true, enabled: guildConfig.enabled !== false, disabledFamilies, mode: guildConfig.mode || 'auto', structure, healthy: guildIssues.length === 0, issues: guildIssues });
   }
 
   const structuralFailures = guildReports.filter((report) => report.available && report.structure && !report.structure.healthy).length;
@@ -329,24 +323,9 @@ async function inspectHealth(client) {
     checkedAt: new Date().toISOString(),
     environment: String(process.env.BOT_MODE || 'dev').toUpperCase(),
     destination: ownerGuild ? { id: ownerGuild.id, name: ownerGuild.name } : null,
-    commandCenter: {
-      configured: Boolean(commandCenter.guildId),
-      channelId: commandChannel?.id || commandCenter.channelId || null,
-      channelName: commandChannel?.name || null,
-      messagePresent: Boolean(commandMessage),
-      permissions: commandPermissions,
-      privateCommandRegistered,
-      globalCommandLeaked,
-    },
+    commandCenter: { configured: Boolean(commandCenter.guildId), channelId: commandChannel?.id || commandCenter.channelId || null, channelName: commandChannel?.name || null, messagePresent: Boolean(commandMessage), permissions: commandPermissions, privateCommandRegistered, globalCommandLeaked },
     guilds: guildReports,
-    counts: {
-      configured: guildReports.length,
-      healthy: guildReports.filter((report) => report.healthy).length,
-      structuralFailures,
-      unavailable: unavailableGuilds,
-      paused: pausedGuilds,
-      partiallyDisabled: partiallyDisabledGuilds,
-    },
+    counts: { configured: guildReports.length, healthy: guildReports.filter((report) => report.healthy).length, structuralFailures, unavailable: unavailableGuilds, paused: pausedGuilds, partiallyDisabled: partiallyDisabledGuilds },
     healthy: issues.length === 0 && structuralFailures === 0 && unavailableGuilds === 0,
     issues,
   };
