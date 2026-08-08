@@ -181,6 +181,7 @@ function importAudit() {
     ...walk(absolute('src/events')),
     ...walk(absolute('src/core/admin/functions')),
     ...walk(absolute('src/server/routes')),
+    ...walk(absolute('src/owner')),
   ];
   const errors = [];
   const probe = "try{require(process.argv[1]);process.exit(0)}catch(e){console.error(e?.stack||e);process.exit(1)}";
@@ -337,6 +338,14 @@ function classifyDeploymentChanges(files) {
       const parts = file.split('/');
       const label = [parts[2], parts[3]].filter(Boolean).join('/');
       if (label) plan.affected.add(label);
+      plan.needsAppReload = true;
+      plan.needsDoctor = true;
+      continue;
+    }
+
+    if (file.startsWith('src/owner/')) {
+      const parts = file.split('/');
+      plan.affected.add(`owner:${parts[2] || 'system'}`);
       plan.needsAppReload = true;
       plan.needsDoctor = true;
       continue;
@@ -520,32 +529,41 @@ function promote(target) {
     console.error('Working tree is not clean.');
     return false;
   }
-  if (!run('git', ['checkout', environment])) return false;
-  if (!run('git', ['pull', '--ff-only', 'origin', environment])) return false;
-  if (!run('git', ['merge', '--ff-only', `origin/${plan.source}`])) return false;
-  if (!run('npm', ['ci'])) return false;
-  if (!run('npm', ['run', 'doctor'])) return false;
-  if (!run('npm', ['run', 'build'])) return false;
+
+  const sourceRef = `origin/${plan.source}`;
+  const targetRef = `origin/${environment}`;
+  const sourceSha = output('git', ['rev-parse', sourceRef]);
+  const targetSha = output('git', ['rev-parse', targetRef]);
+  if (!sourceSha || !targetSha) return false;
+
+  console.log(`Source ${sourceRef}: ${sourceSha}`);
+  console.log(`Target ${targetRef}: ${targetSha}`);
+  if (sourceSha === targetSha) {
+    console.log(`${environment} already matches ${plan.source}.`);
+    return true;
+  }
+
+  if (!run('git', ['checkout', '-B', environment, targetRef])) return false;
+  if (!run('git', ['merge', '--no-ff', '--no-edit', sourceRef])) return false;
   if (!run('git', ['push', 'origin', environment])) return false;
-  return run(plan.deploy, []);
+  console.log(`${environment} synchronized with ${plan.source}.`);
+  return true;
 }
 
-function audit() {
-  return [projectShape, sourceAudit, importAudit, runtimeAudit, guildAudit, mediaAudit].map((suite) => suite()).every(Boolean);
+const commands = {
+  doctor: () => doctor(process.argv[3]),
+  'deploy-plan': () => deployPlan(process.argv[3], process.argv[4], process.argv[5]),
+  'sync-commands': () => syncCommands(process.argv[3]),
+  promote: () => promote(process.argv[3]),
+  guilds: guildAudit,
+  media: mediaAudit,
+};
+
+const command = process.argv[2] || 'doctor';
+const handler = commands[command];
+if (!handler) {
+  console.error(`Unknown Goliath command: ${command}`);
+  process.exitCode = 1;
+} else if (!handler()) {
+  process.exitCode = 1;
 }
-
-const args = process.argv.slice(2);
-const [command = 'doctor', target = ''] = args;
-const success = command === 'doctor'
-  ? doctor(String(target || '').toLowerCase())
-  : command === 'audit'
-    ? audit()
-    : command === 'sync-commands'
-      ? syncCommands(target)
-      : command === 'promote'
-        ? promote(target)
-        : command === 'deploy-plan'
-          ? deployPlan(args[1], args[2], args[3])
-          : false;
-
-if (!success) process.exitCode = 1;
