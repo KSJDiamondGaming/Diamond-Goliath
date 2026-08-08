@@ -689,26 +689,18 @@ function buildEmbedFromPanel(p, i, showTimestamp, fieldLayout = "auto") {
   if (p.title) e.setTitle(trim(replaceVars(p.title, i), 256));
 
   const media = extractMediaLines(replaceVars(p.description, i));
-  const widthAnchorUnit = "\u2800\u2060";
-  const widthAnchor = widthAnchorUnit.repeat(56) + "\u2800";
-  const description = trim(media.description, 4096 - widthAnchor.length - 2);
-  if (description) e.setDescription(`${description}\n\n${widthAnchor}`);
-  else e.setDescription(widthAnchor);
+  if (media.description) e.setDescription(trim(media.description, 4096));
 
   const footer = trim(replaceVars(p.footer, i), 2048);
   const footerIcon = safeUrl(replaceVars(p.footerIcon, i));
+  const footerBase = footer || (footerIcon && isImageUrl(footerIcon) ? (replaceVars("{guildName}", i) || "Embed") : "");
+  const footerWidth = 164;
+  const footerText = `${footerBase}${" ".repeat(Math.max(1, footerWidth - footerBase.length))}\u200B`;
 
-  if (footer) {
-    e.setFooter({
-      text: footer,
-      ...(footerIcon && isImageUrl(footerIcon) ? { iconURL: footerIcon } : {}),
-    });
-  } else if (footerIcon && isImageUrl(footerIcon)) {
-    e.setFooter({
-      text: replaceVars("{guildName}", i) || "Embed",
-      iconURL: footerIcon,
-    });
-  }
+  e.setFooter({
+    text: footerText,
+    ...(footerIcon && isImageUrl(footerIcon) ? { iconURL: footerIcon } : {}),
+  });
 
   const image = safeUrl(replaceVars(p.image, i));
   const thumb = safeUrl(replaceVars(p.thumbnail, i));
