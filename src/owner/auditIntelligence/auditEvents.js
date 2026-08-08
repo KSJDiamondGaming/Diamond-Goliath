@@ -47,6 +47,90 @@ function auditChannelContext(channel) {
   return { sourceGuildId: userMatch[1], userId: userMatch[2] };
 }
 
+function interactionKind(interaction) {
+  if (interaction?.isChatInputCommand?.()) return 'command';
+  if (interaction?.isButton?.()) return 'button';
+  if (interaction?.isStringSelectMenu?.()) return 'string-select';
+  if (interaction?.isUserSelectMenu?.()) return 'user-select';
+  if (interaction?.isRoleSelectMenu?.()) return 'role-select';
+  if (interaction?.isChannelSelectMenu?.()) return 'channel-select';
+  if (interaction?.isMentionableSelectMenu?.()) return 'mentionable-select';
+  if (interaction?.isModalSubmit?.()) return 'modal';
+  if (interaction?.isContextMenuCommand?.()) return 'context-menu';
+  return 'interaction';
+}
+
+function safeInteractionOptions(interaction) {
+  if (!interaction?.isChatInputCommand?.()) return null;
+  const simplify = (items = []) => items.map((item) => ({
+    name: item.name,
+    type: item.type,
+    value: item.value ?? null,
+    options: Array.isArray(item.options) ? simplify(item.options) : undefined,
+  }));
+  return simplify(interaction.options?.data || []);
+}
+
+function interactionValues(interaction) {
+  if (Array.isArray(interaction?.values)) return interaction.values.slice(0, 25);
+  if (interaction?.isUserSelectMenu?.() || interaction?.isRoleSelectMenu?.() || interaction?.isChannelSelectMenu?.() || interaction?.isMentionableSelectMenu?.()) {
+    return Array.isArray(interaction.values) ? interaction.values.slice(0, 25) : [];
+  }
+  return null;
+}
+
+function interactionLabel(interaction, kind) {
+  if (kind === 'command') return `/${interaction.commandName || 'unknown'}`;
+  if (kind === 'context-menu') return interaction.commandName || 'context menu';
+  return String(interaction.customId || kind || 'interaction');
+}
+
+async function captureGoliathInteraction(client, interaction) {
+  if (!interaction?.guild || !interaction?.user) return false;
+  const ownerAuditGuildId = auditRouter.getOwnerAuditGuildId();
+  if (ownerAuditGuildId && String(interaction.guildId || '') === String(ownerAuditGuildId)) return false;
+  if (String(interaction.customId || '').startsWith('owner:audit:')) return false;
+  if (interaction?.isAutocomplete?.()) return false;
+
+  const kind = interactionKind(interaction);
+  const label = interactionLabel(interaction, kind);
+  const actor = {
+    id: interaction.user.id,
+    username: interaction.user.username || null,
+    globalName: interaction.user.globalName || null,
+    bot: Boolean(interaction.user.bot),
+  };
+
+  const metadata = {
+    interactionId: interaction.id || null,
+    interactionType: interaction.type ?? null,
+    kind,
+    commandName: interaction.commandName || null,
+    commandId: interaction.commandId || null,
+    customId: interaction.customId || null,
+    channelId: interaction.channelId || null,
+    messageId: interaction.message?.id || null,
+    options: safeInteractionOptions(interaction),
+    values: interactionValues(interaction),
+  };
+
+  await audit.captureGoliathAction(client, {
+    type: `goliath.interaction.${kind}`,
+    category: 'goliath',
+    action: 'execute',
+    title: kind === 'command' ? 'Goliath Command Used' : 'Goliath Interaction Used',
+    icon: '🤖',
+    guild: interaction.guild,
+    channel: interaction.channel || null,
+    user: interaction.user,
+    actor,
+    target: { id: interaction.id || null, label },
+    summary: `<@${interaction.user.id}> used **${label}** through Goliath.`,
+    metadata,
+  });
+  return true;
+}
+
 async function handleOwnerAuditInteraction(client, interaction) {
   const customId = String(interaction?.customId || '');
   if (!interaction?.isButton?.() || !customId.startsWith('owner:audit:')) return false;
@@ -147,7 +231,10 @@ function registerAuditEvents(client) {
   if (!client || wired.has(client)) return false;
   wired.add(client);
 
-  client.on(Events.InteractionCreate, (interaction) => handleOwnerAuditInteraction(client, interaction).catch((error) => console.warn('[Audit Intelligence] owner interaction failed:', error?.message || error)));
+  client.on(Events.InteractionCreate, (interaction) => {
+    handleOwnerAuditInteraction(client, interaction).catch((error) => console.warn('[Audit Intelligence] owner interaction failed:', error?.message || error));
+    captureGoliathInteraction(client, interaction).catch((error) => console.warn('[Audit Intelligence] Goliath interaction capture failed:', error?.message || error));
+  });
   client.on(Events.GuildMemberAdd, (member) => audit.capture(client, { type: 'member.join', category: 'member', action: 'join', title: 'Member Joined', icon: '📥', guild: member.guild, member, target: { id: member.id, label: member.user?.tag || member.user?.username }, after: snapshotMember(member) }));
   client.on(Events.GuildMemberRemove, async (member) => {
     const removal = await findRemoval(member.guild, member.id).catch(() => ({ type: 'member.leave', correlation: null }));
@@ -214,4 +301,4 @@ function registerAuditEvents(client) {
   return true;
 }
 
-module.exports = { registerAuditEvents, handleOwnerAuditInteraction };
+module.exports = { registerAuditEvents, handleOwnerAuditInteraction, captureGoliathInteraction };
