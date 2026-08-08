@@ -1,0 +1,254 @@
+'use strict';
+
+const {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  ChannelSelectMenuBuilder,
+  ChannelType,
+  EmbedBuilder,
+  StringSelectMenuBuilder,
+  UserSelectMenuBuilder,
+} = require('discord.js');
+const store = require('./socialStudioStore');
+const { ALERT_TYPES } = require('./socialStudioTemplates');
+
+const P = 'social:userroute:';
+const TYPE_LABELS = {
+  all: 'All Content',
+  live: 'LIVE',
+  ended: 'Stream Ended',
+  vod: 'VOD',
+  clip: 'Clip',
+  upload: 'Upload',
+  short: 'Short',
+  post: 'Social Post',
+};
+const sessions = new Map();
+
+function key(i) { return `${i.guildId}:${i.user?.id || 'unknown'}`; }
+function state(i) { return sessions.get(key(i)) || { targetUserId: null, type: 'all' }; }
+function setState(i, patch) { const next = { ...state(i), ...patch }; sessions.set(key(i), next); return next; }
+function row(...components) { return new ActionRowBuilder().addComponents(...components); }
+function button(id, label, style = ButtonStyle.Secondary, disabled = false) {
+  return new ButtonBuilder().setCustomId(id).setLabel(label).setStyle(style).setDisabled(disabled);
+}
+function object(v) { return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; }
+function who(i) { return i.member?.displayName || i.user?.displayName || i.user?.username || 'Unknown User'; }
+function save(i, config) { return store.saveConfig(i.guildId, config, { actorId: i.user?.id || null, guild: i.guild }); }
+
+function overrides(config) { return object(config.userChannelOverrides); }
+function routesFor(config, userId) { return object(overrides(config)[String(userId || '')]); }
+
+function userDisplay(i, userId) {
+  if (!userId) return 'None';
+  const member = i.guild?.members?.cache?.get?.(userId);
+  return member ? `${member.displayName} (<@${userId}>)` : `<@${userId}>`;
+}
+
+function creatorAccountsForUser(config, userId) {
+  const uid = String(userId || '');
+  const ids = new Set();
+  for (const creator of Object.values(config.creators || {})) {
+    const owner = String(creator?.ownerDiscordId || creator?.discordUserId || creator?.userId || '');
+    if (owner !== uid) continue;
+    for (const id of creator.accountIds || []) ids.add(String(id));
+  }
+  for (const [id, account] of Object.entries(config.accounts || {})) {
+    if (String(account?.discordUserId || account?.ownerDiscordId || '') === uid) ids.add(String(id));
+  }
+  return [...ids];
+}
+
+function applyRoutesToAccount(account, routes) {
+  if (!account || typeof account !== 'object') return;
+  if (!account.userRouteBaseCaptured) {
+    account.userRouteBaseCaptured = true;
+    account.userRouteBaseChannelId = account.alertChannelId || null;
+    account.userRouteBaseChannels = { ...object(account.alertChannels) };
+  }
+  const baseChannels = object(account.userRouteBaseChannels);
+  account.alertChannelId = routes.all || account.userRouteBaseChannelId || null;
+  account.alertChannels = { ...baseChannels };
+  for (const type of ALERT_TYPES) {
+    if (routes[type]) account.alertChannels[type] = routes[type];
+    else if (routes.all) account.alertChannels[type] = routes.all;
+    else if (!(type in baseChannels)) delete account.alertChannels[type];
+  }
+  account.updatedAt = new Date().toISOString();
+}
+
+function clearRoutesFromAccount(account) {
+  if (!account?.userRouteBaseCaptured) return;
+  account.alertChannelId = account.userRouteBaseChannelId || null;
+  account.alertChannels = { ...object(account.userRouteBaseChannels) };
+  delete account.userRouteBaseCaptured;
+  delete account.userRouteBaseChannelId;
+  delete account.userRouteBaseChannels;
+  account.updatedAt = new Date().toISOString();
+}
+
+function syncUser(config, userId) {
+  const routes = routesFor(config, userId);
+  const hasRoutes = Object.values(routes).some(Boolean);
+  for (const accountId of creatorAccountsForUser(config, userId)) {
+    const account = config.accounts?.[accountId];
+    if (!account) continue;
+    if (hasRoutes) applyRoutesToAccount(account, routes);
+    else clearRoutesFromAccount(account);
+  }
+}
+
+function routeSummary(routes) {
+  const lines = [];
+  for (const type of ['all', ...ALERT_TYPES]) {
+    if (routes[type]) lines.push(`• **${TYPE_LABELS[type] || type}:** <#${routes[type]}>`);
+  }
+  return lines.length ? lines.join('\n') : 'Uses server routing (Dedicated Channels → Default Channel).';
+}
+
+function payload(i) {
+  const config = store.getConfig(i.guildId);
+  const s = state(i);
+  const routes = routesFor(config, s.targetUserId);
+  const selectedChannel = routes[s.type] || null;
+  const configuredUsers = Object.entries(overrides(config)).filter(([, r]) => Object.values(object(r)).some(Boolean));
+
+  const desc = [
+    'Choose **which Discord user**, **which content type**, and **which Discord channel** their automatic Social Studio posts should use.',
+    '',
+    '**Routing priority**',
+    '1. User + content-type override',
+    '2. User All Content override',
+    '3. Server Dedicated Channel for that content type',
+    '4. Server Default Channel',
+    '',
+    `**Configured Users:** ${configuredUsers.length}`,
+    `**Selected User:** ${userDisplay(i, s.targetUserId)}`,
+    s.targetUserId ? `**Selected User Routes**\n${routeSummary(routes)}` : 'Select a Discord user below.',
+  ].join('\n');
+
+  const components = [
+    row(new UserSelectMenuBuilder()
+      .setCustomId(`${P}user`)
+      .setPlaceholder('1. Choose the Discord user')
+      .setMinValues(1)
+      .setMaxValues(1)),
+  ];
+
+  if (s.targetUserId) {
+    components.push(row(new StringSelectMenuBuilder()
+      .setCustomId(`${P}type`)
+      .setPlaceholder('2. Choose the content type')
+      .setMinValues(1)
+      .setMaxValues(1)
+      .addOptions(['all', ...ALERT_TYPES].map((type) => ({
+        label: TYPE_LABELS[type] || type,
+        value: type,
+        description: type === 'all' ? 'Send every content type for this user to one channel.' : `Override only ${TYPE_LABELS[type] || type} posts.`,
+        default: type === s.type,
+      }))));
+
+    const channel = new ChannelSelectMenuBuilder()
+      .setCustomId(`${P}channel`)
+      .setPlaceholder(`3. Choose channel for ${TYPE_LABELS[s.type] || s.type}`)
+      .setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
+      .setMinValues(1)
+      .setMaxValues(1);
+    if (selectedChannel) channel.setDefaultChannels([selectedChannel]);
+    components.push(row(channel));
+    components.push(row(
+      button(`${P}clear`, `Clear ${TYPE_LABELS[s.type] || s.type}`, ButtonStyle.Secondary, !selectedChannel),
+      button(`${P}clearall`, 'Clear All User Overrides', ButtonStyle.Danger, !Object.values(routes).some(Boolean)),
+    ));
+  }
+
+  components.push(row(button('social:channels', '⬅️ Channels'), button('social:main', '🏠 Social Studio')));
+
+  return {
+    embeds: [new EmbedBuilder()
+      .setColor(config.enabled ? 0x5865F2 : 0x747F8D)
+      .setTitle('👥 User Automatic Post Routing')
+      .setDescription(desc)
+      .setFooter({ text: `Requested by ${who(i)}` })
+      .setTimestamp()],
+    components,
+  };
+}
+
+async function update(i) {
+  const next = payload(i);
+  if (i.deferred || i.replied) await i.editReply(next);
+  else await i.update(next);
+  return true;
+}
+
+async function handle(i) {
+  const id = String(i?.customId || '');
+  if (!i.guildId) return false;
+
+  // Replace the old creator-override entry point with the usable user/content/channel flow.
+  if (id === 'social:channel:creator:open') {
+    setState(i, { targetUserId: null, type: 'all' });
+    return update(i);
+  }
+  if (!id.startsWith(P)) return false;
+
+  if (id === `${P}user`) {
+    setState(i, { targetUserId: i.values?.[0] || null, type: 'all' });
+    return update(i);
+  }
+  if (id === `${P}type`) {
+    const type = i.values?.[0] || 'all';
+    setState(i, { type: ['all', ...ALERT_TYPES].includes(type) ? type : 'all' });
+    return update(i);
+  }
+  if (id === `${P}channel`) {
+    const config = store.getConfig(i.guildId);
+    const s = state(i);
+    if (!s.targetUserId) throw new Error('Choose a Discord user first.');
+    config.userChannelOverrides = { ...overrides(config) };
+    const routes = { ...routesFor(config, s.targetUserId), [s.type]: i.values?.[0] || null };
+    config.userChannelOverrides[s.targetUserId] = routes;
+    syncUser(config, s.targetUserId);
+    save(i, config);
+    return update(i);
+  }
+  if (id === `${P}clear` || id === `${P}clearall`) {
+    const config = store.getConfig(i.guildId);
+    const s = state(i);
+    if (!s.targetUserId) throw new Error('Choose a Discord user first.');
+    config.userChannelOverrides = { ...overrides(config) };
+    if (id.endsWith('clearall')) delete config.userChannelOverrides[s.targetUserId];
+    else {
+      const routes = { ...routesFor(config, s.targetUserId) };
+      delete routes[s.type];
+      if (Object.values(routes).some(Boolean)) config.userChannelOverrides[s.targetUserId] = routes;
+      else delete config.userChannelOverrides[s.targetUserId];
+    }
+    syncUser(config, s.targetUserId);
+    save(i, config);
+    return update(i);
+  }
+  return false;
+}
+
+function installStoreCompatibility() {
+  if (store.__userChannelRoutingPatched) return;
+  const originalUpsert = store.upsertCreatorAccount.bind(store);
+  store.upsertCreatorAccount = function upsertWithUserRouting(guildId, creatorId, account, duplicateIds = [], meta = {}) {
+    const result = originalUpsert(guildId, creatorId, account, duplicateIds, meta);
+    const config = store.getConfig(guildId);
+    const creator = config.creators?.[creatorId];
+    const userId = creator?.ownerDiscordId || creator?.discordUserId || creator?.userId || account?.discordUserId || account?.ownerDiscordId;
+    if (userId && Object.values(routesFor(config, userId)).some(Boolean)) {
+      syncUser(config, userId);
+      store.saveConfig(guildId, config, meta);
+      return { ...result, account: store.getAccount(guildId, account.accountId) };
+    }
+    return result;
+  };
+  store.__userChannelRoutingPatched = true;
+}
+
+module.exports = { handle, installStoreCompatibility, syncUser };
