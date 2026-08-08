@@ -2,6 +2,7 @@
 
 const {
   ActionRowBuilder,
+  AttachmentBuilder,
   ButtonBuilder,
   ButtonStyle,
   EmbedBuilder,
@@ -10,6 +11,7 @@ const {
   TextInputStyle,
 } = require('discord.js');
 const store = require('./socialStudioStore');
+const { providerInfo } = require('./socialStudioProviders');
 
 const P = 'social:';
 const sessions = new Map();
@@ -231,9 +233,21 @@ function liveMessagesPayload(interaction) {
   return panel.buildSectionPanel(interaction, 'liveMessages');
 }
 
+function diagnosticsPayload(interaction) {
+  const panel = require('./socialStudioPanel');
+  return panel.buildSectionPanel(interaction, 'diagnostics');
+}
+
 async function updatePanel(interaction, payload) {
   if (interaction.deferred || interaction.replied) await interaction.editReply(payload);
   else await interaction.update(payload);
+  return true;
+}
+
+async function followUp(interaction, payload) {
+  const next = { flags: 64, ...payload };
+  if (interaction.deferred || interaction.replied) await interaction.followUp(next);
+  else await interaction.reply(next);
   return true;
 }
 
@@ -242,6 +256,17 @@ function saveSettings(interaction, config) {
     actorId: interaction.user?.id || null,
     guild: interaction.guild,
   });
+}
+
+function redactSecrets(value) {
+  if (Array.isArray(value)) return value.map(redactSecrets);
+  if (!value || typeof value !== 'object') return value;
+  const output = {};
+  for (const [entryKey, entryValue] of Object.entries(value)) {
+    if (/(token|secret|password|authorization|cookie|api.?key|access.?key)/i.test(entryKey)) output[entryKey] = '[REDACTED]';
+    else output[entryKey] = redactSecrets(entryValue);
+  }
+  return output;
 }
 
 async function handleMonitoringAction(interaction, id) {
@@ -322,6 +347,64 @@ async function handleLiveMessageAction(interaction, id) {
   return updatePanel(interaction, liveMessagesPayload(interaction));
 }
 
+async function handleDiagnosticsAction(interaction, id) {
+  const config = store.getConfig(interaction.guildId);
+  const accounts = Object.values(config.accounts || {});
+  const history = Array.isArray(config.history) ? config.history : [];
+
+  if (id === `${P}data:refresh`) return updatePanel(interaction, diagnosticsPayload(interaction));
+
+  if (id === `${P}testing:last`) {
+    const latest = history.at(-1);
+    const content = latest
+      ? `📄 **Latest Social Studio Response**\n\n\`\`\`json\n${JSON.stringify(latest, null, 2).slice(0, 1700)}\n\`\`\``
+      : '📄 **Latest Social Studio Response**\n\nNo provider response or Social Studio history has been recorded yet.';
+    return followUp(interaction, { content });
+  }
+
+  if (id === `${P}testing:diagnostics`) {
+    const platforms = [...new Set(accounts.map((account) => String(account.platform || '').toLowerCase()).filter(Boolean))];
+    const lines = platforms.length
+      ? platforms.map((platform) => {
+        let info = {};
+        try { info = providerInfo(platform) || {}; } catch { info = {}; }
+        const alerts = Array.isArray(info.supportedAlertTypes) && info.supportedAlertTypes.length
+          ? info.supportedAlertTypes.join(', ')
+          : 'No alert types reported';
+        return `**${platform}** — ${alerts}`;
+      })
+      : ['No linked accounts are available to inspect.'];
+    return followUp(interaction, {
+      content: `🩺 **Social Studio Provider Details**\n\n${lines.join('\n').slice(0, 1800)}`,
+    });
+  }
+
+  if (id === `${P}data:export:config`) {
+    const safe = redactSecrets(config);
+    const file = new AttachmentBuilder(Buffer.from(JSON.stringify(safe, null, 2), 'utf8'), {
+      name: `social-studio-config-${interaction.guildId}.json`,
+    });
+    return followUp(interaction, { content: '📤 Social Studio configuration export.', files: [file] });
+  }
+
+  if (id === `${P}data:export`) {
+    const file = new AttachmentBuilder(Buffer.from(JSON.stringify(history, null, 2), 'utf8'), {
+      name: `social-studio-history-${interaction.guildId}.json`,
+    });
+    return followUp(interaction, { content: '🗂️ Social Studio history export.', files: [file] });
+  }
+
+  if (id === `${P}data:clear`) {
+    config.history = [];
+    saveSettings(interaction, config);
+    await updatePanel(interaction, diagnosticsPayload(interaction));
+    await interaction.followUp({ content: '🧹 Social Studio history cleared.', flags: 64 }).catch(() => null);
+    return true;
+  }
+
+  return false;
+}
+
 async function handle(interaction) {
   const id = String(interaction?.customId || '');
   capture(interaction);
@@ -334,6 +417,17 @@ async function handle(interaction) {
     || id.startsWith(`${P}account:check:`)
     || id.startsWith(`${P}creator:check:`)
   ) return true;
+
+  if ([
+    `${P}testing:last`,
+    `${P}testing:diagnostics`,
+    `${P}data:refresh`,
+    `${P}data:export`,
+    `${P}data:export:config`,
+    `${P}data:clear`,
+  ].includes(id)) {
+    return handleDiagnosticsAction(interaction, id);
+  }
 
   if ([
     `${P}automation:interval`,
