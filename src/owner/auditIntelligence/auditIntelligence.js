@@ -103,19 +103,43 @@ function normalize(input = {}) {
   };
 }
 
+function confirmGoliathOutcome(client, event, correlation) {
+  const botId = String(client?.user?.id || '');
+  const actorId = String(correlation?.actor?.id || event?.actor?.id || '');
+  if (!botId || actorId !== botId) return false;
+
+  event.source = 'Goliath + Discord Audit Log';
+  event.result = 'Success';
+  event.category = event.category === 'system' ? 'goliath' : event.category;
+  event.metadata = {
+    ...(event.metadata || {}),
+    goliath: {
+      confirmed: true,
+      botId,
+      confirmation: 'Discord Audit Log',
+    },
+  };
+  return true;
+}
+
 async function capture(client, input = {}) {
   const event = normalize(input);
   const guild = input.guild || input.member?.guild || input.channel?.guild || client?.guilds?.cache?.get?.(event.guildId) || null;
+  let correlation = null;
 
   if (!event.actor && guild) {
-    const correlation = await correlate(guild, event.type, event.target?.id || event.user?.id, new Date(event.timestamp).getTime());
+    correlation = await correlate(guild, event.type, event.target?.id || event.user?.id, new Date(event.timestamp).getTime());
     if (correlation) {
       event.actor = correlation.actor;
       event.reason = event.reason || correlation.reason;
       event.metadata.auditLog = correlation;
       event.source = 'Discord Gateway + Audit Log';
     }
+  } else if (event.metadata?.auditLog) {
+    correlation = event.metadata.auditLog;
   }
+
+  confirmGoliathOutcome(client, event, correlation);
 
   try {
     auditStore.appendEvent(event);
@@ -130,4 +154,4 @@ function captureGoliathAction(client, input = {}) {
   return capture(client, { ...input, source: 'Goliath', category: input.category || 'goliath', action: input.action || 'execute' });
 }
 
-module.exports = { capture, captureGoliathAction, correlate, normalize };
+module.exports = { capture, captureGoliathAction, correlate, normalize, confirmGoliathOutcome };
