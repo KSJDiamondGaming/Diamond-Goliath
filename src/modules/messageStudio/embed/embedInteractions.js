@@ -81,9 +81,15 @@ async function replyOrUpdate(i, payload) {
 }
 
 async function handleInteraction(i) {
-  if (!i.customId?.startsWith('embed:')) return false;
+  const customId = String(i.customId || '');
+  if (customId !== 'admin:embed' && !customId.startsWith('embed:')) return false;
   const who = memberName(i);
   const s = getSession(i);
+
+  if (customId === 'admin:embed') {
+    await i.update(buildEditorPanel(i, who));
+    return true;
+  }
 
   if (i.isStringSelectMenu()) {
     if (i.customId === 'embed:template') {
