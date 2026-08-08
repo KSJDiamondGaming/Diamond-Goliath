@@ -9,20 +9,24 @@ const {
   EmbedBuilder,
   Events,
   MessageFlags,
+  ModalBuilder,
   SlashCommandBuilder,
   StringSelectMenuBuilder,
+  TextInputBuilder,
+  TextInputStyle,
 } = require('discord.js');
 const audit = require('./auditIntelligence');
 const auditRouter = require('./auditRouter');
 const auditStore = require('./auditStore');
 const security = require('../../core/security/securityCore');
 const { snapshotMember, buildReport } = require('./userIntelligence');
-const { buildUserIntelligenceSectionEmbed, buildCommandCenterSetup } = require('./auditEmbeds');
+const { buildUserIntelligenceEmbed, buildUserIntelligenceSectionEmbed, buildCommandCenterSetup } = require('./auditEmbeds');
 
 const wired = new WeakSet();
 const routingSessions = new Map();
 const monitoringSessions = new Map();
 const structureSessions = new Map();
+const intelligenceSessions = new Map();
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const ROUTE_LABELS = {
   default: 'Guild Events / Default',
@@ -73,6 +77,8 @@ function getMonitoringSession(interaction) { return monitoringSessions.get(sessi
 function setMonitoringSession(interaction, patch) { const next = { ...getMonitoringSession(interaction), ...patch }; monitoringSessions.set(sessionKey(interaction), next); return next; }
 function getStructureSession(interaction) { return structureSessions.get(sessionKey(interaction)) || { sourceGuildId: null }; }
 function setStructureSession(interaction, patch) { const next = { ...getStructureSession(interaction), ...patch }; structureSessions.set(sessionKey(interaction), next); return next; }
+function getIntelligenceSession(interaction) { return intelligenceSessions.get(sessionKey(interaction)) || { sourceGuildId: null, userId: null, matches: [] }; }
+function setIntelligenceSession(interaction, patch) { const next = { ...getIntelligenceSession(interaction), ...patch }; intelligenceSessions.set(sessionKey(interaction), next); return next; }
 function configuredGuild(client, id) { return client.guilds.cache.get(String(id || '')) || null; }
 function sourceGuildOptions(client, destinationId) {
   return [...client.guilds.cache.values()]
@@ -198,6 +204,84 @@ async function buildStructurePanel(client, interaction) {
   }
   return { embeds: [embed], components: rows, allowedMentions: { parse: [] } };
 }
+
+function intelligenceMemberLabel(member) {
+  return member?.displayName || member?.user?.globalName || member?.user?.username || member?.id || 'Unknown user';
+}
+function intelligenceSearchModal() {
+  const input = new TextInputBuilder()
+    .setCustomId('query')
+    .setLabel('Discord user ID or username')
+    .setPlaceholder('Example: 123456789012345678 or username')
+    .setStyle(TextInputStyle.Short)
+    .setMinLength(2)
+    .setMaxLength(100)
+    .setRequired(true);
+  return new ModalBuilder()
+    .setCustomId('owner:commandcenter:intelligence:search-submit')
+    .setTitle('Search User Intelligence')
+    .addComponents(new ActionRowBuilder().addComponents(input));
+}
+async function buildIntelligencePanel(client, interaction) {
+  const config = auditStore.getConfig();
+  const session = getIntelligenceSession(interaction);
+  const sourceGuilds = sourceGuildOptions(client, config.commandCenter?.guildId);
+  const sourceGuild = configuredGuild(client, session.sourceGuildId);
+  const report = sourceGuild && session.userId ? await buildReport(client, session.userId) : null;
+  const embed = new EmbedBuilder()
+    .setColor(0x5865F2)
+    .setTitle('🔎 User Intelligence Lookup')
+    .setDescription(sourceGuild
+      ? 'Search this guild by Discord **user ID or username**. Goliath combines live Discord state with its own stored Audit Intelligence history.'
+      : 'Choose the source guild that contains, or previously contained, the user you want to investigate.')
+    .addFields(
+      { name: 'Source Guild', value: sourceGuild ? `**${sourceGuild.name}**\n\`${sourceGuild.id}\`` : 'Not selected', inline: true },
+      { name: 'Selected User', value: session.userId ? `<@${session.userId}>\n\`${session.userId}\`` : 'Not selected', inline: true },
+      { name: 'Search Results', value: session.matches?.length ? `${session.matches.length} matching member(s)` : 'None / not searched', inline: true },
+    )
+    .setFooter({ text: 'Goliath Command Center • User Intelligence • Owner only' });
+  const rows = [];
+  if (sourceGuilds.length) rows.push(new ActionRowBuilder().addComponents(sourceGuildSelect('owner:commandcenter:intelligence:guild', '1. Select source guild', sourceGuilds, session.sourceGuildId)));
+  if (sourceGuild) {
+    const searchButton = new ButtonBuilder().setCustomId('owner:commandcenter:intelligence:search').setLabel('Search User').setEmoji('🔎').setStyle(ButtonStyle.Primary);
+    const resetButton = new ButtonBuilder().setCustomId('owner:commandcenter:intelligence:reset').setLabel('Reset User').setStyle(ButtonStyle.Secondary).setDisabled(!session.userId && !session.matches?.length);
+    const backButton = new ButtonBuilder().setCustomId('owner:commandcenter:refresh').setLabel('Back / Refresh Home').setStyle(ButtonStyle.Secondary);
+    rows.push(new ActionRowBuilder().addComponents(searchButton, resetButton, backButton));
+  }
+  if (sourceGuild && session.matches?.length > 1) {
+    const resultSelect = new StringSelectMenuBuilder()
+      .setCustomId('owner:commandcenter:intelligence:result')
+      .setPlaceholder('2. Select matching user')
+      .setMinValues(1)
+      .setMaxValues(1)
+      .addOptions(session.matches.slice(0, 25).map((match) => ({
+        label: String(match.label || match.id).slice(0, 100),
+        value: match.id,
+        description: `User ID: ${match.id}`.slice(0, 100),
+        default: match.id === session.userId,
+      })));
+    rows.push(new ActionRowBuilder().addComponents(resultSelect));
+  }
+  if (sourceGuild && session.userId) {
+    const channelButton = new ButtonBuilder().setCustomId('owner:commandcenter:intelligence:channel').setLabel('Create / Open Intelligence Channel').setEmoji('📂').setStyle(ButtonStyle.Success);
+    rows.push(new ActionRowBuilder().addComponents(channelButton));
+  }
+  return { embeds: report ? [embed, buildUserIntelligenceEmbed(report, sourceGuild)] : [embed], components: rows, allowedMentions: { parse: [] } };
+}
+async function searchIntelligenceUser(client, sourceGuild, query) {
+  const value = String(query || '').trim();
+  if (!sourceGuild || !value) return [];
+  if (/^\d{16,22}$/.test(value)) {
+    const member = await sourceGuild.members.fetch(value).catch(() => null);
+    if (member) return [{ id: member.id, label: intelligenceMemberLabel(member) }];
+    const user = await client.users.fetch(value).catch(() => null);
+    return user ? [{ id: user.id, label: user.globalName || user.username || user.id }] : [{ id: value, label: `Stored user ${value}` }];
+  }
+  const members = await sourceGuild.members.search({ query: value, limit: 25 }).catch(() => null);
+  if (!members?.size) return [];
+  return [...members.values()].map((member) => ({ id: member.id, label: intelligenceMemberLabel(member) }));
+}
+
 async function buildHealthPanel(client) {
   const report = await auditRouter.inspectHealth(client);
   const commandCenter = report.commandCenter || {};
@@ -365,6 +449,47 @@ async function handleCommandCenterInteraction(client, interaction) {
     await interaction.deferUpdate().catch(() => null);
     await auditRouter.repairStructure(client, sourceGuild);
     await interaction.editReply(await buildStructurePanel(client, interaction)).catch(() => null); return true;
+  }
+  if (customId === 'owner:commandcenter:intelligence' && interaction.isButton?.()) {
+    intelligenceSessions.set(sessionKey(interaction), { sourceGuildId: null, userId: null, matches: [] });
+    await interaction.reply({ ...(await buildIntelligencePanel(client, interaction)), flags: MessageFlags.Ephemeral }).catch(() => null); return true;
+  }
+  if (customId === 'owner:commandcenter:intelligence:guild' && interaction.isStringSelectMenu?.()) {
+    setIntelligenceSession(interaction, { sourceGuildId: String(interaction.values?.[0] || ''), userId: null, matches: [] });
+    await interaction.update(await buildIntelligencePanel(client, interaction)).catch(() => null); return true;
+  }
+  if (customId === 'owner:commandcenter:intelligence:search' && interaction.isButton?.()) {
+    const session = getIntelligenceSession(interaction);
+    if (!session.sourceGuildId) { await interaction.reply({ content: '❌ Select a source guild first.', flags: MessageFlags.Ephemeral }).catch(() => null); return true; }
+    await interaction.showModal(intelligenceSearchModal()).catch(() => null); return true;
+  }
+  if (customId === 'owner:commandcenter:intelligence:search-submit' && interaction.isModalSubmit?.()) {
+    const session = getIntelligenceSession(interaction);
+    const sourceGuild = configuredGuild(client, session.sourceGuildId);
+    if (!sourceGuild) { await interaction.reply({ content: '❌ The selected source guild is no longer available.', flags: MessageFlags.Ephemeral }).catch(() => null); return true; }
+    const query = interaction.fields.getTextInputValue('query');
+    const matches = await searchIntelligenceUser(client, sourceGuild, query);
+    const userId = matches.length === 1 ? matches[0].id : null;
+    setIntelligenceSession(interaction, { matches, userId });
+    await interaction.update(await buildIntelligencePanel(client, interaction)).catch(() => null); return true;
+  }
+  if (customId === 'owner:commandcenter:intelligence:result' && interaction.isStringSelectMenu?.()) {
+    setIntelligenceSession(interaction, { userId: String(interaction.values?.[0] || '') });
+    await interaction.update(await buildIntelligencePanel(client, interaction)).catch(() => null); return true;
+  }
+  if (customId === 'owner:commandcenter:intelligence:reset' && interaction.isButton?.()) {
+    setIntelligenceSession(interaction, { userId: null, matches: [] });
+    await interaction.update(await buildIntelligencePanel(client, interaction)).catch(() => null); return true;
+  }
+  if (customId === 'owner:commandcenter:intelligence:channel' && interaction.isButton?.()) {
+    const session = getIntelligenceSession(interaction);
+    const sourceGuild = configuredGuild(client, session.sourceGuildId);
+    if (!sourceGuild || !session.userId) return true;
+    const member = await sourceGuild.members.fetch(session.userId).catch(() => null);
+    const user = member?.user || await client.users.fetch(session.userId).catch(() => ({ id: session.userId, username: `user-${String(session.userId).slice(-6)}` }));
+    const channel = await auditRouter.ensureUserAuditChannel(client, sourceGuild, { user });
+    const link = channel ? `https://discord.com/channels/${interaction.guildId}/${channel.id}` : null;
+    await interaction.reply({ content: link ? `✅ Intelligence channel ready: ${link}` : '❌ Intelligence channel could not be prepared.', flags: MessageFlags.Ephemeral }).catch(() => null); return true;
   }
   if (customId === 'owner:commandcenter:health' && interaction.isButton?.()) {
     await interaction.reply({ ...(await buildHealthPanel(client)), flags: MessageFlags.Ephemeral }).catch(() => null); return true;
