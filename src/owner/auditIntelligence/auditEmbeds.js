@@ -88,7 +88,9 @@ function buildCommandCenterSetup(client) {
 }
 
 function buildCommandCenterHome(client, guild, config = {}) {
-  const configured = Object.values(config.guilds || {}).filter((item) => item?.enabled !== false).length;
+  const monitored = [...(client?.guilds?.cache?.values?.() || [])]
+    .filter((item) => String(item.id) !== String(guild?.id || config.commandCenter?.guildId || ''))
+    .length;
   const embed = new EmbedBuilder()
     .setColor(COLORS.intelligence)
     .setTitle('🛡️ GOLIATH COMMAND CENTER')
@@ -97,7 +99,7 @@ function buildCommandCenterHome(client, guild, config = {}) {
       { name: 'Environment', value: `\`${String(process.env.BOT_MODE || 'DEV').toUpperCase()}\``, inline: true },
       { name: 'Destination', value: guild ? `**${guild.name}**\n\`${guild.id}\`` : 'Not configured', inline: true },
       { name: 'Status', value: guild ? '🟢 Operational' : '🔴 Not configured', inline: true },
-      { name: 'Monitored Guilds', value: `\`${configured}\``, inline: true },
+      { name: 'Monitored Guilds', value: `\`${monitored}\``, inline: true },
       { name: 'Auto Provision', value: config.autoProvision === false ? '🔴 Off' : '🟢 On', inline: true },
       { name: 'Command Visibility', value: guild ? `Only registered in **${guild.name}**` : 'Not registered', inline: true },
     )
