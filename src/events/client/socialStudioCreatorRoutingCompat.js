@@ -7,6 +7,7 @@
 
 const creatorCompat = require('../../modules/socialStudio/socialAlerts/socialStudioCreatorActionCompat');
 const creatorRoutingCompat = require('../../modules/socialStudio/socialAlerts/socialStudioCreatorRoutingCompat');
+const creatorRoutingLegacyFix = require('../../modules/socialStudio/socialAlerts/socialStudioCreatorRoutingLegacyFix');
 
 creatorRoutingCompat.installStoreCompatibility();
 
@@ -16,6 +17,7 @@ if (!creatorCompat.__creatorRoutingCompatPatched) {
     : async () => false;
 
   creatorCompat.handle = async function handleWithCreatorRouting(interaction) {
+    if (await creatorRoutingLegacyFix.handle(interaction)) return true;
     if (await creatorRoutingCompat.handle(interaction)) return true;
     return originalHandle(interaction);
   };
