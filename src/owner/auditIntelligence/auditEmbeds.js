@@ -16,6 +16,17 @@ const COLORS = {
   intelligence: 0x5865F2,
 };
 
+const GUILD_ACTIVITY_FAMILIES = {
+  all: { label: 'Recent Activity', emoji: '🕒' },
+  moderation: { label: 'Moderation', emoji: '🛡️' },
+  members: { label: 'Members', emoji: '👥' },
+  roles: { label: 'Roles / Permissions', emoji: '🎭' },
+  messages: { label: 'Messages / Reactions', emoji: '💬' },
+  voice: { label: 'Voice', emoji: '🔊' },
+  security: { label: 'Security / AutoMod', emoji: '🔐' },
+  goliath: { label: 'Goliath Actions', emoji: '🤖' },
+};
+
 function family(event) {
   if (event.category === 'moderation') return 'moderation';
   if (event.category === 'voice') return 'voice';
@@ -96,12 +107,45 @@ function guildIntelligenceSources(client, destinationId) {
     .slice(0, 25);
 }
 
-async function buildGuildIntelligencePanel(client, sourceGuildId = null) {
+function matchesGuildActivityFamily(event, familyKey) {
+  const category = String(event?.category || 'system');
+  const type = String(event?.type || '');
+  if (familyKey === 'all') return true;
+  if (familyKey === 'moderation') return category === 'moderation';
+  if (familyKey === 'members') return category === 'member' && type !== 'member.roles';
+  if (familyKey === 'roles') return category === 'role' || type === 'member.roles' || type.startsWith('member.role.');
+  if (familyKey === 'messages') return category === 'message';
+  if (familyKey === 'voice') return category === 'voice';
+  if (familyKey === 'security') return category === 'automod' || category === 'security';
+  if (familyKey === 'goliath') return category === 'goliath' || type.startsWith('goliath.');
+  return true;
+}
+
+function buildGuildActivityEmbed(guild, events, familyKey) {
+  const familyConfig = GUILD_ACTIVITY_FAMILIES[familyKey] || GUILD_ACTIVITY_FAMILIES.all;
+  const lines = events.length ? events.slice(0, 20).map((event) => {
+    const actor = event.actor?.id ? `<@${event.actor.id}>` : 'Unknown actor';
+    const target = event.user?.id ? `<@${event.user.id}>` : event.target?.label || event.target?.name || event.target?.id || 'Unknown target';
+    const channel = event.channel?.id ? ` in <#${event.channel.id}>` : '';
+    const reason = event.reason ? ` — ${String(event.reason).slice(0, 120)}` : '';
+    return `${discordTime(event.timestamp, 'R')} • \`${event.type || 'event'}\` • ${actor} → ${target}${channel}${reason}`;
+  }) : ['No matching stored events found in the recent audit window.'];
+
+  return new EmbedBuilder()
+    .setColor(COLORS.intelligence)
+    .setTitle(`${familyConfig.emoji} ${familyConfig.label} • ${guild?.name || 'Guild'}`)
+    .setDescription(lines.join('\n').slice(0, 4000))
+    .setFooter({ text: 'Newest matching events • Up to 20 shown from the latest 100 stored guild events' })
+    .setTimestamp();
+}
+
+async function buildGuildIntelligencePanel(client, sourceGuildId = null, familyKey = 'all') {
   const auditStore = require('./auditStore');
   const auditRouter = require('./auditRouter');
   const config = auditStore.getConfig();
   const sources = guildIntelligenceSources(client, config.commandCenter?.guildId);
   const sourceGuild = sourceGuildId ? client.guilds.cache.get(String(sourceGuildId)) : null;
+  const selectedFamily = GUILD_ACTIVITY_FAMILIES[familyKey] ? familyKey : 'all';
   const rows = [];
   const select = new StringSelectMenuBuilder()
     .setCustomId('owner:guildintelligence:guild')
@@ -128,13 +172,34 @@ async function buildGuildIntelligencePanel(client, sourceGuildId = null) {
   const stored = auditStore.getGuild(sourceGuild.id) || {};
   const guildConfig = config.guilds?.[sourceGuild.id] || {};
   const structure = await auditRouter.inspectStructure(client, sourceGuild).catch(() => ({}));
+  const recentEvents = auditStore.getGuildEvents(sourceGuild.id, { limit: 100 });
+  const matchingEvents = recentEvents.filter((event) => matchesGuildActivityFamily(event, selectedFamily));
+  const familySelect = new StringSelectMenuBuilder()
+    .setCustomId(`owner:guildintelligence:family:${sourceGuild.id}`)
+    .setPlaceholder('Inspect recent activity by family')
+    .setMinValues(1)
+    .setMaxValues(1)
+    .addOptions(Object.entries(GUILD_ACTIVITY_FAMILIES).map(([value, details]) => ({
+      label: details.label,
+      value,
+      emoji: details.emoji,
+      default: value === selectedFamily,
+    })));
+  rows.push(new ActionRowBuilder().addComponents(familySelect));
   const refresh = new ButtonBuilder()
-    .setCustomId(`owner:guildintelligence:refresh:${sourceGuild.id}`)
+    .setCustomId(`owner:guildintelligence:refresh:${sourceGuild.id}:${selectedFamily}`)
     .setLabel('Rescan Guild')
     .setEmoji('🔄')
     .setStyle(ButtonStyle.Secondary);
   rows.push(new ActionRowBuilder().addComponents(refresh));
-  return { embeds: [buildGuildIntelligenceEmbed(sourceGuild, stored, guildConfig, structure)], components: rows, allowedMentions: { parse: [] } };
+  return {
+    embeds: [
+      buildGuildIntelligenceEmbed(sourceGuild, stored, guildConfig, structure),
+      buildGuildActivityEmbed(sourceGuild, matchingEvents, selectedFamily),
+    ],
+    components: rows,
+    allowedMentions: { parse: [] },
+  };
 }
 
 function ensureGuildIntelligenceControls(client) {
@@ -159,13 +224,20 @@ function ensureGuildIntelligenceControls(client) {
       return;
     }
     if (customId === 'owner:guildintelligence:guild' && interaction.isStringSelectMenu?.()) {
-      await interaction.update(await buildGuildIntelligencePanel(client, interaction.values?.[0] || null)).catch(() => null);
+      await interaction.update(await buildGuildIntelligencePanel(client, interaction.values?.[0] || null, 'all')).catch(() => null);
+      return;
+    }
+    if (customId.startsWith('owner:guildintelligence:family:') && interaction.isStringSelectMenu?.()) {
+      const sourceGuildId = customId.slice('owner:guildintelligence:family:'.length);
+      const selectedFamily = String(interaction.values?.[0] || 'all');
+      await interaction.update(await buildGuildIntelligencePanel(client, sourceGuildId, selectedFamily)).catch(() => null);
       return;
     }
     if (customId.startsWith('owner:guildintelligence:refresh:') && interaction.isButton?.()) {
-      const sourceGuildId = customId.slice('owner:guildintelligence:refresh:'.length);
+      const payload = customId.slice('owner:guildintelligence:refresh:'.length);
+      const [sourceGuildId, selectedFamily = 'all'] = payload.split(':');
       await interaction.deferUpdate().catch(() => null);
-      await interaction.editReply(await buildGuildIntelligencePanel(client, sourceGuildId)).catch(() => null);
+      await interaction.editReply(await buildGuildIntelligencePanel(client, sourceGuildId, selectedFamily)).catch(() => null);
     }
   });
 }
