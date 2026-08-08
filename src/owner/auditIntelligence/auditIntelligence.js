@@ -16,12 +16,30 @@ const AUDIT_ACTIONS = {
   'member.kick': AuditLogEvent.MemberKick,
   'member.ban': AuditLogEvent.MemberBanAdd,
   'member.unban': AuditLogEvent.MemberBanRemove,
+  'member.prune': AuditLogEvent.MemberPrune,
   'member.update': AuditLogEvent.MemberUpdate,
+  'member.nickname': AuditLogEvent.MemberUpdate,
+  'member.timeout': AuditLogEvent.MemberUpdate,
   'member.roles': AuditLogEvent.MemberRoleUpdate,
   'invite.create': AuditLogEvent.InviteCreate,
   'invite.delete': AuditLogEvent.InviteDelete,
   'message.delete': AuditLogEvent.MessageDelete,
   'message.bulkDelete': AuditLogEvent.MessageBulkDelete,
+  'thread.create': AuditLogEvent.ThreadCreate,
+  'thread.update': AuditLogEvent.ThreadUpdate,
+  'thread.delete': AuditLogEvent.ThreadDelete,
+  'emoji.create': AuditLogEvent.EmojiCreate,
+  'emoji.update': AuditLogEvent.EmojiUpdate,
+  'emoji.delete': AuditLogEvent.EmojiDelete,
+  'sticker.create': AuditLogEvent.StickerCreate,
+  'sticker.update': AuditLogEvent.StickerUpdate,
+  'sticker.delete': AuditLogEvent.StickerDelete,
+  'scheduledEvent.create': AuditLogEvent.GuildScheduledEventCreate,
+  'scheduledEvent.update': AuditLogEvent.GuildScheduledEventUpdate,
+  'scheduledEvent.delete': AuditLogEvent.GuildScheduledEventDelete,
+  'automod.ruleCreate': AuditLogEvent.AutoModerationRuleCreate,
+  'automod.ruleUpdate': AuditLogEvent.AutoModerationRuleUpdate,
+  'automod.ruleDelete': AuditLogEvent.AutoModerationRuleDelete,
   'guild.update': AuditLogEvent.GuildUpdate,
 };
 
@@ -29,15 +47,19 @@ function id() { return `AUD-${Date.now().toString(36).toUpperCase()}-${crypto.ra
 function plain(value) { return value === undefined ? undefined : JSON.parse(JSON.stringify(value)); }
 function actor(user) { return user ? { id: user.id, username: user.username || null, globalName: user.globalName || null, bot: Boolean(user.bot) } : null; }
 
-async function correlate(guild, type, targetId, observedAt = Date.now()) {
+async function correlate(guild, type, targetId, observedAt = Date.now(), options = {}) {
   const action = AUDIT_ACTIONS[type];
   if (!guild || action === undefined) return null;
+  const maxAgeMs = Number(options.maxAgeMs || 15000);
+  const limit = Math.min(20, Math.max(1, Number(options.limit || 8)));
+  const allowTargetless = options.allowTargetless === true;
   try {
-    const logs = await guild.fetchAuditLogs({ type: action, limit: 6 });
+    const logs = await guild.fetchAuditLogs({ type: action, limit });
     const match = logs.entries.find((entry) => {
       const age = Math.abs(observedAt - entry.createdTimestamp);
-      const targetMatches = !targetId || !entry.target?.id || String(entry.target.id) === String(targetId);
-      return age <= 10000 && targetMatches;
+      const auditTargetId = entry.target?.id ? String(entry.target.id) : null;
+      const targetMatches = !targetId || auditTargetId === String(targetId) || (allowTargetless && !auditTargetId);
+      return age <= maxAgeMs && targetMatches;
     });
     if (!match) return null;
     return {
@@ -95,7 +117,11 @@ async function capture(client, input = {}) {
     }
   }
 
-  auditStore.appendEvent(event);
+  try {
+    auditStore.appendEvent(event);
+  } catch (error) {
+    console.warn('[Audit Intelligence] storage failed:', error?.message || error);
+  }
   if (guild) await auditRouter.deliver(client, guild, event).catch((error) => console.warn('[Audit Intelligence] delivery failed:', error?.message || error));
   return event;
 }
