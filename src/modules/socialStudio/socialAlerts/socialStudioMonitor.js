@@ -51,6 +51,7 @@ function configFor(guildId) {
     enabled: guildManager.isModuleEnabled(guildId, 'social'),
     alertsChannelId: social.alertsChannelId || null,
     alertChannels: social.alertChannels && typeof social.alertChannels === 'object' ? social.alertChannels : {},
+    platformChannels: social.platformChannels && typeof social.platformChannels === 'object' ? social.platformChannels : {},
     accounts: social.accounts && typeof social.accounts === 'object' ? social.accounts : {},
     creators: social.creators && typeof social.creators === 'object' ? social.creators : {},
     templates: normalizeTemplates(social.templates),
@@ -414,9 +415,11 @@ function variableMap(discordGuild, member, account, creator, event) {
 }
 
 async function resolveAlertChannel(discordGuild, config, account, eventType) {
+  const platform = String(account.platform || '').toLowerCase();
   const candidates = [
     account.alertChannels?.[eventType],
     account.alertChannelId,
+    config.platformChannels?.[platform],
     config.alertChannels?.[eventType],
     config.alertsChannelId,
   ].filter(Boolean);
