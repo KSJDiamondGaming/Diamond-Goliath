@@ -85,7 +85,39 @@ const SYSTEM_RULES = [
 function id() { return `AUD-${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`; }
 function operationId() { return `OP-${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`; }
 function plain(value) { return value === undefined ? undefined : JSON.parse(JSON.stringify(value)); }
-function actor(user) { return user ? { id: user.id, username: user.username || null, globalName: user.globalName || null, bot: Boolean(user.bot) } : null; }
+function actor(user) { return user ? { id: user.id, username: user.username || null, globalName: user.globalName || null, bot: Boolean(user.bot), accountCreatedAt: user.createdAt?.toISOString?.() || null } : null; }
+
+function actorMemberSnapshot(guild, member, user) {
+  const base = actor(user || member?.user);
+  if (!base) return null;
+  if (!member) return { ...base, guildOwner: String(guild?.ownerId || '') === String(base.id), memberAvailable: false };
+  const roles = member.roles?.cache
+    ? member.roles.cache.filter((role) => role.id !== guild.id).sort((a, b) => b.position - a.position).map((role) => ({ id: role.id, name: role.name, position: role.position, managed: Boolean(role.managed) }))
+    : [];
+  const permissions = member.permissions?.toArray?.() || [];
+  return {
+    ...base,
+    memberAvailable: true,
+    guildOwner: String(guild?.ownerId || '') === String(base.id),
+    displayName: member.displayName || null,
+    nickname: member.nickname || null,
+    joinedAt: member.joinedAt?.toISOString?.() || null,
+    highestRole: member.roles?.highest ? { id: member.roles.highest.id, name: member.roles.highest.name, position: member.roles.highest.position } : null,
+    roles,
+    permissions,
+    administrator: permissions.includes('Administrator'),
+    manageable: member.manageable ?? null,
+    moderatable: member.moderatable ?? null,
+    bannable: member.bannable ?? null,
+  };
+}
+
+async function buildActorSnapshot(guild, user) {
+  if (!user) return null;
+  let member = guild?.members?.cache?.get?.(user.id) || null;
+  if (!member && guild?.members?.fetch) member = await guild.members.fetch(user.id).catch(() => null);
+  return actorMemberSnapshot(guild, member, user);
+}
 
 function identifyGoliathSystem(event) {
   const metadata = event?.metadata || {};
@@ -269,7 +301,7 @@ function ensureGoliathOutputCapture(client) {
         icon: '📤',
         guild: message.guild,
         channel: message.channel || null,
-        actor: actor(client.user),
+        actor: actorMemberSnapshot(message.guild, message.member, client.user),
         target: { id: message.id, label: `Message ${message.id}` },
         summary: `Goliath sent a message in <#${message.channelId}>.`,
         result: 'Success',
@@ -305,7 +337,7 @@ async function correlate(guild, type, targetId, observedAt = Date.now(), options
     });
     if (!match) return null;
     return {
-      actor: actor(match.executor),
+      actor: await buildActorSnapshot(guild, match.executor),
       reason: match.reason || null,
       auditLogId: match.id,
       auditCreatedAt: match.createdAt?.toISOString?.() || null,
@@ -419,4 +451,6 @@ module.exports = {
   findOperationForOutput,
   findOperationForConfirmedOutcome,
   identifyGoliathSystem,
+  buildActorSnapshot,
+  actorMemberSnapshot,
 };
