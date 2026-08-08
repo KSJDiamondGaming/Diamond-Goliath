@@ -104,8 +104,9 @@ function normalize(input = {}) {
 }
 
 function confirmGoliathOutcome(client, event, correlation) {
+  if (!correlation?.auditLogId) return false;
   const botId = String(client?.user?.id || '');
-  const actorId = String(correlation?.actor?.id || event?.actor?.id || '');
+  const actorId = String(correlation.actor?.id || '');
   if (!botId || actorId !== botId) return false;
 
   event.source = 'Goliath + Discord Audit Log';
@@ -117,6 +118,7 @@ function confirmGoliathOutcome(client, event, correlation) {
       confirmed: true,
       botId,
       confirmation: 'Discord Audit Log',
+      auditLogId: correlation.auditLogId,
     },
   };
   return true;
@@ -135,7 +137,7 @@ async function capture(client, input = {}) {
       event.metadata.auditLog = correlation;
       event.source = 'Discord Gateway + Audit Log';
     }
-  } else if (event.metadata?.auditLog) {
+  } else if (event.metadata?.auditLog?.auditLogId) {
     correlation = event.metadata.auditLog;
   }
 
