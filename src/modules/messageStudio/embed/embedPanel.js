@@ -689,7 +689,10 @@ function buildEmbedFromPanel(p, i, showTimestamp, fieldLayout = "auto") {
   if (p.title) e.setTitle(trim(replaceVars(p.title, i), 256));
 
   const media = extractMediaLines(replaceVars(p.description, i));
-  if (media.description) e.setDescription(trim(media.description, 4096));
+  const widthAnchor = "\u2800".repeat(38);
+  const description = trim(media.description, 4096 - widthAnchor.length - 2);
+  if (description) e.setDescription(`${description}\n\n${widthAnchor}`);
+  else e.setDescription(widthAnchor);
 
   const footer = trim(replaceVars(p.footer, i), 2048);
   const footerIcon = safeUrl(replaceVars(p.footerIcon, i));
