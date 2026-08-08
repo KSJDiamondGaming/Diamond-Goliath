@@ -1,0 +1,54 @@
+name: Fix Embed Studio Footer Width Once
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - '.github/workflows/fix-embed-footer-width-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Replace description anchor with footer width lock
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('src/modules/messageStudio/embed/embedPanel.js')
+          s = p.read_text()
+
+          old_desc = '''  const media = extractMediaLines(replaceVars(p.description, i));\n  const widthAnchor = "\\u2800".repeat(64).split("").join("\\u2060");\n  const description = trim(media.description, 4096 - widthAnchor.length - 2);\n  if (description) e.setDescription(`${description}\\n\\n${widthAnchor}`);\n  else e.setDescription(widthAnchor);\n'''
+          if old_desc not in s:
+              old_desc = '''  const media = extractMediaLines(replaceVars(p.description, i));\n  const widthAnchor = "\\u2800".repeat(64);\n  const description = trim(media.description, 4096 - widthAnchor.length - 2);\n  if (description) e.setDescription(`${description}\\n\\n${widthAnchor}`);\n  else e.setDescription(widthAnchor);\n'''
+          if old_desc not in s:
+              raise SystemExit('Current width-anchor description block not found; refusing unsafe patch.')
+          new_desc = '''  const media = extractMediaLines(replaceVars(p.description, i));\n  if (media.description) e.setDescription(trim(media.description, 4096));\n'''
+          s = s.replace(old_desc, new_desc, 1)
+
+          old_footer = '''  const footer = trim(replaceVars(p.footer, i), 2048);\n  const footerIcon = safeUrl(replaceVars(p.footerIcon, i));\n\n  if (footer) {\n    e.setFooter({\n      text: footer,\n      ...(footerIcon && isImageUrl(footerIcon) ? { iconURL: footerIcon } : {}),\n    });\n  } else if (footerIcon && isImageUrl(footerIcon)) {\n    e.setFooter({\n      text: replaceVars("{guildName}", i) || "Embed",\n      iconURL: footerIcon,\n    });\n  }\n'''
+          if old_footer not in s:
+              raise SystemExit('Footer block not found; refusing unsafe patch.')
+          new_footer = '''  const footer = trim(replaceVars(p.footer, i), 2048);\n  const footerIcon = safeUrl(replaceVars(p.footerIcon, i));\n  const footerBase = footer || (footerIcon && isImageUrl(footerIcon) ? (replaceVars("{guildName}", i) || "Embed") : "");\n  const footerWidth = 164;\n  const footerText = `${footerBase}${" ".repeat(Math.max(1, footerWidth - footerBase.length))}\\u200B`;\n\n  e.setFooter({\n    text: footerText,\n    ...(footerIcon && isImageUrl(footerIcon) ? { iconURL: footerIcon } : {}),\n  });\n'''
+          s = s.replace(old_footer, new_footer, 1)
+          p.write_text(s)
+          PY
+          node --check src/modules/messageStudio/embed/embedPanel.js
+      - name: Commit fix and remove one-shot workflow
+        run: |
+          rm -f .github/workflows/fix-embed-footer-width-once.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/modules/messageStudio/embed/embedPanel.js .github/workflows/fix-embed-footer-width-once.yml
+          git commit -m "fix(embed): lock panel width through footer padding"
+          git pull --rebase origin dev
+          git push origin dev
