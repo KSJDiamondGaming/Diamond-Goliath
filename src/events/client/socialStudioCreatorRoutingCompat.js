@@ -1,15 +1,15 @@
 'use strict';
 
-// Install creator-level automatic-post routing ahead of the main Social Studio
-// interaction handler. This follows the same compatibility pattern used by the
-// role-hierarchy and diagnostics fixes so we do not add a second competing
-// interactionCreate listener.
+// Install Social Studio automatic-post routing ahead of the main interaction
+// handler without adding another competing interactionCreate listener.
 
 const creatorCompat = require('../../modules/socialStudio/socialAlerts/socialStudioCreatorActionCompat');
 const creatorRoutingCompat = require('../../modules/socialStudio/socialAlerts/socialStudioCreatorRoutingCompat');
 const creatorRoutingLegacyFix = require('../../modules/socialStudio/socialAlerts/socialStudioCreatorRoutingLegacyFix');
+const userChannelRouting = require('../../modules/socialStudio/socialAlerts/socialStudioUserChannelRouting');
 
 creatorRoutingCompat.installStoreCompatibility();
+userChannelRouting.installStoreCompatibility();
 
 if (!creatorCompat.__creatorRoutingCompatPatched) {
   const originalHandle = typeof creatorCompat.handle === 'function'
@@ -17,6 +17,9 @@ if (!creatorCompat.__creatorRoutingCompatPatched) {
     : async () => false;
 
   creatorCompat.handle = async function handleWithCreatorRouting(interaction) {
+    // The user/content/channel router owns the new usable multi-user flow and
+    // must run before the older creator-wide compatibility screens.
+    if (await userChannelRouting.handle(interaction)) return true;
     if (await creatorRoutingLegacyFix.handle(interaction)) return true;
     if (await creatorRoutingCompat.handle(interaction)) return true;
     return originalHandle(interaction);
