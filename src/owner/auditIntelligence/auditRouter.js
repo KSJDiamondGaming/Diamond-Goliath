@@ -257,6 +257,101 @@ async function repairStructure(client, sourceGuild) {
   return { before, after: await inspectStructure(client, sourceGuild) };
 }
 
+async function inspectHealth(client) {
+  const config = auditStore.getConfig();
+  const commandCenter = config.commandCenter || {};
+  const issues = [];
+  const ownerGuild = await getOwnerGuild(client);
+  let commandChannel = null;
+  let commandMessage = null;
+  let commandPermissions = null;
+  let privateCommandRegistered = false;
+  let globalCommandLeaked = false;
+
+  if (!commandCenter.guildId) issues.push('Command Center destination is not configured');
+  if (!ownerGuild) issues.push('Command Center destination guild is unavailable to Goliath');
+  if (ownerGuild) {
+    commandChannel = commandCenter.channelId ? ownerGuild.channels.cache.get(String(commandCenter.channelId)) || await ownerGuild.channels.fetch(String(commandCenter.channelId)).catch(() => null) : null;
+    if (!commandChannel?.isTextBased?.()) issues.push('Command Center channel is missing or unavailable');
+    if (commandChannel) {
+      commandPermissions = viewState(commandChannel, ownerGuild);
+      if (commandPermissions.everyone) issues.push('Command Center channel is visible to @everyone');
+      if (!commandPermissions.owner) issues.push('Goliath owner cannot view the Command Center channel');
+      if (!commandPermissions.bot) issues.push('Goliath cannot view the Command Center channel');
+      commandMessage = commandCenter.messageId ? await commandChannel.messages.fetch(String(commandCenter.messageId)).catch(() => null) : null;
+      if (!commandMessage) issues.push('Persistent Command Center panel message is missing');
+    }
+    const privateCommands = await ownerGuild.commands.fetch().catch(() => null);
+    privateCommandRegistered = Boolean(privateCommands?.find((command) => command.name === 'commandcenter'));
+    if (!privateCommandRegistered) issues.push('/commandcenter is not registered in the private destination guild');
+  }
+
+  if (client?.application?.commands) {
+    const globalCommands = await client.application.commands.fetch().catch(() => null);
+    globalCommandLeaked = Boolean(globalCommands?.find((command) => command.name === 'commandcenter'));
+    if (globalCommandLeaked) issues.push('/commandcenter is accidentally registered globally');
+  }
+
+  const guildReports = [];
+  const configuredGuilds = config.guilds && typeof config.guilds === 'object' ? config.guilds : {};
+  for (const [guildId, guildConfig] of Object.entries(configuredGuilds)) {
+    const sourceGuild = client.guilds.cache.get(String(guildId)) || await client.guilds.fetch(String(guildId)).catch(() => null);
+    if (!sourceGuild) {
+      guildReports.push({ guildId, guildName: null, available: false, enabled: guildConfig.enabled !== false, disabledFamilies: [], structure: null, healthy: false, issues: ['Guild is unavailable to Goliath'] });
+      issues.push(`Configured monitored guild ${guildId} is unavailable to Goliath`);
+      continue;
+    }
+    const monitoring = guildConfig.monitoring && typeof guildConfig.monitoring === 'object' ? guildConfig.monitoring : {};
+    const disabledFamilies = Object.entries(monitoring).filter(([, enabled]) => enabled === false).map(([family]) => family);
+    const structure = await inspectStructure(client, sourceGuild);
+    const guildIssues = [];
+    if (guildConfig.enabled === false) guildIssues.push('Guild monitoring is paused');
+    if (disabledFamilies.length) guildIssues.push(`${disabledFamilies.length} monitoring family/families disabled`);
+    if (!structure?.healthy) guildIssues.push(...(structure?.issues || ['Audit structure is unavailable']));
+    guildReports.push({
+      guildId: sourceGuild.id,
+      guildName: sourceGuild.name,
+      available: true,
+      enabled: guildConfig.enabled !== false,
+      disabledFamilies,
+      mode: guildConfig.mode || 'auto',
+      structure,
+      healthy: guildIssues.length === 0,
+      issues: guildIssues,
+    });
+  }
+
+  const structuralFailures = guildReports.filter((report) => report.available && report.structure && !report.structure.healthy).length;
+  const unavailableGuilds = guildReports.filter((report) => !report.available).length;
+  const pausedGuilds = guildReports.filter((report) => report.enabled === false).length;
+  const partiallyDisabledGuilds = guildReports.filter((report) => report.disabledFamilies.length > 0).length;
+  return {
+    checkedAt: new Date().toISOString(),
+    environment: String(process.env.BOT_MODE || 'dev').toUpperCase(),
+    destination: ownerGuild ? { id: ownerGuild.id, name: ownerGuild.name } : null,
+    commandCenter: {
+      configured: Boolean(commandCenter.guildId),
+      channelId: commandChannel?.id || commandCenter.channelId || null,
+      channelName: commandChannel?.name || null,
+      messagePresent: Boolean(commandMessage),
+      permissions: commandPermissions,
+      privateCommandRegistered,
+      globalCommandLeaked,
+    },
+    guilds: guildReports,
+    counts: {
+      configured: guildReports.length,
+      healthy: guildReports.filter((report) => report.healthy).length,
+      structuralFailures,
+      unavailable: unavailableGuilds,
+      paused: pausedGuilds,
+      partiallyDisabled: partiallyDisabledGuilds,
+    },
+    healthy: issues.length === 0 && structuralFailures === 0 && unavailableGuilds === 0,
+    issues,
+  };
+}
+
 async function deliver(client, sourceGuild, event) {
   if (!sourceGuild || sourceGuild.id === getOwnerAuditGuildId() || !monitoringEnabled(sourceGuild, event)) return false;
   const userId = eventUserId(event);
@@ -283,4 +378,5 @@ module.exports = {
   configuredRouteChannel,
   inspectStructure,
   repairStructure,
+  inspectHealth,
 };
