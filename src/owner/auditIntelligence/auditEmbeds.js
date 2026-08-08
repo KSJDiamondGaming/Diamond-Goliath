@@ -1,6 +1,6 @@
 'use strict';
 
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, StringSelectMenuBuilder } = require('discord.js');
 
 const COLORS = {
   create: 0x57F287,
@@ -63,6 +63,57 @@ function buildAuditEmbed(event) {
   if (event.after !== undefined) embed.addFields({ name: 'After', value: `\`\`\`json\n${compact(event.after)}\n\`\`\``, inline: false });
 
   return embed;
+}
+
+function buildCommandCenterSetup(client) {
+  const guilds = [...(client?.guilds?.cache?.values?.() || [])]
+    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')))
+    .slice(0, 25);
+  const embed = new EmbedBuilder()
+    .setColor(COLORS.intelligence)
+    .setTitle('🛡️ Goliath Command Center Setup')
+    .setDescription('Choose the **one private Discord server** that should host Goliath Audit Intelligence. `/commandcenter` will only be registered in that server and nowhere else.')
+    .addFields(
+      { name: 'Privacy', value: 'Only the configured Goliath owner can complete setup or use the Command Center.' },
+      { name: 'Provisioning', value: 'Goliath will create a private **GOLIATH CONTROL** category and **#command-center** channel.' },
+    )
+    .setFooter({ text: 'Goliath Command Center • Private owner bootstrap' });
+
+  if (!guilds.length) return { embeds: [embed.setDescription('No shared guilds are currently available to Goliath.')], components: [] };
+  const select = new StringSelectMenuBuilder()
+    .setCustomId('owner:commandcenter:destination')
+    .setPlaceholder('Select your private Command Center server')
+    .addOptions(guilds.map((guild) => ({ label: String(guild.name || guild.id).slice(0, 100), value: guild.id, description: `Guild ID: ${guild.id}`.slice(0, 100) })));
+  return { embeds: [embed], components: [new ActionRowBuilder().addComponents(select)] };
+}
+
+function buildCommandCenterHome(client, guild, config = {}) {
+  const configured = Object.values(config.guilds || {}).filter((item) => item?.enabled !== false).length;
+  const embed = new EmbedBuilder()
+    .setColor(COLORS.intelligence)
+    .setTitle('🛡️ GOLIATH COMMAND CENTER')
+    .setDescription('Private owner control plane for Audit Intelligence. This panel is intentionally isolated from Goliath public guild commands.')
+    .addFields(
+      { name: 'Environment', value: `\`${String(process.env.BOT_MODE || 'DEV').toUpperCase()}\``, inline: true },
+      { name: 'Destination', value: guild ? `**${guild.name}**\n\`${guild.id}\`` : 'Not configured', inline: true },
+      { name: 'Status', value: guild ? '🟢 Operational' : '🔴 Not configured', inline: true },
+      { name: 'Monitored Guilds', value: `\`${configured}\``, inline: true },
+      { name: 'Auto Provision', value: config.autoProvision === false ? '🔴 Off' : '🟢 On', inline: true },
+      { name: 'Command Visibility', value: guild ? `Only registered in **${guild.name}**` : 'Not registered', inline: true },
+    )
+    .setFooter({ text: 'Goliath Command Center • Owner only' })
+    .setTimestamp();
+
+  const rows = [
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('owner:commandcenter:refresh').setLabel('Refresh').setEmoji('🔄').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId('owner:commandcenter:routing').setLabel('Routing').setEmoji('📡').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId('owner:commandcenter:monitoring').setLabel('Monitoring').setEmoji('👁️').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId('owner:commandcenter:structure').setLabel('Structure').setEmoji('📂').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId('owner:commandcenter:health').setLabel('Health').setEmoji('🩺').setStyle(ButtonStyle.Secondary),
+    ),
+  ];
+  return { embeds: [embed], components: rows, allowedMentions: { parse: [] } };
 }
 
 function buildUserIntelligenceEmbed(report, sourceGuild) {
@@ -184,6 +235,8 @@ function buildUserIntelligenceSectionEmbed(report, section, sourceGuild) {
 
 module.exports = {
   buildAuditEmbed,
+  buildCommandCenterSetup,
+  buildCommandCenterHome,
   buildUserIntelligenceEmbed,
   buildUserIntelligenceControls,
   buildUserIntelligenceSectionEmbed,
