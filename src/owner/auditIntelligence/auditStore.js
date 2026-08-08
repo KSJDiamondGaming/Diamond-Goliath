@@ -8,6 +8,7 @@ const paths = getRuntimePaths(process.env.BOT_MODE || 'DEV');
 const root = path.join(paths.data, 'audit');
 const HISTORY_LIMIT = 100;
 const CONFIG_FILE = path.join(root, 'config.json');
+const COMMAND_CENTER_GUILD_ID = '1515201360386068642';
 
 function ensure(dir) { fs.mkdirSync(dir, { recursive: true }); return dir; }
 function readJson(file, fallback = {}) { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return fallback; } }
@@ -17,7 +18,7 @@ function defaultConfig() {
   return {
     version: 1,
     commandCenter: {
-      guildId: null,
+      guildId: COMMAND_CENTER_GUILD_ID,
       categoryId: null,
       channelId: null,
       messageId: null,
@@ -34,7 +35,11 @@ function getConfig() {
   return {
     ...defaultConfig(),
     ...current,
-    commandCenter: { ...defaultConfig().commandCenter, ...(current.commandCenter || {}) },
+    commandCenter: {
+      ...defaultConfig().commandCenter,
+      ...(current.commandCenter || {}),
+      guildId: COMMAND_CENTER_GUILD_ID,
+    },
     guilds: current.guilds && typeof current.guilds === 'object' ? current.guilds : {},
   };
 }
@@ -42,7 +47,11 @@ function saveConfig(config) {
   const next = {
     ...defaultConfig(),
     ...(config || {}),
-    commandCenter: { ...defaultConfig().commandCenter, ...(config?.commandCenter || {}) },
+    commandCenter: {
+      ...defaultConfig().commandCenter,
+      ...(config?.commandCenter || {}),
+      guildId: COMMAND_CENTER_GUILD_ID,
+    },
     guilds: config?.guilds && typeof config.guilds === 'object' ? config.guilds : {},
   };
   writeJson(CONFIG_FILE, next);
@@ -53,7 +62,7 @@ function updateConfig(patch = {}) {
   const next = {
     ...current,
     ...patch,
-    commandCenter: patch.commandCenter ? { ...current.commandCenter, ...patch.commandCenter } : current.commandCenter,
+    commandCenter: patch.commandCenter ? { ...current.commandCenter, ...patch.commandCenter, guildId: COMMAND_CENTER_GUILD_ID } : current.commandCenter,
     guilds: patch.guilds ? { ...current.guilds, ...patch.guilds } : current.guilds,
   };
   return saveConfig(next);
@@ -155,118 +164,47 @@ function updateMembershipHistory(current, event, user) {
     currentMember: null,
     eventTypes: {},
   };
-
   guild.guildName = event.guildName || guild.guildName;
   guild.lastObservedAt = event.timestamp;
   guild.eventCount = Number(guild.eventCount || 0) + 1;
   guild.eventTypes ||= {};
   increment(guild.eventTypes, event.type || 'unknown');
-
   const joinedAt = user?.joinedAt || event.after?.joinedAt || null;
   if (joinedAt && !guild.firstJoinedAt) guild.firstJoinedAt = joinedAt;
-
   if (event.type === 'member.join') {
     guild.currentMember = true;
     guild.joinCount = Number(guild.joinCount || 0) + 1;
     guild.lastJoinedAt = joinedAt || event.timestamp;
     if (!guild.firstJoinedAt) guild.firstJoinedAt = guild.lastJoinedAt;
-    current.joinHistory = pushUnique(current.joinHistory, {
-      guildId: event.guildId,
-      guildName: event.guildName || null,
-      joinedAt: guild.lastJoinedAt,
-      eventId: event.eventId || null,
-    }, (item) => `${item.guildId}:${item.eventId || item.joinedAt}`);
+    current.joinHistory = pushUnique(current.joinHistory, { guildId: event.guildId, guildName: event.guildName || null, joinedAt: guild.lastJoinedAt, eventId: event.eventId || null }, (item) => `${item.guildId}:${item.eventId || item.joinedAt}`);
   }
-
   if (['member.leave', 'member.kick', 'member.ban', 'member.prune'].includes(event.type)) {
     guild.currentMember = false;
     guild.leaveCount = Number(guild.leaveCount || 0) + 1;
     guild.lastLeftAt = event.timestamp;
-    current.leaveHistory = pushUnique(current.leaveHistory, {
-      guildId: event.guildId,
-      guildName: event.guildName || null,
-      leftAt: event.timestamp,
-      type: event.type,
-      reason: event.reason || null,
-      actorId: event.actor?.id || null,
-      eventId: event.eventId || null,
-    }, (item) => `${item.guildId}:${item.eventId || item.leftAt}`);
+    current.leaveHistory = pushUnique(current.leaveHistory, { guildId: event.guildId, guildName: event.guildName || null, leftAt: event.timestamp, type: event.type, reason: event.reason || null, actorId: event.actor?.id || null, eventId: event.eventId || null }, (item) => `${item.guildId}:${item.eventId || item.leftAt}`);
   }
-
   current.guilds[event.guildId] = guild;
 }
 
 function updateRoleHistory(current, event) {
   if (!event.guildId || event.relation === 'actor') return;
-  const relevant = ['member.role.add', 'member.role.remove', 'member.roles'];
-  if (!relevant.includes(event.type)) return;
-  current.roleHistory = pushUnique(current.roleHistory, {
-    guildId: event.guildId,
-    guildName: event.guildName || null,
-    timestamp: event.timestamp,
-    type: event.type,
-    before: event.before || null,
-    after: event.after || null,
-    actorId: event.actor?.id || null,
-    reason: event.reason || null,
-    eventId: event.eventId || null,
-  }, (item) => item.eventId || `${item.guildId}:${item.timestamp}:${item.type}`);
+  if (!['member.role.add', 'member.role.remove', 'member.roles'].includes(event.type)) return;
+  current.roleHistory = pushUnique(current.roleHistory, { guildId: event.guildId, guildName: event.guildName || null, timestamp: event.timestamp, type: event.type, before: event.before || null, after: event.after || null, actorId: event.actor?.id || null, reason: event.reason || null, eventId: event.eventId || null }, (item) => item.eventId || `${item.guildId}:${item.timestamp}:${item.type}`);
 }
-
 function updateModerationHistory(current, event) {
   if (event.relation === 'actor') return;
   if (event.category !== 'moderation' && !/^member\.(ban|unban|kick|timeout|prune)/.test(String(event.type || ''))) return;
-  current.moderationHistory = pushUnique(current.moderationHistory, {
-    guildId: event.guildId || null,
-    guildName: event.guildName || null,
-    timestamp: event.timestamp,
-    type: event.type,
-    title: event.title || null,
-    actorId: event.actor?.id || null,
-    actorName: event.actor?.globalName || event.actor?.username || null,
-    reason: event.reason || null,
-    before: event.before || null,
-    after: event.after || null,
-    eventId: event.eventId || null,
-  }, (item) => item.eventId || `${item.guildId}:${item.timestamp}:${item.type}`);
+  current.moderationHistory = pushUnique(current.moderationHistory, { guildId: event.guildId || null, guildName: event.guildName || null, timestamp: event.timestamp, type: event.type, title: event.title || null, actorId: event.actor?.id || null, actorName: event.actor?.globalName || event.actor?.username || null, reason: event.reason || null, before: event.before || null, after: event.after || null, eventId: event.eventId || null }, (item) => item.eventId || `${item.guildId}:${item.timestamp}:${item.type}`);
 }
-
 function updateVoiceHistory(current, event) {
   if (event.relation === 'actor' || event.category !== 'voice') return;
-  current.voiceHistory = pushUnique(current.voiceHistory, {
-    guildId: event.guildId || null,
-    guildName: event.guildName || null,
-    timestamp: event.timestamp,
-    type: event.type,
-    before: event.before || null,
-    after: event.after || null,
-    eventId: event.eventId || null,
-  }, (item) => item.eventId || `${item.guildId}:${item.timestamp}`);
+  current.voiceHistory = pushUnique(current.voiceHistory, { guildId: event.guildId || null, guildName: event.guildName || null, timestamp: event.timestamp, type: event.type, before: event.before || null, after: event.after || null, eventId: event.eventId || null }, (item) => item.eventId || `${item.guildId}:${item.timestamp}`);
 }
-
 function updateActorHistory(current, event) {
   if (event.relation !== 'actor') return;
-  current.actorHistory = pushUnique(current.actorHistory, {
-    guildId: event.guildId || null,
-    guildName: event.guildName || null,
-    timestamp: event.timestamp,
-    type: event.type || 'unknown',
-    category: event.category || 'system',
-    action: event.action || 'observe',
-    title: event.title || event.type || 'Audit Event',
-    target: event.target || (event.user?.id ? { id: event.user.id, label: event.user.globalName || event.user.username || event.user.id } : null),
-    channelId: event.channel?.id || null,
-    channelName: event.channel?.name || null,
-    reason: event.reason || null,
-    source: event.source || null,
-    result: event.result || null,
-    actorSnapshot: event.actor || null,
-    auditLogId: event.metadata?.auditLog?.auditLogId || null,
-    operationId: event.metadata?.operation?.operationId || null,
-    eventId: event.eventId || null,
-  }, (item) => item.eventId || `${item.guildId}:${item.timestamp}:${item.type}`, HISTORY_LIMIT);
+  current.actorHistory = pushUnique(current.actorHistory, { guildId: event.guildId || null, guildName: event.guildName || null, timestamp: event.timestamp, type: event.type || 'unknown', category: event.category || 'system', action: event.action || 'observe', title: event.title || event.type || 'Audit Event', target: event.target || (event.user?.id ? { id: event.user.id, label: event.user.globalName || event.user.username || event.user.id } : null), channelId: event.channel?.id || null, channelName: event.channel?.name || null, reason: event.reason || null, source: event.source || null, result: event.result || null, actorSnapshot: event.actor || null, auditLogId: event.metadata?.auditLog?.auditLogId || null, operationId: event.metadata?.operation?.operationId || null, eventId: event.eventId || null }, (item) => item.eventId || `${item.guildId}:${item.timestamp}:${item.type}`, HISTORY_LIMIT);
 }
-
 function updateActorHistoryOnly(userId, event) {
   const file = path.join(root, 'users', `${userId}.json`);
   const current = readJson(file, null);
@@ -278,31 +216,9 @@ function updateActorHistoryOnly(userId, event) {
   updateActorHistory(current, { ...event, relation: 'actor' });
   writeJson(file, current);
 }
-
 function updateUserIndex(userId, event) {
   const file = path.join(root, 'users', `${userId}.json`);
-  const current = readJson(file, {
-    userId,
-    firstObservedAt: event.timestamp,
-    lastObservedAt: null,
-    eventCount: 0,
-    names: [],
-    globalNames: [],
-    displayNames: [],
-    nicknames: [],
-    guilds: {},
-    eventTypes: {},
-    categories: {},
-    relations: { subject: 0, actor: 0 },
-    joinHistory: [],
-    leaveHistory: [],
-    roleHistory: [],
-    moderationHistory: [],
-    voiceHistory: [],
-    actorHistory: [],
-    recentEvents: [],
-  });
-
+  const current = readJson(file, { userId, firstObservedAt: event.timestamp, lastObservedAt: null, eventCount: 0, names: [], globalNames: [], displayNames: [], nicknames: [], guilds: {}, eventTypes: {}, categories: {}, relations: { subject: 0, actor: 0 }, joinHistory: [], leaveHistory: [], roleHistory: [], moderationHistory: [], voiceHistory: [], actorHistory: [], recentEvents: [] });
   const user = event.user?.id === userId ? event.user : event.actor?.id === userId ? event.actor : null;
   current.firstObservedAt ||= event.timestamp;
   current.lastObservedAt = event.timestamp;
@@ -314,14 +230,12 @@ function updateUserIndex(userId, event) {
   increment(current.eventTypes, event.type || 'unknown');
   increment(current.categories, event.category || 'system');
   increment(current.relations, event.relation === 'actor' ? 'actor' : 'subject');
-
   updateIdentity(current, user, event);
   updateMembershipHistory(current, event, user);
   updateRoleHistory(current, event);
   updateModerationHistory(current, event);
   updateVoiceHistory(current, event);
   updateActorHistory(current, event);
-
   current.recentEvents = pushUnique(current.recentEvents, eventSummary(event), (item) => item.eventId || `${item.timestamp}:${item.type}`, 50);
   writeJson(file, current);
 }
@@ -334,10 +248,7 @@ function getGuildEvents(guildId, options = {}) {
   const limit = Math.min(100, Math.max(1, Number(options.limit || 25)));
   const category = options.category ? String(options.category) : null;
   const prefix = options.typePrefix ? String(options.typePrefix) : null;
-  const files = fs.readdirSync(dir)
-    .filter((name) => /^\d{4}-\d{2}\.jsonl$/.test(name))
-    .sort()
-    .reverse();
+  const files = fs.readdirSync(dir).filter((name) => /^\d{4}-\d{2}\.jsonl$/.test(name)).sort().reverse();
   const found = [];
   for (const name of files) {
     const lines = fs.readFileSync(path.join(dir, name), 'utf8').split(/\r?\n/).filter(Boolean).reverse();
