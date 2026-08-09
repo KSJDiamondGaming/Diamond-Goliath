@@ -9,6 +9,15 @@ const security = require('../../core/security/securityCore');
 const MAX_CATEGORY_CHILDREN = 50;
 const SUMMARY_REFRESH_MS = 60000;
 const summaryRefresh = new Map();
+const REPORT_ROUTE_CHANNELS = {
+  members: { name: 'member-events', label: 'Member Events' },
+  moderation: { name: 'moderation', label: 'Moderation' },
+  security: { name: 'security-automod', label: 'Security / AutoMod' },
+  messages: { name: 'messages-reactions', label: 'Messages / Reactions' },
+  voice: { name: 'voice-activity', label: 'Voice Activity' },
+  roles: { name: 'roles-permissions', label: 'Roles / Permissions' },
+  goliath: { name: 'goliath-actions', label: 'Goliath Actions' },
+};
 
 function slug(value, fallback = 'item') {
   return String(value || fallback).toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80) || fallback;
@@ -26,6 +35,7 @@ function privateOverwrites(ownerGuild) {
 function guildMarker(sourceGuild) { return `GOLIATH_AUDIT_GUILD:${sourceGuild.id}`; }
 function userMarker(sourceGuild, userId) { return `GOLIATH_AUDIT_USER:${sourceGuild.id}:${userId}`; }
 function profileMarker(messageId) { return `GOLIATH_AUDIT_PROFILE:${messageId}`; }
+function reportRouteMarker(sourceGuild, routeKey) { return `GOLIATH_AUDIT_ROUTE:${sourceGuild.id}:${routeKey}`; }
 function categoryBaseName(sourceGuild) { return `audit-${slug(sourceGuild.name, 'guild').slice(0, 70)}-${String(sourceGuild.id).slice(-6)}`.slice(0, 100); }
 function categoryName(sourceGuild, page = 1) { const base = categoryBaseName(sourceGuild); return page <= 1 ? base : `${base}-${page}`.slice(0, 100); }
 function categoryChildCount(ownerGuild, categoryId) { return ownerGuild.channels.cache.filter((channel) => channel.parentId === categoryId).size; }
@@ -78,6 +88,10 @@ function findUserChannels(ownerGuild, sourceGuild) {
   const marker = `GOLIATH_AUDIT_USER:${sourceGuild.id}:`;
   return ownerGuild.channels.cache.filter((channel) => channel.type === ChannelType.GuildText && String(channel.topic || '').includes(marker));
 }
+function findReportRouteChannel(ownerGuild, sourceGuild, routeKey) {
+  const marker = reportRouteMarker(sourceGuild, routeKey);
+  return ownerGuild.channels.cache.find((channel) => channel.type === ChannelType.GuildText && String(channel.topic || '').includes(marker)) || null;
+}
 function findGuildCategories(ownerGuild, sourceGuild) {
   const base = categoryBaseName(sourceGuild);
   return ownerGuild.channels.cache.filter((channel) => channel.type === ChannelType.GuildCategory && (channel.name === base || channel.name.startsWith(`${base}-`))).sort((a, b) => a.rawPosition - b.rawPosition);
@@ -105,6 +119,51 @@ async function ensureAuditContext(client, sourceGuild) {
     systemChannel = await ensureSystemChannel(ownerGuild, sourceGuild, category);
   }
   return { ownerGuild, category, systemChannel };
+}
+async function resolveTextChannel(ownerGuild, channelId) {
+  if (!channelId) return null;
+  const channel = ownerGuild.channels.cache.get(String(channelId)) || await ownerGuild.channels.fetch(String(channelId)).catch(() => null);
+  return channel?.isTextBased?.() ? channel : null;
+}
+async function ensureReportRoutes(client, sourceGuild) {
+  if (!sourceGuild?.id) return null;
+  const context = await ensureAuditContext(client, sourceGuild);
+  if (!context?.ownerGuild || !context.systemChannel) return null;
+  const { ownerGuild, category, systemChannel } = context;
+  const current = auditStore.getConfig();
+  const existing = current.guilds?.[String(sourceGuild.id)] || {};
+  const routes = { ...(existing.routes || {}) };
+
+  if (!await resolveTextChannel(ownerGuild, routes.guild)) routes.guild = systemChannel.id;
+  if (!await resolveTextChannel(ownerGuild, routes.default)) routes.default = systemChannel.id;
+
+  for (const [routeKey, definition] of Object.entries(REPORT_ROUTE_CHANNELS)) {
+    let channel = await resolveTextChannel(ownerGuild, routes[routeKey]);
+    if (!channel) channel = findReportRouteChannel(ownerGuild, sourceGuild, routeKey);
+    if (!channel && autoProvisionEnabled()) {
+      channel = await ownerGuild.channels.create({
+        name: definition.name,
+        type: ChannelType.GuildText,
+        parent: category?.id || null,
+        topic: `${reportRouteMarker(sourceGuild, routeKey)} • ${sourceGuild.name} • ${definition.label} audit reports`.slice(0, 1024),
+        permissionOverwrites: category ? undefined : privateOverwrites(ownerGuild),
+        reason: `Goliath ${definition.label} audit route for ${sourceGuild.name}`,
+      });
+    }
+    if (channel?.isTextBased?.()) routes[routeKey] = channel.id;
+  }
+
+  const saved = auditStore.updateConfig({
+    guilds: {
+      [String(sourceGuild.id)]: {
+        ...existing,
+        enabled: existing.enabled !== false,
+        mode: 'custom',
+        routes,
+      },
+    },
+  });
+  return { ownerGuildId: ownerGuild.id, categoryId: category?.id || null, routes: saved.guilds?.[String(sourceGuild.id)]?.routes || routes };
 }
 
 function eventUserId(event) { const id = event?.user?.id; return id ? String(id) : null; }
@@ -350,6 +409,7 @@ module.exports = {
   deliver,
   ensureAuditChannel,
   ensureUserAuditChannel,
+  ensureReportRoutes,
   refreshUserSummary,
   getOwnerAuditGuildId,
   ensureCommandCenter,
