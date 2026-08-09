@@ -31,8 +31,9 @@ test('Command Center guild persistence and stale private command cleanup are dyn
   const auditStore = read('src/owner/auditIntelligence/auditStore.js');
   const commandSync = read('src/core/commandRegistry/syncCommands.js');
 
-  assert.match(auditStore, /selectedGuildId/);
-  assert.match(auditStore, /persistGuildId/);
+  assert.match(auditStore, /current\.commandCenter\?\.guildId \|\| COMMAND_CENTER_GUILD_ID/);
+  assert.match(auditStore, /commandCenter: patch\.commandCenter \? \{ \.\.\.current\.commandCenter, \.\.\.patch\.commandCenter \} : current\.commandCenter/);
+  assert.doesNotMatch(auditStore, /patch\.commandCenter \? \{ \.\.\.current\.commandCenter, \.\.\.patch\.commandCenter, guildId: COMMAND_CENTER_GUILD_ID \}/);
   assert.match(commandSync, /cleanupCommandCenterScope/);
   assert.match(commandSync, /guildId === commandCenterGuildId/);
   assert.match(commandSync, /Removed stale private \/commandcenter from non-Command-Center guild/);
