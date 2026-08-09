@@ -1,15 +1,23 @@
 'use strict';
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { getRuntimePaths } = require('../../config/runtimePaths');
 
 const paths = getRuntimePaths(process.env.BOT_MODE || 'DEV');
 const root = path.join(paths.data, 'audit');
 const HISTORY_LIMIT = 100;
-const CONFIG_FILE = path.join(root, 'config.json');
+const LEGACY_CONFIG_FILE = path.join(root, 'config.json');
+const SHARED_CONFIG_FILE = path.join(os.homedir(), '.goliath-audit-control.json');
 const COMMAND_CENTER_GUILD_ID = '1515201360386068642';
 
+function runtimeMode() {
+  const mode = String(process.env.BOT_MODE || 'DEV').trim().toUpperCase();
+  if (mode === 'PROD' || mode === 'PRODUCTION') return 'PRODUCTION';
+  if (mode === 'BETA') return 'BETA';
+  return 'DEV';
+}
 function ensure(dir) { fs.mkdirSync(dir, { recursive: true }); return dir; }
 function readJson(file, fallback = {}) { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return fallback; } }
 function writeJson(file, value) { ensure(path.dirname(file)); fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`, 'utf8'); }
@@ -30,8 +38,7 @@ function defaultConfig() {
     guilds: {},
   };
 }
-function getConfig() {
-  const current = readJson(CONFIG_FILE, defaultConfig());
+function normalizeConfig(current = {}) {
   return {
     ...defaultConfig(),
     ...current,
@@ -43,18 +50,21 @@ function getConfig() {
     guilds: current.guilds && typeof current.guilds === 'object' ? current.guilds : {},
   };
 }
+function bootstrapSharedConfig() {
+  if (fs.existsSync(SHARED_CONFIG_FILE)) return;
+  if (runtimeMode() !== 'DEV') return;
+  const legacy = readJson(LEGACY_CONFIG_FILE, null);
+  writeJson(SHARED_CONFIG_FILE, normalizeConfig(legacy || defaultConfig()));
+}
+function getConfig() {
+  bootstrapSharedConfig();
+  if (fs.existsSync(SHARED_CONFIG_FILE)) return normalizeConfig(readJson(SHARED_CONFIG_FILE, defaultConfig()));
+  return normalizeConfig(readJson(LEGACY_CONFIG_FILE, defaultConfig()));
+}
 function saveConfig(config) {
-  const next = {
-    ...defaultConfig(),
-    ...(config || {}),
-    commandCenter: {
-      ...defaultConfig().commandCenter,
-      ...(config?.commandCenter || {}),
-      guildId: COMMAND_CENTER_GUILD_ID,
-    },
-    guilds: config?.guilds && typeof config.guilds === 'object' ? config.guilds : {},
-  };
-  writeJson(CONFIG_FILE, next);
+  const next = normalizeConfig(config || {});
+  if (runtimeMode() === 'DEV') writeJson(SHARED_CONFIG_FILE, next);
+  else if (!fs.existsSync(SHARED_CONFIG_FILE)) writeJson(LEGACY_CONFIG_FILE, next);
   return next;
 }
 function updateConfig(patch = {}) {
@@ -264,5 +274,6 @@ function getGuildEvents(guildId, options = {}) {
   return found;
 }
 function getRoot() { return root; }
+function getControlConfigPath() { return SHARED_CONFIG_FILE; }
 
-module.exports = { appendEvent, getUser, getGuild, getGuildEvents, getRoot, getConfig, saveConfig, updateConfig };
+module.exports = { appendEvent, getUser, getGuild, getGuildEvents, getRoot, getControlConfigPath, getConfig, saveConfig, updateConfig };
