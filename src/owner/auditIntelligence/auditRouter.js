@@ -169,7 +169,9 @@ function routeKeyForEvent(event) {
   if (category === 'message' || type.startsWith('reaction.')) return 'messages';
   if (category === 'role' || type === 'member.roles' || type.includes('permission')) return 'roles';
   if (category === 'goliath' || type.startsWith('goliath.')) return 'goliath';
-  return 'default';
+  if (category === 'voice' || type.startsWith('voice.')) return 'voice';
+  if (category === 'member' || type.startsWith('member.')) return 'members';
+  return 'guild';
 }
 function monitorKeyForEvent(event) {
   const category = String(event?.category || '').toLowerCase(); const type = String(event?.type || '').toLowerCase();
@@ -192,7 +194,7 @@ async function configuredRouteChannel(client, sourceGuild, event) {
   const guildConfig = auditStore.getConfig().guilds?.[String(sourceGuild?.id || '')] || {};
   const routes = guildConfig.routes && typeof guildConfig.routes === 'object' ? guildConfig.routes : {};
   const key = routeKeyForEvent(event);
-  const channelId = routes[key] || (key !== 'default' ? routes.default : null);
+  const channelId = routes[key] || routes.default || null;
   if (!channelId) return null;
   const ownerGuild = await getOwnerGuild(client);
   if (!ownerGuild) return null;
