@@ -2,7 +2,7 @@
 
 const templates = require('./embedTemplates');
 const deployments = require('./embedDeployments');
-const panel = require('./embedPanel');
+const panel = require('./embedPreviewCompat');
 const interactions = require('./embedInteractions');
 const tracking = require('./embedTracking');
 const validation = require('./embedValidation');

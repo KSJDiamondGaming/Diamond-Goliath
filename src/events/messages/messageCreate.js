@@ -2,7 +2,7 @@
 
 const { Events, PermissionFlagsBits } = require('discord.js');
 const { handleStickyMessage } = require('../../modules/messageStudio/sticky/stickyManager');
-const { handlePrefixCommand } = require('../../features/prefix/prefixRouter');
+const { handlePrefixCommand } = require('../../core/commands/prefixRouter');
 const translationThreadManager = require('../../modules/utilityStudio/translation/translationThreadManager');
 const statsManager = require('../../modules/utilityStudio/stats/statsManager');
 const levelingTracking = require('../../modules/communityStudio/leveling/levelingTracking');

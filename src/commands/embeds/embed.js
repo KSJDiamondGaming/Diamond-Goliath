@@ -4,8 +4,9 @@ const {
 } = require('discord.js');
 
 const { errorEmbed } = require('../../core/ui/embeds');
+require('../../modules/messageStudio/embed/embedPreviewCompat');
 const { buildEmbedPanel } = require('../../modules/messageStudio/embed/embedPanel');
-const { enforceCommandAccess } = require('../../core/ui/commandAccess');
+const { enforceCommandAccess } = require('../../core/commands/commandAccess');
 
 const activeEmbedPanels = new Map();
 const PANEL_SESSION_TTL_MS = 14 * 60 * 1000;

@@ -9,7 +9,7 @@ const {
 const mediaTools = require('../../core/mediaTools/mediaService');
 const entitlementManager = require('../../server/billing/entitlementManager');
 const { FEATURE_KEYS } = require('../../config/plans');
-const { enforceCommandAccess } = require('../../core/ui/commandAccess');
+const { enforceCommandAccess } = require('../../core/commands/commandAccess');
 
 const MANAGE_EXPRESSIONS_PERMISSION =
   PermissionFlagsBits.ManageGuildExpressions ||

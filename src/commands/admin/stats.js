@@ -8,7 +8,7 @@ const {
 
 const statsStore = require('../../modules/utilityStudio/stats/statsStore');
 const statsCounters = require('../../modules/utilityStudio/stats/statsCounters');
-const { enforceCommandAccess } = require('../../core/ui/commandAccess');
+const { enforceCommandAccess } = require('../../core/commands/commandAccess');
 
 function formatNumber(value) {
   return Number(value || 0).toLocaleString('en-GB');

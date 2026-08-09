@@ -693,18 +693,14 @@ function buildEmbedFromPanel(p, i, showTimestamp, fieldLayout = "auto") {
 
   const footer = trim(replaceVars(p.footer, i), 2048);
   const footerIcon = safeUrl(replaceVars(p.footerIcon, i));
+  const footerBase = footer || (footerIcon && isImageUrl(footerIcon) ? (replaceVars("{guildName}", i) || "Embed") : "");
+  const footerWidth = 164;
+  const footerText = `${footerBase}${" ".repeat(Math.max(1, footerWidth - footerBase.length))}\u200B`;
 
-  if (footer) {
-    e.setFooter({
-      text: footer,
-      ...(footerIcon && isImageUrl(footerIcon) ? { iconURL: footerIcon } : {}),
-    });
-  } else if (footerIcon && isImageUrl(footerIcon)) {
-    e.setFooter({
-      text: replaceVars("{guildName}", i) || "Embed",
-      iconURL: footerIcon,
-    });
-  }
+  e.setFooter({
+    text: footerText,
+    ...(footerIcon && isImageUrl(footerIcon) ? { iconURL: footerIcon } : {}),
+  });
 
   const image = safeUrl(replaceVars(p.image, i));
   const thumb = safeUrl(replaceVars(p.thumbnail, i));

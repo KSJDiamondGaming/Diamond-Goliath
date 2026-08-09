@@ -10,6 +10,7 @@ const { BETA_GUILD_IDS: CONFIGURED_BETA_GUILD_IDS = [] } = require('../../config
 const ALLOWED_MODES = ['dev', 'beta', 'production'];
 const ALLOWED_COMMAND_MODES = ['guild', 'global'];
 const COMMAND_NAME_REGEX = /^[a-z0-9_-]{1,32}$/;
+const PRIVATE_GUILD_COMMANDS = new Set(['commandcenter']);
 
 function envFlag(name, fallback = false) {
   const value = process.env[name];
@@ -313,10 +314,16 @@ function commandChanged(existing, next) {
   return JSON.stringify(existingComparable) !== JSON.stringify(nextComparable);
 }
 
+async function readGuildPrivateCommands(guildId) {
+  const existing = await discordRequest(`read protected guild commands ${guildId}`, () => rest.get(Routes.applicationGuildCommands(CLIENT_ID, guildId)));
+  return existing.filter((command) => PRIVATE_GUILD_COMMANDS.has(command.name));
+}
+
 async function clearGuildCommands(guildId) {
-  console.log(`Clearing guild commands: ${guildId}`);
-  await discordRequest(`clear guild commands ${guildId}`, () => rest.put(Routes.applicationGuildCommands(CLIENT_ID, guildId), { body: [] }));
-  console.log(`Cleared guild commands: ${guildId}`);
+  console.log(`Clearing normal guild commands while preserving private commands: ${guildId}`);
+  const protectedCommands = await readGuildPrivateCommands(guildId);
+  await discordRequest(`clear guild commands ${guildId}`, () => rest.put(Routes.applicationGuildCommands(CLIENT_ID, guildId), { body: protectedCommands }));
+  console.log(`Cleared normal guild commands: ${guildId}; protected ${protectedCommands.length}.`);
 }
 
 async function safeCommandAction(label, fn, failures) {
@@ -334,8 +341,10 @@ async function safeCommandAction(label, fn, failures) {
 }
 
 async function bulkGuildOverwrite(guildId, commands) {
-  console.log(`Bulk overwriting ${commands.length} guild command(s): ${guildId}`);
-  await discordRequest(`bulk overwrite guild commands ${guildId}`, () => rest.put(Routes.applicationGuildCommands(CLIENT_ID, guildId), { body: commands }));
+  const protectedCommands = await readGuildPrivateCommands(guildId);
+  const body = [...commands, ...protectedCommands.filter((item) => !commands.some((command) => command.name === item.name))];
+  console.log(`Bulk overwriting ${commands.length} normal guild command(s), preserving ${protectedCommands.length} private command(s): ${guildId}`);
+  await discordRequest(`bulk overwrite guild commands ${guildId}`, () => rest.put(Routes.applicationGuildCommands(CLIENT_ID, guildId), { body }));
   console.log(`Bulk overwrite complete: ${guildId}`);
 }
 
@@ -386,7 +395,7 @@ async function upsertGuildCommands(guildId, commands, failures) {
 
   if (DELETE_STALE && !SINGLE_COMMAND && !CLEAR_BEFORE_SYNC) {
     for (const existing of existingCommands) {
-      if (wantedNames.has(existing.name)) continue;
+      if (wantedNames.has(existing.name) || PRIVATE_GUILD_COMMANDS.has(existing.name)) continue;
 
       await safeCommandAction(`/${existing.name} delete stale`, async () => {
         console.log(`Deleting stale guild command: /${existing.name}`);
@@ -398,21 +407,23 @@ async function upsertGuildCommands(guildId, commands, failures) {
 }
 
 async function bulkGlobalOverwrite(commands) {
-  console.log(`Bulk overwriting ${commands.length} global command(s)`);
-  await discordRequest('bulk overwrite global commands', () => rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands }));
+  const safeCommands = commands.filter((command) => !PRIVATE_GUILD_COMMANDS.has(command.name));
+  console.log(`Bulk overwriting ${safeCommands.length} global command(s)`);
+  await discordRequest('bulk overwrite global commands', () => rest.put(Routes.applicationCommands(CLIENT_ID), { body: safeCommands }));
   console.log('Global bulk overwrite complete');
 }
 
 async function upsertGlobalCommands(commands, failures) {
-  if (CLEAR_BEFORE_SYNC || BULK_OVERWRITE) return bulkGlobalOverwrite(commands);
+  const safeCommands = commands.filter((command) => !PRIVATE_GUILD_COMMANDS.has(command.name));
+  if (CLEAR_BEFORE_SYNC || BULK_OVERWRITE) return bulkGlobalOverwrite(safeCommands);
 
   console.log('Reading existing global commands');
 
   const existingCommands = await discordRequest('read global commands', () => rest.get(Routes.applicationCommands(CLIENT_ID)));
   const existingByName = new Map(existingCommands.map((command) => [command.name, command]));
-  const wantedNames = new Set(commands.map((command) => command.name));
+  const wantedNames = new Set(safeCommands.map((command) => command.name));
 
-  for (const command of commands) {
+  for (const command of safeCommands) {
     const existing = existingByName.get(command.name);
 
     if (!existing) {
@@ -490,7 +501,7 @@ async function syncCommands(options = {}) {
 
   printBanner(mode, commandsPath);
 
-  const commands = loadCommands(commandsPath, mode);
+  const commands = loadCommands(commandsPath, mode).filter((command) => !PRIVATE_GUILD_COMMANDS.has(command.name));
 
   console.log(`Commands loaded and validated: ${commands.length}`);
 

@@ -10,7 +10,7 @@ const {
 } = require('../../config/plans');
 
 const subscriptionManager = require('./subscriptionManager');
-const testDevOverride = require('../../core/dev/testDevOverrideManager');
+const testDevOverride = require('../../owner/dev/DevOverrideManager');
 
 function getDevPlan() {
   return testDevOverride.shouldBypassPaywall() ? testDevOverride.getPaywallBypassPlan() || PLAN_IDS.LIFETIME : null;
