@@ -17,6 +17,7 @@ const {
 // interactionCreate loads this module independently of /embed, so importing
 // embedPanel directly would bypass compact preview/media normalization patches.
 const panel = require('./embedPreviewCompat');
+const { prepareEmbedMedia } = require('./embedMediaLayout');
 const {
   clone,
   trim,
@@ -340,9 +341,11 @@ async function handleInteraction(i) {
       return true;
     }
     if (i.customId === 'embed:test-send') {
+      const media = await prepareEmbedMedia(buildPreviewEmbeds(s, i));
       await i.reply({
         content: '🧪 Test Preview',
-        embeds: buildPreviewEmbeds(s, i),
+        embeds: media.embeds,
+        files: media.files,
         components: buttonRows(s),
         allowedMentions: allowedMentions(s, i),
         flags: 64,
@@ -384,9 +387,11 @@ async function handleInteraction(i) {
 
       let payload;
       try {
+        const media = await prepareEmbedMedia(buildPreviewEmbeds(s, i));
         payload = {
           content: s.allowUserPing ? `<@${i.user.id}>` : '',
-          embeds: buildPreviewEmbeds(s, i),
+          embeds: media.embeds,
+          files: media.files,
           components: buttonRows(s),
           allowedMentions: allowedMentions(s, i),
         };
@@ -434,9 +439,11 @@ async function handleInteraction(i) {
 
       let payload;
       try {
+        const media = await prepareEmbedMedia(buildPreviewEmbeds(s, i));
         payload = {
           content: s.allowUserPing ? `<@${i.user.id}>` : '',
-          embeds: buildPreviewEmbeds(s, i),
+          embeds: media.embeds,
+          files: media.files,
           components: buttonRows(s),
           allowedMentions: allowedMentions(s, i),
         };
