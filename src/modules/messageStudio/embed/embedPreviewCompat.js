@@ -3,54 +3,50 @@
 // Keep the Embed Studio editor compact by showing only the selected content
 // panel while editing. Real sends/tests/updates still use the full panel list.
 //
-// The canonical embed builder already tries to hold every panel at a consistent
-// Discord width by padding the footer to a fixed length, but it uses ordinary
-// spaces. Discord collapses those spaces, allowing image/narrow-content panels
-// to shrink. Normalize that existing footer padding to non-breaking spaces so
-// Discord preserves the intended width without changing visible panel content.
+// Discord sizes an embed from its body content. Footer whitespace does not
+// reliably hold the container open, and ordinary spaces are collapsed. Use a
+// preserved Braille-blank line in the description so narrow/image-heavy panels
+// use the same full embed width as panels containing naturally long text.
 const panel = require('./embedPanel');
 
-const FOOTER_WIDTH = 164;
-const NBSP = '\u00A0';
-const ZWSP = '\u200B';
+const WIDTH_GLYPH = '\u2800';
+const WIDTH_GLYPH_COUNT = 46;
+const WIDTH_MARKER = WIDTH_GLYPH.repeat(WIDTH_GLYPH_COUNT);
+const MAX_DESCRIPTION = 4096;
 
-function normalizeFooterWidth(embed) {
-  if (!embed || typeof embed.toJSON !== 'function' || typeof embed.setFooter !== 'function') return embed;
+function stripWidthMarker(value) {
+  return String(value || '')
+    .replace(new RegExp(`\\n?${WIDTH_GLYPH}{${WIDTH_GLYPH_COUNT},}$`, 'u'), '')
+    .replace(/[ \u00A0\u2007\u2009\u200A\u200B\u2800]+$/gu, '');
+}
+
+function normalizeDescriptionWidth(embed) {
+  if (!embed || typeof embed.toJSON !== 'function' || typeof embed.setDescription !== 'function') return embed;
 
   const data = embed.toJSON();
-  if (!data?.footer) return embed;
-
-  const current = String(data.footer.text || '');
-  // Remove the builder's collapsible trailing spaces / previous invisible
-  // width markers while preserving the user's actual footer text.
-  const base = current.replace(/[ \u00A0\u2007\u2009\u200A\u200B\u2800]+$/gu, '');
-  const visibleLength = Array.from(base).length;
-  const padLength = Math.max(1, FOOTER_WIDTH - visibleLength);
-  const text = `${base}${NBSP.repeat(padLength)}${ZWSP}`;
-
-  embed.setFooter({
-    text,
-    ...(data.footer.icon_url ? { iconURL: data.footer.icon_url } : {}),
-  });
-
+  const original = stripWidthMarker(data?.description || '');
+  const separator = original ? '\n' : '';
+  const available = Math.max(0, MAX_DESCRIPTION - separator.length - WIDTH_MARKER.length);
+  const base = original.slice(0, available);
+  embed.setDescription(`${base}${base ? '\n' : ''}${WIDTH_MARKER}`);
   return embed;
 }
 
 function normalizePayloadWidth(payload) {
   if (!payload || !Array.isArray(payload.embeds)) return payload;
-  payload.embeds.forEach(normalizeFooterWidth);
+  payload.embeds.forEach(normalizeDescriptionWidth);
   return payload;
 }
 
-if (!panel.__preservedFooterWidthPatched) {
+if (!panel.__descriptionWidthPatched) {
   const originalBuildPreviewEmbeds = panel.buildPreviewEmbeds.bind(panel);
   const originalBuildPreviewEmbed = panel.buildPreviewEmbed.bind(panel);
   const originalBuildEmbedFromPanel = panel.buildEmbedFromPanel.bind(panel);
 
-  panel.buildEmbedFromPanel = (...args) => normalizeFooterWidth(originalBuildEmbedFromPanel(...args));
-  panel.buildPreviewEmbeds = (...args) => originalBuildPreviewEmbeds(...args).map(normalizeFooterWidth);
-  panel.buildPreviewEmbed = (...args) => normalizeFooterWidth(originalBuildPreviewEmbed(...args));
-  panel.__preservedFooterWidthPatched = true;
+  panel.buildEmbedFromPanel = (...args) => normalizeDescriptionWidth(originalBuildEmbedFromPanel(...args));
+  panel.buildPreviewEmbeds = (...args) => originalBuildPreviewEmbeds(...args).map(normalizeDescriptionWidth);
+  panel.buildPreviewEmbed = (...args) => normalizeDescriptionWidth(originalBuildPreviewEmbed(...args));
+  panel.__descriptionWidthPatched = true;
 }
 
 if (!panel.__compactPreviewPatched) {
