@@ -26,6 +26,17 @@ function getEnvList(name) {
     .filter(Boolean);
 }
 
+function publishAuditGuildRegistry(client, reason = 'startup') {
+  try {
+    const registry = auditStore.publishGuildRegistry(client);
+    if (registry) terminal.info(`Audit guild registry published: ${registry.guilds.length} guild(s) for ${registry.environment} (${reason})`);
+    return registry;
+  } catch (error) {
+    terminal.error(`Failed to publish Audit Intelligence guild registry (${reason}): ${error?.message || error}`);
+    return null;
+  }
+}
+
 module.exports = {
   name: Events.ClientReady,
   once: true,
@@ -50,12 +61,9 @@ module.exports = {
       terminal.info(`PRODUCTION guild scope: ${prodGuildIds.join(', ')}`);
     }
 
-    try {
-      const registry = auditStore.publishGuildRegistry(client);
-      if (registry) terminal.info(`Audit guild registry published: ${registry.guilds.length} guild(s) for ${registry.environment}`);
-    } catch (error) {
-      terminal.error(`Failed to publish Audit Intelligence guild registry: ${error?.message || error}`);
-    }
+    publishAuditGuildRegistry(client);
+    client.on(Events.GuildCreate, () => publishAuditGuildRegistry(client, 'guild joined'));
+    client.on(Events.GuildDelete, () => publishAuditGuildRegistry(client, 'guild left'));
 
     restoreLockdownReminders(client);
     startbackupWorker(client);
