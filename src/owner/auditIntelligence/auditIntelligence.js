@@ -377,6 +377,65 @@ function normalize(input = {}) {
   };
 }
 
+function mention(id, fallback = 'Unknown user') {
+  return id ? `<@${id}>` : fallback;
+}
+
+function targetLabel(event) {
+  return event.user?.id
+    ? mention(event.user.id)
+    : event.target?.id && /^\d{15,22}$/.test(String(event.target.id))
+      ? mention(event.target.id)
+      : event.target?.label || event.target?.name || event.target?.id || 'Unknown target';
+}
+
+function roleChangeSummary(event) {
+  const added = Array.isArray(event.metadata?.added) ? event.metadata.added : [];
+  const removed = Array.isArray(event.metadata?.removed) ? event.metadata.removed : [];
+  const parts = [];
+  if (added.length) parts.push(`added ${added.map((role) => `**${role.name || role.id}**`).join(', ')}`);
+  if (removed.length) parts.push(`removed ${removed.map((role) => `**${role.name || role.id}**`).join(', ')}`);
+  return parts.join(' and ');
+}
+
+function buildOperationalSummary(event) {
+  if (!event || event.summary) return event?.summary || null;
+  const actorLabel = event.actor?.id ? mention(event.actor.id) : null;
+  const target = targetLabel(event);
+  const reason = event.reason ? ` Reason: **${String(event.reason).slice(0, 300)}**.` : '';
+  const byActor = actorLabel ? ` by ${actorLabel}` : '';
+
+  switch (event.type) {
+    case 'member.join': return `${target} joined **${event.guildName || 'the server'}**.`;
+    case 'member.leave': return `${target} left **${event.guildName || 'the server'}**.`;
+    case 'member.kick': return `${target} was kicked${byActor}.${reason}`;
+    case 'member.ban': return `${target} was banned${byActor}.${reason}`;
+    case 'member.unban': return `${target} was unbanned${byActor}.${reason}`;
+    case 'member.prune': return `${target} was removed by a member prune${byActor}.${reason}`;
+    case 'member.timeout': {
+      const before = event.before?.timedOutUntil || null;
+      const after = event.after?.timedOutUntil || null;
+      if (!before && after) return `${target} was timed out${byActor} until <t:${Math.floor(new Date(after).getTime() / 1000)}:F>.${reason}`;
+      if (before && !after) return `${target}'s timeout was removed${byActor}.${reason}`;
+      return `${target}'s timeout was changed${byActor}.${reason}`;
+    }
+    case 'member.nickname': {
+      const before = event.before?.nickname || event.before?.displayName || 'None';
+      const after = event.after?.nickname || event.after?.displayName || 'None';
+      return `${target}'s nickname changed${byActor}: **${before}** → **${after}**.${reason}`;
+    }
+    case 'member.roles': {
+      const changes = roleChangeSummary(event);
+      return changes ? `${target} had roles ${changes}${byActor}.${reason}` : `${target}'s roles changed${byActor}.${reason}`;
+    }
+    case 'member.verification': return `${target}'s membership screening state changed.`;
+    case 'role.create': return `Role **${event.target?.label || event.target?.name || event.target?.id || 'Unknown'}** was created${byActor}.${reason}`;
+    case 'role.update': return `Role **${event.target?.label || event.target?.name || event.target?.id || 'Unknown'}** was updated${byActor}.${reason}`;
+    case 'role.delete': return `Role **${event.target?.label || event.target?.name || event.target?.id || 'Unknown'}** was deleted${byActor}.${reason}`;
+    default: return null;
+  }
+}
+
 function confirmGoliathOutcome(client, event, correlation) {
   if (!correlation?.auditLogId) return false;
   const botId = String(client?.user?.id || '');
@@ -416,6 +475,7 @@ async function capture(client, input = {}) {
     correlation = event.metadata.auditLog;
   }
 
+  event.summary = event.summary || buildOperationalSummary(event);
   const confirmedGoliath = confirmGoliathOutcome(client, event, correlation);
 
   if (String(event.type || '').startsWith('goliath.interaction.')) {
@@ -453,4 +513,5 @@ module.exports = {
   identifyGoliathSystem,
   buildActorSnapshot,
   actorMemberSnapshot,
+  buildOperationalSummary,
 };
