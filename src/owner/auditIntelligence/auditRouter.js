@@ -253,12 +253,13 @@ async function configuredRouteChannel(client, sourceGuild, event) {
   const guildConfig = auditStore.getConfig().guilds?.[String(sourceGuild?.id || '')] || {};
   const routes = guildConfig.routes && typeof guildConfig.routes === 'object' ? guildConfig.routes : {};
   const key = routeKeyForEvent(event);
-  const channelId = routes[key] || routes.default || null;
-  if (!channelId) return null;
   const ownerGuild = await getOwnerGuild(client);
   if (!ownerGuild) return null;
-  const channel = ownerGuild.channels.cache.get(String(channelId)) || await ownerGuild.channels.fetch(String(channelId)).catch(() => null);
-  return channel?.isTextBased?.() ? channel : null;
+  const configuredId = routes[key] || routes.default || null;
+  const configuredChannel = await resolveTextChannel(ownerGuild, configuredId);
+  if (configuredChannel) return configuredChannel;
+  if (key === 'guild') return findSystemChannel(ownerGuild, sourceGuild);
+  return findReportRouteChannel(ownerGuild, sourceGuild, key);
 }
 
 function viewState(channel, ownerGuild) {
