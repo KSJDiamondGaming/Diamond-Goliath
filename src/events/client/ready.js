@@ -40,36 +40,66 @@ function publishAuditGuildRegistry(client, reason = 'startup') {
 
 async function restoreAuditReportFeeds(client) {
   const mode = String(client?.botMode || process.env.BOT_MODE || 'DEV').trim().toUpperCase();
-  if (mode !== 'DEV') return 0;
+  const result = { mode, total: 0, restored: 0, failed: 0, unavailable: 0 };
+  if (mode !== 'DEV') return result;
 
   const config = auditStore.getConfig();
-  if (config.autoProvision === false || !config.commandCenter?.guildId) return 0;
+  if (config.autoProvision === false || !config.commandCenter?.guildId) return result;
 
   const configuredGuilds = config.guilds && typeof config.guilds === 'object' ? config.guilds : {};
   const commandCenterGuildId = String(config.commandCenter.guildId);
   const registry = auditStore.getGuildRegistry?.() || [];
-  let restored = 0;
 
   for (const guildId of Object.keys(configuredGuilds)) {
     if (!guildId || String(guildId) === commandCenterGuildId) continue;
+    result.total += 1;
     const liveGuild = client.guilds.cache.get(String(guildId)) || null;
     const registryGuild = registry.find((entry) => String(entry?.guildId || '') === String(guildId)) || null;
     const sourceGuild = liveGuild || (registryGuild ? { id: String(guildId), name: registryGuild.name || String(guildId) } : null);
     if (!sourceGuild) {
+      result.unavailable += 1;
       terminal.warn(`Audit report feed restore skipped for unavailable guild ${guildId}.`);
       continue;
     }
 
     try {
-      const result = await auditRouter.ensureReportRoutes(client, sourceGuild);
-      if (result) restored += 1;
+      const restored = await auditRouter.ensureReportRoutes(client, sourceGuild);
+      if (restored) result.restored += 1;
+      else result.failed += 1;
     } catch (error) {
+      result.failed += 1;
       terminal.error(`Failed to restore Audit Intelligence report feeds for ${sourceGuild.name || guildId}: ${error?.message || error}`);
     }
   }
 
-  if (restored > 0) terminal.info(`Audit Intelligence report feeds restored for ${restored} configured guild(s).`);
-  return restored;
+  if (result.restored > 0) terminal.info(`Audit Intelligence report feeds restored for ${result.restored} configured guild(s).`);
+  return result;
+}
+
+async function sendAuditStartupSummary(client, restoreResult) {
+  if (!restoreResult || restoreResult.mode !== 'DEV' || restoreResult.total < 1) return false;
+  try {
+    const context = await auditRouter.ensureCommandCenter(client);
+    if (!context?.channel?.isTextBased?.()) return false;
+    const healthy = restoreResult.failed === 0 && restoreResult.unavailable === 0;
+    const content = [
+      `${healthy ? '🟢' : '🟠'} **Goliath Audit Intelligence Online**`,
+      '',
+      `**Report feeds checked:** ${restoreResult.total}`,
+      `**Restored / ready:** ${restoreResult.restored}`,
+      `**Failed:** ${restoreResult.failed}`,
+      `**Source guilds unavailable:** ${restoreResult.unavailable}`,
+      '',
+      healthy
+        ? 'Live reporting is ready. Use **Routing → Send Test Report** to verify any individual feed.'
+        : 'One or more feeds need attention. Use **Routing → Create / Repair Report Channels** and **Send Test Report** to verify them.',
+    ].join('\n');
+    await context.channel.send({ content, allowedMentions: { parse: [] } });
+    return true;
+  } catch (error) {
+    terminal.error(`Failed to send Audit Intelligence startup summary: ${error?.message || error}`);
+    return false;
+  }
 }
 
 module.exports = {
@@ -99,7 +129,8 @@ module.exports = {
     publishAuditGuildRegistry(client);
     client.on(Events.GuildCreate, () => publishAuditGuildRegistry(client, 'guild joined'));
     client.on(Events.GuildDelete, () => publishAuditGuildRegistry(client, 'guild left'));
-    await restoreAuditReportFeeds(client);
+    const auditRestore = await restoreAuditReportFeeds(client);
+    await sendAuditStartupSummary(client, auditRestore);
 
     restoreLockdownReminders(client);
     startbackupWorker(client);
