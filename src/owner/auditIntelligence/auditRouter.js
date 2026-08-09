@@ -395,7 +395,11 @@ async function inspectHealth(client) {
 async function deliver(client, sourceGuild, event) {
   if (!sourceGuild || sourceGuild.id === getOwnerAuditGuildId() || !monitoringEnabled(sourceGuild, event)) return false;
   const userId = eventUserId(event);
-  const routedChannel = await configuredRouteChannel(client, sourceGuild, event);
+  let routedChannel = await configuredRouteChannel(client, sourceGuild, event);
+  if (!routedChannel && autoProvisionEnabled()) {
+    await ensureReportRoutes(client, sourceGuild).catch((error) => console.warn('[Audit Intelligence] automatic report route provisioning failed:', error?.message || error));
+    routedChannel = await configuredRouteChannel(client, sourceGuild, event);
+  }
   const primary = userId ? await ensureUserAuditChannel(client, sourceGuild, event) : (routedChannel || await ensureAuditChannel(client, sourceGuild));
   if (!primary?.isTextBased?.()) return false;
   const payload = { embeds: [buildAuditEmbed(event)], allowedMentions: { parse: [] } };
