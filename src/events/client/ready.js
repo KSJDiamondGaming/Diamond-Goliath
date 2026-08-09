@@ -1,6 +1,7 @@
 const { Events } = require('discord.js');
 const terminal = require('../../core/logging/terminalLogger').createLogger('bot');
 const levelingTracking = require('../../modules/communityStudio/leveling/levelingTracking');
+const auditStore = require('../../owner/auditIntelligence/auditStore');
 
 const {
   restoreLockdownReminders,
@@ -47,6 +48,13 @@ module.exports = {
 
     if (client.botMode === 'PRODUCTION' && prodGuildIds.length) {
       terminal.info(`PRODUCTION guild scope: ${prodGuildIds.join(', ')}`);
+    }
+
+    try {
+      const registry = auditStore.publishGuildRegistry(client);
+      if (registry) terminal.info(`Audit guild registry published: ${registry.guilds.length} guild(s) for ${registry.environment}`);
+    } catch (error) {
+      terminal.error(`Failed to publish Audit Intelligence guild registry: ${error?.message || error}`);
     }
 
     restoreLockdownReminders(client);
