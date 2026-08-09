@@ -1,0 +1,274 @@
+name: Apply audit fixes once
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - .github/workflows/apply-audit-fixes-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: dev
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - name: Apply coordinated fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python <<'PY'
+          import json, pathlib, re, subprocess
+          root = pathlib.Path('.')
+
+          def read(path):
+              return (root / path).read_text(encoding='utf-8')
+
+          def write(path, text):
+              p = root / path
+              p.parent.mkdir(parents=True, exist_ok=True)
+              p.write_text(text, encoding='utf-8')
+
+          def replace(path, old, new, count=1):
+              text = read(path)
+              if old not in text:
+                  raise SystemExit(f'Expected text not found in {path}: {old[:120]!r}')
+              text = text.replace(old, new, count)
+              write(path, text)
+
+          # 1) Restore a real behavioural/source test gate without reviving the stale schedule suite.
+          historical = '201d36b3ae6d669462d523a16215ac3ec8437924'
+          test_files = [
+              'test/guild/discordLogin.test.js',
+              'test/guild/moduleSectionManager.test.js',
+              'test/verification/canonical-state.test.js',
+              'test/verification/source-syntax.test.js',
+          ]
+          for path in test_files:
+              content = subprocess.check_output(['git', 'show', f'{historical}:{path}'], text=True)
+              write(path, content)
+
+          pkg_path = root / 'package.json'
+          pkg = json.loads(pkg_path.read_text())
+          scripts = pkg.setdefault('scripts', {})
+          scripts['test'] = 'npm run test:guild && npm run test:verification'
+          scripts['test:guild'] = 'node --test test/guild/*.test.js'
+          scripts['test:verification'] = 'node --test test/verification/*.test.js'
+          scripts['build'] = 'npm run doctor && npm test && vite build src/dashboard --outDir ../../dist --emptyOutDir --logLevel warn'
+          pkg_path.write_text(json.dumps(pkg, indent=2) + '\n')
+
+          # 2) Canonical Social Studio dynamic route resolver.
+          resolver = r'''\'use strict\';
+
+function object(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+function creatorFor(config, accountId) {
+  return Object.values(object(config?.creators)).find((creator) =>
+    Array.isArray(creator?.accountIds) && creator.accountIds.map(String).includes(String(accountId || ''))
+  ) || null;
+}
+
+function linkedUserId(creator, account) {
+  return String(
+    creator?.ownerDiscordId || creator?.discordUserId || creator?.userId ||
+    account?.ownerDiscordId || account?.discordUserId || account?.userId || ''
+  );
+}
+
+function userRoutes(config, userId) {
+  return object(object(config?.userChannelOverrides)[String(userId || '')]);
+}
+
+function explicitAccountRoutes(account) {
+  if (!account || typeof account !== 'object') return { channelId: null, channels: {} };
+
+  // Compatibility layers historically rewrote account routes. When those
+  // markers exist, treat their captured values as the real account baseline.
+  if (account.userRouteBaseCaptured) {
+    return {
+      channelId: account.userRouteBaseChannelId || null,
+      channels: object(account.userRouteBaseChannels),
+    };
+  }
+  if (account.creatorRouteInherited) {
+    return {
+      channelId: account.creatorRoutePreviousChannelId || null,
+      channels: object(account.creatorRoutePreviousChannels),
+    };
+  }
+  return {
+    channelId: account.alertChannelId || null,
+    channels: object(account.alertChannels),
+  };
+}
+
+function resolveSocialRoute(config, account, eventType, creatorInput = null) {
+  const creator = creatorInput || creatorFor(config, account?.accountId);
+  const platform = String(account?.platform || '').toLowerCase();
+  const userId = linkedUserId(creator, account);
+  const routes = userRoutes(config, userId);
+  const accountRoutes = explicitAccountRoutes(account);
+
+  const candidates = [
+    [object(creator?.platformChannels)[platform], 'Creator Platform Override'],
+    [routes[eventType], 'User Content Override'],
+    [routes.all, 'User All Content'],
+    [creator?.alertChannelId, 'Creator Override'],
+    [accountRoutes.channels[eventType], 'Account Content Override'],
+    [accountRoutes.channelId, 'Account Override'],
+    [object(config?.platformChannels)[platform], 'Server Platform Override'],
+    [object(config?.alertChannels)[eventType], 'Server Dedicated'],
+    [config?.alertsChannelId, 'Server Default'],
+  ];
+
+  for (const [channelId, source] of candidates) {
+    if (channelId) return { channelId: String(channelId), source, creator, userId, platform };
+  }
+  return { channelId: null, source: 'Not configured', creator, userId, platform };
+}
+
+module.exports = {
+  creatorFor,
+  linkedUserId,
+  userRoutes,
+  explicitAccountRoutes,
+  resolveSocialRoute,
+};
+'''
+          write('src/modules/socialStudio/socialAlerts/socialStudioRoutingResolver.js', resolver)
+
+          # 3) Monitor uses the canonical resolver instead of account-field mutation order.
+          monitor = read('src/modules/socialStudio/socialAlerts/socialStudioMonitor.js')
+          marker = "const { normalizeTemplates, resolveTemplate } = require('./socialStudioTemplates');"
+          monitor = monitor.replace(marker, marker + "\nconst { resolveSocialRoute } = require('./socialStudioRoutingResolver');", 1)
+          old = """  const platform = String(account.platform || '').toLowerCase();\n  const candidates = [\n    account.alertChannels?.[eventType],\n    account.alertChannelId,\n    config.platformChannels?.[platform],\n    config.alertChannels?.[eventType],\n    config.alertsChannelId,\n  ].filter(Boolean);"""
+          new = """  const resolvedRoute = resolveSocialRoute(config, account, eventType);\n  const candidates = resolvedRoute.channelId ? [resolvedRoute.channelId] : [];"""
+          if old not in monitor:
+              raise SystemExit('Monitor route candidate block not found')
+          monitor = monitor.replace(old, new, 1)
+          write('src/modules/socialStudio/socialAlerts/socialStudioMonitor.js', monitor)
+
+          # 4) User router no longer hijacks Creator Overrides and no longer rewrites account routing.
+          user_path = 'src/modules/socialStudio/socialAlerts/socialStudioUserChannelRouting.js'
+          user = read(user_path)
+          user = user.replace("const { ALERT_TYPES } = require('./socialStudioTemplates');", "const { ALERT_TYPES } = require('./socialStudioTemplates');\nconst { resolveSocialRoute } = require('./socialStudioRoutingResolver');", 1)
+          user = user.replace("""function syncUser(config, userId) {\n  const routes = routesFor(config, userId);\n  const hasRoutes = Object.values(routes).some(Boolean);\n  for (const accountId of creatorAccountsForUser(config, userId)) {\n    const account = config.accounts?.[accountId];\n    if (!account) continue;\n    if (hasRoutes) applyRoutesToAccount(account, routes);\n    else clearRoutesFromAccount(account);\n  }\n}""", """function syncUser(config, userId) {\n  // Routing is resolved dynamically by socialStudioRoutingResolver. This only\n  // removes legacy inherited account mutations from older compatibility builds.\n  for (const accountId of creatorAccountsForUser(config, userId)) {\n    const account = config.accounts?.[accountId];\n    if (account) clearRoutesFromAccount(account);\n  }\n}""", 1)
+          user = user.replace("""function effectiveRoute(config, routes, type) {\n  if (routes[type]) return { channelId: routes[type], source: 'User Override' };\n  if (routes.all) return { channelId: routes.all, source: 'User All Content' };\n  if (config.alertChannels?.[type]) return { channelId: config.alertChannels[type], source: 'Server Dedicated' };\n  if (config.alertsChannelId) return { channelId: config.alertsChannelId, source: 'Server Default' };\n  return { channelId: null, source: 'Not configured' };\n}\n\nfunction effectivePreview(config, routes) {\n  return ALERT_TYPES.map((type) => {\n    const resolved = effectiveRoute(config, routes, type);\n    const destination = resolved.channelId ? `<#${resolved.channelId}>` : 'Not configured';\n    return `${TYPE_EMOJI[type] || '🔔'} **${TYPE_LABELS[type] || type}** → ${destination} *(${resolved.source})*`;\n  }).join('\\n');\n}""", """function effectivePreview(config, userId) {\n  const accounts = creatorAccountsForUser(config, userId)\n    .map((accountId) => config.accounts?.[accountId])\n    .filter(Boolean);\n  const samples = accounts.length ? accounts : [{ discordUserId: userId, platform: '' }];\n\n  return ALERT_TYPES.map((type) => {\n    const resolved = samples.map((account) => resolveSocialRoute(config, account, type));\n    const unique = new Map(resolved.map((item) => [`${item.channelId || ''}:${item.source}`, item]));\n    if (unique.size === 1) {\n      const item = [...unique.values()][0];\n      const destination = item.channelId ? `<#${item.channelId}>` : 'Not configured';\n      return `${TYPE_EMOJI[type] || '🔔'} **${TYPE_LABELS[type] || type}** → ${destination} *(${item.source})*`;\n    }\n    const platformDetails = resolved.map((item, index) => {\n      const platform = String(samples[index]?.platform || 'account').toUpperCase();\n      return `${platform}: ${item.channelId ? `<#${item.channelId}>` : 'Not configured'} (${item.source})`;\n    }).join(' • ');\n    return `${TYPE_EMOJI[type] || '🔔'} **${TYPE_LABELS[type] || type}** → *varies by platform* — ${platformDetails}`;\n  }).join('\\n');\n}""", 1)
+          user = user.replace("'**Fallback:** User content route → User All Content → Server Dedicated route → Server Default channel.'", "'**Fallback:** User content route → User All Content → Creator route → Server Platform Override → Server Dedicated route → Server Default channel.'", 1)
+          user = user.replace("effectivePreview(config, routes)", "effectivePreview(config, s.targetUserId)", 1)
+          user = user.replace("""  if (id === 'social:channel:creator:open') {\n    setState(i, { targetUserId: null, type: 'all', pendingChannelId: null });\n    return update(i);\n  }\n""", """  if (id === `${P}open`) {\n    setState(i, { targetUserId: null, type: 'all', pendingChannelId: null });\n    return update(i);\n  }\n""", 1)
+          write(user_path, user)
+
+          # 5) Creator compatibility layer stores creator routing only; it cleans old inherited fields instead of mutating them.
+          creator_path = 'src/modules/socialStudio/socialAlerts/socialStudioCreatorRoutingCompat.js'
+          creator = read(creator_path)
+          pattern = re.compile(r"function syncCreatorOverride\(config, creator\) \{.*?\n\}\nfunction syncAllCreatorOverrides", re.S)
+          replacement = """function syncCreatorOverride(config, creator) {\n  if (!creator) return config;\n  // Dynamic routing now reads creator.alertChannelId/platformChannels directly.\n  // Remove legacy account mutations so handler ordering is no longer routing logic.\n  for (const accountId of creator.accountIds || []) {\n    const account = config.accounts?.[accountId];\n    if (account) clearCreatorOverrideFromAccount(account);\n  }\n  return config;\n}\nfunction syncAllCreatorOverrides"""
+          creator, n = pattern.subn(replacement, creator, count=1)
+          if n != 1:
+              raise SystemExit('Creator sync function not found')
+          write(creator_path, creator)
+
+          # 6) Command Center guild is configurable; env/default only supplies the initial fallback.
+          audit_path = 'src/owner/auditIntelligence/auditStore.js'
+          audit = read(audit_path)
+          audit = audit.replace("const COMMAND_CENTER_GUILD_ID = '1515201360386068642';", "const COMMAND_CENTER_GUILD_ID = String(process.env.COMMAND_CENTER_GUILD_ID || '1515201360386068642').trim();", 1)
+          audit = audit.replace("guildId: COMMAND_CENTER_GUILD_ID,\n    },\n    guilds:", "guildId: String(current.commandCenter?.guildId || COMMAND_CENTER_GUILD_ID).trim(),\n    },\n    guilds:", 1)
+          audit = audit.replace("commandCenter: patch.commandCenter ? { ...current.commandCenter, ...patch.commandCenter, guildId: COMMAND_CENTER_GUILD_ID } : current.commandCenter,", "commandCenter: patch.commandCenter ? { ...current.commandCenter, ...patch.commandCenter } : current.commandCenter,", 1)
+          write(audit_path, audit)
+
+          # 7) Private /commandcenter is only protected and deployed in the actual Command Center guild.
+          sync_path = 'src/core/commandRegistry/syncCommands.js'
+          sync = read(sync_path)
+          sync = sync.replace("const PRIVATE_GUILD_COMMANDS = new Set(['commandcenter']);", "const PRIVATE_GUILD_COMMANDS = new Set(['commandcenter']);\nconst COMMAND_CENTER_GUILD_ID = String(process.env.COMMAND_CENTER_GUILD_ID || '1515201360386068642').trim();\n\nfunction isPrivateGuildCommand(name, guildId) {\n  return PRIVATE_GUILD_COMMANDS.has(String(name || '')) && String(guildId || '') === COMMAND_CENTER_GUILD_ID;\n}", 1)
+          sync = sync.replace("return existing.filter((command) => PRIVATE_GUILD_COMMANDS.has(command.name));", "return existing.filter((command) => isPrivateGuildCommand(command.name, guildId));", 1)
+          sync = sync.replace("if (wantedNames.has(existing.name) || PRIVATE_GUILD_COMMANDS.has(existing.name)) continue;", "if (wantedNames.has(existing.name) || isPrivateGuildCommand(existing.name, guildId)) continue;", 1)
+          # Filter the desired command list too, so stale commandcenter copies elsewhere are removed.
+          sync = sync.replace("async function upsertGuildCommands(guildId, commands, failures) {\n  if (BULK_OVERWRITE) return bulkGuildOverwrite(guildId, commands);", "async function upsertGuildCommands(guildId, commands, failures) {\n  commands = commands.filter((command) => command.name !== 'commandcenter' || String(guildId) === COMMAND_CENTER_GUILD_ID);\n  if (BULK_OVERWRITE) return bulkGuildOverwrite(guildId, commands);", 1)
+          sync = sync.replace("async function bulkGuildOverwrite(guildId, commands) {\n  const protectedCommands", "async function bulkGuildOverwrite(guildId, commands) {\n  commands = commands.filter((command) => command.name !== 'commandcenter' || String(guildId) === COMMAND_CENTER_GUILD_ID);\n  const protectedCommands", 1)
+          write(sync_path, sync)
+
+          # 8) Restore strict deployment branch fidelity: dev deploys dev, beta deploys beta, production deploys production.
+          deploy_path = '.github/workflows/deploy-dev.yml'
+          deploy = read(deploy_path)
+          deploy = deploy.replace('SOURCE_BRANCH="dev"; TARGET_BRANCH="beta"', 'SOURCE_BRANCH="beta"; TARGET_BRANCH="beta"', 1)
+          deploy = deploy.replace('SOURCE_BRANCH="dev"; TARGET_BRANCH="production"', 'SOURCE_BRANCH="production"; TARGET_BRANCH="production"', 1)
+          deploy = deploy.replace('permissions:\n  contents: read', 'permissions:\n  contents: read\n  statuses: write', 1)
+          # Re-enable tests in deployment validation.
+          deploy = deploy.replace('          npm run doctor\n          npx vite build', '          npm run doctor\n          npm test\n          npx vite build', 1)
+          write(deploy_path, deploy)
+
+          # 9) Independent PR/build gate and explicit commit status context.
+          preflight = r'''name: Goliath Preflight
+
+on:
+  push:
+    branches: [dev, beta, production]
+  pull_request:
+    branches: [dev, beta, production]
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Doctor, tests and dashboard build
+        run: npm run build
+      - name: Report successful preflight status
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          curl --fail-with-body -L \
+            -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
+            -d '{"state":"success","context":"goliath/preflight","description":"Doctor, behavioural tests and dashboard build passed"}'
+      - name: Report failed preflight status
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          curl --fail-with-body -L \
+            -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
+            -d '{"state":"failure","context":"goliath/preflight","description":"Goliath preflight failed"}'
+'''
+          write('.github/workflows/preflight.yml', preflight)
+
+          # Remove this one-shot workflow from the final tree.
+          (root / '.github/workflows/apply-audit-fixes-once.yml').unlink()
+          PY
+
+          npm ci
+          npm run build
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: harden routing deployment and preflight gates"
+          git push origin HEAD:dev
