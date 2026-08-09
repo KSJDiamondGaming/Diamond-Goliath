@@ -13,7 +13,10 @@ const {
   getEmbedDeployment,
   getDeploymentKeyFromState,
 } = require('./embedDeployments');
-const panel = require('./embedPanel');
+// IMPORTANT: load the compatibility layer here, not embedPanel directly.
+// interactionCreate loads this module independently of /embed, so importing
+// embedPanel directly would bypass compact preview/media normalization patches.
+const panel = require('./embedPreviewCompat');
 const {
   clone,
   trim,
@@ -98,20 +101,19 @@ async function handleInteraction(i) {
       return true;
     }
     if (i.customId === 'embed:color') {
-      if (i.values[0] === CUSTOM_HEX_VALUE) {
+      const value = i.values[0];
+      if (value === CUSTOM_HEX_VALUE) {
         await i.showModal(colorModal(s));
         return true;
       }
-      markUnsaved(i, saveSelected(s, { color: i.values[0] }));
+      markUnsaved(i, saveSelected(s, { color: value }));
       await replyOrUpdate(i, buildEditorPanel(i, who));
       return true;
     }
     if (i.customId === 'embed:panel-select') {
-      saveSession(i, {
-        ...s,
-        selectedPanelIndex: Number(i.values[0]),
-        selectedFieldIndex: null,
-      });
+      const index = Number(i.values[0]);
+      const current = getSession(i);
+      saveSession(i, { ...current, selectedPanelIndex: index, selectedFieldIndex: null });
       await replyOrUpdate(i, buildEditorPanel(i, who));
       return true;
     }
@@ -131,34 +133,34 @@ async function handleInteraction(i) {
       return true;
     }
     if (i.customId === 'embed:preset-select') {
-      const preset = guildManager.getEmbedPreset(i.guild.id, i.values[0]);
+      const name = i.values[0];
+      const presets = typeof guildManager.getEmbedPresets === 'function'
+        ? guildManager.getEmbedPresets(i.guild.id) || {}
+        : {};
+      const preset = presets[name];
       if (!preset) {
         await i.reply({ content: 'Preset not found.', flags: 64 });
         return true;
       }
-      applyPreset(i, i.values[0], preset);
+      applyPreset(i, name, preset);
       await replyOrUpdate(i, buildEditorPanel(i, who));
       return true;
     }
   }
 
-  if (i.isChannelSelectMenu() && i.customId === 'embed:channel') {
+  if (i.isChannelSelectMenu?.() && i.customId === 'embed:channel') {
     markUnsaved(i, { ...s, channelId: i.values[0] });
     await replyOrUpdate(i, buildEditorPanel(i, who));
     return true;
   }
 
   if (i.isButton()) {
-    if (i.customId === 'embed:back' || i.customId === 'embed:editor') {
+    if (i.customId === 'embed:editor' || i.customId === 'embed:back') {
       await i.update(buildEditorPanel(i, who));
       return true;
     }
     if (i.customId === 'embed:builder') {
       await i.update(buildBuilderPanel(i, who));
-      return true;
-    }
-    if (i.customId === 'embed:helpers') {
-      await i.update(buildHelpersPanel(who));
       return true;
     }
     if (i.customId === 'embed:presets') {
@@ -175,6 +177,10 @@ async function handleInteraction(i) {
     }
     if (i.customId === 'embed:buttons') {
       await i.update(buildButtonsPanel(i, who));
+      return true;
+    }
+    if (i.customId === 'embed:helpers') {
+      await i.update(buildHelpersPanel(who));
       return true;
     }
     if (i.customId === 'embed:edit-content') {
@@ -197,7 +203,7 @@ async function handleInteraction(i) {
     }
     if (i.customId === 'embed:reset') {
       resetSession(i);
-      await i.update(buildBuilderPanel(i, who));
+      await i.update(buildEditorPanel(i, who));
       return true;
     }
     if (i.customId === 'embed:panel-add') {
@@ -518,45 +524,29 @@ async function handleInteraction(i) {
       return true;
     }
     if (i.customId === 'embed:field-save-new' || i.customId.startsWith('embed:field-save:')) {
-      const n = i.customId.startsWith('embed:field-save:') ? Number(i.customId.split(':')[2]) : null;
       const fields = [...(s.fields || [])];
-      const f = {
+      const field = {
         name: i.fields.getTextInputValue('name'),
         value: i.fields.getTextInputValue('value'),
-        inline: /^y(es)?|true|1$/i.test(i.fields.getTextInputValue('layout') || ''),
+        inline: /^y(es)?$/i.test(i.fields.getTextInputValue('layout')),
       };
-      if (Number.isInteger(n)) fields[n] = f;
-      else fields.push(f);
-      markUnsaved(i, {
-        ...saveSelected(s, { fields }),
-        selectedFieldIndex: Number.isInteger(n) ? n : fields.length - 1,
-      });
+      if (i.customId === 'embed:field-save-new') fields.push(field);
+      else fields[Number(i.customId.split(':').pop())] = field;
+      markUnsaved(i, saveSelected(s, { fields }));
       await i.reply({ ...buildFieldsPanel(i, who), flags: 64 });
       return true;
     }
     if (i.customId === 'embed:button-save-new' || i.customId.startsWith('embed:button-save:')) {
-      const n = i.customId.startsWith('embed:button-save:') ? Number(i.customId.split(':')[2]) : null;
-      const style = i.fields.getTextInputValue('style') || 'Link';
-      const url = i.fields.getTextInputValue('url');
-      if (String(style).toLowerCase() === 'link' && !safeUrl(url)) {
-        await i.reply({ content: '⚠️ Link buttons require a valid URL.', flags: 64 });
-        return true;
-      }
       const buttons = [...(s.buttons || [])];
-      const b = {
+      const entry = {
         label: i.fields.getTextInputValue('label'),
         emoji: i.fields.getTextInputValue('emoji'),
-        style,
-        action: 'link',
-        url,
+        style: i.fields.getTextInputValue('style'),
+        url: i.fields.getTextInputValue('url'),
       };
-      if (Number.isInteger(n)) buttons[n] = b;
-      else buttons.push(b);
-      markUnsaved(i, {
-        ...s,
-        buttons,
-        selectedButtonIndex: Number.isInteger(n) ? n : buttons.length - 1,
-      });
+      if (i.customId === 'embed:button-save-new') buttons.push(entry);
+      else buttons[Number(i.customId.split(':').pop())] = entry;
+      markUnsaved(i, { ...s, buttons });
       await i.reply({ ...buildButtonsPanel(i, who), flags: 64 });
       return true;
     }
@@ -565,4 +555,6 @@ async function handleInteraction(i) {
   return false;
 }
 
-module.exports = { handleInteraction };
+module.exports = {
+  handleInteraction,
+};
