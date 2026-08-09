@@ -3,14 +3,14 @@
 // Keep the Embed Studio editor compact by showing only the selected content
 // panel while editing. Real sends/tests/updates still use the full panel list.
 //
-// Discord sizes an embed from its body content. Footer whitespace does not
-// reliably hold the container open, and ordinary spaces are collapsed. Use a
-// preserved Braille-blank line in the description so narrow/image-heavy panels
-// use the same full embed width as panels containing naturally long text.
+// Discord sizes an embed from its rendered body content. Footer whitespace and
+// zero-width-style glyphs are not reliable width anchors. Use preserved figure
+// spaces in the description so narrow/image-heavy panels occupy the same width
+// as panels containing naturally long text, without changing visible content.
 const panel = require('./embedPanel');
 
-const WIDTH_GLYPH = '\u2800';
-const WIDTH_GLYPH_COUNT = 46;
+const WIDTH_GLYPH = '\u2007';
+const WIDTH_GLYPH_COUNT = 64;
 const WIDTH_MARKER = WIDTH_GLYPH.repeat(WIDTH_GLYPH_COUNT);
 const MAX_DESCRIPTION = 4096;
 
