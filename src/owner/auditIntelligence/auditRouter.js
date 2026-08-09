@@ -126,18 +126,29 @@ async function resolveTextChannel(ownerGuild, channelId) {
   const channel = ownerGuild.channels.cache.get(String(channelId)) || await ownerGuild.channels.fetch(String(channelId)).catch(() => null);
   return channel?.isTextBased?.() ? channel : null;
 }
+function channelDeliveryState(channel, ownerGuild) {
+  if (!channel?.isTextBased?.() || !ownerGuild) return { exists: Boolean(channel), view: false, send: false, history: false, healthy: false };
+  const botMember = ownerGuild.members.me || null;
+  const permissions = botMember ? channel.permissionsFor(botMember) : null;
+  const view = permissions?.has(PermissionFlagsBits.ViewChannel) ?? false;
+  const send = permissions?.has(PermissionFlagsBits.SendMessages) ?? false;
+  const history = permissions?.has(PermissionFlagsBits.ReadMessageHistory) ?? false;
+  return { exists: true, view, send, history, healthy: view && send && history };
+}
 async function ensureReportFeedHeader(channel, sourceGuild, routeKey, label) {
   if (!channel?.isTextBased?.() || !sourceGuild?.id) return null;
   const marker = reportFeedMarker(sourceGuild, routeKey);
+  const delivery = channelDeliveryState(channel, channel.guild);
   const pinned = await channel.messages.fetchPinned().catch(() => null);
   let message = pinned?.find((item) => item.author?.bot && String(item.content || '').includes(marker)) || null;
   const content = [
-    `🟢 **Goliath Audit Feed Live — ${label}**`,
+    `${delivery.healthy ? '🟢' : '🟠'} **Goliath Audit Feed ${delivery.healthy ? 'Live' : 'Needs Attention'} — ${label}**`,
     '',
     `**Source Guild:** ${sourceGuild.name || 'Unknown Guild'}`,
     `**Guild ID:** \`${sourceGuild.id}\``,
     `**Feed:** ${label}`,
-    `**Status:** Active — monitored events are delivered here automatically.`,
+    `**Status:** ${delivery.healthy ? 'Active — monitored events are delivered here automatically.' : 'Permission issue detected — check the feed health below.'}`,
+    `**Goliath Permissions:** View ${delivery.view ? '🟢' : '🔴'} • Send ${delivery.send ? '🟢' : '🔴'} • History ${delivery.history ? '🟢' : '🔴'}`,
     '',
     `Manage this feed from **Goliath Command Center → Routing**. Renaming or moving this channel is safe; Goliath tracks managed feeds by internal markers.`,
     '',
@@ -302,6 +313,30 @@ function viewState(channel, ownerGuild) {
   const bot = ownerGuild.members.me ? channel.permissionsFor(ownerGuild.members.me)?.has(PermissionFlagsBits.ViewChannel) ?? false : false;
   return { everyone, owner, bot };
 }
+async function inspectReportFeeds(client, sourceGuild) {
+  const ownerGuild = await getOwnerGuild(client);
+  if (!ownerGuild || !sourceGuild?.id) return null;
+  const config = auditStore.getConfig();
+  const routes = config.guilds?.[String(sourceGuild.id)]?.routes || {};
+  const keys = ['guild', ...Object.keys(REPORT_ROUTE_CHANNELS), 'default'];
+  const feeds = [];
+  for (const key of keys) {
+    let channel = await resolveTextChannel(ownerGuild, routes[key]);
+    if (!channel && key === 'guild') channel = findSystemChannel(ownerGuild, sourceGuild);
+    if (!channel && REPORT_ROUTE_CHANNELS[key]) channel = findReportRouteChannel(ownerGuild, sourceGuild, key);
+    if (!channel && key === 'default') channel = await resolveTextChannel(ownerGuild, routes.default || routes.guild) || findSystemChannel(ownerGuild, sourceGuild);
+    const delivery = channelDeliveryState(channel, ownerGuild);
+    feeds.push({
+      key,
+      label: key === 'guild' ? 'Guild / System Events' : key === 'default' ? 'Fallback / All Other Events' : REPORT_ROUTE_CHANNELS[key]?.label || key,
+      channelId: channel?.id || routes[key] || null,
+      channelName: channel?.name || null,
+      configured: Boolean(routes[key]),
+      ...delivery,
+    });
+  }
+  return { sourceGuildId: String(sourceGuild.id), destinationGuildId: ownerGuild.id, healthy: feeds.every((feed) => feed.healthy), feeds };
+}
 async function inspectStructure(client, sourceGuild) {
   const ownerGuild = await getOwnerGuild(client);
   if (!ownerGuild || !sourceGuild) return null;
@@ -311,7 +346,11 @@ async function inspectStructure(client, sourceGuild) {
   for (const channel of [systemChannel, ...userChannels.values()].filter(Boolean)) if (channel.parent?.type === ChannelType.GuildCategory) parents.set(channel.parent.id, channel.parent);
   const config = auditStore.getConfig();
   const routes = config.guilds?.[sourceGuild.id]?.routes || {};
-  const routeStates = Object.entries(routes).map(([key, channelId]) => ({ key, channelId, exists: Boolean(ownerGuild.channels.cache.get(String(channelId))) }));
+  const routeStates = Object.entries(routes).map(([key, channelId]) => {
+    const channel = ownerGuild.channels.cache.get(String(channelId)) || null;
+    const delivery = channelDeliveryState(channel, ownerGuild);
+    return { key, channelId, ...delivery };
+  });
   const systemPermissions = viewState(systemChannel, ownerGuild);
   const insecureUsers = userChannels.filter((channel) => viewState(channel, ownerGuild)?.everyone).size;
   const issues = [];
@@ -320,7 +359,9 @@ async function inspectStructure(client, sourceGuild) {
   if (systemChannel && (!systemPermissions?.owner || !systemPermissions?.bot)) issues.push('Owner or Goliath cannot view guild audit channel');
   if (insecureUsers) issues.push(`${insecureUsers} user audit channel(s) visible to @everyone`);
   const missingRoutes = routeStates.filter((route) => !route.exists);
+  const unhealthyRoutes = routeStates.filter((route) => route.exists && !route.healthy);
   if (missingRoutes.length) issues.push(`${missingRoutes.length} configured route channel(s) missing`);
+  if (unhealthyRoutes.length) issues.push(`${unhealthyRoutes.length} configured route channel(s) missing required Goliath permissions`);
   return {
     sourceGuildId: sourceGuild.id,
     sourceGuildName: sourceGuild.name,
@@ -332,6 +373,7 @@ async function inspectStructure(client, sourceGuild) {
     insecureUserChannelCount: insecureUsers,
     routeStates,
     missingRouteCount: missingRoutes.length,
+    unhealthyRouteCount: unhealthyRoutes.length,
     permissions: systemPermissions,
     healthy: issues.length === 0,
     issues,
@@ -436,7 +478,13 @@ async function deliver(client, sourceGuild, event) {
   const primary = userId ? await ensureUserAuditChannel(client, sourceGuild, event) : (routedChannel || await ensureAuditChannel(client, sourceGuild));
   if (!primary?.isTextBased?.()) return false;
   const payload = { embeds: [buildAuditEmbed(event)], allowedMentions: { parse: [] } };
-  await primary.send(payload);
+  let primaryMessage = await primary.send(payload).catch((error) => { console.warn('[Audit Intelligence] primary report delivery failed:', error?.message || error); return null; });
+  if (!primaryMessage) {
+    const fallback = await ensureAuditChannel(client, sourceGuild);
+    if (!fallback?.isTextBased?.() || fallback.id === primary.id) return false;
+    primaryMessage = await fallback.send(payload).catch((error) => { console.warn('[Audit Intelligence] fallback report delivery failed:', error?.message || error); return null; });
+    if (!primaryMessage) return false;
+  }
   if (userId && routedChannel?.isTextBased?.() && routedChannel.id !== primary.id) await routedChannel.send(payload).catch(() => null);
   if (userId) refreshUserSummary(client, sourceGuild, primary, userId).catch(() => null);
   return true;
@@ -454,6 +502,8 @@ module.exports = {
   monitorKeyForEvent,
   monitoringEnabled,
   configuredRouteChannel,
+  channelDeliveryState,
+  inspectReportFeeds,
   inspectStructure,
   repairStructure,
   inspectHealth,
