@@ -4,6 +4,39 @@
 // panel while editing. Real sends/tests/updates still use the full panel list.
 const panel = require('./embedPanel');
 
+// Discord can collapse an embed around a narrow Large Image even when the
+// neighbouring panels naturally render at the full embed width. For image
+// panels that already have a title, extend that existing title with preserved
+// non-breaking spaces. They are visually blank, stay on the same title line,
+// and give Discord a real, non-collapsible width anchor without adding a field,
+// changing the body copy, moving the timestamp, or touching the image itself.
+const WIDTH_SPACE = '\u00A0';
+const TITLE_WIDTH_PAD = WIDTH_SPACE.repeat(72);
+
+function holdImagePanelWidth(embed) {
+  if (!embed || typeof embed.toJSON !== 'function' || typeof embed.setTitle !== 'function') return embed;
+
+  const data = embed.toJSON();
+  if (!data?.image?.url || !data?.title) return embed;
+
+  const cleanTitle = String(data.title).replace(/\u00A0+$/u, '');
+  const maxPad = Math.max(0, 256 - cleanTitle.length);
+  const pad = TITLE_WIDTH_PAD.slice(0, maxPad);
+  embed.setTitle(`${cleanTitle}${pad}`);
+  return embed;
+}
+
+if (!panel.__imageTitleWidthPatched) {
+  const originalBuildEmbedFromPanel = panel.buildEmbedFromPanel.bind(panel);
+  const originalBuildPreviewEmbed = panel.buildPreviewEmbed.bind(panel);
+  const originalBuildPreviewEmbeds = panel.buildPreviewEmbeds.bind(panel);
+
+  panel.buildEmbedFromPanel = (...args) => holdImagePanelWidth(originalBuildEmbedFromPanel(...args));
+  panel.buildPreviewEmbed = (...args) => holdImagePanelWidth(originalBuildPreviewEmbed(...args));
+  panel.buildPreviewEmbeds = (...args) => originalBuildPreviewEmbeds(...args).map(holdImagePanelWidth);
+  panel.__imageTitleWidthPatched = true;
+}
+
 if (!panel.__compactPreviewPatched) {
   function compactPreviewPayload(builder) {
     if (typeof builder !== 'function') return builder;
