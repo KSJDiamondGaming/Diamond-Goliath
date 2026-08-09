@@ -3,58 +3,54 @@
 // Keep the Embed Studio editor compact by showing only the selected content
 // panel while editing. Real sends/tests/updates still use the full panel list.
 //
-// Discord-hosted attachment images can make an embed collapse to the image's
-// served width. For the large embed image only, request Discord's media proxy
-// at the normal full embed width. This leaves thumbnails/author/footer icons
-// and the saved source URL untouched.
+// The canonical embed builder already tries to hold every panel at a consistent
+// Discord width by padding the footer to a fixed length, but it uses ordinary
+// spaces. Discord collapses those spaces, allowing image/narrow-content panels
+// to shrink. Normalize that existing footer padding to non-breaking spaces so
+// Discord preserves the intended width without changing visible panel content.
 const panel = require('./embedPanel');
 
-const DISCORD_EMBED_IMAGE_WIDTH = 520;
+const FOOTER_WIDTH = 164;
+const NBSP = '\u00A0';
+const ZWSP = '\u200B';
 
-function fullWidthDiscordImageUrl(value) {
-  try {
-    const url = new URL(String(value || ''));
-    if (!['media.discordapp.net', 'cdn.discordapp.com'].includes(url.hostname)) return value;
-
-    // The media proxy supports resize query parameters. Using it for CDN URLs
-    // as well gives the large-image renderer a consistent served width.
-    url.hostname = 'media.discordapp.net';
-    url.searchParams.set('width', String(DISCORD_EMBED_IMAGE_WIDTH));
-    url.searchParams.delete('height');
-    if (!url.searchParams.has('quality')) url.searchParams.set('quality', 'lossless');
-    return url.toString();
-  } catch {
-    return value;
-  }
-}
-
-function normalizeLargeEmbedImage(embed) {
-  if (!embed || typeof embed.toJSON !== 'function' || typeof embed.setImage !== 'function') return embed;
+function normalizeFooterWidth(embed) {
+  if (!embed || typeof embed.toJSON !== 'function' || typeof embed.setFooter !== 'function') return embed;
 
   const data = embed.toJSON();
-  const imageUrl = data?.image?.url;
-  if (!imageUrl) return embed;
+  if (!data?.footer) return embed;
 
-  const normalized = fullWidthDiscordImageUrl(imageUrl);
-  if (normalized && normalized !== imageUrl) embed.setImage(normalized);
+  const current = String(data.footer.text || '');
+  // Remove the builder's collapsible trailing spaces / previous invisible
+  // width markers while preserving the user's actual footer text.
+  const base = current.replace(/[ \u00A0\u2007\u2009\u200A\u200B\u2800]+$/gu, '');
+  const visibleLength = Array.from(base).length;
+  const padLength = Math.max(1, FOOTER_WIDTH - visibleLength);
+  const text = `${base}${NBSP.repeat(padLength)}${ZWSP}`;
+
+  embed.setFooter({
+    text,
+    ...(data.footer.icon_url ? { iconURL: data.footer.icon_url } : {}),
+  });
+
   return embed;
 }
 
-function normalizePayloadMedia(payload) {
+function normalizePayloadWidth(payload) {
   if (!payload || !Array.isArray(payload.embeds)) return payload;
-  payload.embeds.forEach(normalizeLargeEmbedImage);
+  payload.embeds.forEach(normalizeFooterWidth);
   return payload;
 }
 
-if (!panel.__discordLargeImageWidthPatched) {
+if (!panel.__preservedFooterWidthPatched) {
   const originalBuildPreviewEmbeds = panel.buildPreviewEmbeds.bind(panel);
   const originalBuildPreviewEmbed = panel.buildPreviewEmbed.bind(panel);
   const originalBuildEmbedFromPanel = panel.buildEmbedFromPanel.bind(panel);
 
-  panel.buildEmbedFromPanel = (...args) => normalizeLargeEmbedImage(originalBuildEmbedFromPanel(...args));
-  panel.buildPreviewEmbeds = (...args) => originalBuildPreviewEmbeds(...args).map(normalizeLargeEmbedImage);
-  panel.buildPreviewEmbed = (...args) => normalizeLargeEmbedImage(originalBuildPreviewEmbed(...args));
-  panel.__discordLargeImageWidthPatched = true;
+  panel.buildEmbedFromPanel = (...args) => normalizeFooterWidth(originalBuildEmbedFromPanel(...args));
+  panel.buildPreviewEmbeds = (...args) => originalBuildPreviewEmbeds(...args).map(normalizeFooterWidth);
+  panel.buildPreviewEmbed = (...args) => normalizeFooterWidth(originalBuildPreviewEmbed(...args));
+  panel.__preservedFooterWidthPatched = true;
 }
 
 if (!panel.__compactPreviewPatched) {
@@ -62,7 +58,7 @@ if (!panel.__compactPreviewPatched) {
     if (typeof builder !== 'function') return builder;
 
     return function compactPreviewBuilder(interaction, ...args) {
-      const payload = normalizePayloadMedia(builder(interaction, ...args));
+      const payload = normalizePayloadWidth(builder(interaction, ...args));
       if (!payload || !Array.isArray(payload.embeds) || payload.embeds.length <= 2) return payload;
 
       const state = typeof panel.getSession === 'function' ? panel.getSession(interaction) : null;
