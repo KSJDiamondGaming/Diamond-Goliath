@@ -3,7 +3,7 @@
 const { SlashCommandBuilder, MessageFlags } = require('discord.js');
 
 const { normalizeBotMode } = require('../../config/botModes');
-const testDevOverride = require('../../core/dev/testDevOverrideManager');
+const testDevOverride = require('../../core/dev/DevOverrideManager');
 const security = require('../../core/security/securityCore');
 
 function modeLabel() {

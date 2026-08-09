@@ -12,7 +12,7 @@ const {
 
 const verificationStore = require('./verificationStore');
 const guildManager = require('../../core/guild/guildManager');
-const testDevOverride = require('../../core/dev/testDevOverrideManager');
+const testDevOverride = require('../../core/dev/DevOverrideManager');
 
 const CUSTOM_ID_PREFIX = 'verify';
 const SCREENING_FEATURE = 'MEMBER_VERIFICATION_GATE_ENABLED';
