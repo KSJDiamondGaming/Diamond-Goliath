@@ -2,28 +2,29 @@
 
 // Keep the Embed Studio editor compact by showing only the selected content
 // panel while editing. Real sends/tests/updates still use the full panel list.
-// Discord collapses ordinary trailing spaces, so use the preserved U+2800
-// Braille blank to keep narrow embeds at a consistent visual width.
+// Discord does not reliably size embeds from footer padding, so width is held
+// by an invisible U+2800 line in the description itself.
 const panel = require('./embedPanel');
 
 const WIDTH_GLYPH = '\u2800';
-const TARGET_FOOTER_WIDTH = 64;
+const WIDTH_MARKER = WIDTH_GLYPH.repeat(52);
 
 function forceEmbedWidth(embed) {
-  if (!embed || typeof embed.toJSON !== 'function' || typeof embed.setFooter !== 'function') return embed;
+  if (!embed || typeof embed.toJSON !== 'function' || typeof embed.setDescription !== 'function') return embed;
 
   const data = embed.toJSON();
-  const footer = data?.footer || {};
-  const footerBase = String(footer.text || '')
-    .replace(/[\s\u200B\u2800]+$/gu, '')
-    .slice(0, 1900);
-  const padding = WIDTH_GLYPH.repeat(Math.max(1, TARGET_FOOTER_WIDTH - [...footerBase].length));
+  const description = String(data?.description || '');
+  const cleanDescription = description
+    .replace(new RegExp(`\\n?${WIDTH_GLYPH}+$`, 'u'), '')
+    .replace(/\s+$/u, '');
 
-  embed.setFooter({
-    text: `${footerBase}${padding}`,
-    ...(footer.icon_url ? { iconURL: footer.icon_url } : {}),
-  });
+  // Description content participates in Discord's embed width calculation;
+  // footer whitespace does not. Keep the marker invisible on its own line.
+  const widthDescription = cleanDescription
+    ? `${cleanDescription}\n${WIDTH_MARKER}`
+    : WIDTH_MARKER;
 
+  embed.setDescription(widthDescription.slice(0, 4096));
   return embed;
 }
 
