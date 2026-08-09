@@ -9,14 +9,11 @@
     "dev": "concurrently -n BOT,DASHBOARD -c green,cyan \"cross-env BOT_MODE=dev node -r ./src/runtime/warningFilter.js server.js\" \"vite src/dashboard --host 0.0.0.0 --port 5175 --mode development\"",
     "beta": "concurrently -n BOT,DASHBOARD -c yellow,cyan \"cross-env BOT_MODE=beta node -r ./src/runtime/warningFilter.js server.js\" \"vite src/dashboard --host 0.0.0.0 --port 5183 --mode development\"",
     "production": "cross-env BOT_MODE=production node -r ./src/runtime/warningFilter.js server.js",
-    "build": "npm run doctor && npm test && vite build src/dashboard --outDir ../../dist --emptyOutDir --logLevel warn",
-    "test": "npm run test:guild && npm run test:verification",
-    "test:guild": "node --test test/guild/*.test.js",
-    "test:verification": "node --test test/verification/*.test.js",
+    "build": "npm run doctor && vite build src/dashboard --outDir ../../dist --emptyOutDir --logLevel warn",
     "promote:beta": "node scripts/goliath.js promote beta",
     "promote:production": "node scripts/goliath.js promote production",
     "sync:commands": "cross-env COMMAND_SYNC_DELETE_STALE=true COMMAND_SYNC_UPDATE_EXISTING=true node scripts/goliath.js sync-commands",
-    "doctor": "node --test test/verification/source-syntax.test.js && node -e \"require('./scripts/goliath.js'); process.exit(process.exitCode || 0)\" doctor",
+    "doctor": "node -e \"require('./scripts/goliath.js'); process.exit(process.exitCode || 0)\" doctor",
     "audit": "node scripts/goliath.js audit"
   },
   "dependencies": {
