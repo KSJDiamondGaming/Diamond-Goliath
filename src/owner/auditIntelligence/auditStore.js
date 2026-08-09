@@ -1,15 +1,14 @@
 'use strict';
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
-const { getRuntimePaths } = require('../../config/runtimePaths');
+const { PROJECT_ROOT, getRuntimePaths } = require('../../config/runtimePaths');
 
 const paths = getRuntimePaths(process.env.BOT_MODE || 'DEV');
 const root = path.join(paths.data, 'audit');
 const HISTORY_LIMIT = 100;
 const LEGACY_CONFIG_FILE = path.join(root, 'config.json');
-const SHARED_CONFIG_FILE = path.join(os.homedir(), '.goliath-audit-control.json');
+const SHARED_CONFIG_FILE = path.join(path.dirname(PROJECT_ROOT), '.goliath-audit-control.json');
 const COMMAND_CENTER_GUILD_ID = '1515201360386068642';
 
 function runtimeMode() {
