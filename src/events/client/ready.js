@@ -2,6 +2,7 @@ const { Events } = require('discord.js');
 const terminal = require('../../core/logging/terminalLogger').createLogger('bot');
 const levelingTracking = require('../../modules/communityStudio/leveling/levelingTracking');
 const auditStore = require('../../owner/auditIntelligence/auditStore');
+const auditRouter = require('../../owner/auditIntelligence/auditRouter');
 
 const {
   restoreLockdownReminders,
@@ -37,6 +38,40 @@ function publishAuditGuildRegistry(client, reason = 'startup') {
   }
 }
 
+async function restoreAuditReportFeeds(client) {
+  const mode = String(client?.botMode || process.env.BOT_MODE || 'DEV').trim().toUpperCase();
+  if (mode !== 'DEV') return 0;
+
+  const config = auditStore.getConfig();
+  if (config.autoProvision === false || !config.commandCenter?.guildId) return 0;
+
+  const configuredGuilds = config.guilds && typeof config.guilds === 'object' ? config.guilds : {};
+  const commandCenterGuildId = String(config.commandCenter.guildId);
+  const registry = auditStore.getGuildRegistry?.() || [];
+  let restored = 0;
+
+  for (const guildId of Object.keys(configuredGuilds)) {
+    if (!guildId || String(guildId) === commandCenterGuildId) continue;
+    const liveGuild = client.guilds.cache.get(String(guildId)) || null;
+    const registryGuild = registry.find((entry) => String(entry?.guildId || '') === String(guildId)) || null;
+    const sourceGuild = liveGuild || (registryGuild ? { id: String(guildId), name: registryGuild.name || String(guildId) } : null);
+    if (!sourceGuild) {
+      terminal.warn(`Audit report feed restore skipped for unavailable guild ${guildId}.`);
+      continue;
+    }
+
+    try {
+      const result = await auditRouter.ensureReportRoutes(client, sourceGuild);
+      if (result) restored += 1;
+    } catch (error) {
+      terminal.error(`Failed to restore Audit Intelligence report feeds for ${sourceGuild.name || guildId}: ${error?.message || error}`);
+    }
+  }
+
+  if (restored > 0) terminal.info(`Audit Intelligence report feeds restored for ${restored} configured guild(s).`);
+  return restored;
+}
+
 module.exports = {
   name: Events.ClientReady,
   once: true,
@@ -64,6 +99,7 @@ module.exports = {
     publishAuditGuildRegistry(client);
     client.on(Events.GuildCreate, () => publishAuditGuildRegistry(client, 'guild joined'));
     client.on(Events.GuildDelete, () => publishAuditGuildRegistry(client, 'guild left'));
+    await restoreAuditReportFeeds(client);
 
     restoreLockdownReminders(client);
     startbackupWorker(client);
