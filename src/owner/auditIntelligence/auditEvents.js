@@ -171,9 +171,10 @@ function buildRoutingPanel(client, interaction) {
     const channelSelect = new ChannelSelectMenuBuilder().setCustomId('owner:commandcenter:routing:channel').setPlaceholder(`3. Choose destination for ${ROUTE_LABELS[session.routeKey] || 'route'}`).setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setMinValues(1).setMaxValues(1);
     rows.push(new ActionRowBuilder().addComponents(channelSelect));
     const provisionButton = new ButtonBuilder().setCustomId('owner:commandcenter:routing:provision').setLabel('Create / Repair Report Channels').setEmoji('🛠️').setStyle(ButtonStyle.Success);
+    const testButton = new ButtonBuilder().setCustomId('owner:commandcenter:routing:test').setLabel('Send Test Report').setEmoji('🧪').setStyle(ButtonStyle.Primary);
     const resetButton = new ButtonBuilder().setCustomId('owner:commandcenter:routing:reset').setLabel('Reset This Route').setStyle(ButtonStyle.Secondary);
     const backButton = new ButtonBuilder().setCustomId('owner:commandcenter:refresh').setLabel('Back / Refresh Home').setStyle(ButtonStyle.Secondary);
-    rows.push(new ActionRowBuilder().addComponents(provisionButton, resetButton, backButton));
+    rows.push(new ActionRowBuilder().addComponents(provisionButton, testButton, resetButton, backButton));
   }
   return { embeds: [embed], components: rows, allowedMentions: { parse: [] } };
 }
@@ -474,6 +475,36 @@ async function handleCommandCenterInteraction(client, interaction) {
     const result = await auditRouter.ensureReportRoutes(client, sourceGuild).catch((error) => { console.warn('[Audit Intelligence] report channel provisioning failed:', error?.message || error); return null; });
     if (!result) { await interaction.editReply({ content: '❌ Report channels could not be prepared.', embeds: [], components: [] }).catch(() => null); return true; }
     await interaction.editReply(buildRoutingPanel(client, interaction)).catch(() => null);
+    return true;
+  }
+  if (customId === 'owner:commandcenter:routing:test' && interaction.isButton?.()) {
+    const session = getRoutingSession(interaction);
+    const sourceGuild = registryGuild(client, session.sourceGuildId);
+    if (!sourceGuild) { await interaction.reply({ content: '❌ Select a source guild first.', flags: MessageFlags.Ephemeral }).catch(() => null); return true; }
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch(() => null);
+    await auditRouter.ensureReportRoutes(client, sourceGuild).catch(() => null);
+    const categoryByRoute = { guild: 'guild', members: 'member', moderation: 'moderation', security: 'security', messages: 'message', voice: 'voice', roles: 'role', goliath: 'goliath', default: 'guild' };
+    const syntheticEvent = { type: `test.${session.routeKey}`, category: categoryByRoute[session.routeKey] || 'guild' };
+    const destination = await auditRouter.configuredRouteChannel(client, sourceGuild, syntheticEvent).catch(() => null);
+    if (!destination?.isTextBased?.()) { await interaction.editReply({ content: '❌ No usable destination exists for that report family. Use Create / Repair Report Channels first.' }).catch(() => null); return true; }
+    const familyLabel = ROUTE_LABELS[session.routeKey] || ROUTE_LABELS.default;
+    const testEmbed = new EmbedBuilder()
+      .setColor(0x57F287)
+      .setTitle('🧪 Goliath Audit Feed Test')
+      .setDescription('This is a live routing test from the private Goliath Command Center. No fake audit history was stored.')
+      .addFields(
+        { name: 'Source Guild', value: `**${sourceGuild.name || sourceGuild.id}**\n\`${sourceGuild.id}\``, inline: true },
+        { name: 'Report Family', value: familyLabel, inline: true },
+        { name: 'Destination', value: `<#${destination.id}>`, inline: true },
+        { name: 'Requested By', value: `<@${interaction.user.id}>`, inline: true },
+        { name: 'Environment Coverage', value: guildEnvironmentLabel(sourceGuild), inline: true },
+        { name: 'Status', value: '🟢 Route working', inline: true },
+      )
+      .setFooter({ text: 'Goliath Audit Intelligence • Test report only' })
+      .setTimestamp();
+    const sent = await destination.send({ embeds: [testEmbed], allowedMentions: { parse: [] } }).catch((error) => { console.warn('[Audit Intelligence] test report delivery failed:', error?.message || error); return null; });
+    const link = sent ? `https://discord.com/channels/${interaction.guildId}/${destination.id}/${sent.id}` : null;
+    await interaction.editReply({ content: sent ? `✅ Test report delivered to <#${destination.id}>.${link ? `\n${link}` : ''}` : '❌ Goliath could resolve the route but could not send into the destination channel.' }).catch(() => null);
     return true;
   }
   if (customId === 'owner:commandcenter:routing:reset' && interaction.isButton?.()) {
