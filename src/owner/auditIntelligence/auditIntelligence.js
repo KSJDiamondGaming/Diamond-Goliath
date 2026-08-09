@@ -398,6 +398,24 @@ function roleChangeSummary(event) {
   return parts.join(' and ');
 }
 
+function shortText(value, max = 180) {
+  if (value === null || value === undefined || value === '') return 'No text content';
+  const text = String(value).replace(/\s+/g, ' ').trim();
+  return text.length > max ? `${text.slice(0, max - 3)}...` : text;
+}
+
+function locationLabel(event) {
+  return event.channel?.id ? `<#${event.channel.id}>` : 'an unknown channel';
+}
+
+function changedFieldLabels(before = {}, after = {}, labels = {}) {
+  const keys = new Set([...Object.keys(before || {}), ...Object.keys(after || {})]);
+  return [...keys]
+    .filter((key) => JSON.stringify(before?.[key]) !== JSON.stringify(after?.[key]))
+    .map((key) => labels[key] || key)
+    .slice(0, 8);
+}
+
 function buildOperationalSummary(event) {
   if (!event || event.summary) return event?.summary || null;
   const actorLabel = event.actor?.id ? mention(event.actor.id) : null;
@@ -432,6 +450,46 @@ function buildOperationalSummary(event) {
     case 'role.create': return `Role **${event.target?.label || event.target?.name || event.target?.id || 'Unknown'}** was created${byActor}.${reason}`;
     case 'role.update': return `Role **${event.target?.label || event.target?.name || event.target?.id || 'Unknown'}** was updated${byActor}.${reason}`;
     case 'role.delete': return `Role **${event.target?.label || event.target?.name || event.target?.id || 'Unknown'}** was deleted${byActor}.${reason}`;
+    case 'message.update': {
+      const author = event.user?.id ? mention(event.user.id) : event.before?.authorTag || event.after?.authorTag || 'Unknown author';
+      const before = shortText(event.before?.content);
+      const after = shortText(event.after?.content);
+      return `A message from ${author} was edited in ${locationLabel(event)}: **${before}** → **${after}**.`;
+    }
+    case 'message.delete': {
+      const author = event.user?.id ? mention(event.user.id) : event.before?.authorTag || 'Unknown author';
+      return `A message from ${author} was deleted in ${locationLabel(event)}${byActor}. Content: **${shortText(event.before?.content)}**.${reason}`;
+    }
+    case 'message.bulkDelete': {
+      const count = Number(event.metadata?.count || (Array.isArray(event.before) ? event.before.length : 0));
+      return `**${count || 'Multiple'}** messages were bulk deleted in ${locationLabel(event)}${byActor}.${reason}`;
+    }
+    case 'reaction.add': return `${target} added a reaction in ${locationLabel(event)}.`;
+    case 'reaction.remove': return `${target} removed a reaction in ${locationLabel(event)}.`;
+    case 'channel.create': return `Channel **#${event.target?.label || event.after?.name || 'unknown'}** was created${byActor}.${reason}`;
+    case 'channel.update': {
+      const changes = changedFieldLabels(event.before, event.after, { name: 'name', parentId: 'category', topic: 'topic', nsfw: 'NSFW setting', rateLimitPerUser: 'slowmode', bitrate: 'bitrate', userLimit: 'user limit', permissionOverwrites: 'permissions' });
+      return `Channel **#${event.after?.name || event.target?.label || 'unknown'}** was updated${byActor}${changes.length ? ` — changed: **${changes.join(', ')}**` : ''}.${reason}`;
+    }
+    case 'channel.delete': return `Channel **#${event.target?.label || event.before?.name || 'unknown'}** was deleted${byActor}.${reason}`;
+    case 'thread.create': return `Thread **${event.target?.label || event.after?.name || 'unknown'}** was created${byActor}.${reason}`;
+    case 'thread.update': {
+      const changes = changedFieldLabels(event.before, event.after, { name: 'name', parentId: 'parent channel', archived: 'archived state', locked: 'lock state', autoArchiveDuration: 'auto-archive duration', rateLimitPerUser: 'slowmode' });
+      return `Thread **${event.after?.name || event.target?.label || 'unknown'}** was updated${byActor}${changes.length ? ` — changed: **${changes.join(', ')}**` : ''}.${reason}`;
+    }
+    case 'thread.delete': return `Thread **${event.target?.label || event.before?.name || 'unknown'}** was deleted${byActor}.${reason}`;
+    case 'invite.create': return `Invite **${event.target?.label || event.target?.id || 'unknown'}** was created in ${locationLabel(event)}${byActor}.`;
+    case 'invite.delete': return `Invite **${event.target?.label || event.target?.id || 'unknown'}** was deleted from ${locationLabel(event)}${byActor}.`;
+    case 'scheduledEvent.create': return `Scheduled event **${event.target?.label || event.after?.name || 'unknown'}** was created${byActor}.`;
+    case 'scheduledEvent.update': {
+      const changes = changedFieldLabels(event.before, event.after, { name: 'name', description: 'description', channelId: 'channel', status: 'status', privacyLevel: 'privacy', entityType: 'event type', scheduledStartAt: 'start time', scheduledEndAt: 'end time', entityMetadata: 'location/details' });
+      return `Scheduled event **${event.after?.name || event.target?.label || 'unknown'}** was updated${byActor}${changes.length ? ` — changed: **${changes.join(', ')}**` : ''}.`;
+    }
+    case 'scheduledEvent.delete': return `Scheduled event **${event.target?.label || event.before?.name || 'unknown'}** was deleted${byActor}.`;
+    case 'guild.update': {
+      const changes = changedFieldLabels(event.before, event.after, { name: 'server name', ownerId: 'owner', verificationLevel: 'verification level', explicitContentFilter: 'content filter', preferredLocale: 'preferred locale', afkChannelId: 'AFK channel', systemChannelId: 'system channel', rulesChannelId: 'rules channel', publicUpdatesChannelId: 'community updates channel' });
+      return `Server settings for **${event.guildName || event.after?.name || 'the guild'}** were updated${byActor}${changes.length ? ` — changed: **${changes.join(', ')}**` : ''}.${reason}`;
+    }
     default: return null;
   }
 }
