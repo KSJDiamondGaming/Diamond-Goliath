@@ -11,7 +11,7 @@ const panel = require('./embedPanel');
 // and give Discord a real, non-collapsible width anchor without adding a field,
 // changing the body copy, moving the timestamp, or touching the image itself.
 const WIDTH_SPACE = '\u00A0';
-const TITLE_WIDTH_PAD = WIDTH_SPACE.repeat(110);
+const TITLE_WIDTH_PAD = WIDTH_SPACE.repeat(140);
 
 function holdImagePanelWidth(embed) {
   if (!embed || typeof embed.toJSON !== 'function' || typeof embed.setTitle !== 'function') return embed;
