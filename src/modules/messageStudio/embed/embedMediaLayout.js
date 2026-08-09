@@ -5,6 +5,7 @@ const fetch = require('node-fetch');
 const sharp = require('sharp');
 
 const TARGET_WIDTH = 520;
+const PORTRAIT_VISIBLE_WIDTH = 320;
 const MAX_SOURCE_BYTES = 8 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 8000;
 const DISCORD_IMAGE_HOSTS = new Set(['cdn.discordapp.com', 'media.discordapp.net']);
@@ -44,18 +45,32 @@ async function fetchImageBuffer(url) {
 }
 
 async function centerOnEmbedCanvas(buffer) {
-  const source = sharp(buffer, { failOn: 'warning' });
-  const metadata = await source.metadata();
+  const input = sharp(buffer, { failOn: 'warning' });
+  const metadata = await input.metadata();
   const width = Number(metadata.width || 0);
   const height = Number(metadata.height || 0);
+  if (!width || !height) return null;
 
-  if (!width || !height || width >= TARGET_WIDTH) return null;
+  // Portrait/square artwork should keep a comfortable visible size while the
+  // transparent attachment itself occupies Discord's full embed-image width.
+  // Wide artwork may use the full 520 px canvas.
+  const aspect = width / height;
+  const visibleWidth = aspect <= 1.25
+    ? Math.min(width, PORTRAIT_VISIBLE_WIDTH)
+    : Math.min(width, TARGET_WIDTH);
 
-  const left = Math.floor((TARGET_WIDTH - width) / 2);
-  const right = TARGET_WIDTH - width - left;
-
-  return source
+  const resized = await sharp(buffer, { failOn: 'warning' })
+    .resize({ width: visibleWidth, withoutEnlargement: true })
     .ensureAlpha()
+    .png()
+    .toBuffer();
+
+  const resizedMeta = await sharp(resized).metadata();
+  const renderedWidth = Number(resizedMeta.width || visibleWidth);
+  const left = Math.max(0, Math.floor((TARGET_WIDTH - renderedWidth) / 2));
+  const right = Math.max(0, TARGET_WIDTH - renderedWidth - left);
+
+  return sharp(resized)
     .extend({
       top: 0,
       bottom: 0,
@@ -70,9 +85,9 @@ async function centerOnEmbedCanvas(buffer) {
 /**
  * Prepare embed large images for Discord's renderer.
  *
- * Narrow Discord-hosted images are placed unchanged on a transparent 520 px
- * canvas. Discord therefore lays the embed out at full image width while the
- * visible image remains centred. The persisted/source URL is never modified.
+ * Discord-hosted large images are normalised to a transparent 520 px canvas.
+ * Portrait/square images keep a smaller visible size and are centred; landscape
+ * images can use the full width. The persisted/source URL is never modified.
  */
 async function prepareEmbedMedia(embeds = []) {
   const files = [];
@@ -105,5 +120,6 @@ async function prepareEmbedMedia(embeds = []) {
 
 module.exports = {
   TARGET_WIDTH,
+  PORTRAIT_VISIBLE_WIDTH,
   prepareEmbedMedia,
 };
