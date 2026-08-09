@@ -6,6 +6,7 @@ const sharp = require('sharp');
 
 const TARGET_WIDTH = 600;
 const PORTRAIT_VISIBLE_WIDTH = 320;
+const EDGE_ALPHA = 1 / 255;
 const MAX_SOURCE_BYTES = 8 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 8000;
 const DISCORD_IMAGE_HOSTS = new Set(['cdn.discordapp.com', 'media.discordapp.net']);
@@ -51,9 +52,6 @@ async function centerOnEmbedCanvas(buffer) {
   const height = Number(metadata.height || 0);
   if (!width || !height) return null;
 
-  // Portrait/square artwork keeps a comfortable visible size while the
-  // transparent attachment occupies enough width to hold Discord's embed open.
-  // Wide artwork may use the full canvas.
   const aspect = width / height;
   const visibleWidth = aspect <= 1.25
     ? Math.min(width, PORTRAIT_VISIBLE_WIDTH)
@@ -70,13 +68,17 @@ async function centerOnEmbedCanvas(buffer) {
   const left = Math.max(0, Math.floor((TARGET_WIDTH - renderedWidth) / 2));
   const right = Math.max(0, TARGET_WIDTH - renderedWidth - left);
 
+  // Discord's media pipeline can effectively ignore fully-transparent side
+  // padding when deciding how wide an embed image should render. Keep the
+  // canvas visually transparent but give the padding a one-byte alpha value so
+  // the complete 600 px raster survives proxy/attachment processing.
   return sharp(resized)
     .extend({
       top: 0,
       bottom: 0,
       left,
       right,
-      background: { r: 0, g: 0, b: 0, alpha: 0 },
+      background: { r: 0, g: 0, b: 0, alpha: EDGE_ALPHA },
     })
     .png()
     .toBuffer();
@@ -85,9 +87,10 @@ async function centerOnEmbedCanvas(buffer) {
 /**
  * Prepare embed large images for Discord's renderer.
  *
- * Discord-hosted large images are normalised to a transparent 600 px canvas.
- * Portrait/square images keep a 320 px visible size and are centred; landscape
- * images can use the full width. The persisted/source URL is never modified.
+ * Discord-hosted large images are normalised to a 600 px canvas. Portrait /
+ * square images keep a 320 px visible size and are centred. The side padding
+ * uses effectively invisible non-zero alpha so Discord keeps the full canvas.
+ * The persisted/source URL is never modified.
  */
 async function prepareEmbedMedia(embeds = []) {
   const files = [];
@@ -109,8 +112,6 @@ async function prepareEmbedMedia(embeds = []) {
       files.push(new AttachmentBuilder(processed, { name }));
       embed.setImage(`attachment://${name}`);
     } catch (error) {
-      // Media enhancement is best-effort. If Discord's CDN is temporarily
-      // unavailable, keep the original image URL rather than blocking the post.
       console.warn(`[Embed] Could not centre large image for panel ${index + 1}:`, error.message || error);
     }
   }
@@ -121,5 +122,6 @@ async function prepareEmbedMedia(embeds = []) {
 module.exports = {
   TARGET_WIDTH,
   PORTRAIT_VISIBLE_WIDTH,
+  EDGE_ALPHA,
   prepareEmbedMedia,
 };
