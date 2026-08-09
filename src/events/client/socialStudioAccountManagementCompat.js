@@ -284,7 +284,7 @@ async function handle(interaction) {
   }
 
   if (id.startsWith(`${P}account:update:`)) {
-    const accountId = id.split(':')[2];
+    const accountId = id.slice(`${P}account:update:`.length);
     if (accountId !== account.accountId) throw new Error('The selected account changed. Open Manage Account again.');
     const rawValue = String(interaction.fields.getTextInputValue('accountValue') || '').trim();
     const normalized = normalizeAccountInput(account.platform, rawValue);
@@ -298,8 +298,6 @@ async function handle(interaction) {
       profileUrl: normalized.profileUrl,
       sourceInput: normalized.sourceInput,
     }), { actorId: interaction.user?.id || null, guild: interaction.guild });
-    const latest = store.getConfig(interaction.guildId);
-    const latestCreator = creatorFor(latest, creator.creatorId);
     if (!interaction.deferred && !interaction.replied) await interaction.reply({ content: `✅ Updated ${LABEL[updated.platform] || updated.platform} account.`, flags: 64 });
     else await interaction.followUp({ content: `✅ Updated ${LABEL[updated.platform] || updated.platform} account.`, flags: 64 }).catch(() => null);
     return true;
