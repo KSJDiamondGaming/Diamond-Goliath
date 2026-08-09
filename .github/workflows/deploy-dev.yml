@@ -183,9 +183,24 @@ jobs:
             restore_runtime
 
             echo "Goliath deployment: $ENVIRONMENT ${OLD_SHA:-unknown} -> $EXPECTED_SHA"
-            PLAN="$(node scripts/goliath.js deploy-plan "$OLD_SHA" "$EXPECTED_SHA" --env)"
-            echo "$PLAN"
-            eval "$PLAN"
+            PLAN_ERROR="$(mktemp)"
+            if PLAN="$(node scripts/goliath.js deploy-plan "$OLD_SHA" "$EXPECTED_SHA" --env 2>"$PLAN_ERROR")"; then
+              echo "$PLAN"
+              eval "$PLAN"
+            else
+              echo "Deployment planner unavailable or failed at target commit; using safe full deployment fallback."
+              [ ! -s "$PLAN_ERROR" ] || cat "$PLAN_ERROR" >&2
+              NEED_DEPS=true
+              NEED_COMMAND_SYNC=true
+              NEED_DASHBOARD_BUILD=true
+              NEED_APP_RELOAD=true
+              NEED_DOCTOR=true
+              FULL_FALLBACK=true
+              CHANGED_COUNT=0
+              AFFECTED_SYSTEMS=fallback
+              AFFECTED_COMMANDS=
+            fi
+            rm -f "$PLAN_ERROR"
 
             if [ "$FORCE_COMMAND_SYNC" = "true" ]; then
               echo "Manual deployment: forcing full Discord command reconciliation."
@@ -246,6 +261,6 @@ jobs:
           echo "- Source: **${{ needs.resolve.outputs.source_branch }}**" >> "$GITHUB_STEP_SUMMARY"
           echo "- Protected branch: **${{ needs.resolve.outputs.target_branch }}**" >> "$GITHUB_STEP_SUMMARY"
           echo "- Deployed commit: \`${{ needs.preflight.outputs.source_sha }}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Planner: ✅ scripts/goliath.js" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Planner: ✅ scripts/goliath.js with safe full-deploy fallback" >> "$GITHUB_STEP_SUMMARY"
           echo "- Manual command reconciliation: **${{ github.event_name == 'workflow_dispatch' }}**" >> "$GITHUB_STEP_SUMMARY"
           echo "- Runtime data: ✅ preserved" >> "$GITHUB_STEP_SUMMARY"
