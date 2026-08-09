@@ -18,6 +18,7 @@ on:
 
 permissions:
   contents: read
+  statuses: write
 
 concurrency:
   group: deploy-${{ github.event_name == 'push' && 'dev' || inputs.environment }}
@@ -50,13 +51,13 @@ jobs:
               PM2_NAME="goliath-dev"
               ;;
             beta)
-              SOURCE_BRANCH="dev"; TARGET_BRANCH="beta"
+              SOURCE_BRANCH="beta"; TARGET_BRANCH="beta"
               DEPLOY_SCRIPT="/home/goliath/deploy-beta.sh"
               APP_DIR="/home/goliath/beta"; RUNTIME_DIR="$APP_DIR/src/runtime/beta"
               PM2_NAME="goliath-beta"
               ;;
             production)
-              SOURCE_BRANCH="dev"; TARGET_BRANCH="production"
+              SOURCE_BRANCH="production"; TARGET_BRANCH="production"
               DEPLOY_SCRIPT="/home/goliath/deploy-production.sh"
               APP_DIR="/home/goliath/production"; RUNTIME_DIR="$APP_DIR/src/runtime/production"
               PM2_NAME="goliath-production"
@@ -87,14 +88,49 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Record source commit
+        id: sha
+        run: echo "source_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Mark preflight pending
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SHA="$(git rev-parse HEAD)"
+          curl --fail-with-body -L -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/statuses/${SHA}" \
+            -d '{"state":"pending","context":"goliath/preflight","description":"Goliath preflight is running"}'
       - name: Validate source
         run: |
           set -euo pipefail
           npm run doctor
           npx vite build src/dashboard --outDir ../../dist --emptyOutDir --logLevel warn
-      - name: Record source commit
-        id: sha
-        run: echo "source_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Mark preflight successful
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SHA="$(git rev-parse HEAD)"
+          curl --fail-with-body -L -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/statuses/${SHA}" \
+            -d '{"state":"success","context":"goliath/preflight","description":"Doctor, tests and dashboard build passed"}'
+      - name: Mark preflight failed
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SHA="$(git rev-parse HEAD)"
+          curl --fail-with-body -L -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/statuses/${SHA}" \
+            -d '{"state":"failure","context":"goliath/preflight","description":"Goliath preflight failed"}'
 
   deploy:
     needs: [resolve, preflight]
@@ -125,7 +161,7 @@ jobs:
             cd "$APP_DIR"
 
             OLD_SHA="$(git rev-parse HEAD 2>/dev/null || true)"
-            git fetch origin dev "$TARGET_BRANCH"
+            git fetch origin "$TARGET_BRANCH"
             git cat-file -e "$EXPECTED_SHA^{commit}"
 
             BACKUP_DIR="/home/goliath/.goliath-${ENVIRONMENT}-runtime-deploy-backup"
@@ -151,17 +187,11 @@ jobs:
             echo "$PLAN"
             eval "$PLAN"
 
-            # Manual deployments are explicit environment promotions/redeploys.
-            # Always reconcile the complete Discord command registry so special
-            # command surfaces such as /user and /mod cannot be missed by the
-            # affected-file classifier.
             if [ "$FORCE_COMMAND_SYNC" = "true" ]; then
               echo "Manual deployment: forcing full Discord command reconciliation."
               NEED_COMMAND_SYNC=true
             fi
 
-            # /user and /mod are command modules outside src/commands. Keep
-            # automatic DEV deployments aware of changes to those definitions.
             if [ -n "$OLD_SHA" ] && git cat-file -e "$OLD_SHA^{commit}" 2>/dev/null; then
               if git diff --name-only "$OLD_SHA" "$EXPECTED_SHA" | grep -Eq '^src/core/panels/(user/user|mod/mod)\.js$'; then
                 echo "Special command definition changed: forcing Discord command reconciliation."
@@ -214,7 +244,7 @@ jobs:
           echo "### 🚀 Goliath deployment" >> "$GITHUB_STEP_SUMMARY"
           echo "- Environment: **${{ needs.resolve.outputs.environment }}**" >> "$GITHUB_STEP_SUMMARY"
           echo "- Source: **${{ needs.resolve.outputs.source_branch }}**" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Protected branch: **${{ needs.resolve.outputs.target_branch }}** (not rewritten)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Protected branch: **${{ needs.resolve.outputs.target_branch }}**" >> "$GITHUB_STEP_SUMMARY"
           echo "- Deployed commit: \`${{ needs.preflight.outputs.source_sha }}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- Planner: ✅ scripts/goliath.js" >> "$GITHUB_STEP_SUMMARY"
           echo "- Manual command reconciliation: **${{ github.event_name == 'workflow_dispatch' }}**" >> "$GITHUB_STEP_SUMMARY"
