@@ -1,0 +1,52 @@
+name: Fix Embed Studio Width Anchor Once
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - '.github/workflows/fix-embed-width-preserved-anchor-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Replace collapsible footer spaces with preserved invisible width
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('src/modules/messageStudio/embed/embedPanel.js')
+          s = p.read_text()
+          old = '''  const footerBase = footer || (footerIcon && isImageUrl(footerIcon) ? (replaceVars("{guildName}", i) || "Embed") : "");
+  const footerWidth = 164;
+  const footerText = `${footerBase}${" ".repeat(Math.max(1, footerWidth - footerBase.length))}\\u200B`;
+'''
+          new = '''  const footerBase = footer || (footerIcon && isImageUrl(footerIcon) ? (replaceVars("{guildName}", i) || "Embed") : "");
+  // Discord collapses ordinary trailing spaces, so they cannot hold embed width.
+  // U+2800 is visually blank but has glyph width and is preserved by Discord.
+  const footerWidthAnchor = "\\u2800".repeat(72);
+  const footerText = trim(`${footerBase}${footerBase ? " " : ""}${footerWidthAnchor}`, 2048);
+'''
+          if old not in s:
+              raise SystemExit('Expected footer width block not found; refusing unsafe patch.')
+          p.write_text(s.replace(old, new, 1))
+          PY
+          node --check src/modules/messageStudio/embed/embedPanel.js
+      - name: Commit fix and remove one-shot workflow
+        run: |
+          rm -f .github/workflows/fix-embed-width-preserved-anchor-once.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/modules/messageStudio/embed/embedPanel.js .github/workflows/fix-embed-width-preserved-anchor-once.yml
+          git commit -m "fix(embed): preserve consistent Discord embed width"
+          git pull --rebase origin dev
+          git push origin dev
