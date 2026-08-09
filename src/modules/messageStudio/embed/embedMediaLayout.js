@@ -4,7 +4,7 @@ const { AttachmentBuilder } = require('discord.js');
 const fetch = require('node-fetch');
 const sharp = require('sharp');
 
-const TARGET_WIDTH = 520;
+const TARGET_WIDTH = 600;
 const PORTRAIT_VISIBLE_WIDTH = 320;
 const MAX_SOURCE_BYTES = 8 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 8000;
@@ -51,9 +51,9 @@ async function centerOnEmbedCanvas(buffer) {
   const height = Number(metadata.height || 0);
   if (!width || !height) return null;
 
-  // Portrait/square artwork should keep a comfortable visible size while the
-  // transparent attachment itself occupies Discord's full embed-image width.
-  // Wide artwork may use the full 520 px canvas.
+  // Portrait/square artwork keeps a comfortable visible size while the
+  // transparent attachment occupies enough width to hold Discord's embed open.
+  // Wide artwork may use the full canvas.
   const aspect = width / height;
   const visibleWidth = aspect <= 1.25
     ? Math.min(width, PORTRAIT_VISIBLE_WIDTH)
@@ -85,8 +85,8 @@ async function centerOnEmbedCanvas(buffer) {
 /**
  * Prepare embed large images for Discord's renderer.
  *
- * Discord-hosted large images are normalised to a transparent 520 px canvas.
- * Portrait/square images keep a smaller visible size and are centred; landscape
+ * Discord-hosted large images are normalised to a transparent 600 px canvas.
+ * Portrait/square images keep a 320 px visible size and are centred; landscape
  * images can use the full width. The persisted/source URL is never modified.
  */
 async function prepareEmbedMedia(embeds = []) {
