@@ -1,5 +1,5 @@
 const guildManager = require('../guild/guildManager');
-const { shouldBlockOwnerDestructiveAction } = require('../dev/DevOverrideManager');
+const { shouldBlockOwnerDestructiveAction } = require('../../owner/dev/DevOverrideManager');
 
 const {
   emitGuildUpdate,

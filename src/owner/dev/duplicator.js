@@ -13,9 +13,9 @@ const {
 } = require('discord.js');
 
 const fetch = global.fetch;
-const security = require('../security/securityCore');
-const guildManager = require('../guild/guildManager');
-const { createServerBackup } = require('../security/serverBackup');
+const security = require('../../core/security/securityCore');
+const guildManager = require('../../core/guild/guildManager');
+const { createServerBackup } = require('../../core/security/serverBackup');
 
 const COPY_PREFIX = 'duplicator-copy';
 const BUILD_PREFIX = 'duplicator-build';

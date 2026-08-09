@@ -1,5 +1,5 @@
 const { sendAutoModDM } = require('./automodDm');
-const { shouldBlockOwnerDestructiveAction } = require('../dev/DevOverrideManager');
+const { shouldBlockOwnerDestructiveAction } = require('../../owner/dev/DevOverrideManager');
 
 const VALID_PUNISHMENTS = ['dm', 'delete', 'warn', 'timeout', 'kick', 'ban'];
 

@@ -77,7 +77,7 @@ module.exports = {
 
   async execute(interaction) {
     try {
-      const duplicator = require('../../core/dev/duplicator');
+      const duplicator = require('../../owner/dev/duplicator');
       return await duplicator.run(interaction);
     } catch (error) {
       console.error('[ServerCommand] Failed:', error);
