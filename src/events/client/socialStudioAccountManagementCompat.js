@@ -1,10 +1,5 @@
 'use strict';
 
-// Complete the Social Studio account-management interaction flow without
-// competing with the main interactionCreate listener. This wraps the existing
-// compatibility handler and only claims account-management IDs that the panel
-// currently renders but does not process itself.
-
 const {
   ActionRowBuilder,
   ButtonBuilder,
@@ -15,6 +10,7 @@ const {
   TextInputBuilder,
   TextInputStyle,
 } = require('discord.js');
+const crypto = require('crypto');
 const creatorCompat = require('../../modules/socialStudio/socialAlerts/socialStudioCreatorActionCompat');
 const store = require('../../modules/socialStudio/socialAlerts/socialStudioStore');
 const socialPanel = require('../../modules/socialStudio/socialAlerts/socialStudioPanel');
@@ -64,6 +60,10 @@ function creatorFor(config, creatorId) {
   return config.creators?.[creatorId] || null;
 }
 
+function creatorForAccount(config, accountId) {
+  return Object.values(config.creators || {}).find((creator) => (creator.accountIds || []).includes(accountId)) || null;
+}
+
 function linkedAccounts(config, creator) {
   return (creator?.accountIds || [])
     .map((accountId) => config.accounts?.[accountId])
@@ -75,6 +75,9 @@ function accountListPayload(interaction, config, creator) {
   const accounts = linkedAccounts(config, creator);
   const state = getSession(interaction);
   const selected = accounts.find((account) => account.accountId === state.accountId) || null;
+  const lines = accounts.length
+    ? accounts.map((account) => `• ${ICON[account.platform] || '🌐'} **${LABEL[account.platform] || account.platform}** — ${account.username || account.externalId || 'Resolving…'} — ${accountState(account)}`)
+    : ['No linked social accounts.'];
   const description = [
     `👤 **${creator.displayName || creator.creatorId}**`,
     '',
@@ -82,14 +85,12 @@ function accountListPayload(interaction, config, creator) {
     `Linked: ${accounts.length}`,
     `Selected: ${selected ? `${LABEL[selected.platform] || selected.platform} — ${selected.username || selected.externalId || selected.accountId}` : accounts.length ? 'Choose an account below.' : 'None yet.'}`,
     '',
-    ...(accounts.length
-      ? accounts.map((account) => `• ${ICON[account.platform] || '🌐'} **${LABEL[account.platform] || account.platform}** — ${account.username || account.externalId || 'Resolving…'} — ${accountState(account)}`)
-      : ['No linked social accounts.']),
+    ...lines,
   ].join('\n');
 
   const components = [];
   if (accounts.length) {
-    components.push(row(new StringSelectMenuBuilder()
+    const accountMenu = new StringSelectMenuBuilder()
       .setCustomId(`${P}account:select`)
       .setPlaceholder('Select an account to manage')
       .setMinValues(1)
@@ -99,8 +100,10 @@ function accountListPayload(interaction, config, creator) {
         value: account.accountId,
         description: String(account.profileUrl || account.externalId || account.accountId).slice(0, 100),
         default: account.accountId === state.accountId,
-      }))));
+      })));
+    components.push(row(accountMenu));
   }
+
   components.push(row(
     button(`${P}account:change`, '📝 Edit Account', ButtonStyle.Secondary, !selected),
     button(`${P}account:reset`, '🔄 Clear', ButtonStyle.Secondary, !selected),
@@ -156,17 +159,18 @@ function accountDetailPayload(interaction, config, creator, account) {
 }
 
 function accountEditModal(account) {
+  const input = new TextInputBuilder()
+    .setCustomId('accountValue')
+    .setLabel('Username, channel ID or URL')
+    .setPlaceholder('Paste the profile URL, username or channel ID here')
+    .setStyle(TextInputStyle.Short)
+    .setMaxLength(500)
+    .setRequired(true)
+    .setValue(String(account.sourceInput || account.profileUrl || account.externalId || account.username || '').slice(0, 500));
   return new ModalBuilder()
     .setCustomId(`${P}account:update:${account.accountId}`)
     .setTitle(`Edit ${LABEL[account.platform] || account.platform} Account`)
-    .addComponents(row(new TextInputBuilder()
-      .setCustomId('accountValue')
-      .setLabel('Username, channel ID or URL')
-      .setPlaceholder('Paste the profile URL, username or channel ID here')
-      .setStyle(TextInputStyle.Short)
-      .setMaxLength(500)
-      .setRequired(true)
-      .setValue(String(account.sourceInput || account.profileUrl || account.externalId || account.username || '').slice(0, 500))));
+    .addComponents(row(input));
 }
 
 function movePayload(interaction, config, creator, account) {
@@ -174,8 +178,9 @@ function movePayload(interaction, config, creator, account) {
     .filter((item) => item?.creatorId && item.creatorId !== creator.creatorId)
     .sort((a, b) => String(a.displayName || '').localeCompare(String(b.displayName || ''), 'en-GB', { sensitivity: 'base' }));
   const components = [];
+
   if (creators.length) {
-    components.push(row(new StringSelectMenuBuilder()
+    const creatorMenu = new StringSelectMenuBuilder()
       .setCustomId(`${P}account:move:creator`)
       .setPlaceholder('Move to existing creator profile')
       .setMinValues(1)
@@ -184,8 +189,10 @@ function movePayload(interaction, config, creator, account) {
         label: String(item.displayName || 'Unnamed creator').slice(0, 100),
         value: item.creatorId,
         description: `${(item.accountIds || []).length} linked account(s)`.slice(0, 100),
-      }))));
+      })));
+    components.push(row(creatorMenu));
   }
+
   components.push(row(button(`${P}account:move:new`, '➕ New Profile', ButtonStyle.Success), button(`${P}account:edit`, '⬅️ Back')));
   return {
     embeds: [new EmbedBuilder()
@@ -198,16 +205,15 @@ function movePayload(interaction, config, creator, account) {
   };
 }
 
-function moveNewCreatorModal(account) {
+function moveNewCreatorModal() {
+  const displayName = new TextInputBuilder().setCustomId('displayName').setLabel('New creator display name').setStyle(TextInputStyle.Short).setMaxLength(120).setRequired(true);
+  const group = new TextInputBuilder().setCustomId('group').setLabel('Group or team').setStyle(TextInputStyle.Short).setMaxLength(120).setRequired(false);
+  const tags = new TextInputBuilder().setCustomId('tags').setLabel('Tags (comma separated)').setStyle(TextInputStyle.Short).setMaxLength(300).setRequired(false);
+  const notes = new TextInputBuilder().setCustomId('notes').setLabel('Profile Notes (optional)').setStyle(TextInputStyle.Paragraph).setMaxLength(1000).setRequired(false);
   return new ModalBuilder()
     .setCustomId(`${P}account:move:create`)
     .setTitle('Move Account to New Profile')
-    .addComponents(
-      row(new TextInputBuilder().setCustomId('displayName').setLabel('New creator display name').setStyle(TextInputStyle.Short).setMaxLength(120).setRequired(true)),
-      row(new TextInputBuilder().setCustomId('group').setLabel('Group or team').setStyle(TextInputStyle.Short).setMaxLength(120).setRequired(false)),
-      row(new TextInputBuilder().setCustomId('tags').setLabel('Tags (comma separated)').setStyle(TextInputStyle.Short).setMaxLength(300).setRequired(false)),
-      row(new TextInputBuilder().setCustomId('notes').setLabel('Profile Notes (optional)').setStyle(TextInputStyle.Paragraph).setMaxLength(1000).setRequired(false)),
-    );
+    .addComponents(row(displayName), row(group), row(tags), row(notes));
 }
 
 async function render(interaction, payload) {
@@ -223,7 +229,36 @@ function requireSelection(interaction) {
   const account = config.accounts?.[state.accountId] || null;
   if (!creator) throw new Error('Select a creator profile first.');
   if (!account || !(creator.accountIds || []).includes(account.accountId)) throw new Error('Select an account first.');
-  return { state, config, creator, account };
+  return { config, creator, account };
+}
+
+async function handleAccountUpdate(interaction, id) {
+  if (!id.startsWith(`${P}account:update:`) || !interaction.isModalSubmit?.()) return false;
+  const accountId = id.slice(`${P}account:update:`.length);
+  const config = store.getConfig(interaction.guildId);
+  const account = config.accounts?.[accountId] || null;
+  const creator = creatorForAccount(config, accountId);
+  if (!account || !creator) throw new Error('The selected Social Studio account no longer exists.');
+
+  const rawValue = String(interaction.fields.getTextInputValue('accountValue') || '').trim();
+  if (!rawValue) throw new Error('Enter a username, channel ID or profile URL.');
+  const normalized = normalizeAccountInput(account.platform, rawValue);
+  const updated = store.updateAccount(interaction.guildId, accountId, (current) => ({
+    ...current,
+    username: normalized.username,
+    normalizedUsername: normalized.normalizedUsername,
+    externalId: normalized.externalId || current.externalId || null,
+    inputType: normalized.inputType,
+    canonicalIdentity: normalized.canonicalIdentity,
+    profileUrl: normalized.profileUrl,
+    sourceInput: normalized.sourceInput,
+  }), { actorId: interaction.user?.id || null, guild: interaction.guild });
+  setSession(interaction, { creatorId: creator.creatorId, accountId });
+
+  const message = `✅ Updated ${LABEL[updated.platform] || updated.platform || 'social'} account.`;
+  if (!interaction.deferred && !interaction.replied) await interaction.reply({ content: message, flags: 64 });
+  else await interaction.followUp({ content: message, flags: 64 }).catch(() => null);
+  return true;
 }
 
 async function handle(interaction) {
@@ -253,6 +288,8 @@ async function handle(interaction) {
     return true;
   }
 
+  if (await handleAccountUpdate(interaction, id)) return true;
+
   if (id === `${P}account:select`) {
     const accountId = interaction.values?.[0] || null;
     setSession(interaction, { accountId });
@@ -280,26 +317,6 @@ async function handle(interaction) {
 
   if (id === `${P}account:change`) {
     await interaction.showModal(accountEditModal(account));
-    return true;
-  }
-
-  if (id.startsWith(`${P}account:update:`)) {
-    const accountId = id.slice(`${P}account:update:`.length);
-    if (accountId !== account.accountId) throw new Error('The selected account changed. Open Manage Account again.');
-    const rawValue = String(interaction.fields.getTextInputValue('accountValue') || '').trim();
-    const normalized = normalizeAccountInput(account.platform, rawValue);
-    const updated = store.updateAccount(interaction.guildId, account.accountId, (current) => ({
-      ...current,
-      username: normalized.username,
-      normalizedUsername: normalized.normalizedUsername,
-      externalId: normalized.externalId || current.externalId || null,
-      inputType: normalized.inputType,
-      canonicalIdentity: normalized.canonicalIdentity,
-      profileUrl: normalized.profileUrl,
-      sourceInput: normalized.sourceInput,
-    }), { actorId: interaction.user?.id || null, guild: interaction.guild });
-    if (!interaction.deferred && !interaction.replied) await interaction.reply({ content: `✅ Updated ${LABEL[updated.platform] || updated.platform} account.`, flags: 64 });
-    else await interaction.followUp({ content: `✅ Updated ${LABEL[updated.platform] || updated.platform} account.`, flags: 64 }).catch(() => null);
     return true;
   }
 
@@ -341,14 +358,14 @@ async function handle(interaction) {
   }
 
   if (id === `${P}account:move:new`) {
-    await interaction.showModal(moveNewCreatorModal(account));
+    await interaction.showModal(moveNewCreatorModal());
     return true;
   }
 
   if (id === `${P}account:move:create`) {
     const displayName = String(interaction.fields.getTextInputValue('displayName') || '').trim().slice(0, 120);
     if (!displayName) throw new Error('Creator display name is required.');
-    const creatorId = `creator_${require('crypto').randomBytes(8).toString('hex')}`;
+    const creatorId = `creator_${crypto.randomBytes(8).toString('hex')}`;
     const timestamp = new Date().toISOString();
     for (const item of Object.values(config.creators || {})) item.accountIds = (item.accountIds || []).filter((value) => value !== account.accountId);
     config.creators[creatorId] = {
@@ -368,8 +385,9 @@ async function handle(interaction) {
     account.updatedAt = timestamp;
     store.saveConfig(interaction.guildId, config, { actorId: interaction.user?.id || null, guild: interaction.guild });
     setSession(interaction, { creatorId, accountId: account.accountId });
-    if (!interaction.deferred && !interaction.replied) await interaction.reply({ content: `✅ Created **${displayName}** and moved the account.`, flags: 64 });
-    else await interaction.followUp({ content: `✅ Created **${displayName}** and moved the account.`, flags: 64 }).catch(() => null);
+    const message = `✅ Created **${displayName}** and moved the account.`;
+    if (!interaction.deferred && !interaction.replied) await interaction.reply({ content: message, flags: 64 });
+    else await interaction.followUp({ content: message, flags: 64 }).catch(() => null);
     return true;
   }
 
