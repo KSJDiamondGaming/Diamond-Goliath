@@ -1,0 +1,45 @@
+name: Run audit fixes once
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - .audit-fix-trigger
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: dev
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - name: Execute staged audit patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          source = Path('.github/workflows/apply-audit-fixes-once.yml').read_text()
+          start = source.index("          python <<'PY'\n") + len("          python <<'PY'\n")
+          end = source.index("\n          PY\n", start)
+          code = source[start:end]
+          code = '\n'.join(line[10:] if line.startswith('          ') else line for line in code.splitlines())
+          compile(code, '<audit-fix>', 'exec')
+          exec(code, {'__name__': '__main__'})
+          PY
+          rm -f .audit-fix-trigger .github/workflows/run-audit-fixes-once.yml
+          npm ci
+          npm run build
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: harden routing deployment and preflight gates"
+          git push origin HEAD:dev
