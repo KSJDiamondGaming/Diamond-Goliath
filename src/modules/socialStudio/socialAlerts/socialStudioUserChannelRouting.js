@@ -70,6 +70,12 @@ function creatorAccountsForUser(config, userId) {
   return [...ids];
 }
 
+function platformsForUser(config, userId) {
+  return [...new Set(creatorAccountsForUser(config, userId)
+    .map((accountId) => String(config.accounts?.[accountId]?.platform || '').toLowerCase())
+    .filter(Boolean))];
+}
+
 function applyRoutesToAccount(account, routes) {
   if (!account || typeof account !== 'object') return;
   if (!account.userRouteBaseCaptured) {
@@ -117,19 +123,31 @@ function routeSummary(routes) {
   return lines.length ? lines.join('\n') : 'No direct user overrides. This user follows the server routing.';
 }
 
-function effectiveRoute(config, routes, type) {
+function effectiveRoute(config, routes, type, platform = '') {
   if (routes[type]) return { channelId: routes[type], source: 'User Override' };
   if (routes.all) return { channelId: routes.all, source: 'User All Content' };
+  if (platform && config.platformChannels?.[platform]) {
+    return { channelId: config.platformChannels[platform], source: `Server ${platform} Platform Override` };
+  }
   if (config.alertChannels?.[type]) return { channelId: config.alertChannels[type], source: 'Server Dedicated' };
   if (config.alertsChannelId) return { channelId: config.alertsChannelId, source: 'Server Default' };
   return { channelId: null, source: 'Not configured' };
 }
 
-function effectivePreview(config, routes) {
+function effectivePreview(config, routes, userId) {
+  const platforms = platformsForUser(config, userId);
+  const samples = platforms.length ? platforms : [''];
+
   return ALERT_TYPES.map((type) => {
-    const resolved = effectiveRoute(config, routes, type);
-    const destination = resolved.channelId ? `<#${resolved.channelId}>` : 'Not configured';
-    return `${TYPE_EMOJI[type] || '🔔'} **${TYPE_LABELS[type] || type}** → ${destination} *(${resolved.source})*`;
+    const resolved = samples.map((platform) => ({ platform, ...effectiveRoute(config, routes, type, platform) }));
+    const unique = new Map(resolved.map((item) => [`${item.channelId || ''}:${item.source}`, item]));
+    if (unique.size === 1) {
+      const item = [...unique.values()][0];
+      const destination = item.channelId ? `<#${item.channelId}>` : 'Not configured';
+      return `${TYPE_EMOJI[type] || '🔔'} **${TYPE_LABELS[type] || type}** → ${destination} *(${item.source})*`;
+    }
+    const details = resolved.map((item) => `${item.platform.toUpperCase()}: ${item.channelId ? `<#${item.channelId}>` : 'Not configured'} (${item.source})`).join(' • ');
+    return `${TYPE_EMOJI[type] || '🔔'} **${TYPE_LABELS[type] || type}** → *varies by platform* — ${details}`;
   }).join('\n');
 }
 
@@ -144,12 +162,12 @@ function payload(i) {
   const desc = [
     'Route each creator\'s automatic Social Studio posts to their own Discord channels. Anything not overridden falls back to the server routing.',
     '',
-    '**Fallback:** User content route → User All Content → Server Dedicated route → Server Default channel.',
+    '**Fallback:** User content route → User All Content → Server Platform Override → Server Dedicated route → Server Default channel.',
     '',
     `**Configured Users:** ${configuredUsers.length}`,
     `**Selected User:** ${userDisplay(i, s.targetUserId)}`,
     s.targetUserId ? `\n**Current User Routes**\n${routeSummary(routes)}` : '\nSelect a Discord user below to manage their routing.',
-    s.targetUserId ? `\n**Effective Routing Preview**\n${effectivePreview(config, routes)}` : '',
+    s.targetUserId ? `\n**Effective Routing Preview**\n${effectivePreview(config, routes, s.targetUserId)}` : '',
   ].filter(Boolean).join('\n');
 
   const userMenu = new UserSelectMenuBuilder()
@@ -218,7 +236,7 @@ async function handle(i) {
   const id = String(i?.customId || '');
   if (!i.guildId) return false;
 
-  if (id === 'social:channel:creator:open') {
+  if (id === `${P}open`) {
     setState(i, { targetUserId: null, type: 'all', pendingChannelId: null });
     return update(i);
   }
