@@ -158,6 +158,12 @@ function pruneOperations(guildId, now = Date.now()) {
   return active;
 }
 
+function operationSummarySuffix(op, role) {
+  if (!op?.operationId) return '';
+  const roleLabel = role === 'trigger' ? 'trigger' : role === 'output' ? 'output' : 'confirmed result';
+  return `\n\n🤖 **Goliath Operation:** \`${op.operationId}\` • **${op.system || 'Goliath Core'}** • ${roleLabel}`;
+}
+
 function registerOperation(event) {
   if (!event?.guildId || !String(event.type || '').startsWith('goliath.interaction.')) return null;
   const system = identifyGoliathSystem(event);
@@ -187,6 +193,7 @@ function registerOperation(event) {
       system,
     },
   };
+  event.summary = `${event.summary || 'Goliath interaction started.'}${operationSummarySuffix(op, 'trigger')}`;
   return op;
 }
 
@@ -248,6 +255,7 @@ function attachOperation(event, match, role) {
       system: match.op.system || 'Goliath Core',
     },
   };
+  event.summary = `${event.summary || event.title || 'Goliath operation event.'}${operationSummarySuffix(match.op, role)}`;
   return true;
 }
 
@@ -489,6 +497,18 @@ function buildOperationalSummary(event) {
     case 'thread.delete': return `Thread **${event.target?.label || event.before?.name || 'unknown'}** was deleted${byActor}.${reason}`;
     case 'invite.create': return `Invite **${event.target?.label || event.target?.id || 'unknown'}** was created in ${locationLabel(event)}${byActor}.`;
     case 'invite.delete': return `Invite **${event.target?.label || event.target?.id || 'unknown'}** was deleted from ${locationLabel(event)}${byActor}.`;
+    case 'emoji.create': return `Emoji **:${event.after?.name || event.target?.label || 'unknown'}:** was created${byActor}.${reason}`;
+    case 'emoji.update': {
+      const changes = changedFieldLabels(event.before, event.after, { name: 'name', animated: 'animated state', available: 'availability', managed: 'managed state', roles: 'role restrictions' });
+      return `Emoji **:${event.after?.name || event.target?.label || 'unknown'}:** was updated${byActor}${changes.length ? ` — changed: **${changes.join(', ')}**` : ''}.${reason}`;
+    }
+    case 'emoji.delete': return `Emoji **:${event.target?.label || event.before?.name || 'unknown'}:** was deleted${byActor}.${reason}`;
+    case 'sticker.create': return `Sticker **${event.after?.name || event.target?.label || 'unknown'}** was created${byActor}.${reason}`;
+    case 'sticker.update': {
+      const changes = changedFieldLabels(event.before, event.after, { name: 'name', description: 'description', tags: 'tags', format: 'format', available: 'availability' });
+      return `Sticker **${event.after?.name || event.target?.label || 'unknown'}** was updated${byActor}${changes.length ? ` — changed: **${changes.join(', ')}**` : ''}.${reason}`;
+    }
+    case 'sticker.delete': return `Sticker **${event.target?.label || event.before?.name || 'unknown'}** was deleted${byActor}.${reason}`;
     case 'scheduledEvent.create': return `Scheduled event **${event.target?.label || event.after?.name || 'unknown'}** was created${byActor}.`;
     case 'scheduledEvent.update': {
       const changes = changedFieldLabels(event.before, event.after, { name: 'name', description: 'description', channelId: 'channel', status: 'status', privacyLevel: 'privacy', entityType: 'event type', scheduledStartAt: 'start time', scheduledEndAt: 'end time', entityMetadata: 'location/details' });
