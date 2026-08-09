@@ -6,11 +6,11 @@ const panel = require('./embedPanel');
 
 // Discord can collapse an embed around a narrow Large Image even when the
 // neighbouring panels naturally render at the full embed width. For image
-// panels that already have a title, extend that existing title with preserved
-// non-breaking spaces. They are visually blank, stay on the same title line,
-// and give Discord a real, non-collapsible width anchor without adding a field,
-// changing the body copy, moving the timestamp, or touching the image itself.
-const WIDTH_SPACE = '\u00A0';
+// panels that already have a title, extend that existing title with a visually
+// blank glyph that Discord still measures as real content. Braille Blank is not
+// whitespace, so it should survive Discord's whitespace collapsing while
+// leaving the title looking unchanged and the centred image untouched.
+const WIDTH_SPACE = '\u2800';
 const TITLE_WIDTH_PAD = WIDTH_SPACE.repeat(256);
 
 function holdImagePanelWidth(embed) {
@@ -19,7 +19,7 @@ function holdImagePanelWidth(embed) {
   const data = embed.toJSON();
   if (!data?.image?.url || !data?.title) return embed;
 
-  const cleanTitle = String(data.title).replace(/\u00A0+$/u, '');
+  const cleanTitle = String(data.title).replace(/[\u00A0\u2003\u2800]+$/u, '');
   const maxPad = Math.max(0, 256 - cleanTitle.length);
   const pad = TITLE_WIDTH_PAD.slice(0, maxPad);
   embed.setTitle(`${cleanTitle}${pad}`);
