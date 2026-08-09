@@ -140,7 +140,7 @@ function sourceGuildSelect(customId, placeholder, sourceGuilds, selectedId) {
 }
 function routeSummary(config, sourceGuildId) {
   const routes = config.guilds?.[String(sourceGuildId || '')]?.routes || {};
-  return Object.keys(ROUTE_LABELS).map((key) => `**${ROUTE_LABELS[key]}:** ${routes[key] ? `<#${routes[key]}>` : 'Automatic / guild-events'}`).join('\n');
+  return Object.keys(ROUTE_LABELS).map((key) => `${routes[key] ? '🟢' : '⚪'} **${ROUTE_LABELS[key]}:** ${routes[key] ? `<#${routes[key]}>` : 'Automatic / not provisioned yet'}`).join('\n');
 }
 function monitoringSummary(config, sourceGuildId) {
   const guildConfig = config.guilds?.[String(sourceGuildId || '')] || {};
@@ -160,9 +160,9 @@ function buildRoutingPanel(client, interaction) {
     .addFields(
       { name: 'Source Guild', value: selectedGuild ? `**${selectedGuild.name}**\n\`${selectedGuild.id}\`\n${guildEnvironmentLabel(selectedGuild)}` : 'Not selected', inline: true },
       { name: 'Route Type', value: ROUTE_LABELS[session.routeKey] || ROUTE_LABELS.default, inline: true },
-      { name: 'Current Routing', value: selectedGuild ? routeSummary(config, selectedGuild.id) : 'Select a guild first.', inline: false },
+      { name: 'Current Report Feeds', value: selectedGuild ? routeSummary(config, selectedGuild.id) : 'Select a guild first.', inline: false },
     )
-    .setFooter({ text: 'Goliath Command Center • Routing • Owner only' });
+    .setFooter({ text: 'Goliath Command Center • Routing • Owner only • 🟢 assigned feed • ⚪ automatic/not provisioned' });
   const rows = [];
   if (sourceGuilds.length) rows.push(new ActionRowBuilder().addComponents(sourceGuildSelect('owner:commandcenter:routing:guild', '1. Select source guild', sourceGuilds, session.sourceGuildId)));
   if (selectedGuild) {
@@ -170,9 +170,10 @@ function buildRoutingPanel(client, interaction) {
     rows.push(new ActionRowBuilder().addComponents(routeSelect));
     const channelSelect = new ChannelSelectMenuBuilder().setCustomId('owner:commandcenter:routing:channel').setPlaceholder(`3. Choose destination for ${ROUTE_LABELS[session.routeKey] || 'route'}`).setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setMinValues(1).setMaxValues(1);
     rows.push(new ActionRowBuilder().addComponents(channelSelect));
+    const provisionButton = new ButtonBuilder().setCustomId('owner:commandcenter:routing:provision').setLabel('Create / Repair Report Channels').setEmoji('🛠️').setStyle(ButtonStyle.Success);
     const resetButton = new ButtonBuilder().setCustomId('owner:commandcenter:routing:reset').setLabel('Reset This Route').setStyle(ButtonStyle.Secondary);
     const backButton = new ButtonBuilder().setCustomId('owner:commandcenter:refresh').setLabel('Back / Refresh Home').setStyle(ButtonStyle.Secondary);
-    rows.push(new ActionRowBuilder().addComponents(resetButton, backButton));
+    rows.push(new ActionRowBuilder().addComponents(provisionButton, resetButton, backButton));
   }
   return { embeds: [embed], components: rows, allowedMentions: { parse: [] } };
 }
@@ -464,6 +465,16 @@ async function handleCommandCenterInteraction(client, interaction) {
     const current = auditStore.getConfig(); const existing = current.guilds?.[session.sourceGuildId] || {};
     auditStore.updateConfig({ guilds: { [session.sourceGuildId]: { ...existing, enabled: existing.enabled !== false, mode: 'custom', routes: { ...(existing.routes || {}), [session.routeKey]: String(interaction.values?.[0] || '') } } } });
     await interaction.update(buildRoutingPanel(client, interaction)).catch(() => null); return true;
+  }
+  if (customId === 'owner:commandcenter:routing:provision' && interaction.isButton?.()) {
+    const session = getRoutingSession(interaction);
+    const sourceGuild = registryGuild(client, session.sourceGuildId);
+    if (!sourceGuild) { await interaction.reply({ content: '❌ Select a source guild first.', flags: MessageFlags.Ephemeral }).catch(() => null); return true; }
+    await interaction.deferUpdate().catch(() => null);
+    const result = await auditRouter.ensureReportRoutes(client, sourceGuild).catch((error) => { console.warn('[Audit Intelligence] report channel provisioning failed:', error?.message || error); return null; });
+    if (!result) { await interaction.editReply({ content: '❌ Report channels could not be prepared.', embeds: [], components: [] }).catch(() => null); return true; }
+    await interaction.editReply(buildRoutingPanel(client, interaction)).catch(() => null);
+    return true;
   }
   if (customId === 'owner:commandcenter:routing:reset' && interaction.isButton?.()) {
     const session = getRoutingSession(interaction); if (!session.sourceGuildId) return true;
