@@ -1,0 +1,222 @@
+name: Refactor audit routing once
+
+on:
+  push:
+    branches: [dev]
+    paths: [.refactor-audit-routing-trigger]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: dev
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - name: Apply refactor
+        shell: bash
+        run: |
+          set -euo pipefail
+          python <<'PY'
+          from pathlib import Path
+          import re
+
+          def read(p): return Path(p).read_text(encoding='utf-8')
+          def write(p, s): Path(p).write_text(s, encoding='utf-8')
+          def replace(p, old, new, count=1):
+              s = read(p)
+              if old not in s: raise SystemExit(f'missing expected block in {p}: {old[:100]!r}')
+              write(p, s.replace(old, new, count))
+
+          # Canonical Social Studio route resolver: business precedence lives here.
+          Path('src/modules/socialStudio/socialAlerts/socialStudioRoutingResolver.js').write_text("""'use strict';
+
+function object(value) { return value && typeof value === 'object' && !Array.isArray(value) ? value : {}; }
+
+function creatorFor(config, accountId) {
+  return Object.values(object(config?.creators)).find((creator) =>
+    Array.isArray(creator?.accountIds) && creator.accountIds.map(String).includes(String(accountId || ''))
+  ) || null;
+}
+
+function linkedUserId(creator, account) {
+  return String(creator?.ownerDiscordId || creator?.discordUserId || creator?.userId || account?.ownerDiscordId || account?.discordUserId || account?.userId || '');
+}
+
+function explicitAccountRoutes(account) {
+  if (!account || typeof account !== 'object') return { channelId: null, channels: {} };
+  if (account.userRouteBaseCaptured) return { channelId: account.userRouteBaseChannelId || null, channels: object(account.userRouteBaseChannels) };
+  if (account.creatorRouteInherited) return { channelId: account.creatorRoutePreviousChannelId || null, channels: object(account.creatorRoutePreviousChannels) };
+  return { channelId: account.alertChannelId || null, channels: object(account.alertChannels) };
+}
+
+function resolveSocialRoute(config, account, eventType, creatorInput = null) {
+  const creator = creatorInput || creatorFor(config, account?.accountId);
+  const platform = String(account?.platform || '').toLowerCase();
+  const userId = linkedUserId(creator, account);
+  const userRoutes = object(object(config?.userChannelOverrides)[userId]);
+  const accountRoutes = explicitAccountRoutes(account);
+  const candidates = [
+    [object(creator?.platformChannels)[platform], 'Creator Platform Override'],
+    [userRoutes[eventType], 'User Content Override'],
+    [userRoutes.all, 'User All Content'],
+    [creator?.alertChannelId, 'Creator Override'],
+    [accountRoutes.channels[eventType], 'Account Content Override'],
+    [accountRoutes.channelId, 'Account Override'],
+    [object(config?.platformChannels)[platform], 'Server Platform Override'],
+    [object(config?.alertChannels)[eventType], 'Server Dedicated'],
+    [config?.alertsChannelId, 'Server Default'],
+  ];
+  for (const [channelId, source] of candidates) if (channelId) return { channelId: String(channelId), source, platform, userId, creator };
+  return { channelId: null, source: 'Not configured', platform, userId, creator };
+}
+
+module.exports = { creatorFor, linkedUserId, explicitAccountRoutes, resolveSocialRoute };
+""", encoding='utf-8')
+
+          # Monitor uses one resolver rather than whichever compat layer mutated account routes last.
+          monitor_path = 'src/modules/socialStudio/socialAlerts/socialStudioMonitor.js'
+          monitor = read(monitor_path)
+          req = "const { normalizeTemplates, resolveTemplate } = require('./socialStudioTemplates');"
+          if "require('./socialStudioRoutingResolver')" not in monitor:
+              monitor = monitor.replace(req, req + "\nconst { resolveSocialRoute } = require('./socialStudioRoutingResolver');", 1)
+          old = """  const platform = String(account.platform || '').toLowerCase();
+  const candidates = [
+    account.alertChannels?.[eventType],
+    account.alertChannelId,
+    config.platformChannels?.[platform],
+    config.alertChannels?.[eventType],
+    config.alertsChannelId,
+  ].filter(Boolean);"""
+          new = """  const resolvedRoute = resolveSocialRoute(config, account, eventType);
+  const candidates = resolvedRoute.channelId ? [resolvedRoute.channelId] : [];"""
+          if old not in monitor: raise SystemExit('monitor routing block not found')
+          monitor = monitor.replace(old, new, 1)
+          write(monitor_path, monitor)
+
+          # User routing stops writing business precedence into account fields.
+          user_path = 'src/modules/socialStudio/socialAlerts/socialStudioUserChannelRouting.js'
+          user = read(user_path)
+          pattern = re.compile(r"function syncUser\(config, userId\) \{.*?\n\}\n\nfunction routeSummary", re.S)
+          repl = """function syncUser(config, userId) {
+  // Routing is resolved dynamically. Only clean inherited fields left by older builds.
+  for (const accountId of creatorAccountsForUser(config, userId)) {
+    const account = config.accounts?.[accountId];
+    if (account) clearRoutesFromAccount(account);
+  }
+}
+
+function routeSummary"""
+          user, n = pattern.subn(repl, user, count=1)
+          if n != 1: raise SystemExit('user sync block not found')
+          write(user_path, user)
+
+          # Creator routing likewise stores creator config only and cleans legacy inherited account state.
+          creator_path = 'src/modules/socialStudio/socialAlerts/socialStudioCreatorRoutingCompat.js'
+          creator = read(creator_path)
+          pattern = re.compile(r"function syncCreatorOverride\(config, creator\) \{.*?\n\}\nfunction syncAllCreatorOverrides", re.S)
+          repl = """function syncCreatorOverride(config, creator) {
+  if (!creator) return config;
+  for (const accountId of creator.accountIds || []) {
+    const account = config.accounts?.[accountId];
+    if (account) clearCreatorOverrideFromAccount(account);
+  }
+  return config;
+}
+function syncAllCreatorOverrides"""
+          creator, n = pattern.subn(repl, creator, count=1)
+          if n != 1: raise SystemExit('creator sync block not found')
+          write(creator_path, creator)
+
+          # Compatibility dispatcher: creator handlers own creator IDs; user router only owns social:userroute:*.
+          wrapper_path = 'src/events/client/socialStudioCreatorRoutingCompat.js'
+          wrapper = read(wrapper_path)
+          old = """    // The user/content/channel router owns the new usable multi-user flow and
+    // must run before the older creator-wide compatibility screens.
+    if (await userChannelRouting.handle(interaction)) return true;
+    if (await creatorRoutingLegacyFix.handle(interaction)) return true;
+    if (await creatorRoutingCompat.handle(interaction)) return true;"""
+          new = """    if (await creatorRoutingCompat.handle(interaction)) return true;
+    if (await creatorRoutingLegacyFix.handle(interaction)) return true;
+    if (await userChannelRouting.handle(interaction)) return true;"""
+          if old in wrapper: wrapper = wrapper.replace(old, new, 1)
+          write(wrapper_path, wrapper)
+
+          # Command Center config now preserves an explicitly selected guild instead of silently replacing it.
+          audit_path = 'src/owner/auditIntelligence/auditStore.js'
+          audit = read(audit_path)
+          audit = audit.replace("const COMMAND_CENTER_GUILD_ID = '1515201360386068642';", "const COMMAND_CENTER_GUILD_ID = String(process.env.COMMAND_CENTER_GUILD_ID || '1515201360386068642').trim();", 1)
+          audit = audit.replace("      guildId: COMMAND_CENTER_GUILD_ID,\n    },\n    guilds:", "      guildId: String(current.commandCenter?.guildId || COMMAND_CENTER_GUILD_ID).trim(),\n    },\n    guilds:", 1)
+          audit = audit.replace("commandCenter: patch.commandCenter ? { ...current.commandCenter, ...patch.commandCenter, guildId: COMMAND_CENTER_GUILD_ID } : current.commandCenter,", "commandCenter: patch.commandCenter ? { ...current.commandCenter, ...patch.commandCenter } : current.commandCenter,", 1)
+          write(audit_path, audit)
+
+          # Private command preservation is scoped to the configured Command Center guild.
+          sync_path = 'src/core/commandRegistry/syncCommands.js'
+          sync = read(sync_path)
+          needle = "const PRIVATE_GUILD_COMMANDS = new Set(['commandcenter']);"
+          helper = """const PRIVATE_GUILD_COMMANDS = new Set(['commandcenter']);
+const auditStore = require('../../owner/auditIntelligence/auditStore');
+
+function commandCenterGuildId() {
+  return String(auditStore.getConfig()?.commandCenter?.guildId || process.env.COMMAND_CENTER_GUILD_ID || '1515201360386068642').trim();
+}
+
+function isPrivateGuildCommand(name, guildId) {
+  return PRIVATE_GUILD_COMMANDS.has(String(name || '')) && String(guildId || '') === commandCenterGuildId();
+}"""
+          if 'function isPrivateGuildCommand' not in sync: sync = sync.replace(needle, helper, 1)
+          sync = sync.replace("return existing.filter((command) => PRIVATE_GUILD_COMMANDS.has(command.name));", "return existing.filter((command) => isPrivateGuildCommand(command.name, guildId));", 1)
+          sync = sync.replace("if (wantedNames.has(existing.name) || PRIVATE_GUILD_COMMANDS.has(existing.name)) continue;", "if (wantedNames.has(existing.name) || isPrivateGuildCommand(existing.name, guildId)) continue;", 1)
+          old = "async function upsertGuildCommands(guildId, commands, failures) {\n  if (BULK_OVERWRITE) return bulkGuildOverwrite(guildId, commands);"
+          new = "async function upsertGuildCommands(guildId, commands, failures) {\n  commands = commands.filter((command) => command.name !== 'commandcenter' || String(guildId) === commandCenterGuildId());\n  if (BULK_OVERWRITE) return bulkGuildOverwrite(guildId, commands);"
+          if old not in sync: raise SystemExit('upsertGuildCommands block not found')
+          sync = sync.replace(old, new, 1)
+          old = "async function bulkGuildOverwrite(guildId, commands) {\n  const protectedCommands = await readGuildPrivateCommands(guildId);"
+          new = "async function bulkGuildOverwrite(guildId, commands) {\n  commands = commands.filter((command) => command.name !== 'commandcenter' || String(guildId) === commandCenterGuildId());\n  const protectedCommands = await readGuildPrivateCommands(guildId);"
+          if old not in sync: raise SystemExit('bulkGuildOverwrite block not found')
+          sync = sync.replace(old, new, 1)
+          write(sync_path, sync)
+
+          # Extend regression tests for the architectural fixes.
+          test_path = 'test/auditRegression.test.js'
+          tests = read(test_path)
+          tests += """
+
+test('Social Studio monitor resolves routing through one canonical resolver', () => {
+  const monitor = read('src/modules/socialStudio/socialAlerts/socialStudioMonitor.js');
+  const resolver = read('src/modules/socialStudio/socialAlerts/socialStudioRoutingResolver.js');
+  assert.match(monitor, /resolveSocialRoute\(config, account, eventType\)/);
+  assert.match(resolver, /Creator Platform Override/);
+  assert.match(resolver, /User Content Override/);
+  assert.match(resolver, /Server Platform Override/);
+  assert.match(resolver, /Server Dedicated/);
+  assert.match(resolver, /Server Default/);
+});
+
+test('Command Center config preserves selected guild and private command protection is scoped', () => {
+  const store = read('src/owner/auditIntelligence/auditStore.js');
+  const sync = read('src/core/commandRegistry/syncCommands.js');
+  assert.match(store, /current\.commandCenter\?\.guildId \|\| COMMAND_CENTER_GUILD_ID/);
+  assert.doesNotMatch(store, /patch\.commandCenter \? \{ \.\.\.current\.commandCenter, \.\.\.patch\.commandCenter, guildId: COMMAND_CENTER_GUILD_ID \}/);
+  assert.match(sync, /function isPrivateGuildCommand\(name, guildId\)/);
+  assert.match(sync, /command\.name !== 'commandcenter' \|\| String\(guildId\) === commandCenterGuildId\(\)/);
+});
+"""
+          write(test_path, tests)
+          PY
+
+          npm ci
+          npm run build
+          rm -f .refactor-audit-routing-trigger .github/workflows/refactor-audit-routing-once.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "refactor: centralize routing and command center scope"
+          git push origin HEAD:dev
