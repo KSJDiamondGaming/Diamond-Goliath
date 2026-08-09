@@ -1,5 +1,5 @@
 const guildManager = require('../guild/guildManager');
-const { shouldUseDryRunForOwner } = require('../dev/DevOverrideManager');
+const { shouldBlockOwnerDestructiveAction } = require('../dev/DevOverrideManager');
 
 const {
   emitGuildUpdate,
@@ -120,7 +120,7 @@ async function quarantineMember(
     };
   }
 
-  if (shouldUseDryRunForOwner({
+  if (shouldBlockOwnerDestructiveAction({
     guild,
     member,
     action: 'quarantine',
