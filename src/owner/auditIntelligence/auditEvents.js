@@ -10,6 +10,7 @@ const {
   Events,
   MessageFlags,
   ModalBuilder,
+  PermissionFlagsBits,
   SlashCommandBuilder,
   StringSelectMenuBuilder,
   TextInputBuilder,
@@ -138,9 +139,21 @@ function sourceGuildSelect(customId, placeholder, sourceGuilds, selectedId) {
       };
     }));
 }
-function routeSummary(config, sourceGuildId) {
+function routeSummary(config, sourceGuildId, destinationGuild) {
   const routes = config.guilds?.[String(sourceGuildId || '')]?.routes || {};
-  return Object.keys(ROUTE_LABELS).map((key) => `${routes[key] ? '🟢' : '⚪'} **${ROUTE_LABELS[key]}:** ${routes[key] ? `<#${routes[key]}>` : 'Automatic / not provisioned yet'}`).join('\n');
+  return Object.keys(ROUTE_LABELS).map((key) => {
+    const channelId = routes[key];
+    if (!channelId) return `⚪ **${ROUTE_LABELS[key]}:** Automatic / not provisioned yet`;
+    const channel = destinationGuild?.channels?.cache?.get(String(channelId)) || null;
+    if (!channel) return `🔴 **${ROUTE_LABELS[key]}:** <#${channelId}> • Missing channel`;
+    const member = destinationGuild?.members?.me || null;
+    const permissions = member ? channel.permissionsFor(member) : null;
+    const missing = [];
+    if (!permissions?.has(PermissionFlagsBits.ViewChannel)) missing.push('View');
+    if (!permissions?.has(PermissionFlagsBits.SendMessages)) missing.push('Send');
+    if (!permissions?.has(PermissionFlagsBits.ReadMessageHistory)) missing.push('History');
+    return `${missing.length ? '🟠' : '🟢'} **${ROUTE_LABELS[key]}:** <#${channelId}>${missing.length ? ` • Missing: ${missing.join(', ')}` : ' • Healthy'}`;
+  }).join('\n');
 }
 function monitoringSummary(config, sourceGuildId) {
   const guildConfig = config.guilds?.[String(sourceGuildId || '')] || {};
@@ -160,9 +173,9 @@ function buildRoutingPanel(client, interaction) {
     .addFields(
       { name: 'Source Guild', value: selectedGuild ? `**${selectedGuild.name}**\n\`${selectedGuild.id}\`\n${guildEnvironmentLabel(selectedGuild)}` : 'Not selected', inline: true },
       { name: 'Route Type', value: ROUTE_LABELS[session.routeKey] || ROUTE_LABELS.default, inline: true },
-      { name: 'Current Report Feeds', value: selectedGuild ? routeSummary(config, selectedGuild.id) : 'Select a guild first.', inline: false },
+      { name: 'Current Report Feeds', value: selectedGuild ? routeSummary(config, selectedGuild.id, interaction.guild) : 'Select a guild first.', inline: false },
     )
-    .setFooter({ text: 'Goliath Command Center • Routing • Owner only • 🟢 assigned feed • ⚪ automatic/not provisioned' });
+    .setFooter({ text: 'Goliath Command Center • Routing • Owner only • 🟢 healthy • 🟠 permission issue • 🔴 missing • ⚪ automatic' });
   const rows = [];
   if (sourceGuilds.length) rows.push(new ActionRowBuilder().addComponents(sourceGuildSelect('owner:commandcenter:routing:guild', '1. Select source guild', sourceGuilds, session.sourceGuildId)));
   if (selectedGuild) {
