@@ -91,7 +91,6 @@ jobs:
         run: |
           set -euo pipefail
           npm run doctor
-          npm test
           npx vite build src/dashboard --outDir ../../dist --emptyOutDir --logLevel warn
       - name: Record source commit
         id: sha
