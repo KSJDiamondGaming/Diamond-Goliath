@@ -29,12 +29,15 @@ const structureSessions = new Map();
 const intelligenceSessions = new Map();
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const ROUTE_LABELS = {
-  default: 'Guild Events / Default',
+  guild: 'Guild / System Events',
+  members: 'Member Events',
   moderation: 'Moderation',
   security: 'Security / AutoMod',
   messages: 'Messages / Reactions',
+  voice: 'Voice Activity',
   roles: 'Roles / Permissions',
   goliath: 'Goliath Actions',
+  default: 'Fallback / All Other Events',
 };
 const MONITOR_LABELS = {
   guild: 'Guild / System Events',
