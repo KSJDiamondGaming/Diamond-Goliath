@@ -5,13 +5,21 @@
 //
 // Discord's embed width is driven by its internal layout grid. Large images can
 // make an otherwise normal panel collapse narrower than neighbouring embeds.
-// For image-bearing panels, append a visually blank non-inline field: Discord
-// allocates that field across the full embed grid, widening the panel background
-// itself without changing the visible copy or centred-image treatment.
+// For image-bearing panels, append a visually blank non-inline field. Unlike a
+// zero-width-space-only field, the Hangul filler run below has measurable layout
+// width while still appearing blank, so Discord has a real grid width to hold.
 const panel = require('./embedPanel');
 
 const WIDTH_FIELD_NAME = '\u200B';
-const WIDTH_FIELD_VALUE = '\u200B';
+const WIDTH_FIELD_GLYPH = '\u3164';
+const WIDTH_FIELD_VALUE = WIDTH_FIELD_GLYPH.repeat(48);
+
+function isWidthField(field) {
+  return field?.name === WIDTH_FIELD_NAME
+    && typeof field?.value === 'string'
+    && /^\u3164+$/u.test(field.value)
+    && field?.inline === false;
+}
 
 function holdImagePanelOpen(embed) {
   if (!embed || typeof embed.toJSON !== 'function' || typeof embed.addFields !== 'function') return embed;
@@ -20,10 +28,19 @@ function holdImagePanelOpen(embed) {
   if (!data?.image?.url) return embed;
 
   const fields = Array.isArray(data.fields) ? data.fields : [];
-  const alreadyAdded = fields.some((field) =>
-    field?.name === WIDTH_FIELD_NAME && field?.value === WIDTH_FIELD_VALUE && field?.inline === false
-  );
-  if (alreadyAdded) return embed;
+  if (fields.some(isWidthField)) return embed;
+
+  // Remove the previous zero-width-only compatibility field if this embed was
+  // built by an older process in the same runtime, then add the measurable one.
+  const realFields = fields.filter((field) => !(
+    field?.name === '\u200B'
+    && field?.value === '\u200B'
+    && field?.inline === false
+  ));
+
+  if (realFields.length !== fields.length && typeof embed.setFields === 'function') {
+    embed.setFields(realFields);
+  }
 
   embed.addFields({
     name: WIDTH_FIELD_NAME,
