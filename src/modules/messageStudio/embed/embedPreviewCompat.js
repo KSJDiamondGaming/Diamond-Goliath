@@ -2,47 +2,59 @@
 
 // Keep the Embed Studio editor compact by showing only the selected content
 // panel while editing. Real sends/tests/updates still use the full panel list.
-// Discord does not reliably size embeds from footer padding, so width is held
-// by an invisible U+2800 line in the description itself.
+//
+// Discord-hosted attachment images can make an embed collapse to the image's
+// served width. For the large embed image only, request Discord's media proxy
+// at the normal full embed width. This leaves thumbnails/author/footer icons
+// and the saved source URL untouched.
 const panel = require('./embedPanel');
 
-const WIDTH_GLYPH = '\u2800';
-const WIDTH_MARKER = WIDTH_GLYPH.repeat(52);
+const DISCORD_EMBED_IMAGE_WIDTH = 520;
 
-function forceEmbedWidth(embed) {
-  if (!embed || typeof embed.toJSON !== 'function' || typeof embed.setDescription !== 'function') return embed;
+function fullWidthDiscordImageUrl(value) {
+  try {
+    const url = new URL(String(value || ''));
+    if (!['media.discordapp.net', 'cdn.discordapp.com'].includes(url.hostname)) return value;
+
+    // The media proxy supports resize query parameters. Using it for CDN URLs
+    // as well gives the large-image renderer a consistent served width.
+    url.hostname = 'media.discordapp.net';
+    url.searchParams.set('width', String(DISCORD_EMBED_IMAGE_WIDTH));
+    url.searchParams.delete('height');
+    if (!url.searchParams.has('quality')) url.searchParams.set('quality', 'lossless');
+    return url.toString();
+  } catch {
+    return value;
+  }
+}
+
+function normalizeLargeEmbedImage(embed) {
+  if (!embed || typeof embed.toJSON !== 'function' || typeof embed.setImage !== 'function') return embed;
 
   const data = embed.toJSON();
-  const description = String(data?.description || '');
-  const cleanDescription = description
-    .replace(new RegExp(`\\n?${WIDTH_GLYPH}+$`, 'u'), '')
-    .replace(/\s+$/u, '');
+  const imageUrl = data?.image?.url;
+  if (!imageUrl) return embed;
 
-  // Description content participates in Discord's embed width calculation;
-  // footer whitespace does not. Keep the marker invisible on its own line.
-  const widthDescription = cleanDescription
-    ? `${cleanDescription}\n${WIDTH_MARKER}`
-    : WIDTH_MARKER;
-
-  embed.setDescription(widthDescription.slice(0, 4096));
+  const normalized = fullWidthDiscordImageUrl(imageUrl);
+  if (normalized && normalized !== imageUrl) embed.setImage(normalized);
   return embed;
 }
 
-function forcePayloadWidth(payload) {
+function normalizePayloadMedia(payload) {
   if (!payload || !Array.isArray(payload.embeds)) return payload;
-  payload.embeds.forEach(forceEmbedWidth);
+  payload.embeds.forEach(normalizeLargeEmbedImage);
   return payload;
 }
 
-if (!panel.__consistentWidthPatched) {
+if (!panel.__discordLargeImageWidthPatched) {
   const originalBuildPreviewEmbeds = panel.buildPreviewEmbeds.bind(panel);
   const originalBuildPreviewEmbed = panel.buildPreviewEmbed.bind(panel);
   const originalBuildEmbedFromPanel = panel.buildEmbedFromPanel.bind(panel);
 
-  panel.buildEmbedFromPanel = (...args) => forceEmbedWidth(originalBuildEmbedFromPanel(...args));
-  panel.buildPreviewEmbeds = (...args) => originalBuildPreviewEmbeds(...args).map(forceEmbedWidth);
-  panel.buildPreviewEmbed = (...args) => forceEmbedWidth(originalBuildPreviewEmbed(...args));
-  panel.__consistentWidthPatched = true;
+  panel.buildEmbedFromPanel = (...args) => normalizeLargeEmbedImage(originalBuildEmbedFromPanel(...args));
+  panel.buildPreviewEmbeds = (...args) => originalBuildPreviewEmbeds(...args).map(normalizeLargeEmbedImage);
+  panel.buildPreviewEmbed = (...args) => normalizeLargeEmbedImage(originalBuildPreviewEmbed(...args));
+  panel.__discordLargeImageWidthPatched = true;
 }
 
 if (!panel.__compactPreviewPatched) {
@@ -50,7 +62,7 @@ if (!panel.__compactPreviewPatched) {
     if (typeof builder !== 'function') return builder;
 
     return function compactPreviewBuilder(interaction, ...args) {
-      const payload = forcePayloadWidth(builder(interaction, ...args));
+      const payload = normalizePayloadMedia(builder(interaction, ...args));
       if (!payload || !Array.isArray(payload.embeds) || payload.embeds.length <= 2) return payload;
 
       const state = typeof panel.getSession === 'function' ? panel.getSession(interaction) : null;
