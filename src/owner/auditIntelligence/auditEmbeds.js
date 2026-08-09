@@ -59,28 +59,47 @@ function discordTime(value, style = 'F') {
   return `<t:${Math.floor(date.getTime() / 1000)}:${style}>`;
 }
 
+function auditFamilyLabel(event) {
+  const category = String(event?.category || '').toLowerCase();
+  const type = String(event?.type || '').toLowerCase();
+  if (category === 'moderation' || /^member\.(ban|unban|kick|timeout|prune)/.test(type)) return 'Moderation';
+  if (category === 'automod' || category === 'security') return 'Security / AutoMod';
+  if (category === 'message' || type.startsWith('reaction.')) return 'Messages / Reactions';
+  if (category === 'role' || type === 'member.roles' || type.includes('permission')) return 'Roles / Permissions';
+  if (category === 'goliath' || type.startsWith('goliath.')) return 'Goliath Actions';
+  if (category === 'voice' || type.startsWith('voice.')) return 'Voice Activity';
+  if (category === 'member' || type.startsWith('member.')) return 'Member Events';
+  return 'Guild / System Events';
+}
+
 function buildAuditEmbed(event) {
-  const actor = event.actor?.id ? `<@${event.actor.id}> (${event.actor.id})` : event.actor?.label || 'Unknown / not exposed by Discord';
-  const user = event.user?.id ? `<@${event.user.id}> (${event.user.id})` : null;
+  const actor = event.actor?.id ? `<@${event.actor.id}>\n\`${event.actor.id}\`` : event.actor?.label || 'Unknown / not exposed by Discord';
+  const user = event.user?.id ? `<@${event.user.id}>\n\`${event.user.id}\`` : null;
   const target = user || event.target?.label || event.target?.name || event.target?.id || 'Unknown';
   const environment = runtimeMode();
+  const guildName = event.guildName || event.guild?.name || 'Unknown Guild';
+  const guildId = event.guildId || event.guild?.id || null;
+  const eventTime = discordTime(event.timestamp, 'F');
 
   const embed = new EmbedBuilder()
     .setColor(COLORS[family(event)] || COLORS.system)
     .setTitle(`${event.icon || '🧾'} ${event.title || event.type}`)
-    .setDescription(event.summary || `Audit event detected in **${event.guildName || 'Unknown Guild'}**.`)
+    .setDescription(event.summary || `Audit event detected in **${guildName}**.`)
     .addFields(
-      { name: 'Action', value: `\`${event.type}\``, inline: true },
+      { name: 'Server', value: guildId ? `**${guildName}**\n\`${guildId}\`` : `**${guildName}**`, inline: true },
+      { name: 'Report Family', value: auditFamilyLabel(event), inline: true },
+      { name: 'When', value: eventTime, inline: true },
+      { name: 'Target', value: compact(target), inline: true },
+      { name: 'Actor', value: compact(actor), inline: true },
+      { name: 'Result', value: event.result || 'Observed', inline: true },
+      { name: 'Event Type', value: `\`${event.type}\``, inline: true },
       { name: 'Environment', value: `\`${environment}\``, inline: true },
       { name: 'Source', value: event.source || 'Discord', inline: true },
-      { name: 'Result', value: event.result || 'Observed', inline: true },
-      { name: 'Target', value: compact(target), inline: false },
-      { name: 'Actor', value: compact(actor), inline: false },
     )
     .setFooter({ text: `Goliath Audit • ${environment} • ${event.eventId}` })
     .setTimestamp(new Date(event.timestamp));
 
-  if (event.channel?.id) embed.addFields({ name: 'Channel', value: `<#${event.channel.id}> (${event.channel.id})`, inline: false });
+  if (event.channel?.id) embed.addFields({ name: 'Location', value: `<#${event.channel.id}>\n\`${event.channel.id}\``, inline: false });
   if (event.reason) embed.addFields({ name: 'Reason', value: compact(event.reason), inline: false });
   if (event.before !== undefined) embed.addFields({ name: 'Before', value: `\`\`\`json\n${compact(event.before)}\n\`\`\``, inline: false });
   if (event.after !== undefined) embed.addFields({ name: 'After', value: `\`\`\`json\n${compact(event.after)}\n\`\`\``, inline: false });
