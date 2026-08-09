@@ -87,18 +87,53 @@ function sourceGuildOptions(client, destinationId) {
     .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')))
     .slice(0, 25);
 }
+function registryEnvironments(guild) {
+  return Object.keys(guild?.environments || {}).filter(Boolean);
+}
+function registryGuildOptions(client, destinationId) {
+  const destination = String(destinationId || '');
+  const merged = new Map();
+  for (const item of auditStore.getGuildRegistry?.() || []) {
+    const id = String(item?.guildId || '');
+    if (!id || id === destination) continue;
+    merged.set(id, { ...item, id, name: item.name || id, live: Boolean(client.guilds.cache.has(id)) });
+  }
+  for (const guild of client.guilds.cache.values()) {
+    if (guild.id === destination) continue;
+    const current = merged.get(guild.id) || {};
+    merged.set(guild.id, { ...current, id: guild.id, name: guild.name || current.name || guild.id, live: true });
+  }
+  return [...merged.values()]
+    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')))
+    .slice(0, 25);
+}
+function registryGuild(client, id) {
+  const key = String(id || '');
+  if (!key) return null;
+  const live = configuredGuild(client, key);
+  const stored = (auditStore.getGuildRegistry?.() || []).find((item) => String(item.guildId || '') === key);
+  if (!live && !stored) return null;
+  return { ...(stored || {}), id: key, name: live?.name || stored?.name || key, live: Boolean(live) };
+}
+function guildEnvironmentLabel(guild) {
+  const modes = registryEnvironments(guild);
+  return modes.length ? modes.join(' • ') : (guild?.live ? 'DEV' : 'Registry');
+}
 function sourceGuildSelect(customId, placeholder, sourceGuilds, selectedId) {
   return new StringSelectMenuBuilder()
     .setCustomId(customId)
     .setPlaceholder(placeholder)
     .setMinValues(1)
     .setMaxValues(1)
-    .addOptions(sourceGuilds.map((guild) => ({
-      label: String(guild.name || guild.id).slice(0, 100),
-      value: guild.id,
-      description: `Guild ID: ${guild.id}`.slice(0, 100),
-      default: guild.id === selectedId,
-    })));
+    .addOptions(sourceGuilds.map((guild) => {
+      const modes = registryEnvironments(guild);
+      return {
+        label: String(guild.name || guild.id).slice(0, 100),
+        value: guild.id,
+        description: (modes.length ? `${modes.join(' • ')} • ${guild.id}` : `Guild ID: ${guild.id}`).slice(0, 100),
+        default: guild.id === selectedId,
+      };
+    }));
 }
 function routeSummary(config, sourceGuildId) {
   const routes = config.guilds?.[String(sourceGuildId || '')]?.routes || {};
@@ -113,14 +148,14 @@ function monitoringSummary(config, sourceGuildId) {
 function buildRoutingPanel(client, interaction) {
   const config = auditStore.getConfig();
   const session = getRoutingSession(interaction);
-  const sourceGuilds = sourceGuildOptions(client, config.commandCenter?.guildId);
-  const selectedGuild = configuredGuild(client, session.sourceGuildId);
+  const sourceGuilds = registryGuildOptions(client, config.commandCenter?.guildId);
+  const selectedGuild = registryGuild(client, session.sourceGuildId);
   const embed = new EmbedBuilder()
     .setColor(0x5865F2)
     .setTitle('📡 Audit Intelligence Routing')
     .setDescription(selectedGuild ? `Configure where **${selectedGuild.name}** audit events are mirrored inside this private server. Individual user intelligence channels remain intact.` : 'Choose a source guild to configure.')
     .addFields(
-      { name: 'Source Guild', value: selectedGuild ? `**${selectedGuild.name}**\n\`${selectedGuild.id}\`` : 'Not selected', inline: true },
+      { name: 'Source Guild', value: selectedGuild ? `**${selectedGuild.name}**\n\`${selectedGuild.id}\`\n${guildEnvironmentLabel(selectedGuild)}` : 'Not selected', inline: true },
       { name: 'Route Type', value: ROUTE_LABELS[session.routeKey] || ROUTE_LABELS.default, inline: true },
       { name: 'Current Routing', value: selectedGuild ? routeSummary(config, selectedGuild.id) : 'Select a guild first.', inline: false },
     )
@@ -141,8 +176,8 @@ function buildRoutingPanel(client, interaction) {
 function buildMonitoringPanel(client, interaction) {
   const config = auditStore.getConfig();
   const session = getMonitoringSession(interaction);
-  const sourceGuilds = sourceGuildOptions(client, config.commandCenter?.guildId);
-  const selectedGuild = configuredGuild(client, session.sourceGuildId);
+  const sourceGuilds = registryGuildOptions(client, config.commandCenter?.guildId);
+  const selectedGuild = registryGuild(client, session.sourceGuildId);
   const guildConfig = selectedGuild ? (config.guilds?.[selectedGuild.id] || {}) : {};
   const monitoring = guildConfig.monitoring && typeof guildConfig.monitoring === 'object' ? guildConfig.monitoring : {};
   const selectedEnabled = monitoring[session.family] !== false;
@@ -151,7 +186,7 @@ function buildMonitoringPanel(client, interaction) {
     .setTitle('👁️ Audit Intelligence Monitoring')
     .setDescription(selectedGuild ? `Control which **${selectedGuild.name}** events are mirrored into your private Audit Intelligence server. Captured intelligence remains stored even when a mirror family is disabled.` : 'Choose a source guild to configure. All monitoring families default to enabled.')
     .addFields(
-      { name: 'Source Guild', value: selectedGuild ? `**${selectedGuild.name}**\n\`${selectedGuild.id}\`` : 'Not selected', inline: true },
+      { name: 'Source Guild', value: selectedGuild ? `**${selectedGuild.name}**\n\`${selectedGuild.id}\`\n${guildEnvironmentLabel(selectedGuild)}` : 'Not selected', inline: true },
       { name: 'Selected Family', value: MONITOR_LABELS[session.family] || MONITOR_LABELS.members, inline: true },
       { name: 'Selected Status', value: selectedGuild ? (selectedEnabled ? '🟢 Mirroring enabled' : '🔴 Mirroring disabled') : 'Select a guild first.', inline: true },
       { name: 'Monitoring Status', value: selectedGuild ? monitoringSummary(config, selectedGuild.id) : 'Select a guild first.', inline: false },
