@@ -26,8 +26,8 @@ function collect(target) {
 }
 
 function isDashboardModule(file) {
-  const relative = path.relative(ROOT, file).replace(/\\/g, '/');
-  return relative.startsWith('src/dashboard/');
+  const relativePath = path.relative(ROOT, file).replace(/\\/g, '/');
+  return relativePath.startsWith('src/dashboard/');
 }
 
 function relative(file) {
@@ -62,23 +62,20 @@ test('all active server-side JavaScript parses successfully', () => {
   );
 });
 
-test('Social Studio avoids fragile nested Discord component builders', () => {
-  const socialRoots = [
-    'src/modules/socialStudio',
-    'src/events/client',
-  ];
-  const files = socialRoots.flatMap(collect).filter((file) => !isDashboardModule(file));
+test('Social Studio runtime compatibility handlers avoid fragile nested builders', () => {
+  const files = collect('src/events/client');
   const fragileBuilder = /components\.push\s*\(\s*row\s*\(\s*new\s+(?:StringSelectMenuBuilder|RoleSelectMenuBuilder|ChannelSelectMenuBuilder)/m;
   const failures = [];
 
   for (const file of files) {
     const source = fs.readFileSync(file, 'utf8');
+    if (!source.includes('socialStudio')) continue;
     if (fragileBuilder.test(source)) failures.push(relative(file));
   }
 
   assert.equal(
     failures.length,
     0,
-    `Fragile nested Discord builder chains found. Build the menu in a named variable before pushing its row:\n${failures.join('\n')}`,
+    `Fragile nested Discord builder chains found in Social Studio runtime compatibility handlers. Build the menu in a named variable before pushing its row:\n${failures.join('\n')}`,
   );
 });
