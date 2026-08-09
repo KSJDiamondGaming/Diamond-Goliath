@@ -416,6 +416,15 @@ function changedFieldLabels(before = {}, after = {}, labels = {}) {
     .slice(0, 8);
 }
 
+function automodActionLabel(action) {
+  if (action === null || action === undefined) return 'an AutoMod action';
+  if (typeof action === 'object') {
+    const type = action.type ?? action.actionType ?? action.kind ?? null;
+    return type !== null ? `AutoMod action type **${type}**` : 'an AutoMod action';
+  }
+  return `AutoMod action **${String(action)}**`;
+}
+
 function buildOperationalSummary(event) {
   if (!event || event.summary) return event?.summary || null;
   const actorLabel = event.actor?.id ? mention(event.actor.id) : null;
@@ -489,6 +498,31 @@ function buildOperationalSummary(event) {
     case 'guild.update': {
       const changes = changedFieldLabels(event.before, event.after, { name: 'server name', ownerId: 'owner', verificationLevel: 'verification level', explicitContentFilter: 'content filter', preferredLocale: 'preferred locale', afkChannelId: 'AFK channel', systemChannelId: 'system channel', rulesChannelId: 'rules channel', publicUpdatesChannelId: 'community updates channel' });
       return `Server settings for **${event.guildName || event.after?.name || 'the guild'}** were updated${byActor}${changes.length ? ` — changed: **${changes.join(', ')}**` : ''}.${reason}`;
+    }
+    case 'voice.update': {
+      const beforeChannel = event.before?.channelId || null;
+      const afterChannel = event.after?.channelId || null;
+      if (!beforeChannel && afterChannel) return `${target} joined voice channel <#${afterChannel}>.`;
+      if (beforeChannel && !afterChannel) return `${target} left voice channel <#${beforeChannel}>.`;
+      if (beforeChannel && afterChannel && beforeChannel !== afterChannel) return `${target} moved from <#${beforeChannel}> to <#${afterChannel}>.`;
+      const changes = [];
+      if (event.before?.serverMute !== event.after?.serverMute) changes.push(event.after?.serverMute ? 'server muted' : 'server unmuted');
+      if (event.before?.serverDeaf !== event.after?.serverDeaf) changes.push(event.after?.serverDeaf ? 'server deafened' : 'server undeafened');
+      return changes.length ? `${target} was **${changes.join(' and ')}**${byActor} in ${afterChannel ? `<#${afterChannel}>` : 'voice'}.${reason}` : `${target}'s voice state changed.`;
+    }
+    case 'automod.ruleCreate': return `AutoMod rule **${event.target?.label || event.after?.name || event.target?.id || 'unknown'}** was created${byActor}.${reason}`;
+    case 'automod.ruleUpdate': {
+      const changes = changedFieldLabels(event.before, event.after, { name: 'name', enabled: 'enabled state', eventType: 'event type', triggerType: 'trigger type', actions: 'actions' });
+      return `AutoMod rule **${event.after?.name || event.target?.label || event.target?.id || 'unknown'}** was updated${byActor}${changes.length ? ` — changed: **${changes.join(', ')}**` : ''}.${reason}`;
+    }
+    case 'automod.ruleDelete': return `AutoMod rule **${event.target?.label || event.before?.name || event.target?.id || 'unknown'}** was deleted${byActor}.${reason}`;
+    case 'automod.action': {
+      const ruleId = event.metadata?.ruleId ? ` rule \`${event.metadata.ruleId}\`` : '';
+      const matched = event.metadata?.matchedKeyword || event.metadata?.matchedContent || null;
+      const content = event.metadata?.content || null;
+      const matchText = matched ? ` Match: **${shortText(matched, 160)}**.` : '';
+      const contentText = content ? ` Content: **${shortText(content, 220)}**.` : '';
+      return `AutoMod${ruleId} applied ${automodActionLabel(event.metadata?.action)} to ${target} in ${locationLabel(event)}.${matchText}${contentText}`;
     }
     default: return null;
   }
