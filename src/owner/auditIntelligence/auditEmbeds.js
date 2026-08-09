@@ -28,6 +28,13 @@ const GUILD_ACTIVITY_FAMILIES = {
   goliath: { label: 'Goliath Actions', emoji: '🤖' },
 };
 
+function runtimeMode() {
+  const mode = String(process.env.BOT_MODE || 'DEV').trim().toUpperCase();
+  if (mode === 'PROD' || mode === 'PRODUCTION') return 'PRODUCTION';
+  if (mode === 'BETA') return 'BETA';
+  return 'DEV';
+}
+
 function family(event) {
   if (event.category === 'moderation') return 'moderation';
   if (event.category === 'voice') return 'voice';
@@ -56,6 +63,7 @@ function buildAuditEmbed(event) {
   const actor = event.actor?.id ? `<@${event.actor.id}> (${event.actor.id})` : event.actor?.label || 'Unknown / not exposed by Discord';
   const user = event.user?.id ? `<@${event.user.id}> (${event.user.id})` : null;
   const target = user || event.target?.label || event.target?.name || event.target?.id || 'Unknown';
+  const environment = runtimeMode();
 
   const embed = new EmbedBuilder()
     .setColor(COLORS[family(event)] || COLORS.system)
@@ -63,12 +71,13 @@ function buildAuditEmbed(event) {
     .setDescription(event.summary || `Audit event detected in **${event.guildName || 'Unknown Guild'}**.`)
     .addFields(
       { name: 'Action', value: `\`${event.type}\``, inline: true },
+      { name: 'Environment', value: `\`${environment}\``, inline: true },
       { name: 'Source', value: event.source || 'Discord', inline: true },
       { name: 'Result', value: event.result || 'Observed', inline: true },
       { name: 'Target', value: compact(target), inline: false },
       { name: 'Actor', value: compact(actor), inline: false },
     )
-    .setFooter({ text: `Goliath Audit • ${event.eventId}` })
+    .setFooter({ text: `Goliath Audit • ${environment} • ${event.eventId}` })
     .setTimestamp(new Date(event.timestamp));
 
   if (event.channel?.id) embed.addFields({ name: 'Channel', value: `<#${event.channel.id}> (${event.channel.id})`, inline: false });
@@ -129,14 +138,14 @@ function buildGuildActivityEmbed(guild, events, familyKey) {
     const target = event.user?.id ? `<@${event.user.id}>` : event.target?.label || event.target?.name || event.target?.id || 'Unknown target';
     const channel = event.channel?.id ? ` in <#${event.channel.id}>` : '';
     const reason = event.reason ? ` — ${String(event.reason).slice(0, 120)}` : '';
-    return `${discordTime(event.timestamp, 'R')} • \`${event.type || 'event'}\` • ${actor} → ${target}${channel}${reason}`;
+    return `${discordTime(event.timestamp, 'R')} • \`${runtimeMode()}\` • \`${event.type || 'event'}\` • ${actor} → ${target}${channel}${reason}`;
   }) : ['No matching stored events found in the recent audit window.'];
 
   return new EmbedBuilder()
     .setColor(COLORS.intelligence)
     .setTitle(`${familyConfig.emoji} ${familyConfig.label} • ${guild?.name || 'Guild'}`)
     .setDescription(lines.join('\n').slice(0, 4000))
-    .setFooter({ text: 'Newest matching events • Up to 20 shown from the latest 100 stored guild events' })
+    .setFooter({ text: `Newest matching events • ${runtimeMode()} • Up to 20 shown from the latest 100 stored guild events` })
     .setTimestamp();
 }
 
