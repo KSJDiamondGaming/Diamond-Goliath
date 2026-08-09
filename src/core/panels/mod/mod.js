@@ -3,7 +3,7 @@ const {
   PermissionFlagsBits,
 } = require('discord.js');
 
-const { enforceCommandAccess } = require('../../ui/commandAccess');
+const { enforceCommandAccess } = require('../../commands/commandAccess');
 const { errorEmbed } = require('../../ui/embeds');
 const { safeEditReply } = require('../../ui/interactionResponse');
 const modPanel = require('./modPanel');

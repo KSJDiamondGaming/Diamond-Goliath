@@ -1,7 +1,7 @@
 'use strict';
 
 const { REST, Routes } = require('discord.js');
-const core = require('./syncCommandsCore');
+const core = require('./commandRegistry');
 const auditStore = require('../../owner/auditIntelligence/auditStore');
 const { resolveTokenDetails } = require('../../config/tokenResolver');
 const { BETA_GUILD_IDS: CONFIGURED_BETA_GUILD_IDS = [] } = require('../../config/betaGuilds');

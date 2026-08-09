@@ -4,7 +4,7 @@ const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 
 const formsPanel = require('../../modules/feedbackStudio/forms/formsPanel');
 const forms = require('../../modules/feedbackStudio/forms/forms');
-const { enforceCommandAccess } = require('../../core/ui/commandAccess');
+const { enforceCommandAccess } = require('../../core/commands/commandAccess');
 
 async function safeReply(interaction, payload) {
   const finalPayload = {

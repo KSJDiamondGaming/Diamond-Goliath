@@ -92,7 +92,7 @@ const ownerSecurityRoutes = route('owner security routes', './src/server/routes/
 const ownerSubscriptionRoutes = route('owner subscription routes', './src/server/routes/ownerSubscription', true);
 const publicCommunityRoutes = route('public community routes', './src/server/routes/publicCommunity');
 
-const commandHandler = safeRequire('command handler', './src/handlers/commandHandler', { loadCommands: () => null });
+const commandHandler = safeRequire('command handler', './src/core/commands/commandLoader', { loadCommands: () => null });
 const backupScheduler = safeRequire('backup scheduler', './src/core/backup/backupScheduler', { startBackupScheduler: () => null });
 const defaultModules = safeRequire('default modules', './src/core/guild/defaultModules', { initializeDefaultModules: () => null });
 const guildManager = safeRequire('guild manager', './src/core/guild/guildManager', { syncGuildMeta: () => null }, { optional: false });

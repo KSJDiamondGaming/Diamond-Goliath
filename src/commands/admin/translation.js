@@ -6,7 +6,7 @@ const translationStore = require('../../modules/utilityStudio/translation/transl
 const translation = require('../../modules/utilityStudio/translation/translation');
 const translationThreadManager = require('../../modules/utilityStudio/translation/translationThreadManager');
 const { setModuleEnabled } = require('../../core/guild/guildManager');
-const { enforceCommandAccess } = require('../../core/ui/commandAccess');
+const { enforceCommandAccess } = require('../../core/commands/commandAccess');
 
 async function reply(interaction, payload) {
   const data = { ...payload, flags: 64 };

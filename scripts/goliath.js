@@ -476,7 +476,7 @@ function syncCommands(target = mode) {
   }
 
   section(`Sync Discord commands (${environment})`);
-  const result = spawnSync(process.execPath, [absolute('src/core/commandRegistry/syncCommands.js')], {
+  const result = spawnSync(process.execPath, [absolute('src/core/commands/syncCommands.js')], {
     cwd: root,
     stdio: 'inherit',
     env: { ...process.env, BOT_MODE: environment },

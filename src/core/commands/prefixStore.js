@@ -1,8 +1,6 @@
 'use strict';
 
-// src/features/prefix/prefixStore.js
-
-const guildManager = require('../../core/guild/guildManager');
+const guildManager = require('../guild/guildManager');
 
 const DEFAULT_PREFIX = guildManager.DEFAULT_GENERAL_SETTINGS.prefix;
 const MIN_PREFIX_LENGTH = 1;
