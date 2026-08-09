@@ -36,6 +36,7 @@ function guildMarker(sourceGuild) { return `GOLIATH_AUDIT_GUILD:${sourceGuild.id
 function userMarker(sourceGuild, userId) { return `GOLIATH_AUDIT_USER:${sourceGuild.id}:${userId}`; }
 function profileMarker(messageId) { return `GOLIATH_AUDIT_PROFILE:${messageId}`; }
 function reportRouteMarker(sourceGuild, routeKey) { return `GOLIATH_AUDIT_ROUTE:${sourceGuild.id}:${routeKey}`; }
+function reportFeedMarker(sourceGuild, routeKey) { return `GOLIATH_AUDIT_FEED:${sourceGuild.id}:${routeKey}`; }
 function categoryBaseName(sourceGuild) { return `audit-${slug(sourceGuild.name, 'guild').slice(0, 70)}-${String(sourceGuild.id).slice(-6)}`.slice(0, 100); }
 function categoryName(sourceGuild, page = 1) { const base = categoryBaseName(sourceGuild); return page <= 1 ? base : `${base}-${page}`.slice(0, 100); }
 function categoryChildCount(ownerGuild, categoryId) { return ownerGuild.channels.cache.filter((channel) => channel.parentId === categoryId).size; }
@@ -125,6 +126,31 @@ async function resolveTextChannel(ownerGuild, channelId) {
   const channel = ownerGuild.channels.cache.get(String(channelId)) || await ownerGuild.channels.fetch(String(channelId)).catch(() => null);
   return channel?.isTextBased?.() ? channel : null;
 }
+async function ensureReportFeedHeader(channel, sourceGuild, routeKey, label) {
+  if (!channel?.isTextBased?.() || !sourceGuild?.id) return null;
+  const marker = reportFeedMarker(sourceGuild, routeKey);
+  const pinned = await channel.messages.fetchPinned().catch(() => null);
+  let message = pinned?.find((item) => item.author?.bot && String(item.content || '').includes(marker)) || null;
+  const content = [
+    `🟢 **Goliath Audit Feed Live — ${label}**`,
+    '',
+    `**Source Guild:** ${sourceGuild.name || 'Unknown Guild'}`,
+    `**Guild ID:** \`${sourceGuild.id}\``,
+    `**Feed:** ${label}`,
+    `**Status:** Active — monitored events are delivered here automatically.`,
+    '',
+    `Manage this feed from **Goliath Command Center → Routing**. Renaming or moving this channel is safe; Goliath tracks managed feeds by internal markers.`,
+    '',
+    `\`${marker}\``,
+  ].join('\n');
+  if (message) {
+    if (message.content !== content) await message.edit({ content, allowedMentions: { parse: [] } }).catch(() => null);
+    return message;
+  }
+  message = await channel.send({ content, allowedMentions: { parse: [] } }).catch(() => null);
+  if (message) await message.pin('Goliath Audit feed status').catch(() => null);
+  return message;
+}
 async function ensureReportRoutes(client, sourceGuild) {
   if (!sourceGuild?.id) return null;
   const context = await ensureAuditContext(client, sourceGuild);
@@ -136,6 +162,7 @@ async function ensureReportRoutes(client, sourceGuild) {
 
   if (!await resolveTextChannel(ownerGuild, routes.guild)) routes.guild = systemChannel.id;
   if (!await resolveTextChannel(ownerGuild, routes.default)) routes.default = systemChannel.id;
+  await ensureReportFeedHeader(systemChannel, sourceGuild, 'guild', 'Guild / System Events').catch(() => null);
 
   for (const [routeKey, definition] of Object.entries(REPORT_ROUTE_CHANNELS)) {
     let channel = await resolveTextChannel(ownerGuild, routes[routeKey]);
@@ -150,7 +177,12 @@ async function ensureReportRoutes(client, sourceGuild) {
         reason: `Goliath ${definition.label} audit route for ${sourceGuild.name}`,
       });
     }
-    if (channel?.isTextBased?.()) routes[routeKey] = channel.id;
+    if (channel?.isTextBased?.()) {
+      routes[routeKey] = channel.id;
+      if (String(channel.topic || '').includes(reportRouteMarker(sourceGuild, routeKey))) {
+        await ensureReportFeedHeader(channel, sourceGuild, routeKey, definition.label).catch(() => null);
+      }
+    }
   }
 
   const saved = auditStore.updateConfig({
