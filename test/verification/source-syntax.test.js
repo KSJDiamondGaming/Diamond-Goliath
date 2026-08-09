@@ -30,6 +30,10 @@ function isDashboardModule(file) {
   return relative.startsWith('src/dashboard/');
 }
 
+function relative(file) {
+  return path.relative(ROOT, file).replace(/\\/g, '/');
+}
+
 test('all active server-side JavaScript parses successfully', () => {
   // The dashboard is a Vite/React ESM application. `node --check` inherits the
   // root CommonJS package mode and therefore reports valid dashboard `import`,
@@ -47,7 +51,7 @@ test('all active server-side JavaScript parses successfully', () => {
     });
 
     if (result.status !== 0) {
-      failures.push(`${path.relative(ROOT, file).replace(/\\/g, '/')}: ${String(result.stderr || result.stdout).trim()}`);
+      failures.push(`${relative(file)}: ${String(result.stderr || result.stdout).trim()}`);
     }
   }
 
@@ -55,5 +59,26 @@ test('all active server-side JavaScript parses successfully', () => {
     failures.length,
     0,
     `JavaScript syntax validation failed:\n${failures.join('\n\n')}`,
+  );
+});
+
+test('Social Studio avoids fragile nested Discord component builders', () => {
+  const socialRoots = [
+    'src/modules/socialStudio',
+    'src/events/client',
+  ];
+  const files = socialRoots.flatMap(collect).filter((file) => !isDashboardModule(file));
+  const fragileBuilder = /components\.push\s*\(\s*row\s*\(\s*new\s+(?:StringSelectMenuBuilder|RoleSelectMenuBuilder|ChannelSelectMenuBuilder)/m;
+  const failures = [];
+
+  for (const file of files) {
+    const source = fs.readFileSync(file, 'utf8');
+    if (fragileBuilder.test(source)) failures.push(relative(file));
+  }
+
+  assert.equal(
+    failures.length,
+    0,
+    `Fragile nested Discord builder chains found. Build the menu in a named variable before pushing its row:\n${failures.join('\n')}`,
   );
 });
