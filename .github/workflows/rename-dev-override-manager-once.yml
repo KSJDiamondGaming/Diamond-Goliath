@@ -1,0 +1,50 @@
+name: Rename Dev Override Manager Once
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - '.github/workflows/rename-dev-override-manager-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  rename:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: dev
+          fetch-depth: 0
+      - name: Rename manager and update references
+        shell: bash
+        run: |
+          set -euo pipefail
+          git mv src/core/dev/testDevOverrideManager.js src/core/dev/DevOverrideManager.js
+          grep -RIl --exclude-dir=.git --exclude='rename-dev-override-manager-once.yml' 'testDevOverrideManager' . | while read -r file; do
+            sed -i 's/testDevOverrideManager/DevOverrideManager/g' "$file"
+          done
+          if grep -RIn --exclude-dir=.git --exclude='rename-dev-override-manager-once.yml' 'testDevOverrideManager' .; then
+            echo 'Old manager name still referenced.'
+            exit 1
+          fi
+          node --check src/core/dev/DevOverrideManager.js
+          node --check src/commands/admin/testdev.js
+          node --check src/server/billing/entitlementManager.js
+          node --check src/core/security/quarantineSystem.js
+          node --check src/core/automod/punishmentEngine.js
+          node --check src/core/security/securityCore.js
+          node --check src/core/security/goliathPermissionGuard.js
+          node --check src/modules/securityStudio/verificationManager.js
+      - name: Commit rename and remove one-shot workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/rename-dev-override-manager-once.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "refactor(dev): rename DevOverrideManager"
+          git pull --rebase origin dev
+          git push origin dev
