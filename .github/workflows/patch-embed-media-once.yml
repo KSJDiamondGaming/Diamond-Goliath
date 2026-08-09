@@ -36,23 +36,18 @@ jobs:
           if "require('./embedMediaLayout')" not in text:
               text = text.replace(old_import, new_import, 1)
 
-          old_test = "if (i.customId === 'embed:test-send') {\n      await i.reply({"
-          new_test = "if (i.customId === 'embed:test-send') {\n      const media = await prepareEmbedMedia(buildPreviewEmbeds(s, i));\n      await i.reply({"
+          old_test = "if (i.customId === 'embed:test-send') {\n      await i.reply({\n        content: '🧪 Test Preview',\n        embeds: buildPreviewEmbeds(s, i),"
+          new_test = "if (i.customId === 'embed:test-send') {\n      const media = await prepareEmbedMedia(buildPreviewEmbeds(s, i));\n      await i.reply({\n        content: '🧪 Test Preview',\n        embeds: media.embeds,\n        files: media.files,"
           if old_test not in text:
-              raise SystemExit('Test-send block not found')
+              raise SystemExit('Test-send payload not found')
           text = text.replace(old_test, new_test, 1)
 
-          old_try = "      try {\n        payload = {"
-          new_try = "      try {\n        const media = await prepareEmbedMedia(buildPreviewEmbeds(s, i));\n        payload = {"
-          if text.count(old_try) != 2:
-              raise SystemExit(f'Expected 2 payload try blocks, found {text.count(old_try)}')
+          old_try = "      try {\n        payload = {\n          content: s.allowUserPing ? `<@${i.user.id}>` : '',\n          embeds: buildPreviewEmbeds(s, i),"
+          new_try = "      try {\n        const media = await prepareEmbedMedia(buildPreviewEmbeds(s, i));\n        payload = {\n          content: s.allowUserPing ? `<@${i.user.id}>` : '',\n          embeds: media.embeds,\n          files: media.files,"
+          count = text.count(old_try)
+          if count != 2:
+              raise SystemExit(f'Expected 2 update/use payloads, found {count}')
           text = text.replace(old_try, new_try)
-
-          old_embeds = "          embeds: buildPreviewEmbeds(s, i),"
-          new_embeds = "          embeds: media.embeds,\n          files: media.files,"
-          if text.count(old_embeds) != 3:
-              raise SystemExit(f'Expected 3 embed payloads, found {text.count(old_embeds)}')
-          text = text.replace(old_embeds, new_embeds)
 
           path.write_text(text, encoding='utf-8')
           Path('.patch-embed-media-trigger').unlink(missing_ok=True)
