@@ -4,35 +4,41 @@
 // panel while editing. Real sends/tests/updates still use the full panel list.
 const panel = require('./embedPanel');
 
-// Footer/title whitespace is collapsed by Discord and was producing no visible
-// width change. Use the earlier rendered Hangul Filler marker instead. U+3164 is
-// visually blank but is still a real rendered glyph, so Discord measures it when
-// calculating the card width. Apply it only to panels that contain a Large Image.
+// Discord is ignoring width hints placed in the image raster, title, footer and
+// description. Move the width anchor into the embed field grid instead. A
+// non-inline field participates in Discord's full embed layout, while U+3164 is
+// visually blank but still measurable text.
 const WIDTH_GLYPH = '\u3164';
-const WIDTH_MARKER = WIDTH_GLYPH.repeat(42);
-const MAX_DESCRIPTION = 4096;
+const WIDTH_FIELD_NAME = WIDTH_GLYPH;
+const WIDTH_FIELD_VALUE = WIDTH_GLYPH.repeat(64);
 
-function stripWidthMarker(value) {
-  return String(value || '')
-    .replace(new RegExp(`\\n?${WIDTH_GLYPH}{20,}$`, 'u'), '')
-    .replace(/\n+$/u, '');
+function isWidthField(field) {
+  return field?.name === WIDTH_FIELD_NAME && field?.value === WIDTH_FIELD_VALUE && field?.inline === false;
 }
 
 function holdImageEmbedWidth(embed) {
-  if (!embed || typeof embed.toJSON !== 'function' || typeof embed.setDescription !== 'function') return embed;
+  if (!embed || typeof embed.toJSON !== 'function' || typeof embed.addFields !== 'function') return embed;
 
   const data = embed.toJSON();
   if (!data?.image?.url) return embed;
 
-  const original = stripWidthMarker(data.description || '');
-  const available = Math.max(0, MAX_DESCRIPTION - WIDTH_MARKER.length - (original ? 1 : 0));
-  const base = original.slice(0, available);
+  const fields = Array.isArray(data.fields) ? data.fields : [];
+  if (fields.some(isWidthField)) return embed;
 
-  embed.setDescription(`${base}${base ? '\n' : ''}${WIDTH_MARKER}`);
+  // Discord allows at most 25 fields. Only add the width probe where there is
+  // capacity; normal content is never removed or altered.
+  if (fields.length < 25) {
+    embed.addFields({
+      name: WIDTH_FIELD_NAME,
+      value: WIDTH_FIELD_VALUE,
+      inline: false,
+    });
+  }
+
   return embed;
 }
 
-if (!panel.__imageWidthMarkerPatched) {
+if (!panel.__imageFieldWidthPatched) {
   const originalBuildEmbedFromPanel = panel.buildEmbedFromPanel.bind(panel);
   const originalBuildPreviewEmbed = panel.buildPreviewEmbed.bind(panel);
   const originalBuildPreviewEmbeds = panel.buildPreviewEmbeds.bind(panel);
@@ -40,7 +46,7 @@ if (!panel.__imageWidthMarkerPatched) {
   panel.buildEmbedFromPanel = (...args) => holdImageEmbedWidth(originalBuildEmbedFromPanel(...args));
   panel.buildPreviewEmbed = (...args) => holdImageEmbedWidth(originalBuildPreviewEmbed(...args));
   panel.buildPreviewEmbeds = (...args) => originalBuildPreviewEmbeds(...args).map(holdImageEmbedWidth);
-  panel.__imageWidthMarkerPatched = true;
+  panel.__imageFieldWidthPatched = true;
 }
 
 if (!panel.__compactPreviewPatched) {
