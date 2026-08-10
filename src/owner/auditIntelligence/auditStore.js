@@ -343,6 +343,127 @@ function updateUserIndex(userId, event) {
 }
 
 function getUser(userId) { return readJson(path.join(root, 'users', `${String(userId)}.json`), null); }
+function modeAuditRoot(mode) {
+  const normalized = String(mode || '').toUpperCase();
+  if (normalized === runtimeMode()) return root;
+  const folder = normalized === 'PRODUCTION' ? 'production' : normalized.toLowerCase();
+  return path.join(SHARED_ROOT, folder, 'src', 'runtime', folder, 'data', 'audit');
+}
+function availableAuditRoots() {
+  const roots = [];
+  for (const mode of REGISTRY_MODES) {
+    const candidate = modeAuditRoot(mode);
+    if (!fs.existsSync(candidate)) continue;
+    roots.push({ mode, root: candidate });
+  }
+  if (!roots.some((item) => item.root === root) && fs.existsSync(root)) roots.push({ mode: runtimeMode(), root });
+  return roots;
+}
+function mergeCountMap(target, source) {
+  for (const [key, value] of Object.entries(source || {})) target[key] = Number(target[key] || 0) + Number(value || 0);
+  return target;
+}
+function mergeUniqueArray(target, source, keyFn, limit = HISTORY_LIMIT) {
+  const map = new Map();
+  for (const item of [...(target || []), ...(source || [])]) {
+    if (item === undefined || item === null) continue;
+    const key = keyFn(item);
+    if (!key) continue;
+    map.set(key, item);
+  }
+  return [...map.values()]
+    .sort((a, b) => String(a?.timestamp || a?.observedAt || a?.joinedAt || a?.leftAt || '').localeCompare(String(b?.timestamp || b?.observedAt || b?.joinedAt || b?.leftAt || '')))
+    .slice(-limit);
+}
+function mergeGuildMembership(target, source) {
+  const next = { ...(target || {}) };
+  for (const [guildId, guild] of Object.entries(source || {})) {
+    const current = next[guildId] || {};
+    const currentLast = String(current.lastObservedAt || '');
+    const incomingLast = String(guild.lastObservedAt || '');
+    next[guildId] = {
+      ...current,
+      ...guild,
+      firstObservedAt: [current.firstObservedAt, guild.firstObservedAt].filter(Boolean).sort()[0] || null,
+      lastObservedAt: currentLast > incomingLast ? current.lastObservedAt : guild.lastObservedAt || current.lastObservedAt || null,
+      eventCount: Number(current.eventCount || 0) + Number(guild.eventCount || 0),
+      joinCount: Number(current.joinCount || 0) + Number(guild.joinCount || 0),
+      leaveCount: Number(current.leaveCount || 0) + Number(guild.leaveCount || 0),
+      eventTypes: mergeCountMap({ ...(current.eventTypes || {}) }, guild.eventTypes || {}),
+    };
+  }
+  return next;
+}
+function getUserAcrossModes(userId) {
+  const id = String(userId || '');
+  if (!id) return null;
+  let merged = null;
+  const environments = {};
+  for (const item of availableAuditRoots()) {
+    const record = readJson(path.join(item.root, 'users', `${id}.json`), null);
+    if (!record) continue;
+    environments[item.mode] = { firstObservedAt: record.firstObservedAt || null, lastObservedAt: record.lastObservedAt || null, eventCount: Number(record.eventCount || 0) };
+    if (!merged) {
+      merged = {
+        userId: id,
+        firstObservedAt: record.firstObservedAt || null,
+        lastObservedAt: record.lastObservedAt || null,
+        eventCount: 0,
+        names: [], globalNames: [], displayNames: [], nicknames: [], guilds: {},
+        eventTypes: {}, categories: {}, relations: { subject: 0, actor: 0 },
+        joinHistory: [], leaveHistory: [], roleHistory: [], moderationHistory: [], voiceHistory: [], actorHistory: [], recentEvents: [],
+      };
+    }
+    merged.firstObservedAt = [merged.firstObservedAt, record.firstObservedAt].filter(Boolean).sort()[0] || null;
+    if (record.lastObservedAt && (!merged.lastObservedAt || record.lastObservedAt > merged.lastObservedAt)) merged.lastObservedAt = record.lastObservedAt;
+    merged.eventCount += Number(record.eventCount || 0);
+    merged.names = mergeUniqueArray(merged.names, record.names, (value) => String(value).toLowerCase(), 25);
+    merged.globalNames = mergeUniqueArray(merged.globalNames, record.globalNames, (value) => String(value).toLowerCase(), 25);
+    merged.displayNames = mergeUniqueArray(merged.displayNames, record.displayNames, (value) => String(value).toLowerCase(), 25);
+    merged.nicknames = mergeUniqueArray(merged.nicknames, record.nicknames, (entry) => `${entry.guildId || ''}:${String(entry.nickname || '').toLowerCase()}`, 100);
+    merged.guilds = mergeGuildMembership(merged.guilds, record.guilds);
+    mergeCountMap(merged.eventTypes, record.eventTypes);
+    mergeCountMap(merged.categories, record.categories);
+    mergeCountMap(merged.relations, record.relations);
+    merged.joinHistory = mergeUniqueArray(merged.joinHistory, record.joinHistory, (entry) => entry.eventId || `${entry.guildId}:${entry.joinedAt}`, 100);
+    merged.leaveHistory = mergeUniqueArray(merged.leaveHistory, record.leaveHistory, (entry) => entry.eventId || `${entry.guildId}:${entry.leftAt}:${entry.type}`, 100);
+    merged.roleHistory = mergeUniqueArray(merged.roleHistory, record.roleHistory, (entry) => entry.eventId || `${entry.guildId}:${entry.timestamp}:${entry.type}`, 100);
+    merged.moderationHistory = mergeUniqueArray(merged.moderationHistory, record.moderationHistory, (entry) => entry.eventId || `${entry.guildId}:${entry.timestamp}:${entry.type}`, 100);
+    merged.voiceHistory = mergeUniqueArray(merged.voiceHistory, record.voiceHistory, (entry) => entry.eventId || `${entry.guildId}:${entry.timestamp}:${entry.type}`, 100);
+    merged.actorHistory = mergeUniqueArray(merged.actorHistory, record.actorHistory, (entry) => entry.eventId || `${entry.guildId}:${entry.timestamp}:${entry.type}`, 100);
+    merged.recentEvents = mergeUniqueArray(merged.recentEvents, record.recentEvents, (entry) => entry.eventId || `${entry.guildId}:${entry.timestamp}:${entry.type}:${entry.relation || 'subject'}`, 100);
+    if (record.bot !== undefined && record.bot !== null) merged.bot = record.bot;
+    if (record.accountCreatedAt && !merged.accountCreatedAt) merged.accountCreatedAt = record.accountCreatedAt;
+  }
+  if (!merged) return null;
+  merged.environments = environments;
+  return merged;
+}
+function searchUsersAcrossModes(query, options = {}) {
+  const value = String(query || '').trim().toLowerCase();
+  if (!value) return [];
+  const limit = Math.min(25, Math.max(1, Number(options.limit || 25)));
+  const guildId = options.guildId ? String(options.guildId) : null;
+  const found = new Map();
+  for (const item of availableAuditRoots()) {
+    const dir = path.join(item.root, 'users');
+    if (!fs.existsSync(dir)) continue;
+    for (const name of fs.readdirSync(dir).filter((file) => file.endsWith('.json'))) {
+      const userId = name.slice(0, -5);
+      const record = readJson(path.join(dir, name), null);
+      if (!record) continue;
+      if (guildId && !record.guilds?.[guildId]) continue;
+      const labels = [userId, ...(record.names || []), ...(record.globalNames || []), ...(record.displayNames || []), ...(record.nicknames || []).map((entry) => entry.nickname)].filter(Boolean);
+      if (!labels.some((label) => String(label).toLowerCase().includes(value))) continue;
+      const current = found.get(userId) || { id: userId, label: record.displayNames?.at?.(-1) || record.globalNames?.at?.(-1) || record.names?.at?.(-1) || userId, environments: new Set() };
+      current.environments.add(item.mode);
+      found.set(userId, current);
+      if (found.size >= limit) break;
+    }
+    if (found.size >= limit) break;
+  }
+  return [...found.values()].map((entry) => ({ id: entry.id, label: entry.label, environments: [...entry.environments] })).slice(0, limit);
+}
 function getGuild(guildId) { return readJson(path.join(root, 'guilds', `${String(guildId)}.json`), null); }
 function getGuildEvents(guildId, options = {}) {
   const dir = path.join(root, 'events', String(guildId || ''));
@@ -371,6 +492,8 @@ function getControlConfigPath() { return SHARED_CONFIG_FILE; }
 module.exports = {
   appendEvent,
   getUser,
+  getUserAcrossModes,
+  searchUsersAcrossModes,
   getGuild,
   getGuildEvents,
   getRoot,
