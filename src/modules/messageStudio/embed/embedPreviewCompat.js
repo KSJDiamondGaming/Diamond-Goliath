@@ -8,26 +8,25 @@ const { persistPresetMedia } = require('./embedAssetStore');
 
 function queuePersistentMediaImport(presetLike) {
   // Runtime storage is deployment-local and durable. Asset identity is derived
-  // from the source attachment path (not Discord's expiring query signature),
-  // so refreshed URLs still point to the same cached binary.
+  // from the source attachment path rather than Discord's expiring signature.
   persistPresetMedia('global', presetLike).then((results) => {
-    const imported = results.filter((r) => r.ok && !r.cached).length;
-    const reused = results.filter((r) => r.ok && r.cached).length;
-    const failed = results.filter((r) => !r.ok);
-    if (imported || reused) {
-      console.log(`[EmbedAssets] persistence check: imported=${imported}, cached=${reused}`);
-    }
+    const failed = results.filter((result) => !result.ok);
     if (failed.length) {
-      console.warn('[EmbedAssets] persistence import failed:', failed.map((r) => ({ url: String(r.url).slice(0, 120), error: r.error })));
+      console.warn(
+        '[EmbedAssets] persistence import failed:',
+        failed.map((result) => ({
+          url: String(result.url).slice(0, 120),
+          error: result.error,
+        })),
+      );
     }
   }).catch((error) => {
-    console.warn('[EmbedAssets] persistence check failed:', error?.message || error);
+    console.warn('[EmbedAssets] persistence import failed:', error?.message || error);
   });
 }
 
-// Import media as soon as a Media modal is saved, rather than waiting until
-// deployment. This makes the editor/preset resilient even if the original
-// Discord signed URL expires before the user next posts it.
+// Import media as soon as it is edited or serialized into a preset so saved
+// presets remain usable after the original signed Discord URL expires.
 if (!panel.__persistentMediaPatched && typeof panel.saveSelected === 'function') {
   const originalSaveSelected = panel.saveSelected.bind(panel);
   panel.saveSelected = (state, patch = {}) => {
