@@ -6,7 +6,6 @@ const sharp = require('sharp');
 
 const TARGET_WIDTH = 600;
 const PORTRAIT_VISIBLE_WIDTH = 320;
-const EDGE_ALPHA = 1 / 255;
 const MAX_SOURCE_BYTES = 8 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 8000;
 const DISCORD_IMAGE_HOSTS = new Set(['cdn.discordapp.com', 'media.discordapp.net']);
@@ -68,17 +67,19 @@ async function centerOnEmbedCanvas(buffer) {
   const left = Math.max(0, Math.floor((TARGET_WIDTH - renderedWidth) / 2));
   const right = Math.max(0, TARGET_WIDTH - renderedWidth - left);
 
-  // Discord's media pipeline can effectively ignore fully-transparent side
-  // padding when deciding how wide an embed image should render. Keep the
-  // canvas visually transparent but give the padding a one-byte alpha value so
-  // the complete 600 px raster survives proxy/attachment processing.
+  // Discord derives the embed card width from the actual rendered image bounds.
+  // Transparent / near-transparent padding can be discarded by Discord's image
+  // proxy, which makes portrait images collapse the whole embed card. Use a real
+  // opaque 600 px dark canvas instead. Against Discord dark mode this reads as
+  // empty side space, but Discord must preserve the complete raster width.
   return sharp(resized)
+    .flatten({ background: { r: 17, g: 18, b: 20 } })
     .extend({
       top: 0,
       bottom: 0,
       left,
       right,
-      background: { r: 0, g: 0, b: 0, alpha: EDGE_ALPHA },
+      background: { r: 17, g: 18, b: 20, alpha: 1 },
     })
     .png()
     .toBuffer();
@@ -87,10 +88,10 @@ async function centerOnEmbedCanvas(buffer) {
 /**
  * Prepare embed large images for Discord's renderer.
  *
- * Discord-hosted large images are normalised to a 600 px canvas. Portrait /
- * square images keep a 320 px visible size and are centred. The side padding
- * uses effectively invisible non-zero alpha so Discord keeps the full canvas.
- * The persisted/source URL is never modified.
+ * Discord-hosted large images are normalised to a genuine 600 px raster.
+ * Portrait / square images keep a 320 px visible size and are centred on an
+ * opaque Discord-dark canvas so the renderer cannot trim the side padding and
+ * collapse the containing embed. The persisted/source URL is never modified.
  */
 async function prepareEmbedMedia(embeds = []) {
   const files = [];
@@ -122,6 +123,5 @@ async function prepareEmbedMedia(embeds = []) {
 module.exports = {
   TARGET_WIDTH,
   PORTRAIT_VISIBLE_WIDTH,
-  EDGE_ALPHA,
   prepareEmbedMedia,
 };
