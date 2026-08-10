@@ -5,28 +5,23 @@
 // builders and the deployment media-normalization path.
 const panel = require('./embedPanel');
 
-// Discord stops responding to ever-larger footer padding on image embeds.
-// Use a real full-width field row instead, which participates in the embed's
-// content grid and should force the card toward the same width as text panels.
-const DEPLOYED_WIDTH_FIELD = '\u2800'.repeat(72);
+// Use a visually blank but non-breaking run in the description so Discord has
+// one real, unwrappable text-layout span to measure against. This exists only
+// in the outgoing built embed and is never saved back into the user's preset.
+const WIDTH_GLYPH = '\u2800';
+const WORD_JOINER = '\u2060';
+const DEPLOYED_WIDTH_ANCHOR = Array.from({ length: 42 }, () => `${WIDTH_GLYPH}${WORD_JOINER}`).join('');
 
 function holdDeployedImagePanelWidth(embed) {
-  if (!embed || typeof embed.toJSON !== 'function' || typeof embed.addFields !== 'function') return embed;
+  if (!embed || typeof embed.toJSON !== 'function' || typeof embed.setDescription !== 'function') return embed;
 
   const data = embed.toJSON();
   if (!data?.image?.url) return embed;
 
-  // Leave the footer completely untouched. The extra field exists only in the
-  // outgoing built embed; it is not saved back into the user's panel/preset.
-  const fields = Array.isArray(data.fields) ? data.fields : [];
-  if (fields.length >= 25) return embed;
-
-  embed.addFields({
-    name: '\u200B',
-    value: DEPLOYED_WIDTH_FIELD,
-    inline: false,
-  });
-
+  const description = String(data.description || '');
+  // Keep the user's real text unchanged; append one blank-looking, unbreakable
+  // measurement line only to the deployed/test/update payload.
+  embed.setDescription(`${description}${description ? '\n' : ''}${DEPLOYED_WIDTH_ANCHOR}`);
   return embed;
 }
 
