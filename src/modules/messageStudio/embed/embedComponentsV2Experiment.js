@@ -17,6 +17,13 @@ const PORTRAIT_WIDTH = 300;
 const MAX_SOURCE_BYTES = 8 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 8000;
 
+// Discord/MediaGallery can effectively collapse fully-transparent horizontal
+// padding when it determines the visible media bounds. A practically invisible
+// alpha floor keeps the full 520px raster participating in layout, so the
+// portrait can genuinely sit in the middle of the container without creating
+// a visible rectangular background.
+const LAYOUT_ALPHA = 1 / 255;
+
 function isHttpsUrl(value) {
   try {
     return new URL(String(value || '')).protocol === 'https:';
@@ -55,6 +62,15 @@ async function sourceBuffer(url) {
   return remote.buffer;
 }
 
+function circleMaskSvg(size) {
+  const radius = size / 2;
+  return Buffer.from(
+    `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">` +
+      `<circle cx="${radius}" cy="${radius}" r="${radius}" fill="white"/>` +
+    '</svg>',
+  );
+}
+
 async function makeCenteredPortrait(buffer) {
   const meta = await sharp(buffer, { failOn: 'warning' }).metadata();
   const width = Number(meta.width || 0);
@@ -69,25 +85,35 @@ async function makeCenteredPortrait(buffer) {
       .toBuffer();
   }
 
+  // Crop the source to a square first, then mask it to a true circle. This
+  // removes any dark/opaque square that may already exist around the portrait
+  // in the source image before it is placed on the layout canvas.
   const portrait = await sharp(buffer, { failOn: 'warning' })
-    .resize({ width: PORTRAIT_WIDTH, withoutEnlargement: false })
+    .resize(PORTRAIT_WIDTH, PORTRAIT_WIDTH, {
+      fit: 'cover',
+      position: 'centre',
+      withoutEnlargement: false,
+    })
     .ensureAlpha()
+    .composite([{ input: circleMaskSvg(PORTRAIT_WIDTH), blend: 'dest-in' }])
     .png()
     .toBuffer();
 
-  const portraitMeta = await sharp(portrait).metadata();
-  const renderedWidth = Number(portraitMeta.width || PORTRAIT_WIDTH);
-  const left = Math.max(0, Math.floor((CANVAS_WIDTH - renderedWidth) / 2));
-  const right = Math.max(0, CANVAS_WIDTH - renderedWidth - left);
+  const left = Math.floor((CANVAS_WIDTH - PORTRAIT_WIDTH) / 2);
 
-  return sharp(portrait)
-    .extend({
-      top: 0,
-      bottom: 0,
-      left,
-      right,
-      background: { r: 0, g: 0, b: 0, alpha: 0 },
-    })
+  // Start with a near-transparent full-width canvas rather than fully
+  // transparent padding. It is visually indistinguishable in Discord, but it
+  // prevents the renderer from treating only the 300px portrait as the media
+  // width. The result should remain 520px wide with the circle exactly centred.
+  return sharp({
+    create: {
+      width: CANVAS_WIDTH,
+      height: PORTRAIT_WIDTH,
+      channels: 4,
+      background: { r: 0, g: 0, b: 0, alpha: LAYOUT_ALPHA },
+    },
+  })
+    .composite([{ input: portrait, left, top: 0 }])
     .png()
     .toBuffer();
 }
