@@ -10,8 +10,8 @@ const { getCachedAsset, saveCachedAsset } = require('./embedAssetStore');
 // 299 px allows the surrounding text/footer layout to hold the normal full
 // embed width. Do not raise this to 300+.
 const TARGET_WIDTH = 299;
-const PORTRAIT_VISIBLE_WIDTH = 205;
-const PORTRAIT_RIGHT_INSET = 8;
+const PORTRAIT_VISIBLE_WIDTH = 212;
+const PORTRAIT_RIGHT_INSET = 0;
 const MAX_SOURCE_BYTES = 8 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 8000;
 
@@ -78,10 +78,10 @@ async function centerOnEmbedCanvas(buffer) {
       .toBuffer();
   }
 
-  // Keep the visible portrait larger than the first centring experiment, while
-  // preserving the locked 299px media width. Transparent padding moves the
-  // portrait toward the visual centre of Discord's full-width embed without
-  // painting a rectangular background behind it.
+  // Portraits stay on a transparent 299px canvas so the embed keeps its full
+  // text-card width. The visible portrait is pushed to the far right of that
+  // media box, which is the furthest Discord lets us move it toward the visual
+  // centre without crossing the 300px renderer threshold.
   const visibleWidth = Math.min(PORTRAIT_VISIBLE_WIDTH, TARGET_WIDTH);
   const resized = await sharp(buffer, { failOn: 'warning' })
     .resize({ width: visibleWidth, withoutEnlargement: false })
