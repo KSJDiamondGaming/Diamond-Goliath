@@ -20,6 +20,8 @@ permissions:
   contents: read
   statuses: write
 
+# Never cancel an in-flight validation. Rapid pushes are queued so every commit gets a
+# deterministic preflight result instead of being left as an ambiguous cancelled run.
 concurrency:
   group: deploy-${{ github.event_name == 'push' && 'dev' || inputs.environment }}
   cancel-in-progress: false
@@ -30,6 +32,7 @@ jobs:
     outputs:
       environment: ${{ steps.target.outputs.environment }}
       source_branch: ${{ steps.target.outputs.source_branch }}
+      source_ref: ${{ steps.target.outputs.source_ref }}
       target_branch: ${{ steps.target.outputs.target_branch }}
       deploy_script: ${{ steps.target.outputs.deploy_script }}
       app_dir: ${{ steps.target.outputs.app_dir }}
@@ -65,8 +68,17 @@ jobs:
             *) exit 1 ;;
           esac
 
+          # Push-triggered DEV runs must validate the exact commit that triggered the run.
+          # Manual promotions intentionally resolve the current selected branch head.
+          if [ "${{ github.event_name }}" = "push" ]; then
+            SOURCE_REF="${{ github.sha }}"
+          else
+            SOURCE_REF="$SOURCE_BRANCH"
+          fi
+
           echo "environment=$ENVIRONMENT" >> "$GITHUB_OUTPUT"
           echo "source_branch=$SOURCE_BRANCH" >> "$GITHUB_OUTPUT"
+          echo "source_ref=$SOURCE_REF" >> "$GITHUB_OUTPUT"
           echo "target_branch=$TARGET_BRANCH" >> "$GITHUB_OUTPUT"
           echo "deploy_script=$DEPLOY_SCRIPT" >> "$GITHUB_OUTPUT"
           echo "app_dir=$APP_DIR" >> "$GITHUB_OUTPUT"
@@ -76,12 +88,13 @@ jobs:
   preflight:
     needs: resolve
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     outputs:
       source_sha: ${{ steps.sha.outputs.source_sha }}
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ needs.resolve.outputs.source_branch }}
+          ref: ${{ needs.resolve.outputs.source_ref }}
           fetch-depth: 0
       - uses: actions/setup-node@v5
         with:
@@ -90,7 +103,14 @@ jobs:
       - run: npm ci
       - name: Record source commit
         id: sha
-        run: echo "source_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+        run: |
+          set -euo pipefail
+          SHA="$(git rev-parse HEAD)"
+          echo "source_sha=$SHA" >> "$GITHUB_OUTPUT"
+          if [ "${{ github.event_name }}" = "push" ] && [ "$SHA" != "${{ github.sha }}" ]; then
+            echo "Preflight checkout drifted from triggering commit: expected ${{ github.sha }}, got $SHA" >&2
+            exit 1
+          fi
       - name: Mark preflight pending
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -124,7 +144,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          SHA="$(git rev-parse HEAD)"
+          SHA="$(git rev-parse HEAD 2>/dev/null || echo '${{ github.sha }}')"
           curl --fail-with-body -L -X POST \
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: Bearer $GH_TOKEN" \
@@ -136,6 +156,7 @@ jobs:
     needs: [resolve, preflight]
     if: needs.preflight.result == 'success'
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - name: Deploy affected components
         uses: appleboy/ssh-action@v1.0.3
@@ -148,13 +169,14 @@ jobs:
           PM2_NAME: ${{ needs.resolve.outputs.pm2_name }}
           EXPECTED_SHA: ${{ needs.preflight.outputs.source_sha }}
           FORCE_COMMAND_SYNC: ${{ github.event_name == 'workflow_dispatch' }}
+          PUSH_TRIGGERED: ${{ github.event_name == 'push' }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           password: ${{ secrets.VPS_PASSWORD }}
           port: 22
           command_timeout: 20m
-          envs: ENVIRONMENT,TARGET_BRANCH,DEPLOY_SCRIPT,APP_DIR,RUNTIME_DIR,PM2_NAME,EXPECTED_SHA,FORCE_COMMAND_SYNC
+          envs: ENVIRONMENT,TARGET_BRANCH,DEPLOY_SCRIPT,APP_DIR,RUNTIME_DIR,PM2_NAME,EXPECTED_SHA,FORCE_COMMAND_SYNC,PUSH_TRIGGERED
           script: |
             set -euo pipefail
             [ -d "$APP_DIR/.git" ] || { echo "Missing checkout: $APP_DIR"; exit 1; }
@@ -163,6 +185,16 @@ jobs:
             OLD_SHA="$(git rev-parse HEAD 2>/dev/null || true)"
             git fetch origin "$TARGET_BRANCH"
             git cat-file -e "$EXPECTED_SHA^{commit}"
+
+            # A queued DEV run may become stale while a newer push waits behind it.
+            # Validate every commit, but never roll the VPS backwards/sideways to an obsolete SHA.
+            if [ "$PUSH_TRIGGERED" = "true" ]; then
+              LATEST_REMOTE_SHA="$(git rev-parse "origin/$TARGET_BRANCH")"
+              if [ "$EXPECTED_SHA" != "$LATEST_REMOTE_SHA" ]; then
+                echo "Skipping stale deployment for $EXPECTED_SHA; latest origin/$TARGET_BRANCH is $LATEST_REMOTE_SHA."
+                exit 0
+              fi
+            fi
 
             BACKUP_DIR="/home/goliath/.goliath-${ENVIRONMENT}-runtime-deploy-backup"
             rm -rf "$BACKUP_DIR"; mkdir -p "$BACKUP_DIR"
@@ -259,8 +291,10 @@ jobs:
           echo "### 🚀 Goliath deployment" >> "$GITHUB_STEP_SUMMARY"
           echo "- Environment: **${{ needs.resolve.outputs.environment }}**" >> "$GITHUB_STEP_SUMMARY"
           echo "- Source: **${{ needs.resolve.outputs.source_branch }}**" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Validated ref: **${{ needs.resolve.outputs.source_ref }}**" >> "$GITHUB_STEP_SUMMARY"
           echo "- Protected branch: **${{ needs.resolve.outputs.target_branch }}**" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Deployed commit: \`${{ needs.preflight.outputs.source_sha }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Validated commit: \`${{ needs.preflight.outputs.source_sha }}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- Planner: ✅ scripts/goliath.js with safe full-deploy fallback" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Stale push protection: ✅ obsolete queued commits are validated but not deployed" >> "$GITHUB_STEP_SUMMARY"
           echo "- Manual command reconciliation: **${{ github.event_name == 'workflow_dispatch' }}**" >> "$GITHUB_STEP_SUMMARY"
           echo "- Runtime data: ✅ preserved" >> "$GITHUB_STEP_SUMMARY"
