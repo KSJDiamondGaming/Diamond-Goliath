@@ -14,15 +14,14 @@ const { getCachedAsset, saveCachedAsset } = require('./embedAssetStore');
 
 const CANVAS_WIDTH = 600;
 const PORTRAIT_WIDTH = 320;
+// Discord's Components V2 media block reads visually left-heavy inside the
+// container. Keep the full-width canvas and portrait size locked, but bias the
+// portrait itself right within that canvas so its visible centre matches the
+// container's perceived centre.
+const PORTRAIT_SHIFT_RIGHT = 90;
 const MAX_SOURCE_BYTES = 8 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 8000;
 
-// Measured from the actual Discord Components V2 container in the user's
-// screenshot. The gallery's own transparent fallback surface is darker
-// (#111214), which is why transparent padding produced a visible block and why
-// shifting inside that transparent canvas had no visible effect. Paint the
-// complete media raster to the real container surface instead so its full width
-// participates in layout while visually disappearing into the panel.
 const PANEL_BG = { r: 19, g: 20, b: 22, alpha: 1 };
 
 function isHttpsUrl(value) {
@@ -89,7 +88,9 @@ async function makeCenteredPortrait(buffer) {
     .png()
     .toBuffer();
 
-  const left = Math.floor((CANVAS_WIDTH - PORTRAIT_WIDTH) / 2);
+  const naturalLeft = Math.floor((CANVAS_WIDTH - PORTRAIT_WIDTH) / 2);
+  const maxLeft = CANVAS_WIDTH - PORTRAIT_WIDTH;
+  const left = Math.min(maxLeft, Math.max(0, naturalLeft + PORTRAIT_SHIFT_RIGHT));
 
   return sharp({
     create: {
@@ -177,4 +178,10 @@ async function buildComponentsV2Payload({ embeds = [], actionRows = [], allowUse
   return { components, files, flags };
 }
 
-module.exports = { CANVAS_WIDTH, PORTRAIT_WIDTH, PANEL_BG, buildComponentsV2Payload };
+module.exports = {
+  CANVAS_WIDTH,
+  PORTRAIT_WIDTH,
+  PORTRAIT_SHIFT_RIGHT,
+  PANEL_BG,
+  buildComponentsV2Payload,
+};
