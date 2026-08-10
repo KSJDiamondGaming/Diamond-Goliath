@@ -10,17 +10,16 @@ const { getCachedAsset, saveCachedAsset } = require('./embedAssetStore');
 // 299 px allows the surrounding text/footer layout to hold the normal full
 // embed width. Do not raise this to 300+.
 const TARGET_WIDTH = 299;
-const PORTRAIT_VISIBLE_WIDTH = 220;
+const PORTRAIT_VISIBLE_WIDTH = 180;
 const MAX_SOURCE_BYTES = 8 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 8000;
 const EMBED_BG = { r: 17, g: 18, b: 20, alpha: 1 };
 
 // EXPERIMENT ONLY:
 // Discord left-aligns the 299px large-image box inside a legacy embed and gives
-// us no native centre-alignment control. To move the visible portrait toward
-// the centre of the full card without crossing the 300px width threshold, keep
-// the raster at 299px and right-align a slightly narrower portrait inside it.
-// The locked 299px rule remains untouched.
+// us no native centre-alignment control. Right-aligning a narrower portrait
+// moves its visible centre toward the centre of the full-width card while the
+// locked 299px outer media width remains unchanged.
 const SHIFT_PORTRAIT_RIGHT = true;
 
 function isHttpsImageUrl(value) {
