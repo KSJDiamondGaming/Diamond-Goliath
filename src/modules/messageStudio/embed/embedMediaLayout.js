@@ -3,9 +3,11 @@
 const { AttachmentBuilder } = require('discord.js');
 const fetch = require('node-fetch');
 const sharp = require('sharp');
+const { getCachedAsset, saveCachedAsset } = require('./embedAssetStore');
 
-// Keep the current media geometry unchanged while we compare the exact embed
-// payloads Discord receives for wide text panels versus the narrow image panel.
+// Keep current geometry unchanged while width debugging continues. Persistence
+// is handled independently below so an expired Discord CDN signature can never
+// break a preset after the source has been imported once.
 const TARGET_WIDTH = 800;
 const PORTRAIT_VISIBLE_WIDTH = 440;
 const MAX_SOURCE_BYTES = 8 * 1024 * 1024;
@@ -29,7 +31,6 @@ function payloadLayoutSummary(embed, index, stage) {
   const longestDescriptionLine = lines.reduce((max, line) => Math.max(max, line.length), 0);
   const fields = Array.isArray(data.fields) ? data.fields : [];
   const longestFieldValue = fields.reduce((max, field) => Math.max(max, String(field?.value || '').length), 0);
-
   console.log('[EmbedLayout]', JSON.stringify({
     stage,
     panel: index + 1,
@@ -39,7 +40,6 @@ function payloadLayoutSummary(embed, index, stage) {
     descriptionLines: lines.length,
     longestDescriptionLine,
     footerLength: String(data.footer?.text || '').length,
-    footerTextTail: String(data.footer?.text || '').slice(-24),
     fields: fields.length,
     longestFieldValue,
     hasImage: Boolean(data.image?.url),
@@ -50,29 +50,38 @@ function payloadLayoutSummary(embed, index, stage) {
   }));
 }
 
-async function fetchImageBuffer(url) {
+async function fetchRemoteImageBuffer(url) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   timer.unref?.();
-
   try {
     const response = await fetch(url, { signal: controller.signal });
     if (!response.ok) throw new Error(`Image fetch failed with HTTP ${response.status}`);
-
     const contentType = String(response.headers.get('content-type') || '').toLowerCase();
     if (contentType && !contentType.startsWith('image/')) {
       throw new Error(`Large image URL returned ${contentType || 'non-image content'}`);
     }
-
     const declaredLength = Number(response.headers.get('content-length') || 0);
     if (declaredLength > MAX_SOURCE_BYTES) throw new Error('Large image exceeds the 8 MB processing limit.');
-
     const buffer = await response.buffer();
     if (buffer.length > MAX_SOURCE_BYTES) throw new Error('Large image exceeds the 8 MB processing limit.');
-    return buffer;
+    return { buffer, contentType };
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function sourceImageBuffer(guildId, url) {
+  const cached = getCachedAsset(guildId, url);
+  if (cached?.buffer) {
+    console.log(`[EmbedMedia] persistent cache hit ${cached.id}`);
+    return cached.buffer;
+  }
+
+  const remote = await fetchRemoteImageBuffer(url);
+  saveCachedAsset(guildId, url, remote.buffer, { contentType: remote.contentType });
+  console.log('[EmbedMedia] imported source image into persistent runtime cache');
+  return remote.buffer;
 }
 
 async function centerOnEmbedCanvas(buffer) {
@@ -81,81 +90,56 @@ async function centerOnEmbedCanvas(buffer) {
   const width = Number(metadata.width || 0);
   const height = Number(metadata.height || 0);
   if (!width || !height) return null;
-
   const aspect = width / height;
   const visibleWidth = aspect <= 1.25
     ? Math.min(width, PORTRAIT_VISIBLE_WIDTH)
     : Math.min(width, TARGET_WIDTH);
-
   const resized = await sharp(buffer, { failOn: 'warning' })
     .resize({ width: visibleWidth, withoutEnlargement: false })
     .ensureAlpha()
     .png()
     .toBuffer();
-
   const resizedMeta = await sharp(resized).metadata();
   const renderedWidth = Number(resizedMeta.width || visibleWidth);
   const left = Math.max(0, Math.floor((TARGET_WIDTH - renderedWidth) / 2));
   const right = Math.max(0, TARGET_WIDTH - renderedWidth - left);
-
   return sharp(resized)
     .flatten({ background: EMBED_BG })
-    .extend({
-      top: 0,
-      bottom: 0,
-      left,
-      right,
-      background: EMBED_BG,
-    })
+    .extend({ top: 0, bottom: 0, left, right, background: EMBED_BG })
     .png()
     .toBuffer();
 }
 
-async function prepareEmbedMedia(embeds = []) {
+async function prepareEmbedMedia(embeds = [], options = {}) {
   const files = [];
   const output = Array.isArray(embeds) ? embeds : [];
+  const guildId = options.guildId || 'global';
 
-  // Log every panel before any media rewriting so we can compare the exact
-  // structural properties that Discord uses for intrinsic embed width.
   output.forEach((embed, index) => payloadLayoutSummary(embed, index, 'before-media'));
 
   for (let index = 0; index < output.length; index += 1) {
     const embed = output[index];
     if (!embed || typeof embed.toJSON !== 'function' || typeof embed.setImage !== 'function') continue;
-
     const imageUrl = embed.toJSON()?.image?.url;
     if (!imageUrl) continue;
-
     if (!isHttpsImageUrl(imageUrl)) {
-      console.warn(`[EmbedMedia] panel ${index + 1}: large image skipped; unsupported URL scheme: ${String(imageUrl).slice(0, 180)}`);
+      console.warn(`[EmbedMedia] panel ${index + 1}: large image skipped; unsupported URL scheme`);
       continue;
     }
 
     try {
       console.log(`[EmbedMedia] panel ${index + 1}: processing large image ${String(imageUrl).slice(0, 180)}`);
-      const source = await fetchImageBuffer(imageUrl);
+      const source = await sourceImageBuffer(guildId, imageUrl);
       const sourceMeta = await sharp(source).metadata();
       const processed = await centerOnEmbedCanvas(source);
-      if (!processed) {
-        console.warn(`[EmbedMedia] panel ${index + 1}: processor returned no image.`);
-        continue;
-      }
-
+      if (!processed) continue;
       const processedMeta = await sharp(processed).metadata();
       const name = `embed-panel-${index + 1}-large.png`;
       files.push(new AttachmentBuilder(processed, { name }));
       embed.setImage(`attachment://${name}`);
-
-      console.log(
-        `[EmbedMedia] panel ${index + 1}: attached ${name}; ` +
-        `source=${sourceMeta.width || '?'}x${sourceMeta.height || '?'} ` +
-        `output=${processedMeta.width || '?'}x${processedMeta.height || '?'} target=${TARGET_WIDTH}px`,
-      );
+      console.log(`[EmbedMedia] panel ${index + 1}: attached ${name}; source=${sourceMeta.width || '?'}x${sourceMeta.height || '?'} output=${processedMeta.width || '?'}x${processedMeta.height || '?'} target=${TARGET_WIDTH}px`);
     } catch (error) {
-      console.error(
-        `[EmbedMedia] panel ${index + 1}: FAILED to normalize ${String(imageUrl).slice(0, 180)}:`,
-        error?.stack || error?.message || error,
-      );
+      console.error(`[EmbedMedia] panel ${index + 1}: FAILED to normalize ${String(imageUrl).slice(0, 180)}:`, error?.stack || error?.message || error);
     }
   }
 
