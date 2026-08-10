@@ -10,17 +10,10 @@ const { getCachedAsset, saveCachedAsset } = require('./embedAssetStore');
 // 299 px allows the surrounding text/footer layout to hold the normal full
 // embed width. Do not raise this to 300+.
 const TARGET_WIDTH = 299;
-const PORTRAIT_VISIBLE_WIDTH = 180;
+const PORTRAIT_VISIBLE_WIDTH = 205;
+const PORTRAIT_RIGHT_INSET = 8;
 const MAX_SOURCE_BYTES = 8 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 8000;
-const EMBED_BG = { r: 17, g: 18, b: 20, alpha: 1 };
-
-// EXPERIMENT ONLY:
-// Discord left-aligns the 299px large-image box inside a legacy embed and gives
-// us no native centre-alignment control. Right-aligning a narrower portrait
-// moves its visible centre toward the centre of the full-width card while the
-// locked 299px outer media width remains unchanged.
-const SHIFT_PORTRAIT_RIGHT = true;
 
 function isHttpsImageUrl(value) {
   try {
@@ -78,10 +71,18 @@ async function centerOnEmbedCanvas(buffer) {
   if (!width || !height) return null;
 
   const aspect = width / height;
-  const visibleWidth = aspect <= 1.25
-    ? Math.min(PORTRAIT_VISIBLE_WIDTH, TARGET_WIDTH)
-    : TARGET_WIDTH;
+  if (aspect > 1.25) {
+    return sharp(buffer, { failOn: 'warning' })
+      .resize({ width: TARGET_WIDTH, withoutEnlargement: false })
+      .png()
+      .toBuffer();
+  }
 
+  // Keep the visible portrait larger than the first centring experiment, while
+  // preserving the locked 299px media width. Transparent padding moves the
+  // portrait toward the visual centre of Discord's full-width embed without
+  // painting a rectangular background behind it.
+  const visibleWidth = Math.min(PORTRAIT_VISIBLE_WIDTH, TARGET_WIDTH);
   const resized = await sharp(buffer, { failOn: 'warning' })
     .resize({ width: visibleWidth, withoutEnlargement: false })
     .ensureAlpha()
@@ -90,20 +91,17 @@ async function centerOnEmbedCanvas(buffer) {
 
   const resizedMeta = await sharp(resized).metadata();
   const renderedWidth = Number(resizedMeta.width || visibleWidth);
-
-  let left;
-  let right;
-  if (SHIFT_PORTRAIT_RIGHT && aspect <= 1.25) {
-    left = Math.max(0, TARGET_WIDTH - renderedWidth);
-    right = 0;
-  } else {
-    left = Math.max(0, Math.floor((TARGET_WIDTH - renderedWidth) / 2));
-    right = Math.max(0, TARGET_WIDTH - renderedWidth - left);
-  }
+  const right = Math.min(PORTRAIT_RIGHT_INSET, Math.max(0, TARGET_WIDTH - renderedWidth));
+  const left = Math.max(0, TARGET_WIDTH - renderedWidth - right);
 
   return sharp(resized)
-    .flatten({ background: EMBED_BG })
-    .extend({ top: 0, bottom: 0, left, right, background: EMBED_BG })
+    .extend({
+      top: 0,
+      bottom: 0,
+      left,
+      right,
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    })
     .png()
     .toBuffer();
 }
