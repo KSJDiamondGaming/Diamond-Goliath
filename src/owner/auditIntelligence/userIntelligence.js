@@ -83,7 +83,7 @@ function summariseStored(stored) {
 
 async function buildReport(client, userId) {
   const id = String(userId);
-  const stored = auditStore.getUser(id) || {
+  const stored = auditStore.getUserAcrossModes?.(id) || auditStore.getUser(id) || {
     userId: id,
     eventCount: 0,
     guilds: {},
@@ -154,6 +154,7 @@ async function buildReport(client, userId) {
       byCategory: stored.categories || {},
       byRelation: stored.relations || { subject: 0, actor: 0 },
     },
+    environments: stored.environments || {},
     stored,
     generatedAt: new Date().toISOString(),
   };
