@@ -123,6 +123,17 @@ function guildEnvironmentLabel(guild) {
   const modes = registryEnvironments(guild);
   return modes.length ? modes.join(' • ') : (guild?.live ? 'DEV' : 'Registry');
 }
+function liveProbeStatus(result) {
+  if (result?.started) return `🟢 **Live event probe:** started via temporary hidden channel \`${result.channelName || result.channelId}\`. Expect real **Channel Created** and **Channel Deleted** reports in Guild / System Events.`;
+  switch (result?.reason) {
+    case 'registry-only': return '🟡 **Live event probe:** skipped — DEV does not have live access to this guild. The configured route test still ran normally.';
+    case 'cooldown': return '🟡 **Live event probe:** skipped — the 15-second safety cooldown is active. Wait briefly before another live probe.';
+    case 'missing-manage-channels': return '🔴 **Live event probe:** blocked — Goliath DEV does not have **Manage Channels** in the source guild.';
+    case 'create-failed': return '🔴 **Live event probe:** failed — Goliath could not create the temporary hidden verification channel.';
+    case 'invalid-guild': return '🔴 **Live event probe:** unavailable — the selected guild could not be resolved for a live verification.';
+    default: return '🟠 **Live event probe:** status unavailable. The normal route-delivery result below is still authoritative.';
+  }
+}
 function sourceGuildSelect(customId, placeholder, sourceGuilds, selectedId) {
   return new StringSelectMenuBuilder()
     .setCustomId(customId)
@@ -514,9 +525,11 @@ async function handleCommandCenterInteraction(client, interaction) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch(() => null);
     await auditRouter.ensureReportRoutes(client, sourceGuild).catch(() => null);
     const categoryByRoute = { guild: 'guild', members: 'member', moderation: 'moderation', security: 'security', messages: 'message', voice: 'voice', roles: 'role', goliath: 'goliath', default: 'guild' };
-    const syntheticEvent = { type: `test.${session.routeKey}`, category: categoryByRoute[session.routeKey] || 'guild' };
+    const syntheticEvent = { type: `routing-check.${session.routeKey}`, category: categoryByRoute[session.routeKey] || 'guild' };
     const destination = await auditRouter.configuredRouteChannel(client, sourceGuild, syntheticEvent).catch(() => null);
     if (!destination?.isTextBased?.()) { await interaction.editReply({ content: '❌ No usable destination exists for that report family. Use Create / Repair Report Channels first.' }).catch(() => null); return true; }
+    const probe = await auditRouter.runLiveEndToEndProbe(client, sourceGuild).catch((error) => { console.warn('[Audit Intelligence] live routing probe failed:', error?.message || error); return { started: false, reason: 'create-failed' }; });
+    const probeStatus = liveProbeStatus(probe);
     const familyLabel = ROUTE_LABELS[session.routeKey] || ROUTE_LABELS.default;
     const testEmbed = new EmbedBuilder()
       .setColor(0x57F287)
@@ -528,13 +541,15 @@ async function handleCommandCenterInteraction(client, interaction) {
         { name: 'Destination', value: `<#${destination.id}>`, inline: true },
         { name: 'Requested By', value: `<@${interaction.user.id}>`, inline: true },
         { name: 'Environment Coverage', value: guildEnvironmentLabel(sourceGuild), inline: true },
-        { name: 'Status', value: '🟢 Route working', inline: true },
+        { name: 'Route Status', value: '🟢 Route resolved', inline: true },
+        { name: 'Live End-to-End Probe', value: probeStatus, inline: false },
       )
       .setFooter({ text: 'Goliath Audit Intelligence • Test report only' })
       .setTimestamp();
     const sent = await destination.send({ embeds: [testEmbed], allowedMentions: { parse: [] } }).catch((error) => { console.warn('[Audit Intelligence] test report delivery failed:', error?.message || error); return null; });
     const link = sent ? `https://discord.com/channels/${interaction.guildId}/${destination.id}/${sent.id}` : null;
-    await interaction.editReply({ content: sent ? `✅ Test report delivered to <#${destination.id}>.${link ? `\n${link}` : ''}` : '❌ Goliath could resolve the route but could not send into the destination channel.' }).catch(() => null);
+    const deliveryStatus = sent ? `✅ **Normal route delivery:** test report delivered to <#${destination.id}>.${link ? `\n${link}` : ''}` : '❌ **Normal route delivery:** Goliath resolved the route but could not send into the destination channel.';
+    await interaction.editReply({ content: `${deliveryStatus}\n\n${probeStatus}` }).catch(() => null);
     return true;
   }
   if (customId === 'owner:commandcenter:routing:reset' && interaction.isButton?.()) {
