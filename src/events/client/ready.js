@@ -60,28 +60,61 @@ function startAuditGuildRegistryRefresh(client) {
   timer.unref?.();
 }
 
+function liveProbeExpired(request, now = Date.now()) {
+  const expiresAt = Date.parse(request?.expiresAt || '') || 0;
+  return Boolean(expiresAt && expiresAt <= now);
+}
+
+function liveProbeStillPending(requestId, mode) {
+  const current = auditStore.getLiveProbeRequest?.(requestId);
+  if (!current || current.status !== 'pending') return null;
+  if (String(current.targetMode || '').toUpperCase() !== String(mode || '').toUpperCase()) return null;
+  if (liveProbeExpired(current)) return null;
+  return current;
+}
+
 async function processAuditLiveProbeRequests(client) {
-  const requests = auditStore.getPendingLiveProbeRequests?.() || [];
-  if (!requests.length) return 0;
   const mode = auditStore.runtimeMode?.() || String(client?.botMode || process.env.BOT_MODE || 'DEV').toUpperCase();
+  const requests = auditStore.getPendingLiveProbeRequests?.(mode) || [];
+  if (!requests.length) return 0;
   let processed = 0;
 
   for (const request of requests) {
     const requestId = String(request?.id || '');
     if (!requestId || auditLiveProbeInFlight.has(requestId)) continue;
+
+    const current = liveProbeStillPending(requestId, mode);
+    if (!current) continue;
+
     auditLiveProbeInFlight.add(requestId);
+    const startedAt = Date.now();
     try {
-      const guildId = String(request.guildId || '');
+      const guildId = String(current.guildId || '');
       const guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
+
+      if (!liveProbeStillPending(requestId, mode)) {
+        terminal.warn(`Audit live probe request ${requestId} became stale before execution in ${mode}; skipping.`);
+        continue;
+      }
+
       const result = guild
         ? await auditRouter.runLocalEndToEndProbe(client, guild)
         : { started: false, reason: 'registry-only' };
-      auditStore.completeLiveProbeRequest?.(requestId, result, mode);
+
+      const fresh = auditStore.getLiveProbeRequest?.(requestId);
+      if (fresh?.status === 'pending' && String(fresh.targetMode || '').toUpperCase() === mode) {
+        auditStore.completeLiveProbeRequest?.(requestId, result, mode);
+      }
+
       processed += 1;
-      terminal.info(`Audit live probe request ${requestId} completed by ${mode} for guild ${guildId}: ${result.started ? 'started' : result.reason || 'not-started'}`);
+      const durationMs = Date.now() - startedAt;
+      terminal.info(`Audit live probe request ${requestId} completed by ${mode} for guild ${guildId} in ${durationMs}ms: ${result.started ? 'started' : result.reason || 'not-started'}${current.requestedFrom ? ` (requested from ${current.requestedFrom})` : ''}`);
     } catch (error) {
-      auditStore.completeLiveProbeRequest?.(requestId, { started: false, reason: 'create-failed' }, mode);
-      terminal.error(`Audit live probe request ${requestId} failed in ${mode}: ${error?.message || error}`);
+      const fresh = auditStore.getLiveProbeRequest?.(requestId);
+      if (fresh?.status === 'pending' && String(fresh.targetMode || '').toUpperCase() === mode) {
+        auditStore.completeLiveProbeRequest?.(requestId, { started: false, reason: 'create-failed' }, mode);
+      }
+      terminal.error(`Audit live probe request ${requestId} failed in ${mode} after ${Date.now() - startedAt}ms: ${error?.message || error}`);
     } finally {
       auditLiveProbeInFlight.delete(requestId);
     }
