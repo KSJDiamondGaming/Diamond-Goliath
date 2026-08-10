@@ -9,6 +9,8 @@ const security = require('../../core/security/securityCore');
 const MAX_CATEGORY_CHILDREN = 50;
 const SUMMARY_REFRESH_MS = 60000;
 const LIVE_PROBE_COOLDOWN_MS = 15000;
+const REMOTE_LIVE_PROBE_WAIT_MS = 8000;
+const REMOTE_LIVE_PROBE_POLL_MS = 250;
 const summaryRefresh = new Map();
 const liveProbeCooldown = new Map();
 const REPORT_ROUTE_CHANNELS = {
@@ -294,7 +296,20 @@ function monitoringEnabled(sourceGuild, event) {
   const monitoring = guildConfig.monitoring && typeof guildConfig.monitoring === 'object' ? guildConfig.monitoring : {};
   return monitoring[monitorKeyForEvent(event)] !== false;
 }
-async function runLiveEndToEndProbe(client, sourceGuild) {
+function preferredRemoteProbeMode(sourceGuild) {
+  const guildId = String(sourceGuild?.id || '');
+  const registryEntry = sourceGuild?.environments
+    ? sourceGuild
+    : (auditStore.getGuildRegistry?.() || []).find((entry) => String(entry?.guildId || '') === guildId);
+  const currentMode = auditStore.runtimeMode?.() || String(process.env.BOT_MODE || 'DEV').toUpperCase();
+  const candidates = Object.entries(registryEntry?.environments || {})
+    .filter(([mode]) => String(mode).toUpperCase() !== String(currentMode).toUpperCase())
+    .map(([mode, info]) => ({ mode: String(mode).toUpperCase(), observedAt: info?.observedAt || null, liveScore: info?.observedAt ? 1 : 0 }))
+    .sort((a, b) => b.liveScore - a.liveScore || String(b.observedAt || '').localeCompare(String(a.observedAt || '')));
+  return candidates[0]?.mode || null;
+}
+function probeWait(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
+async function runLocalEndToEndProbe(client, sourceGuild) {
   const guildId = String(sourceGuild?.id || '');
   if (!guildId || !client?.guilds?.cache) return { started: false, reason: 'invalid-guild' };
   const liveGuild = client.guilds.cache.get(guildId) || null;
@@ -327,6 +342,34 @@ async function runLiveEndToEndProbe(client, sourceGuild) {
     channel.delete('Goliath Audit Intelligence live end-to-end routing probe complete').catch((error) => console.warn('[Audit Intelligence] live end-to-end probe cleanup failed:', error?.message || error));
   }, 1800);
   return { started: true, channelId: channel.id, channelName: channel.name, routeKey: 'guild' };
+}
+async function runLiveEndToEndProbe(client, sourceGuild) {
+  const guildId = String(sourceGuild?.id || '');
+  if (!guildId || !client?.guilds?.cache) return { started: false, reason: 'invalid-guild' };
+  if (client.guilds.cache.has(guildId)) return runLocalEndToEndProbe(client, sourceGuild);
+
+  const targetMode = preferredRemoteProbeMode(sourceGuild);
+  if (!targetMode) return { started: false, reason: 'registry-only' };
+  const request = auditStore.createLiveProbeRequest?.(guildId, targetMode, security.getBotOwnerId?.() || null);
+  if (!request?.id) return { started: false, reason: 'registry-only' };
+
+  const deadline = Date.now() + REMOTE_LIVE_PROBE_WAIT_MS;
+  while (Date.now() < deadline) {
+    const current = auditStore.getLiveProbeRequest?.(request.id);
+    if (current?.status === 'completed') {
+      const result = current.result && typeof current.result === 'object' ? current.result : { started: false, reason: 'create-failed' };
+      const environment = current.completedBy || targetMode;
+      return {
+        ...result,
+        remote: true,
+        environment,
+        requestId: request.id,
+        channelName: result.started && result.channelName ? `${result.channelName} (${environment})` : result.channelName,
+      };
+    }
+    await probeWait(REMOTE_LIVE_PROBE_POLL_MS);
+  }
+  return { started: false, reason: 'registry-only', remote: true, environment: targetMode, requestId: request.id };
 }
 async function configuredRouteChannel(client, sourceGuild, event) {
   if (String(event?.type || '').startsWith('test.')) await runLiveEndToEndProbe(client, sourceGuild).catch(() => null);
@@ -568,6 +611,7 @@ module.exports = {
   monitorKeyForEvent,
   monitoringEnabled,
   configuredRouteChannel,
+  runLocalEndToEndProbe,
   runLiveEndToEndProbe,
   channelDeliveryState,
   inspectReportFeeds,
