@@ -12,16 +12,13 @@ const fetch = require('node-fetch');
 const sharp = require('sharp');
 const { getCachedAsset, saveCachedAsset } = require('./embedAssetStore');
 
-const CANVAS_WIDTH = 520;
-const PORTRAIT_WIDTH = 300;
+// Components V2 experiment: keep a genuinely full-width raster so Discord's
+// MediaGallery has no smaller media box to left-align. The portrait itself is
+// rendered large and centred inside that raster.
+const CANVAS_WIDTH = 600;
+const PORTRAIT_WIDTH = 320;
 const MAX_SOURCE_BYTES = 8 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 8000;
-
-// Discord's media renderer ignores/collapses transparent side padding in some
-// layouts. Use the same RGB as the Discord container surface instead, so the
-// whole 520px raster remains part of layout while the padding visually blends
-// into the panel. This lets the 300px portrait sit at the real canvas centre.
-const CONTAINER_BG = { r: 17, g: 18, b: 20, alpha: 1 };
 
 function isHttpsUrl(value) {
   try {
@@ -40,9 +37,7 @@ async function fetchImage(url) {
     const response = await fetch(url, { signal: controller.signal });
     if (!response.ok) throw new Error(`Image fetch failed with HTTP ${response.status}`);
     const contentType = String(response.headers.get('content-type') || '').toLowerCase();
-    if (contentType && !contentType.startsWith('image/')) {
-      throw new Error(`Media URL returned ${contentType}`);
-    }
+    if (contentType && !contentType.startsWith('image/')) throw new Error(`Media URL returned ${contentType}`);
     const declared = Number(response.headers.get('content-length') || 0);
     if (declared > MAX_SOURCE_BYTES) throw new Error('Media exceeds 8 MB limit.');
     const buffer = await response.buffer();
@@ -63,11 +58,7 @@ async function sourceBuffer(url) {
 
 function circleMaskSvg(size) {
   const radius = size / 2;
-  return Buffer.from(
-    `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">` +
-      `<circle cx="${radius}" cy="${radius}" r="${radius}" fill="white"/>` +
-    '</svg>',
-  );
+  return Buffer.from(`<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg"><circle cx="${radius}" cy="${radius}" r="${radius}" fill="white"/></svg>`);
 }
 
 async function makeCenteredPortrait(buffer) {
@@ -76,8 +67,7 @@ async function makeCenteredPortrait(buffer) {
   const height = Number(meta.height || 0);
   if (!width || !height) return null;
 
-  const aspect = width / height;
-  if (aspect > 1.25) {
+  if ((width / height) > 1.25) {
     return sharp(buffer, { failOn: 'warning' })
       .resize({ width: CANVAS_WIDTH, withoutEnlargement: false })
       .png()
@@ -97,15 +87,16 @@ async function makeCenteredPortrait(buffer) {
 
   const left = Math.floor((CANVAS_WIDTH - PORTRAIT_WIDTH) / 2);
 
-  // Deliberately opaque full-width canvas: MediaGallery must keep all 520px in
-  // the layout. Matching Discord's container background makes that canvas
-  // visually disappear, leaving only the centred circular portrait visible.
+  // Return to real transparency: the previous opaque background introduced a
+  // visible block. The important change here is that the raster is now 600px,
+  // i.e. at/above the container's practical content width, so MediaGallery must
+  // size from the full media item rather than a narrow 299/520px image box.
   return sharp({
     create: {
       width: CANVAS_WIDTH,
       height: PORTRAIT_WIDTH,
       channels: 4,
-      background: CONTAINER_BG,
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
     },
   })
     .composite([{ input: portrait, left, top: 0 }])
@@ -122,12 +113,10 @@ function panelText(data) {
   if (data.author?.name) blocks.push(`-# ${data.author.name}`);
   if (data.title) blocks.push(`**${data.title}**`);
   if (data.description) blocks.push(String(data.description));
-
   for (const field of Array.isArray(data.fields) ? data.fields : []) {
     if (!field?.name || !field?.value) continue;
     blocks.push(`**${field.name}**\n${field.value}`);
   }
-
   return blocks.join('\n\n').trim();
 }
 
@@ -145,10 +134,7 @@ function footerText(data) {
 async function buildComponentsV2Payload({ embeds = [], actionRows = [], allowUserPing = false, userId = null, ephemeral = false }) {
   const components = [];
   const files = [];
-
-  if (allowUserPing && userId) {
-    components.push(new TextDisplayBuilder().setContent(`<@${userId}>`));
-  }
+  if (allowUserPing && userId) components.push(new TextDisplayBuilder().setContent(`<@${userId}>`));
 
   for (let index = 0; index < embeds.length; index += 1) {
     const embed = embeds[index];
@@ -157,7 +143,6 @@ async function buildComponentsV2Payload({ embeds = [], actionRows = [], allowUse
 
     const container = new ContainerBuilder();
     if (Number.isInteger(data.color)) container.setAccentColor(data.color);
-
     const text = panelText(data);
     if (text) container.addTextDisplayComponents(new TextDisplayBuilder().setContent(text));
 
@@ -169,40 +154,27 @@ async function buildComponentsV2Payload({ embeds = [], actionRows = [], allowUse
         if (centered) {
           const name = `embed-v2-panel-${index + 1}.png`;
           files.push(new AttachmentBuilder(centered, { name }));
-          const gallery = new MediaGalleryBuilder().addItems(
-            new MediaGalleryItemBuilder().setURL(`attachment://${name}`),
+          container.addMediaGalleryComponents(
+            new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(`attachment://${name}`)),
           );
-          container.addMediaGalleryComponents(gallery);
         }
       } catch (error) {
-        const gallery = new MediaGalleryBuilder().addItems(
-          new MediaGalleryItemBuilder().setURL(imageUrl),
+        container.addMediaGalleryComponents(
+          new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(imageUrl)),
         );
-        container.addMediaGalleryComponents(gallery);
         console.warn(`[EmbedV2] panel ${index + 1}: centered media processing failed:`, error?.message || error);
       }
     }
 
     const footer = footerText(data);
     if (footer) container.addTextDisplayComponents(new TextDisplayBuilder().setContent(footer));
-
     components.push(container);
   }
 
   for (const row of actionRows || []) components.push(row);
-
   let flags = MessageFlags.IsComponentsV2;
   if (ephemeral) flags |= MessageFlags.Ephemeral;
-
-  return {
-    components,
-    files,
-    flags,
-  };
+  return { components, files, flags };
 }
 
-module.exports = {
-  CANVAS_WIDTH,
-  PORTRAIT_WIDTH,
-  buildComponentsV2Payload,
-};
+module.exports = { CANVAS_WIDTH, PORTRAIT_WIDTH, buildComponentsV2Payload };
