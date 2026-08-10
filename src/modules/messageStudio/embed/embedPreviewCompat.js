@@ -4,11 +4,11 @@
 // panel while editing. Real sends/tests/updates still use the full panel list.
 const panel = require('./embedPanel');
 
-// Restore the earlier width-lock behaviour. The later zero-width field method
-// regressed portrait image panels back to the narrow card shown in Discord.
-// Extending an existing title with preserved EM spaces gives Discord measurable
-// horizontal content while leaving the visible title and centred image unchanged.
-const WIDTH_SPACE = '\u2003';
+// Discord can collapse an embed around a narrow Large Image even when the
+// neighbouring panels naturally render at the full embed width. The earlier
+// proven implementation used non-breaking spaces in the title as measurable
+// horizontal content. Keep that exact behaviour here.
+const WIDTH_SPACE = '\u00A0';
 const TITLE_WIDTH_PAD = WIDTH_SPACE.repeat(256);
 
 function holdImagePanelWidth(embed) {
