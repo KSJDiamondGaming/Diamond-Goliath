@@ -8,6 +8,7 @@ const TARGET_WIDTH = 520;
 const PORTRAIT_VISIBLE_WIDTH = 320;
 const MAX_SOURCE_BYTES = 8 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 8000;
+const WIDTH_THUMB_SIZE = 80;
 
 function isHttpsImageUrl(value) {
   try {
@@ -66,9 +67,6 @@ async function centerOnEmbedCanvas(buffer) {
   const left = Math.max(0, Math.floor((TARGET_WIDTH - renderedWidth) / 2));
   const right = Math.max(0, TARGET_WIDTH - renderedWidth - left);
 
-  // Important: keep the side canvas genuinely transparent. This matches the
-  // historical full-width implementation that previously worked: Discord sees
-  // a 520 px attachment while the portrait itself remains centred at ~320 px.
   return sharp(resized)
     .extend({
       top: 0,
@@ -81,6 +79,19 @@ async function centerOnEmbedCanvas(buffer) {
     .toBuffer();
 }
 
+async function transparentWidthThumbnail() {
+  return sharp({
+    create: {
+      width: WIDTH_THUMB_SIZE,
+      height: WIDTH_THUMB_SIZE,
+      channels: 4,
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    },
+  })
+    .png()
+    .toBuffer();
+}
+
 async function prepareEmbedMedia(embeds = []) {
   const files = [];
   const output = Array.isArray(embeds) ? embeds : [];
@@ -89,7 +100,8 @@ async function prepareEmbedMedia(embeds = []) {
     const embed = output[index];
     if (!embed || typeof embed.toJSON !== 'function' || typeof embed.setImage !== 'function') continue;
 
-    const imageUrl = embed.toJSON()?.image?.url;
+    const before = embed.toJSON();
+    const imageUrl = before?.image?.url;
     if (!imageUrl) continue;
 
     if (!isHttpsImageUrl(imageUrl)) {
@@ -111,6 +123,18 @@ async function prepareEmbedMedia(embeds = []) {
       const name = `embed-panel-${index + 1}-large.png`;
       files.push(new AttachmentBuilder(processed, { name }));
       embed.setImage(`attachment://${name}`);
+
+      // Discord lays thumbnails out in a separate right-hand grid column. For
+      // large-image panels that do not already have a real thumbnail, reserve
+      // that column with a fully transparent 80x80 attachment. This changes
+      // only the outgoing payload and leaves the user's saved preset untouched.
+      if (!before?.thumbnail?.url && typeof embed.setThumbnail === 'function') {
+        const thumb = await transparentWidthThumbnail();
+        const thumbName = `embed-panel-${index + 1}-width.png`;
+        files.push(new AttachmentBuilder(thumb, { name: thumbName }));
+        embed.setThumbnail(`attachment://${thumbName}`);
+        console.log(`[EmbedMedia] panel ${index + 1}: added transparent ${WIDTH_THUMB_SIZE}x${WIDTH_THUMB_SIZE} width thumbnail`);
+      }
 
       console.log(
         `[EmbedMedia] panel ${index + 1}: attached ${name}; ` +
