@@ -4,11 +4,8 @@ const { AttachmentBuilder } = require('discord.js');
 const fetch = require('node-fetch');
 const sharp = require('sharp');
 
-// Discord scales large embed images to fit its media box. Use a deliberately
-// wider raster so the rendered media box reaches the same width as a normal
-// full text embed. The portrait is enlarged in the source proportionally so
-// that, after Discord scales the 800px canvas down, it remains about the same
-// visible size as the current ~290px portrait.
+// Keep the current media geometry unchanged while we compare the exact embed
+// payloads Discord receives for wide text panels versus the narrow image panel.
 const TARGET_WIDTH = 800;
 const PORTRAIT_VISIBLE_WIDTH = 440;
 const MAX_SOURCE_BYTES = 8 * 1024 * 1024;
@@ -22,6 +19,35 @@ function isHttpsImageUrl(value) {
   } catch {
     return false;
   }
+}
+
+function payloadLayoutSummary(embed, index, stage) {
+  if (!embed || typeof embed.toJSON !== 'function') return;
+  const data = embed.toJSON();
+  const description = String(data.description || '');
+  const lines = description.split('\n');
+  const longestDescriptionLine = lines.reduce((max, line) => Math.max(max, line.length), 0);
+  const fields = Array.isArray(data.fields) ? data.fields : [];
+  const longestFieldValue = fields.reduce((max, field) => Math.max(max, String(field?.value || '').length), 0);
+
+  console.log('[EmbedLayout]', JSON.stringify({
+    stage,
+    panel: index + 1,
+    title: String(data.title || ''),
+    titleLength: String(data.title || '').length,
+    descriptionLength: description.length,
+    descriptionLines: lines.length,
+    longestDescriptionLine,
+    footerLength: String(data.footer?.text || '').length,
+    footerTextTail: String(data.footer?.text || '').slice(-24),
+    fields: fields.length,
+    longestFieldValue,
+    hasImage: Boolean(data.image?.url),
+    imageUrl: data.image?.url ? String(data.image.url).slice(0, 90) : null,
+    hasThumbnail: Boolean(data.thumbnail?.url),
+    hasAuthor: Boolean(data.author?.name || data.author?.icon_url),
+    timestamp: Boolean(data.timestamp),
+  }));
 }
 
 async function fetchImageBuffer(url) {
@@ -72,9 +98,6 @@ async function centerOnEmbedCanvas(buffer) {
   const left = Math.max(0, Math.floor((TARGET_WIDTH - renderedWidth) / 2));
   const right = Math.max(0, TARGET_WIDTH - renderedWidth - left);
 
-  // Keep the whole 800px raster opaque. Discord can ignore/crop transparent
-  // padding for layout purposes, so this test makes the full raster count while
-  // blending the side canvas into Discord's embed background.
   return sharp(resized)
     .flatten({ background: EMBED_BG })
     .extend({
@@ -91,6 +114,10 @@ async function centerOnEmbedCanvas(buffer) {
 async function prepareEmbedMedia(embeds = []) {
   const files = [];
   const output = Array.isArray(embeds) ? embeds : [];
+
+  // Log every panel before any media rewriting so we can compare the exact
+  // structural properties that Discord uses for intrinsic embed width.
+  output.forEach((embed, index) => payloadLayoutSummary(embed, index, 'before-media'));
 
   for (let index = 0; index < output.length; index += 1) {
     const embed = output[index];
@@ -132,6 +159,7 @@ async function prepareEmbedMedia(embeds = []) {
     }
   }
 
+  output.forEach((embed, index) => payloadLayoutSummary(embed, index, 'after-media'));
   console.log(`[EmbedMedia] deploy payload: embeds=${output.length}, processedFiles=${files.length}`);
   return { embeds: output, files };
 }
