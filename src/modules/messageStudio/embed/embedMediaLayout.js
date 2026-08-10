@@ -67,11 +67,6 @@ async function centerOnEmbedCanvas(buffer) {
   const left = Math.max(0, Math.floor((TARGET_WIDTH - renderedWidth) / 2));
   const right = Math.max(0, TARGET_WIDTH - renderedWidth - left);
 
-  // Important: the side canvas must be genuinely opaque. Discord can ignore
-  // fully-transparent bounds when laying out a Large Image, which leaves the
-  // embed card at the portrait's visible width. Now that all HTTPS images pass
-  // through this function, an opaque 520px raster gives Discord real measurable
-  // width while visually blending into the dark embed background.
   return sharp(resized)
     .flatten({ background: EMBED_BG })
     .extend({
@@ -85,11 +80,6 @@ async function centerOnEmbedCanvas(buffer) {
     .toBuffer();
 }
 
-/**
- * Normalize every HTTPS large-image URL to a genuine opaque 520 px attachment
- * before sending it to Discord. Portrait/square artwork remains centred at a
- * comfortable visible size while the full raster holds the embed card width.
- */
 async function prepareEmbedMedia(embeds = []) {
   const files = [];
   const output = Array.isArray(embeds) ? embeds : [];
@@ -99,21 +89,42 @@ async function prepareEmbedMedia(embeds = []) {
     if (!embed || typeof embed.toJSON !== 'function' || typeof embed.setImage !== 'function') continue;
 
     const imageUrl = embed.toJSON()?.image?.url;
-    if (!imageUrl || !isHttpsImageUrl(imageUrl)) continue;
+    if (!imageUrl) continue;
+
+    if (!isHttpsImageUrl(imageUrl)) {
+      console.warn(`[EmbedMedia] panel ${index + 1}: large image skipped; unsupported URL scheme: ${String(imageUrl).slice(0, 180)}`);
+      continue;
+    }
 
     try {
+      console.log(`[EmbedMedia] panel ${index + 1}: processing large image ${String(imageUrl).slice(0, 180)}`);
       const source = await fetchImageBuffer(imageUrl);
+      const sourceMeta = await sharp(source).metadata();
       const processed = await centerOnEmbedCanvas(source);
-      if (!processed) continue;
+      if (!processed) {
+        console.warn(`[EmbedMedia] panel ${index + 1}: processor returned no image.`);
+        continue;
+      }
 
+      const processedMeta = await sharp(processed).metadata();
       const name = `embed-panel-${index + 1}-large.png`;
       files.push(new AttachmentBuilder(processed, { name }));
       embed.setImage(`attachment://${name}`);
+
+      console.log(
+        `[EmbedMedia] panel ${index + 1}: attached ${name}; ` +
+        `source=${sourceMeta.width || '?'}x${sourceMeta.height || '?'} ` +
+        `output=${processedMeta.width || '?'}x${processedMeta.height || '?'} target=${TARGET_WIDTH}px`,
+      );
     } catch (error) {
-      console.warn(`[Embed] Could not centre large image for panel ${index + 1}:`, error.message || error);
+      console.error(
+        `[EmbedMedia] panel ${index + 1}: FAILED to normalize ${String(imageUrl).slice(0, 180)}:`,
+        error?.stack || error?.message || error,
+      );
     }
   }
 
+  console.log(`[EmbedMedia] deploy payload: embeds=${output.length}, processedFiles=${files.length}`);
   return { embeds: output, files };
 }
 
