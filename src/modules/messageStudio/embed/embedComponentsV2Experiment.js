@@ -14,10 +14,10 @@ const { getCachedAsset, saveCachedAsset } = require('./embedAssetStore');
 
 const CANVAS_WIDTH = 600;
 const PORTRAIT_WIDTH = 320;
-// Fine-tuned from the last Discord render: keep the successful canvas, size,
-// mask and background exactly as-is, but reduce the right bias slightly so the
-// visible portrait lands closer to the true centre of the panel.
-const PORTRAIT_SHIFT_RIGHT = 18;
+// Fine-tuned from the Discord render. Keep the successful canvas, size,
+// mask and background exactly as-is; move the portrait further left to
+// compensate for Discord's Components V2 media-gallery presentation.
+const PORTRAIT_SHIFT_RIGHT = 0;
 const MAX_SOURCE_BYTES = 8 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 8000;
 
