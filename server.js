@@ -94,7 +94,6 @@ const publicCommunityRoutes = route('public community routes', './src/server/rou
 
 const commandHandler = safeRequire('command handler', './src/core/commands/commandLoader', { loadCommands: () => null });
 const backupScheduler = safeRequire('backup scheduler', './src/core/backup/backupScheduler', { startBackupScheduler: () => null });
-const defaultModules = safeRequire('default modules', './src/core/guild/defaultModules', { initializeDefaultModules: () => null });
 const guildManager = safeRequire('guild manager', './src/core/guild/guildManager', { syncGuildMeta: () => null }, { optional: false });
 const resourceManager = safeRequire('discord resource manager', './src/core/guild/discordResourceManager', { syncDiscordResources: async () => null }, { optional: false });
 const auditEvents = safeRequire('owner audit intelligence', './src/owner/auditIntelligence/auditEvents', { registerAuditEvents: () => false }, { optional: false });
@@ -204,7 +203,7 @@ client.once('clientReady', async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
   console.log(`ℹ️ Guilds cached: ${client.guilds.cache.size}`);
   for (const guild of client.guilds.cache.values()) {
-    try { await enforceGuildAccess(guild, botMode, config); defaultModules.initializeDefaultModules?.(guild.id); guildManager.syncGuildMeta?.(guild); await resourceManager.syncDiscordResources?.(guild); }
+    try { await enforceGuildAccess(guild, botMode, config); guildManager.syncGuildMeta?.(guild); await resourceManager.syncDiscordResources?.(guild); }
     catch (error) { console.error(`Guild startup sync failed for ${guild?.id}:`, error?.message || error); }
   }
   await Promise.all([
