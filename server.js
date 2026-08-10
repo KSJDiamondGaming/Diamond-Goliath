@@ -44,7 +44,7 @@ safeRequire('backup notification wiring', './src/core/notifications/wireBackupNo
 const route = (label, modulePath, optional = false) => safeRequire(label, modulePath, emptyRouter(), { optional });
 const authRoutes = route('auth routes', './src/server/routes/auth');
 const discordRoutes = route('discord routes', './src/server/routes/discord');
-const discordRoleEditorRoutes = route('discord role editor routes', './src/server/routes/discordRoleEditor');
+const discordRoleEditorRoutes = route('discord role editor routes', './src/server/routes/discord/discordRoleEditor');
 const discordResourceRoutes = route('discord resource routes', './src/server/routes/discordResources');
 const statusRoutes = route('status routes', './src/server/routes/status');
 const ownerRoutes = route('owner routes', './src/server/routes/owner');
