@@ -4,7 +4,7 @@ const { AttachmentBuilder } = require('discord.js');
 const fetch = require('node-fetch');
 const sharp = require('sharp');
 
-const TARGET_WIDTH = 520;
+const TARGET_WIDTH = 600;
 const PORTRAIT_VISIBLE_WIDTH = 320;
 const MAX_SOURCE_BYTES = 8 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 8000;
