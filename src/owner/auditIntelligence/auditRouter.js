@@ -8,7 +8,9 @@ const security = require('../../core/security/securityCore');
 
 const MAX_CATEGORY_CHILDREN = 50;
 const SUMMARY_REFRESH_MS = 60000;
+const LIVE_PROBE_COOLDOWN_MS = 15000;
 const summaryRefresh = new Map();
+const liveProbeCooldown = new Map();
 const REPORT_ROUTE_CHANNELS = {
   members: { name: 'member-events', label: 'Member Events' },
   moderation: { name: 'moderation', label: 'Moderation' },
@@ -292,7 +294,42 @@ function monitoringEnabled(sourceGuild, event) {
   const monitoring = guildConfig.monitoring && typeof guildConfig.monitoring === 'object' ? guildConfig.monitoring : {};
   return monitoring[monitorKeyForEvent(event)] !== false;
 }
+async function runLiveEndToEndProbe(client, sourceGuild) {
+  const guildId = String(sourceGuild?.id || '');
+  if (!guildId || !client?.guilds?.cache) return { started: false, reason: 'invalid-guild' };
+  const liveGuild = client.guilds.cache.get(guildId) || null;
+  if (!liveGuild) return { started: false, reason: 'registry-only' };
+  const now = Date.now();
+  if (now - Number(liveProbeCooldown.get(guildId) || 0) < LIVE_PROBE_COOLDOWN_MS) return { started: false, reason: 'cooldown' };
+  const botMember = liveGuild.members.me || null;
+  if (!botMember?.permissions?.has(PermissionFlagsBits.ManageChannels)) return { started: false, reason: 'missing-manage-channels' };
+  liveProbeCooldown.set(guildId, now);
+  const probeName = `goliath-e2e-${now.toString(36).slice(-7)}`.slice(0, 100);
+  const permissionOverwrites = [
+    { id: liveGuild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
+    { id: botMember.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.ReadMessageHistory] },
+  ];
+  const channel = await liveGuild.channels.create({
+    name: probeName,
+    type: ChannelType.GuildText,
+    topic: `GOLIATH_AUDIT_E2E_PROBE • Temporary hidden channel used to verify real Discord event capture and routing • ${new Date(now).toISOString()}`.slice(0, 1024),
+    permissionOverwrites,
+    reason: 'Goliath Audit Intelligence live end-to-end routing probe',
+  }).catch((error) => {
+    console.warn('[Audit Intelligence] live end-to-end probe channel create failed:', error?.message || error);
+    return null;
+  });
+  if (!channel) {
+    liveProbeCooldown.delete(guildId);
+    return { started: false, reason: 'create-failed' };
+  }
+  setTimeout(() => {
+    channel.delete('Goliath Audit Intelligence live end-to-end routing probe complete').catch((error) => console.warn('[Audit Intelligence] live end-to-end probe cleanup failed:', error?.message || error));
+  }, 1800);
+  return { started: true, channelId: channel.id, channelName: channel.name, routeKey: 'guild' };
+}
 async function configuredRouteChannel(client, sourceGuild, event) {
+  if (String(event?.type || '').startsWith('test.')) await runLiveEndToEndProbe(client, sourceGuild).catch(() => null);
   const guildConfig = auditStore.getConfig().guilds?.[String(sourceGuild?.id || '')] || {};
   const routes = guildConfig.routes && typeof guildConfig.routes === 'object' ? guildConfig.routes : {};
   const key = routeKeyForEvent(event);
@@ -531,6 +568,7 @@ module.exports = {
   monitorKeyForEvent,
   monitoringEnabled,
   configuredRouteChannel,
+  runLiveEndToEndProbe,
   channelDeliveryState,
   inspectReportFeeds,
   inspectStructure,
