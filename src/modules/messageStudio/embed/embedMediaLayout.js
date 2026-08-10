@@ -8,12 +8,11 @@ const TARGET_WIDTH = 520;
 const PORTRAIT_VISIBLE_WIDTH = 320;
 const MAX_SOURCE_BYTES = 8 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 8000;
-const DISCORD_IMAGE_HOSTS = new Set(['cdn.discordapp.com', 'media.discordapp.net']);
 
-function isDiscordHostedImage(value) {
+function isHttpsImageUrl(value) {
   try {
     const url = new URL(String(value || ''));
-    return url.protocol === 'https:' && DISCORD_IMAGE_HOSTS.has(url.hostname);
+    return url.protocol === 'https:';
   } catch {
     return false;
   }
@@ -51,9 +50,6 @@ async function centerOnEmbedCanvas(buffer) {
   const height = Number(metadata.height || 0);
   if (!width || !height) return null;
 
-  // Portrait/square artwork should keep a comfortable visible size while the
-  // transparent attachment itself occupies Discord's full embed-image width.
-  // Wide artwork may use the full 520 px canvas.
   const aspect = width / height;
   const visibleWidth = aspect <= 1.25
     ? Math.min(width, PORTRAIT_VISIBLE_WIDTH)
@@ -83,11 +79,10 @@ async function centerOnEmbedCanvas(buffer) {
 }
 
 /**
- * Prepare embed large images for Discord's renderer.
- *
- * Discord-hosted large images are normalised to a transparent 520 px canvas.
- * Portrait/square images keep a smaller visible size and are centred; landscape
- * images can use the full width. The persisted/source URL is never modified.
+ * Normalize every HTTPS large-image URL to a 520 px attachment canvas before
+ * sending it to Discord. Previously this only ran for Discord CDN/media hosts,
+ * which meant external image URLs completely bypassed the width-normalization
+ * path and made every width tweak appear to do nothing.
  */
 async function prepareEmbedMedia(embeds = []) {
   const files = [];
@@ -98,7 +93,7 @@ async function prepareEmbedMedia(embeds = []) {
     if (!embed || typeof embed.toJSON !== 'function' || typeof embed.setImage !== 'function') continue;
 
     const imageUrl = embed.toJSON()?.image?.url;
-    if (!imageUrl || !isDiscordHostedImage(imageUrl)) continue;
+    if (!imageUrl || !isHttpsImageUrl(imageUrl)) continue;
 
     try {
       const source = await fetchImageBuffer(imageUrl);
@@ -109,8 +104,6 @@ async function prepareEmbedMedia(embeds = []) {
       files.push(new AttachmentBuilder(processed, { name }));
       embed.setImage(`attachment://${name}`);
     } catch (error) {
-      // Media enhancement is best-effort. If Discord's CDN is temporarily
-      // unavailable, keep the original image URL rather than blocking the post.
       console.warn(`[Embed] Could not centre large image for panel ${index + 1}:`, error.message || error);
     }
   }
