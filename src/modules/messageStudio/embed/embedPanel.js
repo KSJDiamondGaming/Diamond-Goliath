@@ -380,9 +380,1070 @@ function replaceVars(text, i) {
     departurereason: "No reason — the member left voluntarily.",
     departureModerator: "Not applicable",
     departuremoderator: "Not applicable",
-    departureModeratorId: "",
-    departuremoderatorid: "",
+    departureModeratorId: "Not applicable",
+    departuremoderatorid: "Not applicable",
     nowTimestamp: now,
     nowtimestamp: now,
     successEmoji: "✅",
-    successem...
+    succesemoji: "✅",
+    successemoji: "✅",
+    warningEmoji: "⚠️",
+    warningemoji: "⚠️",
+    errorEmoji: "❌",
+    erroremoji: "❌",
+    proofVerifiedEmoji: "💎",
+    proofverifiedemoji: "💎",
+    successColor: "#57F287",
+    successcolor: "#57F287",
+    warningColor: "#FEE75C",
+    warningcolor: "#FEE75C",
+    errorColor: "#ED4245",
+    errorcolor: "#ED4245",
+    proofVerifiedColor: "#00D4FF",
+    proofverifiedcolor: "#00D4FF",
+    guildId: guild.id || "",
+    guildid: guild.id || "",
+    guildName: guild.name || "Server",
+    guildname: guild.name || "Server",
+    server: guild.name || "Server",
+    guildIcon: icon,
+    guildicon: icon,
+    guildiconurl: icon,
+    serverIcon: icon,
+    servericon: icon,
+    servericonurl: icon,
+    guildBanner: banner,
+    guildbanner: banner,
+    guildbannerurl: banner,
+    guildMemberCount: String(guild.memberCount || 0),
+    guildmembercount: String(guild.memberCount || 0),
+    memberCount: String(guild.memberCount || 0),
+    membercount: String(guild.memberCount || 0),
+    guildVanityCode: guild.vanityURLCode || "",
+    guildvanitycode: guild.vanityURLCode || "",
+  };
+  let out = String(text || "");
+  Object.entries(vars).forEach(([k, v]) => {
+    out = out.replaceAll(`{${k}}`, v);
+  });
+  return out;
+}
+
+function isIconUrl(url) {
+  return /\/icons\/|\/avatars\//i.test(String(url || ""));
+}
+function isImageUrl(url) {
+  try {
+    const parsed = new URL(url);
+    return /\.(png|jpe?g|gif|webp|bmp|svg|avif)$/i.test(parsed.pathname);
+  } catch {
+    return false;
+  }
+}
+function extractMediaLines(description) {
+  const lines = String(description || "").split("\n");
+  const kept = [];
+  let thumbnailUrl = null;
+  let imageUrl = null;
+
+  for (const line of lines) {
+    const text = line.trim();
+    const url = safeUrl(text);
+
+    if (url && isImageUrl(url)) {
+      if (isIconUrl(url) && !thumbnailUrl) {
+        thumbnailUrl = url;
+        continue;
+      }
+
+      if (!isIconUrl(url) && !imageUrl) {
+        imageUrl = url;
+        continue;
+      }
+    }
+
+    kept.push(line);
+  }
+
+  return { description: kept.join("\n").trim(), thumbnailUrl, imageUrl };
+}
+
+function basePanel(data = {}) {
+  return {
+    title: data.title || "",
+    description: data.description || "",
+    color: data.color || PANEL_COLOR,
+    authorName: data.authorName || "",
+    authorIcon: data.authorIcon || "",
+    authorUrl: data.authorUrl || "",
+    footer: data.footer || "",
+    footerIcon: data.footerIcon || "",
+    image: data.image || "",
+    thumbnail: data.thumbnail || "",
+    fields: Array.isArray(data.fields) ? clone(data.fields).slice(0, 25) : [],
+  };
+}
+function sync(state) {
+  const panels =
+    Array.isArray(state.panels) && state.panels.length
+      ? state.panels.map(basePanel).slice(0, MAX_PANELS)
+      : [basePanel(state)];
+  const selectedPanelIndex = Math.max(
+    0,
+    Math.min(Number(state.selectedPanelIndex) || 0, panels.length - 1),
+  );
+  return {
+    ...state,
+    panels,
+    selectedPanelIndex,
+    ...panels[selectedPanelIndex],
+  };
+}
+function saveSelected(state, patch = {}) {
+  const s = sync(state);
+  const panels = s.panels.map((p, n) =>
+    n === s.selectedPanelIndex ? basePanel({ ...p, ...patch }) : p,
+  );
+  return sync({ ...s, panels });
+}
+function defaultState() {
+  const p = basePanel(TEMPLATES.custom);
+  return {
+    template: "custom",
+    selectedPreset: null,
+    showTimestamp: true,
+    fieldLayout: "auto",
+    selectedPanelIndex: 0,
+    selectedFieldIndex: null,
+    selectedButtonIndex: null,
+    channelId: null,
+    hasUnsavedChanges: false,
+    allowUserPing: false,
+    panels: [p],
+    buttons: [],
+    ...p,
+  };
+}
+function getSession(i) {
+  if (!sessions.has(sessionKey(i))) sessions.set(sessionKey(i), defaultState());
+  return sync(sessions.get(sessionKey(i)));
+}
+function saveSession(i, state) {
+  const s = sync(state);
+  sessions.set(sessionKey(i), s);
+  return s;
+}
+function markUnsaved(i, state) {
+  return saveSession(i, { ...state, hasUnsavedChanges: true });
+}
+function clearUnsaved(i, state) {
+  return saveSession(i, { ...state, hasUnsavedChanges: false });
+}
+function resetSession(i) {
+  return saveSession(i, defaultState());
+}
+function allowedMentions(state, i) {
+  return state.allowUserPing
+    ? { users: [i.user.id], roles: [], repliedUser: false }
+    : { parse: [], repliedUser: false };
+}
+function presetData(state) {
+  const s = sync(state);
+  return {
+    template: s.template || "custom",
+    channelId: s.channelId || null,
+    allowUserPing: Boolean(s.allowUserPing),
+    showTimestamp: s.showTimestamp !== false,
+    fieldLayout: s.fieldLayout || "auto",
+    panels: clone(s.panels),
+    buttons: clone(s.buttons || []),
+    ...s.panels[s.selectedPanelIndex],
+  };
+}
+function applyTemplate(i, name) {
+  const t = TEMPLATES[name] || TEMPLATES.custom,
+    current = getSession(i),
+    p = basePanel(t);
+  return saveSession(i, {
+    ...current,
+    template: name,
+    selectedPreset: null,
+    selectedPanelIndex: 0,
+    selectedFieldIndex: null,
+    panels: [p],
+    buttons: clone(t.buttons || []),
+    ...p,
+    hasUnsavedChanges: true,
+  });
+}
+function applyPreset(i, name, preset) {
+  const current = getSession(i);
+  const panels =
+    Array.isArray(preset.panels) && preset.panels.length
+      ? preset.panels.map(basePanel)
+      : [basePanel(preset)];
+  return clearUnsaved(i, {
+    ...current,
+    template: preset.template || "custom",
+    selectedPreset: name,
+    selectedPanelIndex: 0,
+    selectedFieldIndex: null,
+    panels,
+    buttons: clone(preset.buttons || []),
+    channelId: preset.channelId || current.channelId,
+    allowUserPing: Boolean(preset.allowUserPing),
+    showTimestamp: preset.showTimestamp !== false,
+    fieldLayout: preset.fieldLayout || current.fieldLayout || "auto",
+  });
+}
+function setDefault(guildId, template, preset) {
+  if (typeof guildManager.setEmbedDefaultPreset === "function") {
+    guildManager.setEmbedDefaultPreset(guildId, template, preset);
+    return true;
+  }
+  if (typeof guildManager.setEmbedDefault === "function") {
+    guildManager.setEmbedDefault(guildId, template, preset);
+    return true;
+  }
+  if (typeof guildManager.replaceGuildSection === "function") {
+    const current =
+      typeof guildManager.getEmbedDefaults === "function"
+        ? guildManager.getEmbedDefaults(guildId) || {}
+        : {};
+    guildManager.replaceGuildSection(guildId, "embedDefaults", {
+      ...current,
+      [template]: preset,
+    });
+    return true;
+  }
+  return false;
+}
+
+function normalizeInlineFields(fields) {
+  let inlineCount = 0;
+
+  return fields.map((field) => {
+    if (!field.inline) {
+      inlineCount = 0;
+      return { ...field, inline: false };
+    }
+
+    inlineCount += 1;
+
+    if (inlineCount > 2) {
+      inlineCount = 1;
+      return { ...field, inline: false };
+    }
+
+    return { ...field, inline: true };
+  });
+}
+
+function applyFieldLayout(fields, layout = "auto") {
+  if (layout === "1") return fields.map((field) => ({ ...field, inline: false }));
+  if (layout === "3") return fields;
+
+  const inlineCount = fields.filter((field) => field.inline).length;
+  const useTwoPerRow = layout === "2" || (layout === "auto" && (inlineCount === 4 || inlineCount === 5));
+
+  if (!useTwoPerRow) return fields;
+
+  const output = [];
+  let rowCount = 0;
+
+  fields.forEach((field, index) => {
+    if (!field.inline) {
+      rowCount = 0;
+      output.push(field);
+      return;
+    }
+
+    output.push({ ...field, inline: true });
+    rowCount += 1;
+
+    const hasMoreInline = fields.slice(index + 1).some((next) => next.inline);
+    if (rowCount === 2 && hasMoreInline) {
+      output.push({ name: "\u200B", value: "\u200B", inline: true });
+      rowCount = 0;
+    }
+  });
+
+  return output.slice(0, 25);
+}
+
+function buildEmbedFromPanel(p, i, showTimestamp, fieldLayout = "auto") {
+  const e = new EmbedBuilder().setColor(p.color || PANEL_COLOR);
+
+  const authorName = trim(replaceVars(p.authorName, i), 256);
+  const authorIcon = safeUrl(replaceVars(p.authorIcon, i));
+  const authorUrl = safeUrl(replaceVars(p.authorUrl, i));
+
+  if (authorName || (authorIcon && isImageUrl(authorIcon))) {
+    e.setAuthor({
+      name: authorName || replaceVars("{guildName}", i) || "Embed",
+      ...(authorIcon && isImageUrl(authorIcon) ? { iconURL: authorIcon } : {}),
+      ...(authorUrl ? { url: authorUrl } : {}),
+    });
+  }
+
+  if (p.title) e.setTitle(trim(replaceVars(p.title, i), 256));
+
+  const media = extractMediaLines(replaceVars(p.description, i));
+  if (media.description) e.setDescription(trim(media.description, 4096));
+
+  const footer = trim(replaceVars(p.footer, i), 2048);
+  const footerIcon = safeUrl(replaceVars(p.footerIcon, i));
+  const footerBase = footer || (footerIcon && isImageUrl(footerIcon) ? (replaceVars("{guildName}", i) || "Embed") : "");
+  const footerWidth = 164;
+  const footerText = `${footerBase}${" ".repeat(Math.max(1, footerWidth - footerBase.length))}\u200B`;
+
+  e.setFooter({
+    text: footerText,
+    ...(footerIcon && isImageUrl(footerIcon) ? { iconURL: footerIcon } : {}),
+  });
+
+  const image = safeUrl(replaceVars(p.image, i));
+  const thumb = safeUrl(replaceVars(p.thumbnail, i));
+
+  if (image && isImageUrl(image)) e.setImage(image);
+  else if (media.imageUrl) e.setImage(media.imageUrl);
+
+  if (thumb && isImageUrl(thumb)) e.setThumbnail(thumb);
+  else if (media.thumbnailUrl) e.setThumbnail(media.thumbnailUrl);
+
+  const fields = applyFieldLayout(
+    (p.fields || [])
+      .filter((f) => f?.name && f?.value)
+      .slice(0, 25)
+      .map((f) => ({
+        name: trim(replaceVars(f.name, i), 256),
+        value: trim(replaceVars(f.value, i), 1024),
+        inline: Boolean(f.inline),
+      })),
+    fieldLayout,
+  );
+
+  if (fields.length) e.addFields(fields);
+  if (showTimestamp !== false) e.setTimestamp();
+
+  return e;
+}
+function buildPreviewEmbeds(state, i) {
+  const s = sync(state);
+  return s.panels
+    .slice(0, MAX_PANELS)
+    .map((p) => buildEmbedFromPanel(p, i, s.showTimestamp, s.fieldLayout || "auto"));
+}
+function buildPreviewEmbed(state, i) {
+  return buildPreviewEmbeds(state, i)[0];
+}
+function buttonRows(state) {
+  const rows = [],
+    buttons = (state.buttons || []).slice(0, MAX_BUTTONS);
+  for (let i = 0; i < buttons.length; i += 5) {
+    const row = new ActionRowBuilder();
+    buttons.slice(i, i + 5).forEach((b, offset) => {
+      const style =
+        {
+          secondary: ButtonStyle.Secondary,
+          success: ButtonStyle.Success,
+          danger: ButtonStyle.Danger,
+          link: ButtonStyle.Link,
+        }[String(b.style || "Primary").toLowerCase()] || ButtonStyle.Primary;
+      const builder = new ButtonBuilder()
+        .setLabel(trim(b.label || "Button", 80))
+        .setStyle(style);
+      if (b.emoji) builder.setEmoji(b.emoji);
+      const url = safeUrl(b.url);
+      if (url) builder.setStyle(ButtonStyle.Link).setURL(url);
+      else
+        builder.setCustomId(
+          b.id || `embed-action:${b.action || "custom"}:${i + offset}`,
+        );
+      row.addComponents(builder);
+    });
+    rows.push(row);
+  }
+  return rows;
+}
+
+function buildEmbedPanel(
+  interactionOrGuild,
+  memberDisplayName = "Unknown User",
+) {
+  const fake = interactionOrGuild?.guild
+    ? interactionOrGuild
+    : {
+        guild: interactionOrGuild,
+        guildId: interactionOrGuild?.id,
+        user: { id: "system" },
+      };
+  return buildEditorPanel(fake, memberDisplayName);
+}
+function mainEmbed(s, who) {
+  return new EmbedBuilder()
+    .setColor(s.color || PANEL_COLOR)
+    .setTitle("✏️ Embed Studio")
+    .setDescription(
+      [
+        "**Build embeds with separate coloured panels in one Discord message.**",
+        "",
+        `> **Template:** ${(TEMPLATES[s.template] || TEMPLATES.custom).emoji} ${(TEMPLATES[s.template] || TEMPLATES.custom).label}`,
+        `> **Preset:** ${s.selectedPreset ? `💾 ${s.selectedPreset}` : "None loaded"}`,
+        `> **Channel:** ${s.channelId ? `<#${s.channelId}>` : "Not selected"}`,
+        `> **Selected Panel:** ${s.selectedPanelIndex + 1}/${s.panels.length}`,
+        `> **Panel Colour:** \`${s.color || PANEL_COLOR}\``,
+        `> **Fields:** ${(s.fields || []).length}/25`,
+        `> **Buttons:** ${(s.buttons || []).length}/20`,
+        `> **Mentions:** ${s.allowUserPing ? "🔔 User ping enabled" : "🔕 Safe / no ping"}`,
+        `> **Unsaved Changes:** ${s.hasUnsavedChanges ? "⚠️ Yes" : "✅ No"}`,
+        "",
+        "Server icon: use **Media → Small thumbnail URL** = `{guildIcon}`. Author/Footer icon fields also accept `{guildIcon}`.",
+      ].join("\n"),
+    )
+    .setFooter({ text: `Requested by ${who}` })
+    .setTimestamp();
+}
+function buildEditorPanel(i, who = "Unknown User") {
+  const s = getSession(i);
+  return {
+    embeds: [mainEmbed(s, who), ...buildPreviewEmbeds(s, i)],
+    components: [
+      new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId("embed:template")
+          .setPlaceholder("🎨 Choose template")
+          .addOptions(
+            Object.entries(TEMPLATES).map(([value, t]) => ({
+              label: t.label,
+              value,
+              emoji: t.emoji,
+              default: s.template === value,
+            })),
+          ),
+      ),
+      new ActionRowBuilder().addComponents(
+        new ChannelSelectMenuBuilder()
+          .setCustomId("embed:channel")
+          .setPlaceholder("📢 Choose channel")
+          .addChannelTypes(
+            ChannelType.GuildText,
+            ChannelType.GuildAnnouncement,
+          ),
+      ),
+      new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId("embed:color")
+          .setPlaceholder("🌈 Selected panel colour")
+          .addOptions([
+            ...COLORS.map((c) => ({
+              label: c.label,
+              value: c.value,
+              emoji: c.emoji,
+              default: s.color === c.value,
+            })),
+            {
+              label: "Custom HEX",
+              value: CUSTOM_HEX_VALUE,
+              emoji: "🎨",
+              description: "Enter your own HEX colour",
+            },
+          ]),
+      ),
+      new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId("embed:panel-select")
+          .setPlaceholder("🧩 Select content panel")
+          .addOptions(
+            s.panels.map((p, n) => ({
+              label: `${n + 1}. ${trim(p.title || p.authorName || "Content Panel", 80)}`,
+              value: String(n),
+              description: trim(p.description || p.color, 100),
+              default: s.selectedPanelIndex === n,
+            })),
+          ),
+      ),
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId("embed:builder")
+          .setLabel("🛠️ Builder")
+          .setStyle(ButtonStyle.Primary),
+        new ButtonBuilder()
+          .setCustomId("embed:presets")
+          .setLabel("💾 Presets")
+          .setStyle(ButtonStyle.Primary),
+        new ButtonBuilder()
+          .setCustomId("embed:panels")
+          .setLabel(`🧩 Panels (${s.panels.length})`)
+          .setStyle(ButtonStyle.Primary),  
+        new ButtonBuilder()
+          .setCustomId("embed:use")
+          .setLabel("✅ Use Embed")
+          .setStyle(ButtonStyle.Success),
+      ),
+    ],
+  };
+}
+function simplePanel(title, desc, state, who) {
+  return new EmbedBuilder()
+    .setColor(state.color || PANEL_COLOR)
+    .setTitle(title)
+    .setDescription(desc)
+    .setFooter({ text: `Requested by ${who}` })
+    .setTimestamp();
+}
+function buildBuilderPanel(i, who = "Unknown User") {
+  const s = getSession(i);
+  return {
+    embeds: [
+      simplePanel(
+        "🛠️ Embed Builder",
+        `Editing panel **${s.selectedPanelIndex + 1}/${s.panels.length}**.`,
+        s,
+        who,
+      ),
+      ...buildPreviewEmbeds(s, i),
+    ],
+    components: [
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId("embed:edit-content")
+          .setLabel("✏️ Content")
+          .setStyle(ButtonStyle.Primary),
+        new ButtonBuilder()
+          .setCustomId("embed:edit-media")
+          .setLabel("🖼️ Media")
+          .setStyle(ButtonStyle.Primary),
+        new ButtonBuilder()
+          .setCustomId("embed:fields")
+          .setLabel(`📋 Fields (${(s.fields || []).length})`)
+          .setStyle(ButtonStyle.Primary),
+        new ButtonBuilder()
+          .setCustomId("embed:buttons")
+          .setLabel(`🔘 Buttons (${(s.buttons || []).length})`)
+          .setStyle(ButtonStyle.Primary),
+      ),
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId("embed:toggle-ping")
+          .setLabel(s.allowUserPing ? "🔔 Ping ON" : "🔕 Ping OFF")
+          .setStyle(
+            s.allowUserPing ? ButtonStyle.Success : ButtonStyle.Secondary,
+          ),
+        new ButtonBuilder()
+          .setCustomId("embed:toggle-timestamp")
+          .setLabel(s.showTimestamp ? "🕒 Timestamp ON" : "🕒 Timestamp OFF")
+          .setStyle(
+            s.showTimestamp ? ButtonStyle.Success : ButtonStyle.Secondary,
+          ),
+        new ButtonBuilder()
+          .setCustomId("embed:helpers")
+          .setLabel("📖 Variables")
+          .setStyle(ButtonStyle.Secondary),
+      ),
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId("embed:test-send")
+          .setLabel("🧪 Test")
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId("embed:update-existing")
+          .setLabel("♻️ Update Existing")
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId("embed:reset")
+          .setLabel("♻️ Reset")
+          .setStyle(ButtonStyle.Danger),
+        new ButtonBuilder()
+          .setCustomId("embed:back")
+          .setLabel("⬅️ Back")
+          .setStyle(ButtonStyle.Secondary),
+      ),
+    ],
+  };
+}
+function buildPanelsPanel(i, who) {
+  const s = getSession(i);
+  return {
+    embeds: [
+      simplePanel(
+        "🧩 Content Panels",
+        `Selected **${s.selectedPanelIndex + 1}/${s.panels.length}**.`,
+        s,
+        who,
+      ),
+      ...buildPreviewEmbeds(s, i),
+    ],
+    components: [
+      new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId("embed:panel-select")
+          .setPlaceholder("🧩 Select panel")
+          .addOptions(
+            s.panels.map((p, n) => ({
+              label: `${n + 1}. ${trim(p.title || "Content Panel", 80)}`,
+              value: String(n),
+              description: trim(p.description || p.color, 100),
+              default: s.selectedPanelIndex === n,
+            })),
+          ),
+      ),
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId("embed:panel-add")
+          .setLabel("➕ Add")
+          .setStyle(ButtonStyle.Success)
+          .setDisabled(s.panels.length >= MAX_PANELS),
+        new ButtonBuilder()
+          .setCustomId("embed:panel-duplicate")
+          .setLabel("📋 Duplicate")
+          .setStyle(ButtonStyle.Secondary)
+          .setDisabled(s.panels.length >= MAX_PANELS),
+        new ButtonBuilder()
+          .setCustomId("embed:panel-remove")
+          .setLabel("🗑️ Remove")
+          .setStyle(ButtonStyle.Danger)
+          .setDisabled(s.panels.length <= 1),
+      ),
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId("embed:panel-up")
+          .setLabel("⬆️ Up")
+          .setStyle(ButtonStyle.Secondary)
+          .setDisabled(s.selectedPanelIndex <= 0),
+        new ButtonBuilder()
+          .setCustomId("embed:panel-down")
+          .setLabel("⬇️ Down")
+          .setStyle(ButtonStyle.Secondary)
+          .setDisabled(s.selectedPanelIndex >= s.panels.length - 1),
+        new ButtonBuilder()
+          .setCustomId("embed:builder")
+          .setLabel("⬅️ Builder")
+          .setStyle(ButtonStyle.Secondary),
+      ),
+    ],
+  };
+}
+function buildFieldsPanel(i, who) {
+  const s = getSession(i),
+    rows = [];
+
+  rows.push(
+    new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId("embed:field-layout")
+        .setPlaceholder("Field Layout")
+        .addOptions([
+          { label: "Auto", value: "auto", default: (s.fieldLayout || "auto") === "auto" },
+          { label: "1 field per row", value: "1", default: s.fieldLayout === "1" },
+          { label: "2 fields per row", value: "2", default: s.fieldLayout === "2" },
+          { label: "3 fields per row", value: "3", default: s.fieldLayout === "3" },
+        ]),
+    ),
+  );
+  if ((s.fields || []).length)
+    rows.push(
+      new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId("embed:field-select")
+          .setPlaceholder("📋 Select field")
+          .addOptions(
+            s.fields.map((f, n) => ({
+              label: `${n + 1}. ${trim(f.name || "Field", 80)}`,
+              value: String(n),
+              description: trim(f.value || "Value", 100),
+              default: s.selectedFieldIndex === n,
+            })),
+          ),
+      ),
+    );
+  rows.push(
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId("embed:field-add")
+        .setLabel("➕ Add")
+        .setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId("embed:field-edit")
+        .setLabel("✏️ Edit")
+        .setStyle(ButtonStyle.Primary)
+        .setDisabled(!Number.isInteger(s.selectedFieldIndex)),
+      new ButtonBuilder()
+        .setCustomId("embed:field-remove-selected")
+        .setLabel("🗑️ Remove")
+        .setStyle(ButtonStyle.Danger)
+        .setDisabled(!Number.isInteger(s.selectedFieldIndex)),
+      new ButtonBuilder()
+        .setCustomId("embed:builder")
+        .setLabel("⬅️ Builder")
+        .setStyle(ButtonStyle.Secondary),
+    ),
+  );
+  return {
+    embeds: [
+      simplePanel(
+        "📋 Field Management",
+        `Panel ${s.selectedPanelIndex + 1}/${s.panels.length} fields: ${(s.fields || []).length}/25`,
+        s,
+        who,
+      ),
+    ],
+    components: rows,
+  };
+}
+function buildButtonsPanel(i, who) {
+  const s = getSession(i),
+    rows = [];
+  if ((s.buttons || []).length)
+    rows.push(
+      new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId("embed:button-select")
+          .setPlaceholder("🔘 Select button")
+          .addOptions(
+            s.buttons.map((b, n) => ({
+              label: `${n + 1}. ${trim(b.label || "Button", 80)}`,
+              value: String(n),
+              description: trim(b.url || b.style || "Button", 100),
+              default: s.selectedButtonIndex === n,
+            })),
+          ),
+      ),
+    );
+  rows.push(
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId("embed:button-add")
+        .setLabel("➕ Add")
+        .setStyle(ButtonStyle.Success)
+        .setDisabled((s.buttons || []).length >= MAX_BUTTONS),
+      new ButtonBuilder()
+        .setCustomId("embed:button-edit")
+        .setLabel("✏️ Edit")
+        .setStyle(ButtonStyle.Primary)
+        .setDisabled(!Number.isInteger(s.selectedButtonIndex)),
+      new ButtonBuilder()
+        .setCustomId("embed:button-remove-selected")
+        .setLabel("🗑️ Remove")
+        .setStyle(ButtonStyle.Danger)
+        .setDisabled(!Number.isInteger(s.selectedButtonIndex)),
+    ),
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId("embed:button-move-up")
+        .setLabel("⬆️ Up")
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(
+          !Number.isInteger(s.selectedButtonIndex) ||
+            s.selectedButtonIndex <= 0,
+        ),
+      new ButtonBuilder()
+        .setCustomId("embed:button-move-down")
+        .setLabel("⬇️ Down")
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(
+          !Number.isInteger(s.selectedButtonIndex) ||
+            s.selectedButtonIndex >= (s.buttons || []).length - 1,
+        ),
+      new ButtonBuilder()
+        .setCustomId("embed:builder")
+        .setLabel("⬅️ Builder")
+        .setStyle(ButtonStyle.Secondary),
+    ),
+  );
+  return {
+    embeds: [
+      simplePanel(
+        "🔘 Button Management",
+        `Buttons: ${(s.buttons || []).length}/${MAX_BUTTONS}`,
+        s,
+        who,
+      ),
+    ],
+    components: rows,
+  };
+}
+function buildPresetsPanel(i, who) {
+  refreshGuild(i.guild.id);
+  const s = getSession(i),
+    presets =
+      typeof guildManager.getEmbedPresets === "function"
+        ? guildManager.getEmbedPresets(i.guild.id) || {}
+        : {},
+    names = Object.keys(presets).slice(0, 25),
+    rows = [];
+  if (names.length)
+    rows.push(
+      new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId("embed:preset-select")
+          .setPlaceholder("💾 Select preset")
+          .addOptions(
+            names.map((name) => ({
+              label: trim(name, 100),
+              value: name,
+              description: "Load this preset",
+              default: s.selectedPreset === name,
+            })),
+          ),
+      ),
+    );
+  rows.push(
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId("embed:preset-save")
+        .setLabel("💾 Save")
+        .setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId("embed:preset-delete")
+        .setLabel("🗑️ Delete")
+        .setStyle(ButtonStyle.Danger)
+        .setDisabled(!s.selectedPreset),
+      new ButtonBuilder()
+        .setCustomId("embed:editor")
+        .setLabel("⬅️ Back")
+        .setStyle(ButtonStyle.Secondary),
+    ),
+  );
+  return {
+    embeds: [
+      simplePanel(
+        "💾 Embed Presets",
+        names.length
+          ? `Saved presets: **${names.length}**`
+          : "No presets saved yet.",
+        s,
+        who,
+      ),
+    ],
+    components: rows,
+  };
+}
+function buildHelpersPanel(who) {
+  return {
+    embeds: [
+      new EmbedBuilder()
+        .setColor(PANEL_COLOR)
+        .setTitle("📖 Embed Variables")
+        .setDescription(HELPERS.map((h) => `\`${h}\``).join("\n"))
+        .setFooter({ text: `Requested by ${who}` })
+        .setTimestamp(),
+    ],
+    components: [
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId("embed:builder")
+          .setLabel("⬅️ Back")
+          .setStyle(ButtonStyle.Secondary),
+      ),
+    ],
+  };
+}
+function modal(id, title, inputs) {
+  return new ModalBuilder()
+    .setCustomId(id)
+    .setTitle(title)
+    .addComponents(
+      ...inputs.map((input) => new ActionRowBuilder().addComponents(input)),
+    );
+}
+function input(id, label, style, value = "", required = false, max) {
+  const t = new TextInputBuilder()
+    .setCustomId(id)
+    .setLabel(label)
+    .setStyle(style)
+    .setRequired(required)
+    .setValue(trim(value, max || 4000));
+  if (max) t.setMaxLength(max);
+  return t;
+}
+function contentModal(s) {
+  return modal(`embed:save-content:${Date.now()}`, "Edit Panel Text", [
+    input("title", "Panel title", TextInputStyle.Short, s.title, false, 256),
+    input(
+      "description",
+      "Panel message/content",
+      TextInputStyle.Paragraph,
+      s.description,
+      false,
+      4000,
+    ),
+    input(
+      "authorName",
+      "Author name",
+      TextInputStyle.Short,
+      s.authorName,
+      false,
+      256,
+    ),
+    input(
+      "footer",
+      "Footer text",
+      TextInputStyle.Short,
+      s.footer,
+      false,
+      2048,
+    ),
+  ]);
+}
+function mediaModal(s) {
+  return modal(`embed:save-media:${Date.now()}`, "Edit Panel Media", [
+    input(
+      "authorIcon",
+      "Author logo URL / variable",
+      TextInputStyle.Short,
+      s.authorIcon,
+    ),
+    input(
+      "thumbnail",
+      "Small thumbnail URL / variable",
+      TextInputStyle.Short,
+      s.thumbnail,
+    ),
+    input("image", "Large banner/image URL", TextInputStyle.Short, s.image),
+    input(
+      "authorUrl",
+      "Author clickable URL",
+      TextInputStyle.Short,
+      s.authorUrl,
+    ),
+    input(
+      "footerIcon",
+      "Footer icon URL / variable",
+      TextInputStyle.Short,
+      s.footerIcon,
+    ),
+  ]);
+}
+function fieldModal(s, n = null) {
+  const f = Number.isInteger(n) ? s.fields[n] : {};
+  return modal(
+    Number.isInteger(n) ? `embed:field-save:${n}` : "embed:field-save-new",
+    Number.isInteger(n) ? "Edit Field" : "Add Field",
+    [
+      input("name", "Field name", TextInputStyle.Short, f.name, true, 256),
+      input(
+        "value",
+        "Field value",
+        TextInputStyle.Paragraph,
+        f.value,
+        true,
+        1024,
+      ),
+      input(
+        "layout",
+        "Inline? yes/no",
+        TextInputStyle.Short,
+        f.inline ? "yes" : "no",
+        false,
+        10,
+      ),
+    ],
+  );
+}
+function buttonModal(s, n = null) {
+  const b = Number.isInteger(n) ? s.buttons[n] : { style: "Link" };
+  return modal(
+    Number.isInteger(n) ? `embed:button-save:${n}` : "embed:button-save-new",
+    Number.isInteger(n) ? "Edit Button" : "Add Button",
+    [
+      input("label", "Button Label", TextInputStyle.Short, b.label, true, 80),
+      input("emoji", "Emoji", TextInputStyle.Short, b.emoji, false, 20),
+      input("style", "Style", TextInputStyle.Short, b.style || "Link"),
+      input("url", "URL", TextInputStyle.Short, b.url),
+    ],
+  );
+}
+function colorModal(s) {
+  return modal("embed:save-color", "Custom HEX Colour", [
+    input(
+      "hex",
+      "HEX colour",
+      TextInputStyle.Short,
+      s.color || PANEL_COLOR,
+      true,
+      7,
+    ),
+  ]);
+}
+function presetModal(s) {
+  return modal("embed:preset-save-modal", "Save Embed Preset", [
+    input(
+      "name",
+      "Preset name",
+      TextInputStyle.Short,
+      s.selectedPreset || "",
+      true,
+      50,
+    ),
+  ]);
+}
+
+module.exports = {
+  clone,
+  trim,
+  discordErrorCode,
+  discordErrorDetail,
+  embedOperationError,
+  safeUrl,
+  validHex,
+  normHex,
+  fmtDate,
+  fmtTs,
+  avatar,
+  guildIcon,
+  guildBanner,
+  memberName,
+  displayName,
+  refreshGuild,
+  sessionKey,
+  replaceVars,
+  isIconUrl,
+  isImageUrl,
+  extractMediaLines,
+  basePanel,
+  sync,
+  saveSelected,
+  defaultState,
+  getSession,
+  saveSession,
+  markUnsaved,
+  clearUnsaved,
+  resetSession,
+  allowedMentions,
+  presetData,
+  applyTemplate,
+  applyPreset,
+  setDefault,
+  normalizeInlineFields,
+  applyFieldLayout,
+  buildEmbedFromPanel,
+  buildPreviewEmbeds,
+  buildPreviewEmbed,
+  buttonRows,
+  buildEmbedPanel,
+  mainEmbed,
+  buildEditorPanel,
+  simplePanel,
+  buildBuilderPanel,
+  buildPanelsPanel,
+  buildFieldsPanel,
+  buildButtonsPanel,
+  buildPresetsPanel,
+  buildHelpersPanel,
+  modal,
+  input,
+  contentModal,
+  mediaModal,
+  fieldModal,
+  buttonModal,
+  colorModal,
+  presetModal,
+  PANEL_COLOR,
+  CUSTOM_HEX_VALUE,
+  MAX_PANELS,
+  MAX_BUTTONS,
+  COLORS,
+  TEMPLATES,
+  HELPERS,
+};
