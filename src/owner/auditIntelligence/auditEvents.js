@@ -279,21 +279,23 @@ function intelligenceSearchModal() {
 async function buildIntelligencePanel(client, interaction) {
   const config = auditStore.getConfig();
   const session = getIntelligenceSession(interaction);
-  const sourceGuilds = sourceGuildOptions(client, config.commandCenter?.guildId);
-  const sourceGuild = configuredGuild(client, session.sourceGuildId);
+  const sourceGuilds = registryGuildOptions(client, config.commandCenter?.guildId);
+  const sourceGuild = registryGuild(client, session.sourceGuildId);
   const report = sourceGuild && session.userId ? await buildReport(client, session.userId) : null;
+  const liveGuild = sourceGuild ? configuredGuild(client, sourceGuild.id) : null;
   const embed = new EmbedBuilder()
     .setColor(0x5865F2)
     .setTitle('🔎 User Intelligence Lookup')
     .setDescription(sourceGuild
-      ? 'Search this guild by Discord **user ID or username**. Goliath combines live Discord state with its own stored Audit Intelligence history.'
+      ? `Search **${sourceGuild.name}** by Discord **user ID or username**. Goliath combines live Discord state when available with stored Audit Intelligence from every environment that has observed this guild.`
       : 'Choose the source guild that contains, or previously contained, the user you want to investigate.')
     .addFields(
-      { name: 'Source Guild', value: sourceGuild ? `**${sourceGuild.name}**\n\`${sourceGuild.id}\`` : 'Not selected', inline: true },
+      { name: 'Source Guild', value: sourceGuild ? `**${sourceGuild.name}**\n\`${sourceGuild.id}\`\n${guildEnvironmentLabel(sourceGuild)}` : 'Not selected', inline: true },
+      { name: 'Live Access', value: sourceGuild ? (liveGuild ? '🟢 DEV has live access' : '🟡 Registry / stored intelligence') : '—', inline: true },
       { name: 'Selected User', value: session.userId ? `<@${session.userId}>\n\`${session.userId}\`` : 'Not selected', inline: true },
-      { name: 'Search Results', value: session.matches?.length ? `${session.matches.length} matching member(s)` : 'None / not searched', inline: true },
+      { name: 'Search Results', value: session.matches?.length ? `${session.matches.length} matching user(s)` : 'None / not searched', inline: true },
     )
-    .setFooter({ text: 'Goliath Command Center • User Intelligence • Owner only' });
+    .setFooter({ text: 'Goliath Command Center • User Intelligence • Cross-mode stored search • Owner only' });
   const rows = [];
   if (sourceGuilds.length) rows.push(new ActionRowBuilder().addComponents(sourceGuildSelect('owner:commandcenter:intelligence:guild', '1. Select source guild', sourceGuilds, session.sourceGuildId)));
   if (sourceGuild) {
@@ -311,7 +313,7 @@ async function buildIntelligencePanel(client, interaction) {
       .addOptions(session.matches.slice(0, 25).map((match) => ({
         label: String(match.label || match.id).slice(0, 100),
         value: match.id,
-        description: `User ID: ${match.id}`.slice(0, 100),
+        description: `${match.environments?.length ? `${match.environments.join(' • ')} • ` : ''}User ID: ${match.id}`.slice(0, 100),
         default: match.id === session.userId,
       })));
     rows.push(new ActionRowBuilder().addComponents(resultSelect));
@@ -325,15 +327,30 @@ async function buildIntelligencePanel(client, interaction) {
 async function searchIntelligenceUser(client, sourceGuild, query) {
   const value = String(query || '').trim();
   if (!sourceGuild || !value) return [];
-  if (/^\d{16,22}$/.test(value)) {
-    const member = await sourceGuild.members.fetch(value).catch(() => null);
-    if (member) return [{ id: member.id, label: intelligenceMemberLabel(member) }];
-    const user = await client.users.fetch(value).catch(() => null);
-    return user ? [{ id: user.id, label: user.globalName || user.username || user.id }] : [{ id: value, label: `Stored user ${value}` }];
+  const merged = new Map();
+  const add = (entry) => {
+    if (!entry?.id) return;
+    const current = merged.get(String(entry.id)) || { id: String(entry.id), label: entry.label || String(entry.id), environments: [] };
+    if (entry.label && (!current.label || current.label === current.id)) current.label = entry.label;
+    current.environments = [...new Set([...(current.environments || []), ...(entry.environments || [])])];
+    merged.set(current.id, current);
+  };
+  for (const entry of auditStore.searchUsersAcrossModes?.(value, { guildId: sourceGuild.id, limit: 25 }) || []) add(entry);
+  const liveGuild = configuredGuild(client, sourceGuild.id);
+  if (liveGuild) {
+    if (/^\d{16,22}$/.test(value)) {
+      const member = await liveGuild.members.fetch(value).catch(() => null);
+      if (member) add({ id: member.id, label: intelligenceMemberLabel(member), environments: ['DEV'] });
+    } else {
+      const members = await liveGuild.members.search({ query: value, limit: 25 }).catch(() => null);
+      for (const member of members?.values?.() || []) add({ id: member.id, label: intelligenceMemberLabel(member), environments: ['DEV'] });
+    }
   }
-  const members = await sourceGuild.members.search({ query: value, limit: 25 }).catch(() => null);
-  if (!members?.size) return [];
-  return [...members.values()].map((member) => ({ id: member.id, label: intelligenceMemberLabel(member) }));
+  if (/^\d{16,22}$/.test(value) && !merged.has(value)) {
+    const stored = auditStore.getUserAcrossModes?.(value);
+    if (stored?.guilds?.[sourceGuild.id]) add({ id: value, label: stored.displayNames?.at?.(-1) || stored.globalNames?.at?.(-1) || stored.names?.at?.(-1) || `Stored user ${value}`, environments: Object.keys(stored.environments || {}) });
+  }
+  return [...merged.values()].slice(0, 25);
 }
 
 async function buildHealthPanel(client) {
@@ -576,8 +593,8 @@ async function handleCommandCenterInteraction(client, interaction) {
   }
   if (customId === 'owner:commandcenter:intelligence:search-submit' && interaction.isModalSubmit?.()) {
     const session = getIntelligenceSession(interaction);
-    const sourceGuild = configuredGuild(client, session.sourceGuildId);
-    if (!sourceGuild) { await interaction.reply({ content: '❌ The selected source guild is no longer available.', flags: MessageFlags.Ephemeral }).catch(() => null); return true; }
+    const sourceGuild = registryGuild(client, session.sourceGuildId);
+    if (!sourceGuild) { await interaction.reply({ content: '❌ The selected source guild is no longer known to Goliath.', flags: MessageFlags.Ephemeral }).catch(() => null); return true; }
     const query = interaction.fields.getTextInputValue('query');
     const matches = await searchIntelligenceUser(client, sourceGuild, query);
     const userId = matches.length === 1 ? matches[0].id : null;
@@ -594,10 +611,16 @@ async function handleCommandCenterInteraction(client, interaction) {
   }
   if (customId === 'owner:commandcenter:intelligence:channel' && interaction.isButton?.()) {
     const session = getIntelligenceSession(interaction);
-    const sourceGuild = configuredGuild(client, session.sourceGuildId);
+    const sourceGuild = registryGuild(client, session.sourceGuildId);
     if (!sourceGuild || !session.userId) return true;
-    const member = await sourceGuild.members.fetch(session.userId).catch(() => null);
-    const user = member?.user || await client.users.fetch(session.userId).catch(() => ({ id: session.userId, username: `user-${String(session.userId).slice(-6)}` }));
+    const liveGuild = configuredGuild(client, sourceGuild.id);
+    const member = liveGuild ? await liveGuild.members.fetch(session.userId).catch(() => null) : null;
+    const stored = auditStore.getUserAcrossModes?.(session.userId);
+    const user = member?.user || await client.users.fetch(session.userId).catch(() => null) || {
+      id: session.userId,
+      username: stored?.names?.at?.(-1) || `user-${String(session.userId).slice(-6)}`,
+      globalName: stored?.globalNames?.at?.(-1) || null,
+    };
     const channel = await auditRouter.ensureUserAuditChannel(client, sourceGuild, { user });
     const link = channel ? `https://discord.com/channels/${interaction.guildId}/${channel.id}` : null;
     await interaction.reply({ content: link ? `✅ Intelligence channel ready: ${link}` : '❌ Intelligence channel could not be prepared.', flags: MessageFlags.Ephemeral }).catch(() => null); return true;
@@ -666,8 +689,8 @@ async function handleOwnerAuditInteraction(client, interaction) {
   if (!security.isBotOwner(interaction.user?.id)) { if (!interaction.replied && !interaction.deferred) await interaction.reply({ content: '❌ Owner-only control.', flags: MessageFlags.Ephemeral }).catch(() => null); return true; }
   const context = auditChannelContext(interaction.channel);
   if (!context) { if (!interaction.replied && !interaction.deferred) await interaction.reply({ content: '❌ This is not a Goliath user intelligence channel.', flags: MessageFlags.Ephemeral }).catch(() => null); return true; }
-  const sourceGuild = client.guilds.cache.get(context.sourceGuildId) || await client.guilds.fetch(context.sourceGuildId).catch(() => null);
-  if (!sourceGuild) { if (!interaction.replied && !interaction.deferred) await interaction.reply({ content: '❌ Source guild is not currently available to Goliath.', flags: MessageFlags.Ephemeral }).catch(() => null); return true; }
+  const sourceGuild = registryGuild(client, context.sourceGuildId);
+  if (!sourceGuild) { if (!interaction.replied && !interaction.deferred) await interaction.reply({ content: '❌ Source guild is no longer known to Goliath.', flags: MessageFlags.Ephemeral }).catch(() => null); return true; }
   if (customId === 'owner:audit:refresh') {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch(() => null);
     const refreshed = await auditRouter.refreshUserSummary(client, sourceGuild, interaction.channel, context.userId, true);
