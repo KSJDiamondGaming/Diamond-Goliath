@@ -12,6 +12,8 @@ const SHARED_ROOT = path.dirname(PROJECT_ROOT);
 const SHARED_CONFIG_FILE = path.join(SHARED_ROOT, '.goliath-audit-control.json');
 const COMMAND_CENTER_GUILD_ID = '1515201360386068642';
 const REGISTRY_MODES = ['DEV', 'BETA', 'PRODUCTION'];
+const LIVE_PROBE_REQUEST_LIMIT = 25;
+const LIVE_PROBE_TTL_MS = 30 * 1000;
 
 function runtimeMode() {
   const mode = String(process.env.BOT_MODE || 'DEV').trim().toUpperCase();
@@ -47,6 +49,9 @@ function defaultConfig() {
     },
     autoProvision: true,
     guilds: {},
+    control: {
+      liveProbeRequests: [],
+    },
   };
 }
 function normalizeConfig(current = {}) {
@@ -59,6 +64,11 @@ function normalizeConfig(current = {}) {
       guildId: String(current.commandCenter?.guildId || COMMAND_CENTER_GUILD_ID).trim(),
     },
     guilds: current.guilds && typeof current.guilds === 'object' ? current.guilds : {},
+    control: {
+      ...defaultConfig().control,
+      ...(current.control && typeof current.control === 'object' ? current.control : {}),
+      liveProbeRequests: Array.isArray(current.control?.liveProbeRequests) ? current.control.liveProbeRequests : [],
+    },
   };
 }
 function bootstrapSharedConfig() {
@@ -85,8 +95,85 @@ function updateConfig(patch = {}) {
     ...patch,
     commandCenter: patch.commandCenter ? { ...current.commandCenter, ...patch.commandCenter } : current.commandCenter,
     guilds: patch.guilds ? { ...current.guilds, ...patch.guilds } : current.guilds,
+    control: patch.control ? { ...current.control, ...patch.control } : current.control,
   };
   return saveConfig(next);
+}
+function writeSharedControlRequests(requests) {
+  const current = getConfig();
+  const next = normalizeConfig({
+    ...current,
+    control: {
+      ...(current.control || {}),
+      liveProbeRequests: requests.slice(-LIVE_PROBE_REQUEST_LIMIT),
+    },
+  });
+  writeJson(SHARED_CONFIG_FILE, next);
+  return next.control.liveProbeRequests;
+}
+function mutateLiveProbeRequests(mutator) {
+  const now = Date.now();
+  const current = getConfig().control?.liveProbeRequests || [];
+  const active = current.filter((request) => {
+    const expiresAt = Date.parse(request?.expiresAt || '') || 0;
+    const completedAt = Date.parse(request?.completedAt || '') || 0;
+    if (request?.status === 'completed') return !completedAt || now - completedAt < LIVE_PROBE_TTL_MS;
+    return !expiresAt || expiresAt > now;
+  });
+  const next = mutator([...active]);
+  return writeSharedControlRequests(Array.isArray(next) ? next : active);
+}
+function createLiveProbeRequest(guildId, targetMode, requestedBy = null) {
+  const guild = String(guildId || '').trim();
+  const target = String(targetMode || '').trim().toUpperCase();
+  if (!guild || !REGISTRY_MODES.includes(target)) return null;
+  const now = Date.now();
+  const request = {
+    id: `${now.toString(36)}-${Math.random().toString(36).slice(2, 9)}`,
+    guildId: guild,
+    targetMode: target,
+    requestedBy: requestedBy ? String(requestedBy) : null,
+    requestedFrom: runtimeMode(),
+    status: 'pending',
+    createdAt: new Date(now).toISOString(),
+    expiresAt: new Date(now + LIVE_PROBE_TTL_MS).toISOString(),
+    completedAt: null,
+    completedBy: null,
+    result: null,
+  };
+  mutateLiveProbeRequests((requests) => [...requests, request]);
+  return request;
+}
+function getLiveProbeRequest(requestId) {
+  const id = String(requestId || '');
+  if (!id) return null;
+  return (getConfig().control?.liveProbeRequests || []).find((request) => String(request?.id || '') === id) || null;
+}
+function getPendingLiveProbeRequests(mode = runtimeMode()) {
+  const target = String(mode || runtimeMode()).toUpperCase();
+  const now = Date.now();
+  return (getConfig().control?.liveProbeRequests || []).filter((request) => {
+    if (request?.status !== 'pending' || String(request?.targetMode || '').toUpperCase() !== target) return false;
+    const expiresAt = Date.parse(request?.expiresAt || '') || 0;
+    return !expiresAt || expiresAt > now;
+  });
+}
+function completeLiveProbeRequest(requestId, result = {}, completedBy = runtimeMode()) {
+  const id = String(requestId || '');
+  if (!id) return null;
+  let completed = null;
+  mutateLiveProbeRequests((requests) => requests.map((request) => {
+    if (String(request?.id || '') !== id) return request;
+    completed = {
+      ...request,
+      status: 'completed',
+      completedAt: new Date().toISOString(),
+      completedBy: String(completedBy || runtimeMode()).toUpperCase(),
+      result: result && typeof result === 'object' ? result : { started: false, reason: 'invalid-result' },
+    };
+    return completed;
+  }));
+  return completed;
 }
 
 function registryGuild(guild, observedAt) {
@@ -503,4 +590,9 @@ module.exports = {
   updateConfig,
   publishGuildRegistry,
   getGuildRegistry,
+  runtimeMode,
+  createLiveProbeRequest,
+  getLiveProbeRequest,
+  getPendingLiveProbeRequests,
+  completeLiveProbeRequest,
 };
