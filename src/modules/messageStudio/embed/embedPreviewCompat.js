@@ -4,35 +4,42 @@
 // panel while editing. Real sends/tests/updates still use the full panel list.
 const panel = require('./embedPanel');
 
-// Discord can collapse an embed around a narrow Large Image even when the
-// neighbouring panels naturally render at the full embed width. The earlier
-// proven implementation used non-breaking spaces in the title as measurable
-// horizontal content. Keep that exact behaviour here.
-const WIDTH_SPACE = '\u00A0';
-const TITLE_WIDTH_PAD = WIDTH_SPACE.repeat(256);
+// embedPanel already pads every footer to a fixed width, but it uses ordinary
+// spaces. Discord collapses those spaces, so short/image-heavy panels can shrink
+// while neighbouring panels stay wider. Rebuild that footer padding with NBSPs
+// so Discord preserves the intended width without changing visible content.
+const FOOTER_WIDTH = 164;
+const NBSP = '\u00A0';
+const ZWSP = '\u200B';
 
-function holdImagePanelWidth(embed) {
-  if (!embed || typeof embed.toJSON !== 'function' || typeof embed.setTitle !== 'function') return embed;
+function normalizeFooterWidth(embed) {
+  if (!embed || typeof embed.toJSON !== 'function' || typeof embed.setFooter !== 'function') return embed;
 
   const data = embed.toJSON();
-  if (!data?.image?.url || !data?.title) return embed;
+  if (!data?.footer) return embed;
 
-  const cleanTitle = String(data.title).replace(/[\u00A0\u2003\u2800]+$/u, '');
-  const maxPad = Math.max(0, 256 - cleanTitle.length);
-  const pad = TITLE_WIDTH_PAD.slice(0, maxPad);
-  embed.setTitle(`${cleanTitle}${pad}`);
+  const current = String(data.footer.text || '');
+  const base = current.replace(/[ \u00A0\u2003\u2007\u2009\u200A\u200B\u2800]+$/gu, '');
+  const visibleLength = Array.from(base).length;
+  const padLength = Math.max(1, FOOTER_WIDTH - visibleLength);
+
+  embed.setFooter({
+    text: `${base}${NBSP.repeat(padLength)}${ZWSP}`,
+    ...(data.footer.icon_url ? { iconURL: data.footer.icon_url } : {}),
+  });
+
   return embed;
 }
 
-if (!panel.__imageTitleWidthPatched) {
+if (!panel.__preservedFooterWidthPatched) {
   const originalBuildEmbedFromPanel = panel.buildEmbedFromPanel.bind(panel);
   const originalBuildPreviewEmbed = panel.buildPreviewEmbed.bind(panel);
   const originalBuildPreviewEmbeds = panel.buildPreviewEmbeds.bind(panel);
 
-  panel.buildEmbedFromPanel = (...args) => holdImagePanelWidth(originalBuildEmbedFromPanel(...args));
-  panel.buildPreviewEmbed = (...args) => holdImagePanelWidth(originalBuildPreviewEmbed(...args));
-  panel.buildPreviewEmbeds = (...args) => originalBuildPreviewEmbeds(...args).map(holdImagePanelWidth);
-  panel.__imageTitleWidthPatched = true;
+  panel.buildEmbedFromPanel = (...args) => normalizeFooterWidth(originalBuildEmbedFromPanel(...args));
+  panel.buildPreviewEmbed = (...args) => normalizeFooterWidth(originalBuildPreviewEmbed(...args));
+  panel.buildPreviewEmbeds = (...args) => originalBuildPreviewEmbeds(...args).map(normalizeFooterWidth);
+  panel.__preservedFooterWidthPatched = true;
 }
 
 if (!panel.__compactPreviewPatched) {
