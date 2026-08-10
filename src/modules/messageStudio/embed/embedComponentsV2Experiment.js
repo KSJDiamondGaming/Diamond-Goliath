@@ -14,11 +14,10 @@ const { getCachedAsset, saveCachedAsset } = require('./embedAssetStore');
 
 const CANVAS_WIDTH = 600;
 const PORTRAIT_WIDTH = 320;
-// The previous +90px compensation overshot the visual centre. Split the
-// difference and keep the portrait at +45px so it sits much closer to the real
-// centre of Discord's Components V2 container while preserving the successful
-// full-width canvas and portrait size.
-const PORTRAIT_SHIFT_RIGHT = 45;
+// Fine-tuned from the last Discord render: keep the successful canvas, size,
+// mask and background exactly as-is, but reduce the right bias slightly so the
+// visible portrait lands closer to the true centre of the panel.
+const PORTRAIT_SHIFT_RIGHT = 30;
 const MAX_SOURCE_BYTES = 8 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 8000;
 
