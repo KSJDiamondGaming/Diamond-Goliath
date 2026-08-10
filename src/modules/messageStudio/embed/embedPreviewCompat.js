@@ -5,7 +5,7 @@
 // builders and the deployment media-normalization path.
 const panel = require('./embedPanel');
 
-const DEPLOYED_WIDTH_PAD = '\u00A0'.repeat(320);
+const DEPLOYED_WIDTH_PAD = '\u00A0'.repeat(600);
 
 function holdDeployedImagePanelWidth(embed) {
   if (!embed || typeof embed.toJSON !== 'function' || typeof embed.setFooter !== 'function') return embed;
