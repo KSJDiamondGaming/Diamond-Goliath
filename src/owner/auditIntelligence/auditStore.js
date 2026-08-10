@@ -22,6 +22,13 @@ function runtimeMode() {
 function registryFile(mode = runtimeMode()) {
   return path.join(SHARED_ROOT, `.goliath-audit-registry-${String(mode).toLowerCase()}.json`);
 }
+function scopedGuildIds(mode) {
+  const envName = mode === 'PRODUCTION' ? 'PRODUCTION_GUILD_IDS' : `${mode}_GUILD_IDS`;
+  return String(process.env[envName] || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
 function ensure(dir) { fs.mkdirSync(dir, { recursive: true }); return dir; }
 function readJson(file, fallback = {}) { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return fallback; } }
 function writeJson(file, value) { ensure(path.dirname(file)); fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`, 'utf8'); }
@@ -137,6 +144,25 @@ function getGuildRegistry() {
       };
       const seen = item.observedAt || snapshot.observedAt || null;
       if (seen && (!current.lastSeenAt || seen > current.lastSeenAt)) current.lastSeenAt = seen;
+      merged.set(guildId, current);
+    }
+  }
+  for (const mode of REGISTRY_MODES) {
+    for (const guildId of scopedGuildIds(mode)) {
+      const current = merged.get(guildId) || {
+        guildId,
+        name: guildId,
+        ownerId: null,
+        memberCount: null,
+        environments: {},
+        lastSeenAt: null,
+      };
+      current.environments[mode] ||= {
+        botUserId: null,
+        botTag: null,
+        observedAt: null,
+        source: 'configured-scope',
+      };
       merged.set(guildId, current);
     }
   }
