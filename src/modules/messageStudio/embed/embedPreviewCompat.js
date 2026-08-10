@@ -4,46 +4,43 @@
 // panel while editing. Real sends/tests/updates still use the full panel list.
 const panel = require('./embedPanel');
 
-// embedPanel already pads every footer to a fixed width, but it uses ordinary
-// spaces. Discord collapses those spaces, so short/image-heavy panels can shrink
-// while neighbouring panels stay wider. Rebuild that footer padding with NBSPs
-// so Discord preserves the intended width without changing visible content.
-//
-// 164 characters was still only holding portrait-image panels at roughly the
-// narrow width shown in Discord. Increase the preserved width anchor so image
-// panels reach the same practical card width as neighbouring text panels.
-const FOOTER_WIDTH = 240;
-const NBSP = '\u00A0';
-const ZWSP = '\u200B';
+// Footer/title whitespace is collapsed by Discord and was producing no visible
+// width change. Use the earlier rendered Hangul Filler marker instead. U+3164 is
+// visually blank but is still a real rendered glyph, so Discord measures it when
+// calculating the card width. Apply it only to panels that contain a Large Image.
+const WIDTH_GLYPH = '\u3164';
+const WIDTH_MARKER = WIDTH_GLYPH.repeat(42);
+const MAX_DESCRIPTION = 4096;
 
-function normalizeFooterWidth(embed) {
-  if (!embed || typeof embed.toJSON !== 'function' || typeof embed.setFooter !== 'function') return embed;
+function stripWidthMarker(value) {
+  return String(value || '')
+    .replace(new RegExp(`\\n?${WIDTH_GLYPH}{20,}$`, 'u'), '')
+    .replace(/\n+$/u, '');
+}
+
+function holdImageEmbedWidth(embed) {
+  if (!embed || typeof embed.toJSON !== 'function' || typeof embed.setDescription !== 'function') return embed;
 
   const data = embed.toJSON();
-  if (!data?.footer) return embed;
+  if (!data?.image?.url) return embed;
 
-  const current = String(data.footer.text || '');
-  const base = current.replace(/[ \u00A0\u2003\u2007\u2009\u200A\u200B\u2800]+$/gu, '');
-  const visibleLength = Array.from(base).length;
-  const padLength = Math.max(1, FOOTER_WIDTH - visibleLength);
+  const original = stripWidthMarker(data.description || '');
+  const available = Math.max(0, MAX_DESCRIPTION - WIDTH_MARKER.length - (original ? 1 : 0));
+  const base = original.slice(0, available);
 
-  embed.setFooter({
-    text: `${base}${NBSP.repeat(padLength)}${ZWSP}`,
-    ...(data.footer.icon_url ? { iconURL: data.footer.icon_url } : {}),
-  });
-
+  embed.setDescription(`${base}${base ? '\n' : ''}${WIDTH_MARKER}`);
   return embed;
 }
 
-if (!panel.__preservedFooterWidthPatched) {
+if (!panel.__imageWidthMarkerPatched) {
   const originalBuildEmbedFromPanel = panel.buildEmbedFromPanel.bind(panel);
   const originalBuildPreviewEmbed = panel.buildPreviewEmbed.bind(panel);
   const originalBuildPreviewEmbeds = panel.buildPreviewEmbeds.bind(panel);
 
-  panel.buildEmbedFromPanel = (...args) => normalizeFooterWidth(originalBuildEmbedFromPanel(...args));
-  panel.buildPreviewEmbed = (...args) => normalizeFooterWidth(originalBuildPreviewEmbed(...args));
-  panel.buildPreviewEmbeds = (...args) => originalBuildPreviewEmbeds(...args).map(normalizeFooterWidth);
-  panel.__preservedFooterWidthPatched = true;
+  panel.buildEmbedFromPanel = (...args) => holdImageEmbedWidth(originalBuildEmbedFromPanel(...args));
+  panel.buildPreviewEmbed = (...args) => holdImageEmbedWidth(originalBuildPreviewEmbed(...args));
+  panel.buildPreviewEmbeds = (...args) => originalBuildPreviewEmbeds(...args).map(holdImageEmbedWidth);
+  panel.__imageWidthMarkerPatched = true;
 }
 
 if (!panel.__compactPreviewPatched) {
