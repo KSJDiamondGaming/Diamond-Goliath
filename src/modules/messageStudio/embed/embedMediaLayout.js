@@ -4,11 +4,10 @@ const { AttachmentBuilder } = require('discord.js');
 const fetch = require('node-fetch');
 const sharp = require('sharp');
 
-const TARGET_WIDTH = 600;
+const TARGET_WIDTH = 520;
 const PORTRAIT_VISIBLE_WIDTH = 320;
 const MAX_SOURCE_BYTES = 8 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 8000;
-const EMBED_BG = { r: 17, g: 18, b: 20, alpha: 1 };
 
 function isHttpsImageUrl(value) {
   try {
@@ -67,14 +66,16 @@ async function centerOnEmbedCanvas(buffer) {
   const left = Math.max(0, Math.floor((TARGET_WIDTH - renderedWidth) / 2));
   const right = Math.max(0, TARGET_WIDTH - renderedWidth - left);
 
+  // Important: keep the side canvas genuinely transparent. This matches the
+  // historical full-width implementation that previously worked: Discord sees
+  // a 520 px attachment while the portrait itself remains centred at ~320 px.
   return sharp(resized)
-    .flatten({ background: EMBED_BG })
     .extend({
       top: 0,
       bottom: 0,
       left,
       right,
-      background: EMBED_BG,
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
     })
     .png()
     .toBuffer();
