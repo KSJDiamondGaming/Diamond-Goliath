@@ -8,7 +8,11 @@ const panel = require('./embedPanel');
 // spaces. Discord collapses those spaces, so short/image-heavy panels can shrink
 // while neighbouring panels stay wider. Rebuild that footer padding with NBSPs
 // so Discord preserves the intended width without changing visible content.
-const FOOTER_WIDTH = 164;
+//
+// 164 characters was still only holding portrait-image panels at roughly the
+// narrow width shown in Discord. Increase the preserved width anchor so image
+// panels reach the same practical card width as neighbouring text panels.
+const FOOTER_WIDTH = 240;
 const NBSP = '\u00A0';
 const ZWSP = '\u200B';
 
