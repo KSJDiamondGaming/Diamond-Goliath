@@ -8,12 +8,20 @@ const { getCachedAsset, saveCachedAsset } = require('./embedAssetStore');
 // LOCKED EMBED RENDERER BEHAVIOUR
 // Keep large portrait media below Discord's ~300 px image-width threshold.
 // 299 px allows the surrounding text/footer layout to hold the normal full
-// embed width while the portrait remains centred. Do not raise this to 300+.
+// embed width. Do not raise this to 300+.
 const TARGET_WIDTH = 299;
-const PORTRAIT_VISIBLE_WIDTH = 289;
+const PORTRAIT_VISIBLE_WIDTH = 220;
 const MAX_SOURCE_BYTES = 8 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 8000;
 const EMBED_BG = { r: 17, g: 18, b: 20, alpha: 1 };
+
+// EXPERIMENT ONLY:
+// Discord left-aligns the 299px large-image box inside a legacy embed and gives
+// us no native centre-alignment control. To move the visible portrait toward
+// the centre of the full card without crossing the 300px width threshold, keep
+// the raster at 299px and right-align a slightly narrower portrait inside it.
+// The locked 299px rule remains untouched.
+const SHIFT_PORTRAIT_RIGHT = true;
 
 function isHttpsImageUrl(value) {
   try {
@@ -83,8 +91,16 @@ async function centerOnEmbedCanvas(buffer) {
 
   const resizedMeta = await sharp(resized).metadata();
   const renderedWidth = Number(resizedMeta.width || visibleWidth);
-  const left = Math.max(0, Math.floor((TARGET_WIDTH - renderedWidth) / 2));
-  const right = Math.max(0, TARGET_WIDTH - renderedWidth - left);
+
+  let left;
+  let right;
+  if (SHIFT_PORTRAIT_RIGHT && aspect <= 1.25) {
+    left = Math.max(0, TARGET_WIDTH - renderedWidth);
+    right = 0;
+  } else {
+    left = Math.max(0, Math.floor((TARGET_WIDTH - renderedWidth) / 2));
+    right = Math.max(0, TARGET_WIDTH - renderedWidth - left);
+  }
 
   return sharp(resized)
     .flatten({ background: EMBED_BG })
