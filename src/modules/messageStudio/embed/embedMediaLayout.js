@@ -8,6 +8,7 @@ const TARGET_WIDTH = 520;
 const PORTRAIT_VISIBLE_WIDTH = 320;
 const MAX_SOURCE_BYTES = 8 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 8000;
+const EMBED_BG = { r: 17, g: 18, b: 20, alpha: 1 };
 
 function isHttpsImageUrl(value) {
   try {
@@ -66,23 +67,28 @@ async function centerOnEmbedCanvas(buffer) {
   const left = Math.max(0, Math.floor((TARGET_WIDTH - renderedWidth) / 2));
   const right = Math.max(0, TARGET_WIDTH - renderedWidth - left);
 
+  // Important: the side canvas must be genuinely opaque. Discord can ignore
+  // fully-transparent bounds when laying out a Large Image, which leaves the
+  // embed card at the portrait's visible width. Now that all HTTPS images pass
+  // through this function, an opaque 520px raster gives Discord real measurable
+  // width while visually blending into the dark embed background.
   return sharp(resized)
+    .flatten({ background: EMBED_BG })
     .extend({
       top: 0,
       bottom: 0,
       left,
       right,
-      background: { r: 0, g: 0, b: 0, alpha: 0 },
+      background: EMBED_BG,
     })
     .png()
     .toBuffer();
 }
 
 /**
- * Normalize every HTTPS large-image URL to a 520 px attachment canvas before
- * sending it to Discord. Previously this only ran for Discord CDN/media hosts,
- * which meant external image URLs completely bypassed the width-normalization
- * path and made every width tweak appear to do nothing.
+ * Normalize every HTTPS large-image URL to a genuine opaque 520 px attachment
+ * before sending it to Discord. Portrait/square artwork remains centred at a
+ * comfortable visible size while the full raster holds the embed card width.
  */
 async function prepareEmbedMedia(embeds = []) {
   const files = [];
