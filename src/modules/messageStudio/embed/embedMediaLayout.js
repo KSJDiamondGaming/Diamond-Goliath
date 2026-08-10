@@ -3,24 +3,28 @@
 const { AttachmentBuilder } = require('discord.js');
 const fetch = require('node-fetch');
 const sharp = require('sharp');
+const { getCachedAsset, saveCachedAsset } = require('./embedAssetStore');
 
-const TARGET_WIDTH = 600;
-const PORTRAIT_VISIBLE_WIDTH = 320;
-const EDGE_ALPHA = 1 / 255;
+// LOCKED EMBED RENDERER BEHAVIOUR
+// Keep large portrait media below Discord's ~300 px image-width threshold.
+// 299 px allows the surrounding text/footer layout to hold the normal full
+// embed width. Do not raise this to 300+.
+const TARGET_WIDTH = 299;
+const PORTRAIT_VISIBLE_WIDTH = 212;
+const PORTRAIT_RIGHT_INSET = 0;
 const MAX_SOURCE_BYTES = 8 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 8000;
-const DISCORD_IMAGE_HOSTS = new Set(['cdn.discordapp.com', 'media.discordapp.net']);
 
-function isDiscordHostedImage(value) {
+function isHttpsImageUrl(value) {
   try {
     const url = new URL(String(value || ''));
-    return url.protocol === 'https:' && DISCORD_IMAGE_HOSTS.has(url.hostname);
+    return url.protocol === 'https:';
   } catch {
     return false;
   }
 }
 
-async function fetchImageBuffer(url) {
+async function fetchRemoteImageBuffer(url) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   timer.unref?.();
@@ -35,14 +39,28 @@ async function fetchImageBuffer(url) {
     }
 
     const declaredLength = Number(response.headers.get('content-length') || 0);
-    if (declaredLength > MAX_SOURCE_BYTES) throw new Error('Large image exceeds the 8 MB processing limit.');
+    if (declaredLength > MAX_SOURCE_BYTES) {
+      throw new Error('Large image exceeds the 8 MB processing limit.');
+    }
 
     const buffer = await response.buffer();
-    if (buffer.length > MAX_SOURCE_BYTES) throw new Error('Large image exceeds the 8 MB processing limit.');
-    return buffer;
+    if (buffer.length > MAX_SOURCE_BYTES) {
+      throw new Error('Large image exceeds the 8 MB processing limit.');
+    }
+
+    return { buffer, contentType };
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function sourceImageBuffer(guildId, url) {
+  const cached = getCachedAsset(guildId, url);
+  if (cached?.buffer) return cached.buffer;
+
+  const remote = await fetchRemoteImageBuffer(url);
+  saveCachedAsset(guildId, url, remote.buffer, { contentType: remote.contentType });
+  return remote.buffer;
 }
 
 async function centerOnEmbedCanvas(buffer) {
@@ -53,58 +71,55 @@ async function centerOnEmbedCanvas(buffer) {
   if (!width || !height) return null;
 
   const aspect = width / height;
-  const visibleWidth = aspect <= 1.25
-    ? Math.min(width, PORTRAIT_VISIBLE_WIDTH)
-    : Math.min(width, TARGET_WIDTH);
+  if (aspect > 1.25) {
+    return sharp(buffer, { failOn: 'warning' })
+      .resize({ width: TARGET_WIDTH, withoutEnlargement: false })
+      .png()
+      .toBuffer();
+  }
 
+  // Portraits stay on a transparent 299px canvas so the embed keeps its full
+  // text-card width. The visible portrait is pushed to the far right of that
+  // media box, which is the furthest Discord lets us move it toward the visual
+  // centre without crossing the 300px renderer threshold.
+  const visibleWidth = Math.min(PORTRAIT_VISIBLE_WIDTH, TARGET_WIDTH);
   const resized = await sharp(buffer, { failOn: 'warning' })
-    .resize({ width: visibleWidth, withoutEnlargement: true })
+    .resize({ width: visibleWidth, withoutEnlargement: false })
     .ensureAlpha()
     .png()
     .toBuffer();
 
   const resizedMeta = await sharp(resized).metadata();
   const renderedWidth = Number(resizedMeta.width || visibleWidth);
-  const left = Math.max(0, Math.floor((TARGET_WIDTH - renderedWidth) / 2));
-  const right = Math.max(0, TARGET_WIDTH - renderedWidth - left);
+  const right = Math.min(PORTRAIT_RIGHT_INSET, Math.max(0, TARGET_WIDTH - renderedWidth));
+  const left = Math.max(0, TARGET_WIDTH - renderedWidth - right);
 
-  // Discord's media pipeline can effectively ignore fully-transparent side
-  // padding when deciding how wide an embed image should render. Keep the
-  // canvas visually transparent but give the padding a one-byte alpha value so
-  // the complete 600 px raster survives proxy/attachment processing.
   return sharp(resized)
     .extend({
       top: 0,
       bottom: 0,
       left,
       right,
-      background: { r: 0, g: 0, b: 0, alpha: EDGE_ALPHA },
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
     })
     .png()
     .toBuffer();
 }
 
-/**
- * Prepare embed large images for Discord's renderer.
- *
- * Discord-hosted large images are normalised to a 600 px canvas. Portrait /
- * square images keep a 320 px visible size and are centred. The side padding
- * uses effectively invisible non-zero alpha so Discord keeps the full canvas.
- * The persisted/source URL is never modified.
- */
-async function prepareEmbedMedia(embeds = []) {
+async function prepareEmbedMedia(embeds = [], options = {}) {
   const files = [];
   const output = Array.isArray(embeds) ? embeds : [];
+  const guildId = options.guildId || 'global';
 
   for (let index = 0; index < output.length; index += 1) {
     const embed = output[index];
     if (!embed || typeof embed.toJSON !== 'function' || typeof embed.setImage !== 'function') continue;
 
     const imageUrl = embed.toJSON()?.image?.url;
-    if (!imageUrl || !isDiscordHostedImage(imageUrl)) continue;
+    if (!imageUrl || !isHttpsImageUrl(imageUrl)) continue;
 
     try {
-      const source = await fetchImageBuffer(imageUrl);
+      const source = await sourceImageBuffer(guildId, imageUrl);
       const processed = await centerOnEmbedCanvas(source);
       if (!processed) continue;
 
@@ -112,7 +127,12 @@ async function prepareEmbedMedia(embeds = []) {
       files.push(new AttachmentBuilder(processed, { name }));
       embed.setImage(`attachment://${name}`);
     } catch (error) {
-      console.warn(`[Embed] Could not centre large image for panel ${index + 1}:`, error.message || error);
+      // Media normalization is best-effort. Preserve the original image URL if
+      // processing fails so one bad asset never blocks the entire embed post.
+      console.warn(
+        `[EmbedMedia] panel ${index + 1}: media normalization failed:`,
+        error?.message || error,
+      );
     }
   }
 
@@ -122,6 +142,5 @@ async function prepareEmbedMedia(embeds = []) {
 module.exports = {
   TARGET_WIDTH,
   PORTRAIT_VISIBLE_WIDTH,
-  EDGE_ALPHA,
   prepareEmbedMedia,
 };

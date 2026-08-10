@@ -1,40 +1,52 @@
 'use strict';
 
 // Keep the Embed Studio editor compact by showing only the selected content
-// panel while editing. Real sends/tests/updates still use the full panel list.
+// panel while editing. Deployed/test/update payloads still use the real panel
+// builders and the deployment media-normalization path.
 const panel = require('./embedPanel');
+const { persistPresetMedia } = require('./embedAssetStore');
 
-// Discord can collapse an embed around a narrow Large Image even when the
-// neighbouring panels naturally render at the full embed width. For image
-// panels that already have a title, extend that existing title with a visually
-// blank glyph that Discord still measures as real content. Braille Blank is not
-// whitespace, so it should survive Discord's whitespace collapsing while
-// leaving the title looking unchanged and the centred image untouched.
-const WIDTH_SPACE = '\u2800';
-const TITLE_WIDTH_PAD = WIDTH_SPACE.repeat(256);
-
-function holdImagePanelWidth(embed) {
-  if (!embed || typeof embed.toJSON !== 'function' || typeof embed.setTitle !== 'function') return embed;
-
-  const data = embed.toJSON();
-  if (!data?.image?.url || !data?.title) return embed;
-
-  const cleanTitle = String(data.title).replace(/[\u00A0\u2003\u2800]+$/u, '');
-  const maxPad = Math.max(0, 256 - cleanTitle.length);
-  const pad = TITLE_WIDTH_PAD.slice(0, maxPad);
-  embed.setTitle(`${cleanTitle}${pad}`);
-  return embed;
+function queuePersistentMediaImport(presetLike) {
+  // Runtime storage is deployment-local and durable. Asset identity is derived
+  // from the source attachment path rather than Discord's expiring signature.
+  persistPresetMedia('global', presetLike).then((results) => {
+    const failed = results.filter((result) => !result.ok);
+    if (failed.length) {
+      console.warn(
+        '[EmbedAssets] persistence import failed:',
+        failed.map((result) => ({
+          url: String(result.url).slice(0, 120),
+          error: result.error,
+        })),
+      );
+    }
+  }).catch((error) => {
+    console.warn('[EmbedAssets] persistence import failed:', error?.message || error);
+  });
 }
 
-if (!panel.__imageTitleWidthPatched) {
-  const originalBuildEmbedFromPanel = panel.buildEmbedFromPanel.bind(panel);
-  const originalBuildPreviewEmbed = panel.buildPreviewEmbed.bind(panel);
-  const originalBuildPreviewEmbeds = panel.buildPreviewEmbeds.bind(panel);
+// Import media as soon as it is edited or serialized into a preset so saved
+// presets remain usable after the original signed Discord URL expires.
+if (!panel.__persistentMediaPatched && typeof panel.saveSelected === 'function') {
+  const originalSaveSelected = panel.saveSelected.bind(panel);
+  panel.saveSelected = (state, patch = {}) => {
+    const result = originalSaveSelected(state, patch);
+    if (['image', 'thumbnail', 'authorIcon', 'footerIcon'].some((key) => patch && patch[key])) {
+      queuePersistentMediaImport({ panels: [patch] });
+    }
+    return result;
+  };
 
-  panel.buildEmbedFromPanel = (...args) => holdImagePanelWidth(originalBuildEmbedFromPanel(...args));
-  panel.buildPreviewEmbed = (...args) => holdImagePanelWidth(originalBuildPreviewEmbed(...args));
-  panel.buildPreviewEmbeds = (...args) => originalBuildPreviewEmbeds(...args).map(holdImagePanelWidth);
-  panel.__imageTitleWidthPatched = true;
+  if (typeof panel.presetData === 'function') {
+    const originalPresetData = panel.presetData.bind(panel);
+    panel.presetData = (state) => {
+      const preset = originalPresetData(state);
+      queuePersistentMediaImport(preset);
+      return preset;
+    };
+  }
+
+  panel.__persistentMediaPatched = true;
 }
 
 if (!panel.__compactPreviewPatched) {
@@ -59,7 +71,6 @@ if (!panel.__compactPreviewPatched) {
   panel.buildEditorPanel = compactPreviewPayload(panel.buildEditorPanel);
   panel.buildBuilderPanel = compactPreviewPayload(panel.buildBuilderPanel);
   panel.buildPanelsPanel = compactPreviewPayload(panel.buildPanelsPanel);
-
   panel.__compactPreviewPatched = true;
 }
 
