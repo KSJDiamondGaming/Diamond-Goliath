@@ -19,9 +19,7 @@ const EMOJIS = {
   SUCCESS: '✅',
   ERROR: '❌',
   WARNING: '⚠️',
-  INFO: 'ℹ️',
   DASHBOARD: '📊',
-  LOADING: '📡',
 };
 
 /* ---------------- SAFETY ---------------- */
