@@ -397,6 +397,13 @@ async function repairStructure(client, sourceGuild) {
   return { before, after: await inspectStructure(client, sourceGuild) };
 }
 
+function registryEnvironmentNames(entry) {
+  return Object.keys(entry?.environments || {}).filter(Boolean);
+}
+function registryEntryForGuild(registry, guildId) {
+  return registry.find((entry) => String(entry?.guildId || '') === String(guildId || '')) || null;
+}
+
 async function inspectHealth(client) {
   const config = auditStore.getConfig();
   const commandCenter = config.commandCenter || {};
@@ -432,27 +439,49 @@ async function inspectHealth(client) {
     if (globalCommandLeaked) issues.push('/commandcenter is accidentally registered globally');
   }
 
+  const registry = auditStore.getGuildRegistry?.() || [];
   const guildReports = [];
   const configuredGuilds = config.guilds && typeof config.guilds === 'object' ? config.guilds : {};
   for (const [guildId, guildConfig] of Object.entries(configuredGuilds)) {
-    const sourceGuild = client.guilds.cache.get(String(guildId)) || await client.guilds.fetch(String(guildId)).catch(() => null);
-    if (!sourceGuild) {
-      guildReports.push({ guildId, guildName: null, available: false, enabled: guildConfig.enabled !== false, disabledFamilies: [], structure: null, healthy: false, issues: ['Guild is unavailable to Goliath'] });
-      issues.push(`Configured monitored guild ${guildId} is unavailable to Goliath`);
-      continue;
-    }
+    const liveGuild = client.guilds.cache.get(String(guildId)) || await client.guilds.fetch(String(guildId)).catch(() => null);
+    const registryEntry = registryEntryForGuild(registry, guildId);
+    const environments = registryEnvironmentNames(registryEntry);
+    const sourceGuild = liveGuild || (registryEntry ? { ...registryEntry, id: String(guildId), name: registryEntry.name || String(guildId) } : null);
     const monitoring = guildConfig.monitoring && typeof guildConfig.monitoring === 'object' ? guildConfig.monitoring : {};
     const disabledFamilies = Object.entries(monitoring).filter(([, enabled]) => enabled === false).map(([family]) => family);
+
+    if (!sourceGuild) {
+      guildReports.push({ guildId, guildName: null, available: false, liveAccess: false, registryKnown: false, environments: [], enabled: guildConfig.enabled !== false, disabledFamilies, structure: null, healthy: false, issues: ['Guild is unavailable to every known Goliath collector'] });
+      issues.push(`Configured monitored guild ${guildId} is unavailable to every known Goliath collector`);
+      continue;
+    }
+
     const structure = await inspectStructure(client, sourceGuild);
     const guildIssues = [];
     if (guildConfig.enabled === false) guildIssues.push('Guild monitoring is paused');
     if (disabledFamilies.length) guildIssues.push(`${disabledFamilies.length} monitoring family/families disabled`);
     if (!structure?.healthy) guildIssues.push(...(structure?.issues || ['Audit structure is unavailable']));
-    guildReports.push({ guildId: sourceGuild.id, guildName: sourceGuild.name, available: true, enabled: guildConfig.enabled !== false, disabledFamilies, mode: guildConfig.mode || 'auto', structure, healthy: guildIssues.length === 0, issues: guildIssues });
+    guildReports.push({
+      guildId: String(sourceGuild.id),
+      guildName: sourceGuild.name || String(guildId),
+      available: true,
+      liveAccess: Boolean(liveGuild),
+      registryKnown: Boolean(registryEntry),
+      registryOnly: !liveGuild && Boolean(registryEntry),
+      environments,
+      lastSeenAt: registryEntry?.lastSeenAt || null,
+      enabled: guildConfig.enabled !== false,
+      disabledFamilies,
+      mode: guildConfig.mode || 'auto',
+      structure,
+      healthy: guildIssues.length === 0,
+      issues: guildIssues,
+    });
   }
 
   const structuralFailures = guildReports.filter((report) => report.available && report.structure && !report.structure.healthy).length;
   const unavailableGuilds = guildReports.filter((report) => !report.available).length;
+  const registryOnlyGuilds = guildReports.filter((report) => report.registryOnly).length;
   const pausedGuilds = guildReports.filter((report) => report.enabled === false).length;
   const partiallyDisabledGuilds = guildReports.filter((report) => report.disabledFamilies.length > 0).length;
   return {
@@ -461,7 +490,7 @@ async function inspectHealth(client) {
     destination: ownerGuild ? { id: ownerGuild.id, name: ownerGuild.name } : null,
     commandCenter: { configured: Boolean(commandCenter.guildId), channelId: commandChannel?.id || commandCenter.channelId || null, channelName: commandChannel?.name || null, messagePresent: Boolean(commandMessage), permissions: commandPermissions, privateCommandRegistered, globalCommandLeaked },
     guilds: guildReports,
-    counts: { configured: guildReports.length, healthy: guildReports.filter((report) => report.healthy).length, structuralFailures, unavailable: unavailableGuilds, paused: pausedGuilds, partiallyDisabled: partiallyDisabledGuilds },
+    counts: { configured: guildReports.length, healthy: guildReports.filter((report) => report.healthy).length, structuralFailures, unavailable: unavailableGuilds, registryOnly: registryOnlyGuilds, paused: pausedGuilds, partiallyDisabled: partiallyDisabledGuilds },
     healthy: issues.length === 0 && structuralFailures === 0 && unavailableGuilds === 0,
     issues,
   };
