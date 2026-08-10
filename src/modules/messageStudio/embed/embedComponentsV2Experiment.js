@@ -14,11 +14,11 @@ const { getCachedAsset, saveCachedAsset } = require('./embedAssetStore');
 
 const CANVAS_WIDTH = 600;
 const PORTRAIT_WIDTH = 320;
-// Discord's Components V2 media block reads visually left-heavy inside the
-// container. Keep the full-width canvas and portrait size locked, but bias the
-// portrait itself right within that canvas so its visible centre matches the
-// container's perceived centre.
-const PORTRAIT_SHIFT_RIGHT = 90;
+// The previous +90px compensation overshot the visual centre. Split the
+// difference and keep the portrait at +45px so it sits much closer to the real
+// centre of Discord's Components V2 container while preserving the successful
+// full-width canvas and portrait size.
+const PORTRAIT_SHIFT_RIGHT = 45;
 const MAX_SOURCE_BYTES = 8 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 8000;
 
