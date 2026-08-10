@@ -17,6 +17,8 @@ const {
 } = require('../../features/status/statusRotation');
 
 const AUDIT_REGISTRY_REFRESH_MS = 5 * 60 * 1000;
+const AUDIT_LIVE_PROBE_POLL_MS = 1000;
+const auditLiveProbeInFlight = new Set();
 
 function getEnvList(name) {
   const value = process.env[name];
@@ -55,6 +57,43 @@ function startAuditGuildRegistryRefresh(client) {
       terminal.error(`Audit guild registry scheduled refresh failed: ${error?.message || error}`);
     });
   }, AUDIT_REGISTRY_REFRESH_MS);
+  timer.unref?.();
+}
+
+async function processAuditLiveProbeRequests(client) {
+  const requests = auditStore.getPendingLiveProbeRequests?.() || [];
+  if (!requests.length) return 0;
+  const mode = auditStore.runtimeMode?.() || String(client?.botMode || process.env.BOT_MODE || 'DEV').toUpperCase();
+  let processed = 0;
+
+  for (const request of requests) {
+    const requestId = String(request?.id || '');
+    if (!requestId || auditLiveProbeInFlight.has(requestId)) continue;
+    auditLiveProbeInFlight.add(requestId);
+    try {
+      const guildId = String(request.guildId || '');
+      const guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
+      const result = guild
+        ? await auditRouter.runLocalEndToEndProbe(client, guild)
+        : { started: false, reason: 'registry-only' };
+      auditStore.completeLiveProbeRequest?.(requestId, result, mode);
+      processed += 1;
+      terminal.info(`Audit live probe request ${requestId} completed by ${mode} for guild ${guildId}: ${result.started ? 'started' : result.reason || 'not-started'}`);
+    } catch (error) {
+      auditStore.completeLiveProbeRequest?.(requestId, { started: false, reason: 'create-failed' }, mode);
+      terminal.error(`Audit live probe request ${requestId} failed in ${mode}: ${error?.message || error}`);
+    } finally {
+      auditLiveProbeInFlight.delete(requestId);
+    }
+  }
+  return processed;
+}
+
+function startAuditLiveProbeProcessor(client) {
+  processAuditLiveProbeRequests(client).catch((error) => terminal.error(`Audit live probe startup processing failed: ${error?.message || error}`));
+  const timer = setInterval(() => {
+    processAuditLiveProbeRequests(client).catch((error) => terminal.error(`Audit live probe processing failed: ${error?.message || error}`));
+  }, AUDIT_LIVE_PROBE_POLL_MS);
   timer.unref?.();
 }
 
@@ -150,6 +189,7 @@ module.exports = {
     client.on(Events.GuildCreate, () => refreshAuditGuildRegistry(client, 'guild joined'));
     client.on(Events.GuildDelete, () => refreshAuditGuildRegistry(client, 'guild left'));
     startAuditGuildRegistryRefresh(client);
+    startAuditLiveProbeProcessor(client);
 
     const auditRestore = await restoreAuditReportFeeds(client);
     await sendAuditStartupSummary(client, auditRestore);
