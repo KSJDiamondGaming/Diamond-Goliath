@@ -1,7 +1,7 @@
 'use strict';
 
 const { PermissionFlagsBits } = require('discord.js');
-const original = require('./embedInteractions');
+const original = require('./embedInteractionsLegacy');
 const panel = require('./embedPreviewCompat');
 const guildManager = require('../../../core/guild/guildManager');
 const { validateChannelAccess } = require('../../../core/security/goliathPermissionGuard');
