@@ -16,6 +16,8 @@ const {
   startStatusRotation,
 } = require('../../features/status/statusRotation');
 
+const AUDIT_REGISTRY_REFRESH_MS = 5 * 60 * 1000;
+
 function getEnvList(name) {
   const value = process.env[name];
 
@@ -36,6 +38,24 @@ function publishAuditGuildRegistry(client, reason = 'startup') {
     terminal.error(`Failed to publish Audit Intelligence guild registry (${reason}): ${error?.message || error}`);
     return null;
   }
+}
+
+async function refreshAuditGuildRegistry(client, reason = 'startup') {
+  try {
+    await client.guilds.fetch();
+  } catch (error) {
+    terminal.warn(`Audit guild registry cache refresh failed (${reason}): ${error?.message || error}`);
+  }
+  return publishAuditGuildRegistry(client, reason);
+}
+
+function startAuditGuildRegistryRefresh(client) {
+  const timer = setInterval(() => {
+    refreshAuditGuildRegistry(client, 'scheduled refresh').catch((error) => {
+      terminal.error(`Audit guild registry scheduled refresh failed: ${error?.message || error}`);
+    });
+  }, AUDIT_REGISTRY_REFRESH_MS);
+  timer.unref?.();
 }
 
 async function restoreAuditReportFeeds(client) {
@@ -126,9 +146,11 @@ module.exports = {
       terminal.info(`PRODUCTION guild scope: ${prodGuildIds.join(', ')}`);
     }
 
-    publishAuditGuildRegistry(client);
-    client.on(Events.GuildCreate, () => publishAuditGuildRegistry(client, 'guild joined'));
-    client.on(Events.GuildDelete, () => publishAuditGuildRegistry(client, 'guild left'));
+    await refreshAuditGuildRegistry(client);
+    client.on(Events.GuildCreate, () => refreshAuditGuildRegistry(client, 'guild joined'));
+    client.on(Events.GuildDelete, () => refreshAuditGuildRegistry(client, 'guild left'));
+    startAuditGuildRegistryRefresh(client);
+
     const auditRestore = await restoreAuditReportFeeds(client);
     await sendAuditStartupSummary(client, auditRestore);
 
