@@ -17,7 +17,7 @@ const PORTRAIT_WIDTH = 320;
 // Fine-tuned from the last Discord render: keep the successful canvas, size,
 // mask and background exactly as-is, but reduce the right bias slightly so the
 // visible portrait lands closer to the true centre of the panel.
-const PORTRAIT_SHIFT_RIGHT = 26;
+const PORTRAIT_SHIFT_RIGHT = 18;
 const MAX_SOURCE_BYTES = 8 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 8000;
 
