@@ -5,26 +5,26 @@
 // builders and the deployment media-normalization path.
 const panel = require('./embedPanel');
 
-const DEPLOYED_WIDTH_PAD = '\u00A0'.repeat(600);
+// Discord stops responding to ever-larger footer padding on image embeds.
+// Use a real full-width field row instead, which participates in the embed's
+// content grid and should force the card toward the same width as text panels.
+const DEPLOYED_WIDTH_FIELD = '\u2800'.repeat(72);
 
 function holdDeployedImagePanelWidth(embed) {
-  if (!embed || typeof embed.toJSON !== 'function' || typeof embed.setFooter !== 'function') return embed;
+  if (!embed || typeof embed.toJSON !== 'function' || typeof embed.addFields !== 'function') return embed;
 
   const data = embed.toJSON();
   if (!data?.image?.url) return embed;
 
-  // Discord caps the visual Large Image area around ~400px, so widening the
-  // raster alone cannot make the outer embed match a normal ~520px text card.
-  // A preserved non-breaking-space run in the footer gives the embed a real
-  // text-layout width anchor while remaining visually blank.
-  const footer = data.footer || {};
-  const existingText = String(footer.text || '')
-    .replace(/[ \u00A0\u200B]+$/g, '')
-    .trimEnd();
+  // Leave the footer completely untouched. The extra field exists only in the
+  // outgoing built embed; it is not saved back into the user's panel/preset.
+  const fields = Array.isArray(data.fields) ? data.fields : [];
+  if (fields.length >= 25) return embed;
 
-  embed.setFooter({
-    text: `${existingText}${DEPLOYED_WIDTH_PAD}` || DEPLOYED_WIDTH_PAD,
-    ...(footer.icon_url ? { iconURL: footer.icon_url } : {}),
+  embed.addFields({
+    name: '\u200B',
+    value: DEPLOYED_WIDTH_FIELD,
+    inline: false,
   });
 
   return embed;
