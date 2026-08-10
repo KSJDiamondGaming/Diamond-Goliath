@@ -8,12 +8,12 @@ const { getCachedAsset, saveCachedAsset } = require('./embedAssetStore');
 // LOCKED EMBED RENDERER BEHAVIOUR
 // Keep large portrait media below Discord's ~300 px image-width threshold.
 // 299 px allows the surrounding text/footer layout to hold the normal full
-// embed width while the portrait remains centred. Do not raise this to 300+.
+// embed width. Do not raise this to 300+.
 const TARGET_WIDTH = 299;
-const PORTRAIT_VISIBLE_WIDTH = 289;
+const PORTRAIT_VISIBLE_WIDTH = 212;
+const PORTRAIT_RIGHT_INSET = 0;
 const MAX_SOURCE_BYTES = 8 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 8000;
-const EMBED_BG = { r: 17, g: 18, b: 20, alpha: 1 };
 
 function isHttpsImageUrl(value) {
   try {
@@ -71,10 +71,18 @@ async function centerOnEmbedCanvas(buffer) {
   if (!width || !height) return null;
 
   const aspect = width / height;
-  const visibleWidth = aspect <= 1.25
-    ? Math.min(PORTRAIT_VISIBLE_WIDTH, TARGET_WIDTH)
-    : TARGET_WIDTH;
+  if (aspect > 1.25) {
+    return sharp(buffer, { failOn: 'warning' })
+      .resize({ width: TARGET_WIDTH, withoutEnlargement: false })
+      .png()
+      .toBuffer();
+  }
 
+  // Portraits stay on a transparent 299px canvas so the embed keeps its full
+  // text-card width. The visible portrait is pushed to the far right of that
+  // media box, which is the furthest Discord lets us move it toward the visual
+  // centre without crossing the 300px renderer threshold.
+  const visibleWidth = Math.min(PORTRAIT_VISIBLE_WIDTH, TARGET_WIDTH);
   const resized = await sharp(buffer, { failOn: 'warning' })
     .resize({ width: visibleWidth, withoutEnlargement: false })
     .ensureAlpha()
@@ -83,12 +91,17 @@ async function centerOnEmbedCanvas(buffer) {
 
   const resizedMeta = await sharp(resized).metadata();
   const renderedWidth = Number(resizedMeta.width || visibleWidth);
-  const left = Math.max(0, Math.floor((TARGET_WIDTH - renderedWidth) / 2));
-  const right = Math.max(0, TARGET_WIDTH - renderedWidth - left);
+  const right = Math.min(PORTRAIT_RIGHT_INSET, Math.max(0, TARGET_WIDTH - renderedWidth));
+  const left = Math.max(0, TARGET_WIDTH - renderedWidth - right);
 
   return sharp(resized)
-    .flatten({ background: EMBED_BG })
-    .extend({ top: 0, bottom: 0, left, right, background: EMBED_BG })
+    .extend({
+      top: 0,
+      bottom: 0,
+      left,
+      right,
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    })
     .png()
     .toBuffer();
 }
