@@ -12,11 +12,12 @@ const fetch = require('node-fetch');
 const sharp = require('sharp');
 const { getCachedAsset, saveCachedAsset } = require('./embedAssetStore');
 
-// Components V2 experiment: keep a genuinely full-width raster so Discord's
-// MediaGallery has no smaller media box to left-align. The portrait itself is
-// rendered large and centred inside that raster.
 const CANVAS_WIDTH = 600;
 const PORTRAIT_WIDTH = 320;
+// Discord's gallery still renders the visual media block slightly left of the
+// container's perceived centre. Keep the successful transparent 600px canvas,
+// but bias the portrait inside that canvas to compensate for Discord's layout.
+const PORTRAIT_SHIFT_RIGHT = 72;
 const MAX_SOURCE_BYTES = 8 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 8000;
 
@@ -32,7 +33,6 @@ async function fetchImage(url) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   timer.unref?.();
-
   try {
     const response = await fetch(url, { signal: controller.signal });
     if (!response.ok) throw new Error(`Image fetch failed with HTTP ${response.status}`);
@@ -85,12 +85,10 @@ async function makeCenteredPortrait(buffer) {
     .png()
     .toBuffer();
 
-  const left = Math.floor((CANVAS_WIDTH - PORTRAIT_WIDTH) / 2);
+  const naturalLeft = Math.floor((CANVAS_WIDTH - PORTRAIT_WIDTH) / 2);
+  const maxLeft = CANVAS_WIDTH - PORTRAIT_WIDTH;
+  const left = Math.min(maxLeft, Math.max(0, naturalLeft + PORTRAIT_SHIFT_RIGHT));
 
-  // Return to real transparency: the previous opaque background introduced a
-  // visible block. The important change here is that the raster is now 600px,
-  // i.e. at/above the container's practical content width, so MediaGallery must
-  // size from the full media item rather than a narrow 299/520px image box.
   return sharp({
     create: {
       width: CANVAS_WIDTH,
@@ -177,4 +175,4 @@ async function buildComponentsV2Payload({ embeds = [], actionRows = [], allowUse
   return { components, files, flags };
 }
 
-module.exports = { CANVAS_WIDTH, PORTRAIT_WIDTH, buildComponentsV2Payload };
+module.exports = { CANVAS_WIDTH, PORTRAIT_WIDTH, PORTRAIT_SHIFT_RIGHT, buildComponentsV2Payload };
