@@ -117,8 +117,8 @@ async function handleInteraction(i) {
 
   await i.reply({
     content: ok
-      ? `✅ Components V2 embed posted to <#${s.channelId}> and saved as active`
-      : '⚠️ Components V2 embed posted, but default assignment failed.',
+      ? `✅ Embed posted to <#${s.channelId}> and saved as active`
+      : '⚠️ Preset saved, but default assignment failed.',
     flags: 64,
   });
   return true;
