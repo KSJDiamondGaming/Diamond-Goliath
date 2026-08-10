@@ -76,26 +76,6 @@ function syncFile(filePath) {
   }
 }
 
-function safeBackupLabel(value = 'backup') {
-  return String(value || 'backup')
-    .trim()
-    .replace(/[^a-zA-Z0-9_-]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 80) || 'backup';
-}
-
-function createBackup(filePath, label = 'backup') {
-  if (!filePath || typeof filePath !== 'string' || !fs.existsSync(filePath)) return null;
-
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const backupPath = `${filePath}.${safeBackupLabel(label)}.${timestamp}.bak`;
-
-  fs.copyFileSync(filePath, backupPath);
-  validateJsonFile(backupPath);
-  syncFile(backupPath);
-  return backupPath;
-}
-
 function restoreBackup(filePath, backupPath = `${filePath}.bak`) {
   if (!filePath || typeof filePath !== 'string') return false;
   if (!backupPath || typeof backupPath !== 'string' || !fs.existsSync(backupPath)) return false;
@@ -198,35 +178,9 @@ function write(filePath, data = {}) {
   }
 }
 
-function remove(filePath) {
-  try {
-    if (!filePath || typeof filePath !== 'string') return false;
-    if (!fs.existsSync(filePath)) return false;
-
-    fs.unlinkSync(filePath);
-    return true;
-  } catch (error) {
-    console.error(`[fileStore] Failed to remove file: ${filePath}`, error);
-    return false;
-  }
-}
-
-function exists(filePath) {
-  try {
-    return Boolean(filePath && typeof filePath === 'string' && fs.existsSync(filePath));
-  } catch {
-    return false;
-  }
-}
-
 module.exports = {
   clone,
   ensureDir,
   read,
   write,
-  createBackup,
-  restoreBackup,
-  validateJsonFile,
-  remove,
-  exists,
 };
