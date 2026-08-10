@@ -5,11 +5,12 @@ const fetch = require('node-fetch');
 const sharp = require('sharp');
 const { getCachedAsset, saveCachedAsset } = require('./embedAssetStore');
 
-// Keep current geometry unchanged while width debugging continues. Persistence
-// is handled independently below so an expired Discord CDN signature can never
-// break a preset after the source has been imported once.
-const TARGET_WIDTH = 800;
-const PORTRAIT_VISIBLE_WIDTH = 440;
+// Discord's legacy embed renderer locks an embed to the image width once a
+// large image is ~300px+ wide. Keep portrait media just below that threshold so
+// the embed's normal text/footer layout can determine the card width instead.
+// This is intentionally a width-layout test; persistence stays unchanged.
+const TARGET_WIDTH = 299;
+const PORTRAIT_VISIBLE_WIDTH = 289;
 const MAX_SOURCE_BYTES = 8 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 8000;
 const EMBED_BG = { r: 17, g: 18, b: 20, alpha: 1 };
@@ -92,8 +93,8 @@ async function centerOnEmbedCanvas(buffer) {
   if (!width || !height) return null;
   const aspect = width / height;
   const visibleWidth = aspect <= 1.25
-    ? Math.min(width, PORTRAIT_VISIBLE_WIDTH)
-    : Math.min(width, TARGET_WIDTH);
+    ? Math.min(PORTRAIT_VISIBLE_WIDTH, TARGET_WIDTH)
+    : TARGET_WIDTH;
   const resized = await sharp(buffer, { failOn: 'warning' })
     .resize({ width: visibleWidth, withoutEnlargement: false })
     .ensureAlpha()
