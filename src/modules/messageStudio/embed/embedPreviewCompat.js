@@ -2,38 +2,29 @@
 
 // Keep the Embed Studio editor compact by showing only the selected content
 // panel while editing. Real sends/tests/updates still use the full panel list.
-//
-// Discord can collapse an embed around a narrow Large Image even when the
-// neighbouring panels naturally render at the full embed width. For image
-// panels, add a visually blank non-inline field. Discord allocates that field
-// across the full embed grid, widening the card itself while leaving the image,
-// title and visible copy unchanged.
 const panel = require('./embedPanel');
 
-const WIDTH_FIELD_NAME = '\u200B';
-const WIDTH_FIELD_VALUE = '\u200B';
+// Restore the earlier width-lock behaviour. The later zero-width field method
+// regressed portrait image panels back to the narrow card shown in Discord.
+// Extending an existing title with preserved EM spaces gives Discord measurable
+// horizontal content while leaving the visible title and centred image unchanged.
+const WIDTH_SPACE = '\u2003';
+const TITLE_WIDTH_PAD = WIDTH_SPACE.repeat(256);
 
 function holdImagePanelWidth(embed) {
-  if (!embed || typeof embed.toJSON !== 'function' || typeof embed.addFields !== 'function') return embed;
+  if (!embed || typeof embed.toJSON !== 'function' || typeof embed.setTitle !== 'function') return embed;
 
   const data = embed.toJSON();
-  if (!data?.image?.url) return embed;
+  if (!data?.image?.url || !data?.title) return embed;
 
-  const fields = Array.isArray(data.fields) ? data.fields : [];
-  const alreadyAdded = fields.some((field) =>
-    field?.name === WIDTH_FIELD_NAME && field?.value === WIDTH_FIELD_VALUE && field?.inline === false
-  );
-  if (alreadyAdded) return embed;
-
-  embed.addFields({
-    name: WIDTH_FIELD_NAME,
-    value: WIDTH_FIELD_VALUE,
-    inline: false,
-  });
+  const cleanTitle = String(data.title).replace(/[\u00A0\u2003\u2800]+$/u, '');
+  const maxPad = Math.max(0, 256 - cleanTitle.length);
+  const pad = TITLE_WIDTH_PAD.slice(0, maxPad);
+  embed.setTitle(`${cleanTitle}${pad}`);
   return embed;
 }
 
-if (!panel.__imageGridWidthPatched) {
+if (!panel.__imageTitleWidthPatched) {
   const originalBuildEmbedFromPanel = panel.buildEmbedFromPanel.bind(panel);
   const originalBuildPreviewEmbed = panel.buildPreviewEmbed.bind(panel);
   const originalBuildPreviewEmbeds = panel.buildPreviewEmbeds.bind(panel);
@@ -41,7 +32,7 @@ if (!panel.__imageGridWidthPatched) {
   panel.buildEmbedFromPanel = (...args) => holdImagePanelWidth(originalBuildEmbedFromPanel(...args));
   panel.buildPreviewEmbed = (...args) => holdImagePanelWidth(originalBuildPreviewEmbed(...args));
   panel.buildPreviewEmbeds = (...args) => originalBuildPreviewEmbeds(...args).map(holdImagePanelWidth);
-  panel.__imageGridWidthPatched = true;
+  panel.__imageTitleWidthPatched = true;
 }
 
 if (!panel.__compactPreviewPatched) {
