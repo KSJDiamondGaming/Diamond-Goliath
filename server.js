@@ -48,8 +48,8 @@ const discordRoleEditorRoutes = route('discord role editor routes', './src/serve
 const discordResourceRoutes = route('discord resource routes', './src/server/routes/discordResources');
 const statusRoutes = route('status routes', './src/server/routes/status');
 const ownerRoutes = route('owner routes', './src/server/routes/owner');
-const ownerDiagnosticsRoutes = route('owner diagnostics routes', './src/server/routes/ownerDiagnostics');
-const ownerTranslationRoutes = route('owner translation routes', './src/server/routes/ownerTranslation');
+const ownerDiagnosticsRoutes = route('owner diagnostics routes', './src/server/routes/owner/diagnostics');
+const ownerTranslationRoutes = route('owner translation routes', './src/server/routes/owner/translation');
 const automodRoutes = route('automod routes', './src/server/routes/config/automod');
 const generalSettingsRoutes = route('general settings routes', './src/server/routes/config/generalSettings');
 const logsRoutes = route('logs routes', './src/server/routes/config/logs');
@@ -82,7 +82,7 @@ const statsRoutes = route('stats routes', './src/server/routes/modules/utilitySt
 const tempVoiceRoutes = route('temp voice routes', './src/modules/utilityStudio/tempVoice/tempVoiceRoute');
 const starboardRoutes = route('starboard routes', './src/server/routes/modules/messageStudio/starboard');
 const mediaRoutes = route('media routes', './src/server/routes/modules/messageStudio/media');
-const ownerDeploymentRoutes = route('owner deployment routes', './src/server/routes/ownerDeployments');
+const ownerDeploymentRoutes = route('owner deployment routes', './src/server/routes/owner/deployments');
 const publicCommunityRoutes = route('public community routes', './src/server/routes/publicCommunity');
 
 const commandHandler = safeRequire('command handler', './src/core/commands/commandLoader', { loadCommands: () => null });
