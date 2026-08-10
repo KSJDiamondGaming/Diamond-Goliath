@@ -226,8 +226,8 @@ function buildMonitoringPanel(client, interaction) {
 async function buildStructurePanel(client, interaction) {
   const config = auditStore.getConfig();
   const session = getStructureSession(interaction);
-  const sourceGuilds = sourceGuildOptions(client, config.commandCenter?.guildId);
-  const selectedGuild = configuredGuild(client, session.sourceGuildId);
+  const sourceGuilds = registryGuildOptions(client, config.commandCenter?.guildId);
+  const selectedGuild = registryGuild(client, session.sourceGuildId);
   const report = selectedGuild ? await auditRouter.inspectStructure(client, selectedGuild) : null;
   const status = !report ? 'Select a guild first.' : report.healthy ? '🟢 Healthy' : report.systemChannel ? '🟠 Attention required' : '⚪ Not provisioned';
   const placement = !report?.systemChannel ? 'Not provisioned' : report.systemChannel.parentId ? `<#${report.systemChannel.id}> inside a category` : `<#${report.systemChannel.id}> uncategorised`;
@@ -238,7 +238,7 @@ async function buildStructurePanel(client, interaction) {
     .setTitle('📁 Audit Intelligence Structure')
     .setDescription(selectedGuild ? `Inspect and safely provision/repair **${selectedGuild.name}**. Goliath identifies resources by internal markers, so renamed or moved channels remain valid.` : 'Choose a source guild to inspect or provision.')
     .addFields(
-      { name: 'Source Guild', value: selectedGuild ? `**${selectedGuild.name}**\n\`${selectedGuild.id}\`` : 'Not selected', inline: true },
+      { name: 'Source Guild', value: selectedGuild ? `**${selectedGuild.name}**\n\`${selectedGuild.id}\`\n${guildEnvironmentLabel(selectedGuild)}` : 'Not selected', inline: true },
       { name: 'Status', value: status, inline: true },
       { name: 'Guild Events', value: placement, inline: false },
       { name: 'User Intelligence Channels', value: report ? String(report.userChannelCount) : '—', inline: true },
@@ -556,7 +556,7 @@ async function handleCommandCenterInteraction(client, interaction) {
   }
   if (customId === 'owner:commandcenter:structure:rescan' && interaction.isButton?.()) { await interaction.update(await buildStructurePanel(client, interaction)).catch(() => null); return true; }
   if (customId === 'owner:commandcenter:structure:repair' && interaction.isButton?.()) {
-    const session = getStructureSession(interaction); const sourceGuild = configuredGuild(client, session.sourceGuildId); if (!sourceGuild) return true;
+    const session = getStructureSession(interaction); const sourceGuild = registryGuild(client, session.sourceGuildId); if (!sourceGuild) return true;
     await interaction.deferUpdate().catch(() => null);
     await auditRouter.repairStructure(client, sourceGuild);
     await interaction.editReply(await buildStructurePanel(client, interaction)).catch(() => null); return true;
