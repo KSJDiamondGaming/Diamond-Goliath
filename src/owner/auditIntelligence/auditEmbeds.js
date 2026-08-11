@@ -385,6 +385,7 @@ function buildUserIntelligenceControls() {
     new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId('owner:audit:refresh').setLabel('Refresh').setEmoji('🔄').setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId('owner:audit:deep').setLabel('Deep Scan').setEmoji('🔎').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId('owner:audit:identity').setLabel('Identity History').setEmoji('🏷️').setStyle(ButtonStyle.Primary),
       new ButtonBuilder().setCustomId('owner:audit:guilds').setLabel('Guild History').setEmoji('🏰').setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId('owner:audit:moderation').setLabel('Moderation').setEmoji('🛡️').setStyle(ButtonStyle.Secondary),
     ),
@@ -408,6 +409,7 @@ function buildUserIntelligenceSectionEmbed(report, section, sourceGuild) {
   const currentGuilds = report?.currentState?.guilds || [];
   const titleMap = {
     deep: '🔎 Deep Scan',
+    identity: '🏷️ Identity History',
     guilds: '🏰 Guild History',
     moderation: '🛡️ Moderation History',
     roles: '🎭 Role History',
@@ -447,6 +449,30 @@ function buildUserIntelligenceSectionEmbed(report, section, sourceGuild) {
       { name: 'Top Event Types', value: compact(topTypes, 1024), inline: true },
       { name: 'Top Categories', value: compact(topCategories, 1024), inline: true },
       { name: 'Recent Cross-Environment Activity', value: compact(recent, 1024), inline: false },
+    );
+    return embed;
+  }
+
+  if (section === 'identity') {
+    const identity = report?.identity || {};
+    const current = identity.current || {};
+    const historical = identity.historical || {};
+    const counts = identity.counts || {};
+    const environments = (identity.environments || []).map((mode) => `\`${mode}\``).join(' • ') || 'None recorded';
+    const usernames = (historical.usernames || []).slice(-15).reverse().map((value) => `• ${value}`).join('\n') || 'None recorded.';
+    const globalNames = (historical.globalNames || []).slice(-15).reverse().map((value) => `• ${value}`).join('\n') || 'None recorded.';
+    const displayNames = (historical.displayNames || []).slice(-15).reverse().map((value) => `• ${value}`).join('\n') || 'None recorded.';
+    const nicknames = (historical.nicknames || []).slice(-20).reverse().map((item) => `• **${item.guildName || item.guildId || 'Unknown guild'}** — ${item.nickname}${item.observedAt ? ` • ${discordTime(item.observedAt, 'R')}` : ''}`).join('\n') || 'None recorded.';
+    const liveNicknames = (identity.liveNicknames || []).map((item) => `• **${item.guildName || item.guildId || 'Unknown guild'}** — ${item.nickname}`).join('\n') || 'None visible right now.';
+    embed.setDescription(`Cross-environment identity history for <@${report.userId}>. This reflects names Goliath has actually observed; it does not infer unobserved Discord identity changes.`).addFields(
+      { name: 'Current Identity', value: `Username: **${current.username || 'Unknown'}**\nGlobal name: **${current.globalName || 'None'}**\nDisplay name: **${current.displayName || 'Unknown'}**`, inline: false },
+      { name: 'Observed Coverage', value: `Environments: ${environments}\nAccount created: ${discordTime(identity.accountCreatedAt, 'F')}\nFirst observed: ${discordTime(identity.firstObservedAt, 'F')}\nLast observed: ${discordTime(identity.lastObservedAt, 'R')}`, inline: false },
+      { name: 'Identity Counts', value: `Usernames: **${counts.usernames || 0}** • Global names: **${counts.globalNames || 0}**\nDisplay names: **${counts.displayNames || 0}** • Stored nicknames: **${counts.nicknames || 0}**\nLive nicknames: **${counts.liveNicknames || 0}**`, inline: false },
+      { name: 'Username History', value: compact(usernames, 1024), inline: true },
+      { name: 'Global Name History', value: compact(globalNames, 1024), inline: true },
+      { name: 'Display Name History', value: compact(displayNames, 1024), inline: true },
+      { name: 'Nickname History by Guild', value: compact(nicknames, 1024), inline: false },
+      { name: 'Current Live Nicknames', value: compact(liveNicknames, 1024), inline: false },
     );
     return embed;
   }
