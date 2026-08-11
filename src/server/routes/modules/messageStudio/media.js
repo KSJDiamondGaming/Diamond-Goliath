@@ -3,7 +3,7 @@
 const express = require('express');
 
 const mediaTools = require('../../../../core/mediaTools/mediaService');
-const entitlementManager = require('../../../billing/entitlementManager');
+const entitlementManager = require('../../../../core/billing/entitlementManager');
 const { FEATURE_KEYS } = require('../../../../config/plans');
 
 const router = express.Router();
