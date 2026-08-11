@@ -65,9 +65,10 @@ function liveProbeExpired(request, now = Date.now()) {
   return Boolean(expiresAt && expiresAt <= now);
 }
 
-function liveProbeStillPending(requestId, mode) {
+function liveProbeClaimOwnedBy(requestId, mode) {
   const current = auditStore.getLiveProbeRequest?.(requestId);
-  if (!current || current.status !== 'pending') return null;
+  if (!current || current.status !== 'claimed') return null;
+  if (String(current.claimedBy || '').toUpperCase() !== String(mode || '').toUpperCase()) return null;
   if (String(current.targetMode || '').toUpperCase() !== String(mode || '').toUpperCase()) return null;
   if (liveProbeExpired(current)) return null;
   return current;
@@ -81,6 +82,7 @@ function liveProbeCompletionResult(request, mode, result, startedAt, completedAt
     targetMode: String(request?.targetMode || '').toUpperCase() || null,
     requestedFrom: request?.requestedFrom ? String(request.requestedFrom).toUpperCase() : null,
     collectorMode: String(mode || '').toUpperCase() || null,
+    claimedAt: request?.claimedAt || null,
     startedAt: new Date(startedAt).toISOString(),
     completedAt: new Date(completedAt).toISOString(),
     durationMs: Math.max(0, completedAt - startedAt),
@@ -97,17 +99,23 @@ async function processAuditLiveProbeRequests(client) {
     const requestId = String(request?.id || '');
     if (!requestId || auditLiveProbeInFlight.has(requestId)) continue;
 
-    const current = liveProbeStillPending(requestId, mode);
-    if (!current) continue;
+    const claimed = auditStore.claimLiveProbeRequest?.(requestId, mode);
+    if (!claimed) continue;
 
     auditLiveProbeInFlight.add(requestId);
     const startedAt = Date.now();
     try {
+      const current = liveProbeClaimOwnedBy(requestId, mode);
+      if (!current) {
+        terminal.warn(`Audit live probe request ${requestId} lost or expired its ${mode} claim before execution; skipping.`);
+        continue;
+      }
+
       const guildId = String(current.guildId || '');
       const guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
 
-      if (!liveProbeStillPending(requestId, mode)) {
-        terminal.warn(`Audit live probe request ${requestId} became stale before execution in ${mode}; skipping.`);
+      if (!liveProbeClaimOwnedBy(requestId, mode)) {
+        terminal.warn(`Audit live probe request ${requestId} lost or expired its ${mode} claim while resolving guild ${guildId}; skipping.`);
         continue;
       }
 
@@ -117,21 +125,27 @@ async function processAuditLiveProbeRequests(client) {
       const completedAt = Date.now();
       const completion = liveProbeCompletionResult(current, mode, result, startedAt, completedAt);
 
-      const fresh = auditStore.getLiveProbeRequest?.(requestId);
-      if (fresh?.status === 'pending' && String(fresh.targetMode || '').toUpperCase() === mode) {
-        auditStore.completeLiveProbeRequest?.(requestId, completion, mode);
+      const fresh = liveProbeClaimOwnedBy(requestId, mode);
+      if (!fresh) {
+        terminal.warn(`Audit live probe request ${requestId} could not be completed because the ${mode} claim is no longer active.`);
+        continue;
+      }
+
+      const completed = auditStore.completeLiveProbeRequest?.(requestId, completion, mode);
+      if (!completed) {
+        terminal.warn(`Audit live probe request ${requestId} completion was rejected because ${mode} no longer owns the claim.`);
+        continue;
       }
 
       processed += 1;
       terminal.info(`Audit live probe request ${requestId} completed by ${mode} for guild ${guildId} in ${completion.durationMs}ms: ${completion.started ? 'started' : completion.reason || 'not-started'}${current.requestedFrom ? ` (requested from ${current.requestedFrom})` : ''}`);
     } catch (error) {
       const completedAt = Date.now();
-      const completion = liveProbeCompletionResult(current, mode, { started: false, reason: 'create-failed', error: String(error?.message || error).slice(0, 500) }, startedAt, completedAt);
-      const fresh = auditStore.getLiveProbeRequest?.(requestId);
-      if (fresh?.status === 'pending' && String(fresh.targetMode || '').toUpperCase() === mode) {
-        auditStore.completeLiveProbeRequest?.(requestId, completion, mode);
-      }
-      terminal.error(`Audit live probe request ${requestId} failed in ${mode} after ${completion.durationMs}ms: ${error?.message || error}`);
+      const current = auditStore.getLiveProbeRequest?.(requestId) || claimed;
+      const failure = liveProbeCompletionResult(current, mode, { started: false, reason: 'create-failed', error: String(error?.message || error).slice(0, 500) }, startedAt, completedAt);
+      const fresh = liveProbeClaimOwnedBy(requestId, mode);
+      if (fresh) auditStore.failLiveProbeRequest?.(requestId, failure, mode);
+      terminal.error(`Audit live probe request ${requestId} failed in ${mode} after ${failure.durationMs}ms: ${error?.message || error}`);
     } finally {
       auditLiveProbeInFlight.delete(requestId);
     }
