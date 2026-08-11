@@ -1,4 +1,5 @@
 const fs = require('fs');
+const path = require('path');
 const { resolveBotMode, getRuntimePaths } = require('../config/runtimePaths');
 
 /* ---------------- DIRECTORY HELPERS ---------------- */
@@ -47,6 +48,60 @@ function safeLoad(label, loadFn, logger = console) {
     logger.error(error);
     return { ok: false, label, result: null, error };
   }
+}
+
+/* ---------------- EVENT REGISTRATION ---------------- */
+
+function registerEvents(client, options = {}) {
+  const eventsPath = options.eventsPath || path.join(process.cwd(), 'src', 'events');
+  const prepareInteraction = typeof options.prepareInteraction === 'function'
+    ? options.prepareInteraction
+    : async () => null;
+
+  if (!fs.existsSync(eventsPath)) return { files: 0, groups: 0 };
+
+  const files = [];
+  const grouped = new Map();
+  const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).forEach((entry) => {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) walk(full);
+    else if (entry.isFile() && entry.name.endsWith('.js')) files.push(full);
+  });
+
+  walk(eventsPath);
+  files.sort((a, b) => a.localeCompare(b));
+
+  for (const file of files) {
+    try {
+      const loaded = require(file);
+      for (const handler of (Array.isArray(loaded) ? loaded : [loaded])) {
+        if (!handler?.name || typeof handler.execute !== 'function') continue;
+        const eventName = String(handler.name);
+        const groupKey = `${eventName}:${handler.once === true ? 'once' : 'on'}`;
+        if (!grouped.has(groupKey)) grouped.set(groupKey, { eventName, once: handler.once === true, handlers: [] });
+        grouped.get(groupKey).handlers.push({ file, execute: handler.execute });
+      }
+    } catch (error) {
+      console.warn(`⚠️ Event skipped: ${file}`);
+      console.warn(error?.message || error);
+    }
+  }
+
+  for (const { eventName, once, handlers } of grouped.values()) {
+    const listener = async (...args) => {
+      if (eventName === 'interactionCreate') await prepareInteraction(args[0]);
+      for (const handler of handlers) {
+        try { await handler.execute(...args, client); }
+        catch (error) {
+          console.error(`[Events] ${eventName} handler failed: ${handler.file}`);
+          console.error(error?.stack || error?.message || error);
+        }
+      }
+    };
+    if (once) client.once(eventName, listener); else client.on(eventName, listener);
+  }
+
+  return { files: files.length, groups: grouped.size };
 }
 
 /* ---------------- MODE / RUNTIME ---------------- */
@@ -151,6 +206,7 @@ module.exports = {
   bootstrapRuntime,
   runBootValidation,
   safeLoad,
+  registerEvents,
   getStartupFingerprint,
   printStartupFingerprint,
 };
