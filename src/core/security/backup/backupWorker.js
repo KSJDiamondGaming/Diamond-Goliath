@@ -262,10 +262,6 @@ function startBackupWorker(
   };
 }
 
-function isWorkerRunning() {
-  return workerRunning;
-}
-
 // ======================================================
 // EXPORTS
 // ======================================================
@@ -277,5 +273,4 @@ module.exports = {
   processSyncEntry,
 
   startBackupWorker,
-  isWorkerRunning,
 };
