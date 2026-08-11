@@ -95,6 +95,7 @@ async function buildReport(client, userId) {
     roleHistory: [],
     moderationHistory: [],
     voiceHistory: [],
+    actorHistory: [],
     recentEvents: [],
   };
   const liveGuilds = [];
@@ -147,6 +148,7 @@ async function buildReport(client, userId) {
       roles: stored.roleHistory || [],
       moderation: stored.moderationHistory || [],
       voice: stored.voiceHistory || [],
+      actions: stored.actorHistory || [],
       recentEvents: stored.recentEvents || [],
     },
     counts: {
