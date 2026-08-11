@@ -270,7 +270,6 @@ module.exports = {
   WORKER_VERSION,
 
   processPendingSyncs,
-  processSyncEntry,
 
   startBackupWorker,
 };
