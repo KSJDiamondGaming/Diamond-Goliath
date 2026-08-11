@@ -130,14 +130,20 @@ function liveProbeCollectorLabel(result) {
 function liveProbeStatus(result) {
   const collector = liveProbeCollectorLabel(result);
   const duration = Number.isFinite(Number(result?.durationMs)) ? ` • ${Math.max(0, Number(result.durationMs))}ms` : '';
-  if (result?.started) return `🟢 **Live event probe:** executed by **${collector}**${duration} via temporary hidden channel \`${result.channelName || result.channelId}\`. Expect real **Channel Created** and **Channel Deleted** reports in Guild / System Events.`;
+  const lifecycle = result?.lifecycleStatus ? ` • ${String(result.lifecycleStatus).toUpperCase()}` : '';
+  if (result?.started) return `🟢 **Live event probe:** executed by **${collector}**${duration}${lifecycle} via temporary hidden channel \`${result.channelName || result.channelId}\`. Expect real **Channel Created** and **Channel Deleted** reports in Guild / System Events.`;
   switch (result?.reason) {
-    case 'registry-only': return `🟡 **Live event probe:** skipped by **${collector}**${duration} — that collector does not have live access to this guild. The configured route test still ran normally.`;
-    case 'cooldown': return `🟡 **Live event probe:** skipped by **${collector}**${duration} — the 15-second safety cooldown is active. Wait briefly before another live probe.`;
-    case 'missing-manage-channels': return `🔴 **Live event probe:** blocked on **${collector}**${duration} — Goliath does not have **Manage Channels** in the source guild.`;
-    case 'create-failed': return `🔴 **Live event probe:** failed on **${collector}**${duration} — Goliath could not create the temporary hidden verification channel.`;
-    case 'invalid-guild': return `🔴 **Live event probe:** unavailable on **${collector}**${duration} — the selected guild could not be resolved for live verification.`;
-    default: return `🟠 **Live event probe:** status unavailable from **${collector}**${duration}. The normal route-delivery result below is still authoritative.`;
+    case 'remote-timeout': return `🟠 **Live event probe:** timed out waiting for **${collector}**${lifecycle}. The remote request did not reach a terminal result within the Command Center wait window; normal route delivery still ran.`;
+    case 'expired': return `🟠 **Live event probe:** request expired for **${collector}**${lifecycle} before a collector could complete it. Normal route delivery still ran.`;
+    case 'remote-failed': return `🔴 **Live event probe:** remote collector **${collector}** failed the probe${duration}${lifecycle}. Check the collector logs before retrying.`;
+    case 'registry-only': return `🟡 **Live event probe:** skipped by **${collector}**${duration}${lifecycle} — that collector does not have live access to this guild. The configured route test still ran normally.`;
+    case 'cooldown': return `🟡 **Live event probe:** skipped by **${collector}**${duration}${lifecycle} — the 15-second safety cooldown is active. Wait briefly before another live probe.`;
+    case 'missing-manage-channels': return `🔴 **Live event probe:** blocked on **${collector}**${duration}${lifecycle} — Goliath does not have **Manage Channels** in the source guild.`;
+    case 'create-failed': return result?.remote
+      ? `🔴 **Live event probe:** remote collector **${collector}** failed to create the temporary verification channel${duration}${lifecycle}. Check its guild permissions and collector logs.`
+      : `🔴 **Live event probe:** failed on **${collector}**${duration}${lifecycle} — Goliath could not create the temporary hidden verification channel.`;
+    case 'invalid-guild': return `🔴 **Live event probe:** unavailable on **${collector}**${duration}${lifecycle} — the selected guild could not be resolved for live verification.`;
+    default: return `🟠 **Live event probe:** status unavailable from **${collector}**${duration}${lifecycle}. The normal route-delivery result below is still authoritative.`;
   }
 }
 function sourceGuildSelect(customId, placeholder, sourceGuilds, selectedId) {
