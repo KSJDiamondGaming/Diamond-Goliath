@@ -7,7 +7,7 @@ const {
 } = require('discord.js');
 
 const mediaTools = require('../../core/mediaTools/mediaService');
-const entitlementManager = require('../../server/billing/entitlementManager');
+const entitlementManager = require('../../core/billing/entitlementManager');
 const { FEATURE_KEYS } = require('../../config/plans');
 const { enforceCommandAccess } = require('../../core/commands/commandAccess');
 

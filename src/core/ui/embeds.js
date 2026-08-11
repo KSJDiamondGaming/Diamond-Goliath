@@ -19,9 +19,7 @@ const EMOJIS = {
   SUCCESS: '✅',
   ERROR: '❌',
   WARNING: '⚠️',
-  INFO: 'ℹ️',
   DASHBOARD: '📊',
-  LOADING: '📡',
 };
 
 /* ---------------- SAFETY ---------------- */
@@ -105,62 +103,7 @@ function createEmbed({
   return embed;
 }
 
-function createPanelEmbed(interaction, options = {}) {
-  const {
-    title,
-    description,
-    thumbnail,
-    author,
-    color = COLORS.PRIMARY,
-    footerText,
-    footerIcon,
-    fields = [],
-    image,
-    timestamp = true,
-  } = options;
-
-  const embed = createEmbed({
-    title,
-    description,
-    color,
-    fields,
-    thumbnail,
-    image,
-    timestamp,
-  });
-
-  if (author) {
-    embed.setAuthor({
-      name: trim(author.name, 256),
-      iconURL: author.iconURL,
-    });
-  }
-
-  const resolvedFooterText =
-    footerText ||
-    interaction?.guild?.name ||
-    interaction?.client?.user?.username ||
-    'Goliath';
-
-  const resolvedFooterIcon =
-    footerIcon ||
-    interaction?.guild?.iconURL?.({ dynamic: true }) ||
-    interaction?.client?.user?.displayAvatarURL?.({ dynamic: true }) ||
-    undefined;
-
-  embed.setFooter({
-    text: trim(resolvedFooterText, 2048),
-    iconURL: resolvedFooterIcon,
-  });
-
-  return embed;
-}
-
 /* ---------------- QUICK EMBEDS ---------------- */
-
-function loadingEmbed(client, text = '`📡` Loading...') {
-  return baseEmbed(client).setDescription(text);
-}
 
 function successEmbed(description, options = {}) {
   return createEmbed({
@@ -197,27 +140,6 @@ function infoEmbed(titleOrDescription, descriptionOrOptions = {}, maybeOptions =
     description: hasDescription ? descriptionOrOptions : titleOrDescription,
     color: COLORS.PRIMARY,
     ...(hasDescription ? maybeOptions : descriptionOrOptions),
-  });
-}
-
-function createSuccessEmbed(interaction, options = {}) {
-  return createPanelEmbed(interaction, {
-    color: COLORS.SUCCESS,
-    ...options,
-  });
-}
-
-function createDangerEmbed(interaction, options = {}) {
-  return createPanelEmbed(interaction, {
-    color: COLORS.ERROR,
-    ...options,
-  });
-}
-
-function createWarningEmbed(interaction, options = {}) {
-  return createPanelEmbed(interaction, {
-    color: COLORS.WARNING,
-    ...options,
   });
 }
 
@@ -310,17 +232,11 @@ module.exports = {
 
   baseEmbed,
   createEmbed,
-  createPanelEmbed,
 
-  loadingEmbed,
   successEmbed,
   errorEmbed,
   warningEmbed,
   infoEmbed,
-
-  createSuccessEmbed,
-  createDangerEmbed,
-  createWarningEmbed,
 
   statusText,
   formatUptime,

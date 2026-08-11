@@ -470,13 +470,11 @@ function liveMessageUpdateDue(previous, checked) {
     !checked.event
   ) return false;
 
-  const last =
-    Number(previous.lastLiveMessageUpdateAt || 0);
+  const last = Number(previous.lastLiveMessageUpdateAt || previous.lastLiveMessageUpdatedAt || 0);
 
-  return (
-    Date.now() - last >= LIVE_MESSAGE_REFRESH_MS
-  );
+  return Date.now() - last >= LIVE_MESSAGE_REFRESH_MS;
 }
+
 async function forcePostCreatorLive(client, guildId, creatorId, options = {}) {
   const config = configFor(guildId);
   const creator = config.creators?.[creatorId];
@@ -607,7 +605,7 @@ async function buildEventPayload(client, guildId, config, account, creator, even
   const member = await resolveLinkedMember(discordGuild, account, creator);
   const vars = variableMap(discordGuild, member, account, creator, event);
   const template = templateFor(config, event.type);
-  const platform = PLATFORM[account.platform] || { label: account.platform || 'Unknown', icon: '\u{1F310}', color: 0x5865F2 };
+  const platform = PLATFORM[account.platform] || { label: account.platform || 'Unknown', icon: '🌐', color: 0x5865F2 };
   const creatorName = vars.creator;
   const url = vars.url;
   const profileUrl = account.profileUrl || account.url || '';
@@ -629,12 +627,12 @@ async function buildEventPayload(client, guildId, config, account, creator, even
   const actionLabelTemplate = event.type === 'live' && liveStatus === 'OFFLINE' ? defaultActionLabel : template.buttonLabel || defaultActionLabel;
   const actionLabel = clean(render(actionLabelTemplate, vars), 80) || defaultActionLabel;
   const actionLines = [];
-  const liveStatusText = liveStatus === 'OFFLINE' ? '\u{1F534} **OFFLINE**' : liveStatus === 'LIVE' ? '\u{1F7E2} **LIVE**' : '';
-  const profileLink = /^https?:\/\//i.test(profileUrl) && profileUrl !== url ? '\u{1F464} [Creator Profile](' + profileUrl + ')' : '';
+  const liveStatusText = liveStatus === 'OFFLINE' ? '🔴 **OFFLINE**' : liveStatus === 'LIVE' ? '🟢 **LIVE**' : '';
+  const profileLink = /^https?:\/\//i.test(profileUrl) && profileUrl !== url ? '👤 [Creator Profile](' + profileUrl + ')' : '';
   if (/^https?:\/\//i.test(url)) {
     const rightAction = liveStatusText || profileLink;
     const rightSpacer = rightAction ? '\u2003'.repeat(liveStatusText ? 9 : 8) : '';
-    actionLines.push('\u{1F680} **[' + actionLabel + '](' + url + ')**' + rightSpacer + rightAction);
+    actionLines.push('🚀 **[' + actionLabel + '](' + url + ')**' + rightSpacer + rightAction);
   } else if (profileLink) actionLines.push(profileLink);
   const embedCallToAction = embedActionBlock(actionLines);
 
@@ -642,7 +640,7 @@ async function buildEventPayload(client, guildId, config, account, creator, even
     .setColor(embedColor)
     .setTitle(clean(render(template.title, vars), 256) || `${creatorName} update`)
     .setDescription(clean(stripTrailingDivider(baseDescription) + embedCallToAction, 4096))
-    .setFooter({ text: clean(render(template.footer || `Social Studio \u2022 ${platform.label}`, vars), 2048) || `Social Studio \u2022 ${platform.label}` })
+    .setFooter({ text: clean(render(template.footer || `Social Studio • ${platform.label}`, vars), 2048) || `Social Studio • ${platform.label}` })
     .setTimestamp();
 
   const authorIcon = account.avatar || creator?.avatar || null;
@@ -661,32 +659,32 @@ async function buildEventPayload(client, guildId, config, account, creator, even
   const published = discordTimestamp(event.publishedAt);
 
   if (event.type === 'live') {
-    if (account.platform !== 'tiktok' && (event.category || event.game)) fields.push({ name: '\u{1F3AE} Game', value: clean(event.category || event.game, 1024), inline: true });
-    if (account.platform === 'tiktok') fields.push({ name: '\u{1F4F1} Platform', value: liveStatus === 'OFFLINE' ? 'TikTok' : 'TikTok LIVE', inline: true });
-    if (vars.viewers) fields.push({ name: '\u{1F465} Viewers', value: vars.viewers, inline: true });
-    if (started) fields.push({ name: '\u23F2\uFE0F Started', value: started, inline: true });
+    if (account.platform !== 'tiktok' && (event.category || event.game)) fields.push({ name: '🎮 Game', value: clean(event.category || event.game, 1024), inline: true });
+    if (account.platform === 'tiktok') fields.push({ name: '📱 Platform', value: liveStatus === 'OFFLINE' ? 'TikTok' : 'TikTok LIVE', inline: true });
+    if (vars.viewers) fields.push({ name: '👥 Viewers', value: vars.viewers, inline: true });
+    if (started) fields.push({ name: '⏲️ Started', value: started, inline: true });
   } else if (event.type === 'ended') {
     const currentVod = event.currentVod && typeof event.currentVod === 'object' ? event.currentVod : null;
-    if (account.platform !== 'tiktok' && (event.category || event.game)) fields.push({ name: '\u{1F3AE} Game', value: clean(event.category || event.game, 1024), inline: true });
-    if (account.platform === 'tiktok') fields.push({ name: '\u{1F4F1} Platform', value: 'TikTok', inline: true });
-    if (vars.peakViewers) fields.push({ name: '\u{1F4C8} Peak', value: vars.peakViewers, inline: true });
-    if (started) fields.push({ name: '\u23F2\uFE0F Started', value: started, inline: true });
-    if (/^https?:\/\//i.test(currentVod?.url || '')) fields.push({ name: '\u{1F39E}\uFE0F VOD', value: `[**Click to view**](${currentVod.url})`, inline: true });
-    if (durationText) fields.push({ name: '\u23F1\uFE0F Duration', value: durationText, inline: true });
+    if (account.platform !== 'tiktok' && (event.category || event.game)) fields.push({ name: '🎮 Game', value: clean(event.category || event.game, 1024), inline: true });
+    if (account.platform === 'tiktok') fields.push({ name: '📱 Platform', value: 'TikTok', inline: true });
+    if (vars.peakViewers) fields.push({ name: '📈 Peak', value: vars.peakViewers, inline: true });
+    if (started) fields.push({ name: '⏲️ Started', value: started, inline: true });
+    if (/^https?:\/\//i.test(currentVod?.url || '')) fields.push({ name: '🎞️ VOD', value: `[**Click to view**](${currentVod.url})`, inline: true });
+    if (durationText) fields.push({ name: '⏱️ Duration', value: durationText, inline: true });
   } else {
-    if (account.platform !== 'tiktok' && (event.category || event.game)) fields.push({ name: '\u{1F3AE} Game', value: clean(event.category || event.game, 1024), inline: true });
-    if (vars.viewers) fields.push({ name: '\u{1F465} Viewers', value: vars.viewers, inline: true });
-    if (started) fields.push({ name: '\u23F2\uFE0F Started', value: started, inline: true });
+    if (account.platform !== 'tiktok' && (event.category || event.game)) fields.push({ name: '🎮 Game', value: clean(event.category || event.game, 1024), inline: true });
+    if (vars.viewers) fields.push({ name: '👥 Viewers', value: vars.viewers, inline: true });
+    if (started) fields.push({ name: '⏲️ Started', value: started, inline: true });
   }
 
-  if (event.type !== 'ended' && vars.peakViewers) fields.push({ name: '\u{1F4C8} Peak', value: vars.peakViewers, inline: true });
-  if (Number(event.viewCount) > 0) fields.push({ name: '\u{1F441}\uFE0F Views', value: intText(event.viewCount), inline: true });
-  if (event.type !== 'ended' && durationText) fields.push({ name: '\u23F1\uFE0F Duration', value: durationText, inline: true });
-  if (event.type !== 'ended' && ended) fields.push({ name: '\u26AB Ended', value: ended, inline: true });
-  if (published) fields.push({ name: '\u{1F4C5} Published', value: published, inline: true });
+  if (event.type !== 'ended' && vars.peakViewers) fields.push({ name: '📈 Peak', value: vars.peakViewers, inline: true });
+  if (Number(event.viewCount) > 0) fields.push({ name: '👁️ Views', value: intText(event.viewCount), inline: true });
+  if (event.type !== 'ended' && durationText) fields.push({ name: '⏱️ Duration', value: durationText, inline: true });
+  if (event.type !== 'ended' && ended) fields.push({ name: '⚫ Ended', value: ended, inline: true });
+  if (published) fields.push({ name: '📅 Published', value: published, inline: true });
   if (event.type === 'live' && /^https?:\/\//i.test(previousVod?.url || '')) {
     const vodTitle = clean(previousVod.title || 'Previous stream replay', 180);
-    fields.push({ name: '\u200B', value: `\u{1F39E}\uFE0F **[Watch Latest VOD](${previousVod.url})**${vodTitle ? `\n${vodTitle}` : ''}`, inline: false });
+    fields.push({ name: '\u200B', value: `🎞️ **[Watch Latest VOD](${previousVod.url})**${vodTitle ? `\n${vodTitle}` : ''}`, inline: false });
   }
 
   if (fields.length) embed.addFields(fields.slice(0, 25));
@@ -728,6 +726,7 @@ async function updateLiveMessage(client, guildId, config, account, creator, even
   message.socialStudioChannelId = channel.id;
   return message;
 }
+
 async function checkGuildAccounts(client, guildId, options = {}) {
   if (!client || !guildId) throw new Error('Social Studio check requires a Discord client and guild ID.');
   if (runningGuilds.has(guildId)) return { guildId, skipped: true, reason: 'check_already_running', results: [] };
@@ -924,23 +923,16 @@ async function checkGuildAccounts(client, guildId, options = {}) {
 
 async function sweep(client) {
   for (const guild of client.guilds.cache.values()) {
-
     try {
-      deleteExpiredCreators(
-        guild.id,
-        Date.now(),
-        {
-          actorId: 'system',
-        },
-      );
+      deleteExpiredCreators(guild.id, Date.now(), { actorId: 'system' });
     } catch (error) {
-      console.error(
-        `[Social Studio] creator cleanup failed for guild ${guild.id}:`,
-        error?.message || error,
-      );
+      console.error(`[Social Studio] creator cleanup failed for guild ${guild.id}:`, error?.message || error);
     }
-    try { await checkGuildAccounts(client, guild.id); }
-    catch (error) { console.error(`[Social Studio] automatic check failed for guild ${guild.id}:`, error?.message || error); }
+    try {
+      await checkGuildAccounts(client, guild.id, { force: true });
+    } catch (error) {
+      console.error(`[Social Studio] automatic check failed for guild ${guild.id}:`, error?.message || error);
+    }
   }
 }
 

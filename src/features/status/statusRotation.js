@@ -92,11 +92,16 @@ function startStatusRotation(client) {
     client.statusRotationInterval = null;
   }
 
-  let index = Math.floor(Math.random() * buildActivities(client).length);
+  const initialActivities = buildActivities(client);
+  let index = Math.floor(Math.random() * initialActivities.length);
+  let firstRotation = true;
 
   const rotate = async () => {
     try {
-      const activities = buildActivities(client);
+      const activities = firstRotation
+        ? initialActivities
+        : buildActivities(client);
+      firstRotation = false;
       const activity = activities[index % activities.length];
 
       await client.user.setPresence({
@@ -115,14 +120,6 @@ function startStatusRotation(client) {
   client.statusRotationInterval = setInterval(rotate, STATUS_INTERVAL_MS);
 }
 
-function stopStatusRotation(client) {
-  if (!client?.statusRotationInterval) return;
-
-  clearInterval(client.statusRotationInterval);
-  client.statusRotationInterval = null;
-}
-
 module.exports = {
   startStatusRotation,
-  stopStatusRotation,
 };

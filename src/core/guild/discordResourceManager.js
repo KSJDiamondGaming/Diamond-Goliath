@@ -186,9 +186,6 @@ async function syncDiscordResources(guild) {
 }
 
 module.exports = {
-  DISCORD_RESOURCE_FALLBACK,
-  buildDiscordResourceSnapshot,
   getDiscordResources,
-  saveDiscordResources,
   syncDiscordResources,
 };

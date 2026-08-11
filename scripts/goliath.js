@@ -208,13 +208,13 @@ const goodbyeAudit = () => exportsAudit('Goodbye doctor', [
   ['src/modules/messageStudio/goodbye/goodbye.js', []],
   ['src/modules/messageStudio/goodbye/goodbyeDeparture.js', ['getConfig', 'updateConfig', 'resetConfig', 'buildDmEmbed', 'sendDepartureDm']],
   ['src/modules/messageStudio/goodbye/goodbyePanel.js', []],
-  ['src/server/routes/goodbye.js', []],
+  ['src/server/routes/modules/messageStudio/goodbye.js', []],
   ['docs/modules/goodbye.md', []],
 ]);
 
 const reactionRolesAudit = () => exportsAudit('Reaction Roles doctor', [
   ['src/modules/roleStudio/reactionRoles/reactionRoles.js', []],
-  ['src/modules/roleStudio/reactionRoles/reactionRolesRoute.js', []],
+  ['src/server/routes/modules/roleStudio/reactionRoles.js', []],
   ['src/modules/roleStudio/reactionRoles/reactionRolesPanel.js', []],
   ['src/dashboard/js/pages/modules/ReactionRoles.jsx', []],
 ]);
@@ -228,7 +228,7 @@ const roleStudioAudit = () => exportsAudit('Role Studio doctor', [
 
 const inviteStudioAudit = () => exportsAudit('Invite Studio doctor', [
   ['src/modules/communityStudio/invites/invites.js', ['defaults', 'getSection', 'setEnabled', 'updateSettings', 'buildHealth', 'repair', 'startup', 'exportConfiguration', 'reset']],
-  ['src/modules/communityStudio/invites/invitesRoute.js', []],
+  ['src/server/routes/modules/communityStudio/invites.js', []],
   ['src/modules/communityStudio/invites/invitesAdminPanel.js', ['buildInviteStudioPayload', 'handleInviteStudioInteraction']],
   ['src/dashboard/js/pages/modules/Invites.jsx', []],
   ['docs/modules/communityStudio/invites.md', []],

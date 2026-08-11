@@ -74,8 +74,6 @@ function setRoutedSection(source, sectionName, sectionData = {}) {
 }
 
 module.exports = {
-  SECTION_PATHS,
-  resolveSectionPath,
   getRoutedSection,
   setRoutedSection,
 };

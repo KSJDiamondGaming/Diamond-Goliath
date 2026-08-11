@@ -12,6 +12,8 @@ const SHARED_ROOT = path.dirname(PROJECT_ROOT);
 const SHARED_CONFIG_FILE = path.join(SHARED_ROOT, '.goliath-audit-control.json');
 const COMMAND_CENTER_GUILD_ID = '1515201360386068642';
 const REGISTRY_MODES = ['DEV', 'BETA', 'PRODUCTION'];
+const LIVE_PROBE_REQUEST_LIMIT = 25;
+const LIVE_PROBE_TTL_MS = 30 * 1000;
 
 function runtimeMode() {
   const mode = String(process.env.BOT_MODE || 'DEV').trim().toUpperCase();
@@ -21,6 +23,13 @@ function runtimeMode() {
 }
 function registryFile(mode = runtimeMode()) {
   return path.join(SHARED_ROOT, `.goliath-audit-registry-${String(mode).toLowerCase()}.json`);
+}
+function scopedGuildIds(mode) {
+  const envName = mode === 'PRODUCTION' ? 'PRODUCTION_GUILD_IDS' : `${mode}_GUILD_IDS`;
+  return String(process.env[envName] || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
 }
 function ensure(dir) { fs.mkdirSync(dir, { recursive: true }); return dir; }
 function readJson(file, fallback = {}) { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return fallback; } }
@@ -40,6 +49,9 @@ function defaultConfig() {
     },
     autoProvision: true,
     guilds: {},
+    control: {
+      liveProbeRequests: [],
+    },
   };
 }
 function normalizeConfig(current = {}) {
@@ -52,6 +64,11 @@ function normalizeConfig(current = {}) {
       guildId: String(current.commandCenter?.guildId || COMMAND_CENTER_GUILD_ID).trim(),
     },
     guilds: current.guilds && typeof current.guilds === 'object' ? current.guilds : {},
+    control: {
+      ...defaultConfig().control,
+      ...(current.control && typeof current.control === 'object' ? current.control : {}),
+      liveProbeRequests: Array.isArray(current.control?.liveProbeRequests) ? current.control.liveProbeRequests : [],
+    },
   };
 }
 function bootstrapSharedConfig() {
@@ -78,8 +95,151 @@ function updateConfig(patch = {}) {
     ...patch,
     commandCenter: patch.commandCenter ? { ...current.commandCenter, ...patch.commandCenter } : current.commandCenter,
     guilds: patch.guilds ? { ...current.guilds, ...patch.guilds } : current.guilds,
+    control: patch.control ? { ...current.control, ...patch.control } : current.control,
   };
   return saveConfig(next);
+}
+function writeSharedControlRequests(requests) {
+  const current = getConfig();
+  const next = normalizeConfig({
+    ...current,
+    control: {
+      ...(current.control || {}),
+      liveProbeRequests: requests.slice(-LIVE_PROBE_REQUEST_LIMIT),
+    },
+  });
+  writeJson(SHARED_CONFIG_FILE, next);
+  return next.control.liveProbeRequests;
+}
+function liveProbeTerminalAt(request) {
+  return Date.parse(request?.completedAt || request?.failedAt || request?.expiredAt || '') || 0;
+}
+function normalizeLiveProbeLifecycle(request, now = Date.now()) {
+  if (!request || typeof request !== 'object') return request;
+  const status = String(request.status || 'pending').toLowerCase();
+  const expiresAt = Date.parse(request.expiresAt || '') || 0;
+  if ((status === 'pending' || status === 'claimed') && expiresAt && expiresAt <= now) {
+    return {
+      ...request,
+      status: 'expired',
+      expiredAt: request.expiredAt || new Date(now).toISOString(),
+      result: request.result || { started: false, reason: 'expired' },
+    };
+  }
+  return request;
+}
+function mutateLiveProbeRequests(mutator) {
+  const now = Date.now();
+  const current = getConfig().control?.liveProbeRequests || [];
+  const active = current
+    .map((request) => normalizeLiveProbeLifecycle(request, now))
+    .filter((request) => {
+      const status = String(request?.status || 'pending').toLowerCase();
+      if (!['completed', 'failed', 'expired'].includes(status)) return true;
+      const terminalAt = liveProbeTerminalAt(request);
+      return !terminalAt || now - terminalAt < LIVE_PROBE_TTL_MS;
+    });
+  const next = mutator([...active]);
+  return writeSharedControlRequests(Array.isArray(next) ? next : active);
+}
+function refreshLiveProbeLifecycle() {
+  return mutateLiveProbeRequests((requests) => requests);
+}
+function createLiveProbeRequest(guildId, targetMode, requestedBy = null) {
+  const guild = String(guildId || '').trim();
+  const target = String(targetMode || '').trim().toUpperCase();
+  if (!guild || !REGISTRY_MODES.includes(target)) return null;
+  const now = Date.now();
+  const request = {
+    id: `${now.toString(36)}-${Math.random().toString(36).slice(2, 9)}`,
+    guildId: guild,
+    targetMode: target,
+    requestedBy: requestedBy ? String(requestedBy) : null,
+    requestedFrom: runtimeMode(),
+    status: 'pending',
+    createdAt: new Date(now).toISOString(),
+    expiresAt: new Date(now + LIVE_PROBE_TTL_MS).toISOString(),
+    claimedAt: null,
+    claimedBy: null,
+    completedAt: null,
+    completedBy: null,
+    failedAt: null,
+    failedBy: null,
+    expiredAt: null,
+    result: null,
+  };
+  mutateLiveProbeRequests((requests) => [...requests, request]);
+  return request;
+}
+function getLiveProbeRequest(requestId) {
+  const id = String(requestId || '');
+  if (!id) return null;
+  const requests = refreshLiveProbeLifecycle();
+  return requests.find((request) => String(request?.id || '') === id) || null;
+}
+function getPendingLiveProbeRequests(mode = runtimeMode()) {
+  const target = String(mode || runtimeMode()).toUpperCase();
+  return refreshLiveProbeLifecycle().filter((request) => request?.status === 'pending' && String(request?.targetMode || '').toUpperCase() === target);
+}
+function claimLiveProbeRequest(requestId, claimedBy = runtimeMode()) {
+  const id = String(requestId || '');
+  const mode = String(claimedBy || runtimeMode()).toUpperCase();
+  if (!id || !REGISTRY_MODES.includes(mode)) return null;
+  let claimed = null;
+  mutateLiveProbeRequests((requests) => requests.map((request) => {
+    if (String(request?.id || '') !== id) return request;
+    if (request.status !== 'pending' || String(request.targetMode || '').toUpperCase() !== mode) return request;
+    claimed = {
+      ...request,
+      status: 'claimed',
+      claimedAt: new Date().toISOString(),
+      claimedBy: mode,
+    };
+    return claimed;
+  }));
+  return claimed;
+}
+function completeLiveProbeRequest(requestId, result = {}, completedBy = runtimeMode()) {
+  const id = String(requestId || '');
+  const mode = String(completedBy || runtimeMode()).toUpperCase();
+  if (!id) return null;
+  let completed = null;
+  mutateLiveProbeRequests((requests) => requests.map((request) => {
+    if (String(request?.id || '') !== id) return request;
+    const owner = String(request.claimedBy || request.targetMode || '').toUpperCase();
+    if (!['claimed', 'pending'].includes(request.status) || owner !== mode) return request;
+    completed = {
+      ...request,
+      status: 'completed',
+      completedAt: new Date().toISOString(),
+      completedBy: mode,
+      failedAt: null,
+      failedBy: null,
+      result: result && typeof result === 'object' ? result : { started: false, reason: 'invalid-result' },
+    };
+    return completed;
+  }));
+  return completed;
+}
+function failLiveProbeRequest(requestId, result = {}, failedBy = runtimeMode()) {
+  const id = String(requestId || '');
+  const mode = String(failedBy || runtimeMode()).toUpperCase();
+  if (!id) return null;
+  let failed = null;
+  mutateLiveProbeRequests((requests) => requests.map((request) => {
+    if (String(request?.id || '') !== id) return request;
+    const owner = String(request.claimedBy || request.targetMode || '').toUpperCase();
+    if (!['claimed', 'pending'].includes(request.status) || owner !== mode) return request;
+    failed = {
+      ...request,
+      status: 'failed',
+      failedAt: new Date().toISOString(),
+      failedBy: mode,
+      result: result && typeof result === 'object' ? result : { started: false, reason: 'invalid-result' },
+    };
+    return failed;
+  }));
+  return failed;
 }
 
 function registryGuild(guild, observedAt) {
@@ -137,6 +297,25 @@ function getGuildRegistry() {
       };
       const seen = item.observedAt || snapshot.observedAt || null;
       if (seen && (!current.lastSeenAt || seen > current.lastSeenAt)) current.lastSeenAt = seen;
+      merged.set(guildId, current);
+    }
+  }
+  for (const mode of REGISTRY_MODES) {
+    for (const guildId of scopedGuildIds(mode)) {
+      const current = merged.get(guildId) || {
+        guildId,
+        name: guildId,
+        ownerId: null,
+        memberCount: null,
+        environments: {},
+        lastSeenAt: null,
+      };
+      current.environments[mode] ||= {
+        botUserId: null,
+        botTag: null,
+        observedAt: null,
+        source: 'configured-scope',
+      };
       merged.set(guildId, current);
     }
   }
@@ -317,6 +496,127 @@ function updateUserIndex(userId, event) {
 }
 
 function getUser(userId) { return readJson(path.join(root, 'users', `${String(userId)}.json`), null); }
+function modeAuditRoot(mode) {
+  const normalized = String(mode || '').toUpperCase();
+  if (normalized === runtimeMode()) return root;
+  const folder = normalized === 'PRODUCTION' ? 'production' : normalized.toLowerCase();
+  return path.join(SHARED_ROOT, folder, 'src', 'runtime', folder, 'data', 'audit');
+}
+function availableAuditRoots() {
+  const roots = [];
+  for (const mode of REGISTRY_MODES) {
+    const candidate = modeAuditRoot(mode);
+    if (!fs.existsSync(candidate)) continue;
+    roots.push({ mode, root: candidate });
+  }
+  if (!roots.some((item) => item.root === root) && fs.existsSync(root)) roots.push({ mode: runtimeMode(), root });
+  return roots;
+}
+function mergeCountMap(target, source) {
+  for (const [key, value] of Object.entries(source || {})) target[key] = Number(target[key] || 0) + Number(value || 0);
+  return target;
+}
+function mergeUniqueArray(target, source, keyFn, limit = HISTORY_LIMIT) {
+  const map = new Map();
+  for (const item of [...(target || []), ...(source || [])]) {
+    if (item === undefined || item === null) continue;
+    const key = keyFn(item);
+    if (!key) continue;
+    map.set(key, item);
+  }
+  return [...map.values()]
+    .sort((a, b) => String(a?.timestamp || a?.observedAt || a?.joinedAt || a?.leftAt || '').localeCompare(String(b?.timestamp || b?.observedAt || b?.joinedAt || b?.leftAt || '')))
+    .slice(-limit);
+}
+function mergeGuildMembership(target, source) {
+  const next = { ...(target || {}) };
+  for (const [guildId, guild] of Object.entries(source || {})) {
+    const current = next[guildId] || {};
+    const currentLast = String(current.lastObservedAt || '');
+    const incomingLast = String(guild.lastObservedAt || '');
+    next[guildId] = {
+      ...current,
+      ...guild,
+      firstObservedAt: [current.firstObservedAt, guild.firstObservedAt].filter(Boolean).sort()[0] || null,
+      lastObservedAt: currentLast > incomingLast ? current.lastObservedAt : guild.lastObservedAt || current.lastObservedAt || null,
+      eventCount: Number(current.eventCount || 0) + Number(guild.eventCount || 0),
+      joinCount: Number(current.joinCount || 0) + Number(guild.joinCount || 0),
+      leaveCount: Number(current.leaveCount || 0) + Number(guild.leaveCount || 0),
+      eventTypes: mergeCountMap({ ...(current.eventTypes || {}) }, guild.eventTypes || {}),
+    };
+  }
+  return next;
+}
+function getUserAcrossModes(userId) {
+  const id = String(userId || '');
+  if (!id) return null;
+  let merged = null;
+  const environments = {};
+  for (const item of availableAuditRoots()) {
+    const record = readJson(path.join(item.root, 'users', `${id}.json`), null);
+    if (!record) continue;
+    environments[item.mode] = { firstObservedAt: record.firstObservedAt || null, lastObservedAt: record.lastObservedAt || null, eventCount: Number(record.eventCount || 0) };
+    if (!merged) {
+      merged = {
+        userId: id,
+        firstObservedAt: record.firstObservedAt || null,
+        lastObservedAt: record.lastObservedAt || null,
+        eventCount: 0,
+        names: [], globalNames: [], displayNames: [], nicknames: [], guilds: {},
+        eventTypes: {}, categories: {}, relations: { subject: 0, actor: 0 },
+        joinHistory: [], leaveHistory: [], roleHistory: [], moderationHistory: [], voiceHistory: [], actorHistory: [], recentEvents: [],
+      };
+    }
+    merged.firstObservedAt = [merged.firstObservedAt, record.firstObservedAt].filter(Boolean).sort()[0] || null;
+    if (record.lastObservedAt && (!merged.lastObservedAt || record.lastObservedAt > merged.lastObservedAt)) merged.lastObservedAt = record.lastObservedAt;
+    merged.eventCount += Number(record.eventCount || 0);
+    merged.names = mergeUniqueArray(merged.names, record.names, (value) => String(value).toLowerCase(), 25);
+    merged.globalNames = mergeUniqueArray(merged.globalNames, record.globalNames, (value) => String(value).toLowerCase(), 25);
+    merged.displayNames = mergeUniqueArray(merged.displayNames, record.displayNames, (value) => String(value).toLowerCase(), 25);
+    merged.nicknames = mergeUniqueArray(merged.nicknames, record.nicknames, (entry) => `${entry.guildId || ''}:${String(entry.nickname || '').toLowerCase()}`, 100);
+    merged.guilds = mergeGuildMembership(merged.guilds, record.guilds);
+    mergeCountMap(merged.eventTypes, record.eventTypes);
+    mergeCountMap(merged.categories, record.categories);
+    mergeCountMap(merged.relations, record.relations);
+    merged.joinHistory = mergeUniqueArray(merged.joinHistory, record.joinHistory, (entry) => entry.eventId || `${entry.guildId}:${entry.joinedAt}`, 100);
+    merged.leaveHistory = mergeUniqueArray(merged.leaveHistory, record.leaveHistory, (entry) => entry.eventId || `${entry.guildId}:${entry.leftAt}:${entry.type}`, 100);
+    merged.roleHistory = mergeUniqueArray(merged.roleHistory, record.roleHistory, (entry) => entry.eventId || `${entry.guildId}:${entry.timestamp}:${entry.type}`, 100);
+    merged.moderationHistory = mergeUniqueArray(merged.moderationHistory, record.moderationHistory, (entry) => entry.eventId || `${entry.guildId}:${entry.timestamp}:${entry.type}`, 100);
+    merged.voiceHistory = mergeUniqueArray(merged.voiceHistory, record.voiceHistory, (entry) => entry.eventId || `${entry.guildId}:${entry.timestamp}:${entry.type}`, 100);
+    merged.actorHistory = mergeUniqueArray(merged.actorHistory, record.actorHistory, (entry) => entry.eventId || `${entry.guildId}:${entry.timestamp}:${entry.type}`, 100);
+    merged.recentEvents = mergeUniqueArray(merged.recentEvents, record.recentEvents, (entry) => entry.eventId || `${entry.guildId}:${entry.timestamp}:${entry.type}:${entry.relation || 'subject'}`, 100);
+    if (record.bot !== undefined && record.bot !== null) merged.bot = record.bot;
+    if (record.accountCreatedAt && !merged.accountCreatedAt) merged.accountCreatedAt = record.accountCreatedAt;
+  }
+  if (!merged) return null;
+  merged.environments = environments;
+  return merged;
+}
+function searchUsersAcrossModes(query, options = {}) {
+  const value = String(query || '').trim().toLowerCase();
+  if (!value) return [];
+  const limit = Math.min(25, Math.max(1, Number(options.limit || 25)));
+  const guildId = options.guildId ? String(options.guildId) : null;
+  const found = new Map();
+  for (const item of availableAuditRoots()) {
+    const dir = path.join(item.root, 'users');
+    if (!fs.existsSync(dir)) continue;
+    for (const name of fs.readdirSync(dir).filter((file) => file.endsWith('.json'))) {
+      const userId = name.slice(0, -5);
+      const record = readJson(path.join(dir, name), null);
+      if (!record) continue;
+      if (guildId && !record.guilds?.[guildId]) continue;
+      const labels = [userId, ...(record.names || []), ...(record.globalNames || []), ...(record.displayNames || []), ...(record.nicknames || []).map((entry) => entry.nickname)].filter(Boolean);
+      if (!labels.some((label) => String(label).toLowerCase().includes(value))) continue;
+      const current = found.get(userId) || { id: userId, label: record.displayNames?.at?.(-1) || record.globalNames?.at?.(-1) || record.names?.at?.(-1) || userId, environments: new Set() };
+      current.environments.add(item.mode);
+      found.set(userId, current);
+      if (found.size >= limit) break;
+    }
+    if (found.size >= limit) break;
+  }
+  return [...found.values()].map((entry) => ({ id: entry.id, label: entry.label, environments: [...entry.environments] })).slice(0, limit);
+}
 function getGuild(guildId) { return readJson(path.join(root, 'guilds', `${String(guildId)}.json`), null); }
 function getGuildEvents(guildId, options = {}) {
   const dir = path.join(root, 'events', String(guildId || ''));
@@ -345,6 +645,8 @@ function getControlConfigPath() { return SHARED_CONFIG_FILE; }
 module.exports = {
   appendEvent,
   getUser,
+  getUserAcrossModes,
+  searchUsersAcrossModes,
   getGuild,
   getGuildEvents,
   getRoot,
@@ -354,4 +656,12 @@ module.exports = {
   updateConfig,
   publishGuildRegistry,
   getGuildRegistry,
+  runtimeMode,
+  createLiveProbeRequest,
+  getLiveProbeRequest,
+  getPendingLiveProbeRequests,
+  claimLiveProbeRequest,
+  completeLiveProbeRequest,
+  failLiveProbeRequest,
+  refreshLiveProbeLifecycle,
 };

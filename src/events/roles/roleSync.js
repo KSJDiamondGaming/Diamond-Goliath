@@ -98,23 +98,47 @@ async function runAntiNuke(handlerName, ...args) {
   }
 }
 
+async function handleRoleEvent({
+  label,
+  guild,
+  antiNukeHandler,
+  antiNukeArgs,
+  event,
+  role,
+  delayMs = 0,
+}) {
+  try {
+    if (!guild) return;
+
+    await runAntiNuke(antiNukeHandler, ...antiNukeArgs);
+
+    if (delayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+
+    await refreshGuildRoles(guild, {
+      event,
+      role,
+    });
+  } catch (error) {
+    console.error(`[roleSync] ${label} error:`, error);
+  }
+}
+
 module.exports = [
   {
     name: 'roleCreate',
 
     async execute(role) {
-      try {
-        if (!role?.guild) return;
-
-        await runAntiNuke('handleRoleCreate', role);
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-        await refreshGuildRoles(role.guild, {
-          event: 'role.created',
-          role,
-        });
-      } catch (error) {
-        console.error('[roleSync] roleCreate error:', error);
-      }
+      await handleRoleEvent({
+        label: 'roleCreate',
+        guild: role?.guild,
+        antiNukeHandler: 'handleRoleCreate',
+        antiNukeArgs: [role],
+        event: 'role.created',
+        role,
+        delayMs: 2000,
+      });
     },
   },
 
@@ -122,18 +146,14 @@ module.exports = [
     name: 'roleUpdate',
 
     async execute(oldRole, newRole) {
-      try {
-        if (!newRole?.guild) return;
-
-        await runAntiNuke('handleRoleUpdate', oldRole, newRole);
-        await refreshGuildRoles(newRole.guild, {
-          event: 'role.updated',
-          role: newRole,
-          oldRoleName: oldRole?.name || null,
-        });
-      } catch (error) {
-        console.error('[roleSync] roleUpdate error:', error);
-      }
+      await handleRoleEvent({
+        label: 'roleUpdate',
+        guild: newRole?.guild,
+        antiNukeHandler: 'handleRoleUpdate',
+        antiNukeArgs: [oldRole, newRole],
+        event: 'role.updated',
+        role: newRole,
+      });
     },
   },
 
@@ -141,17 +161,14 @@ module.exports = [
     name: 'roleDelete',
 
     async execute(role) {
-      try {
-        if (!role?.guild) return;
-
-        await runAntiNuke('handleRoleDelete', role);
-        await refreshGuildRoles(role.guild, {
-          event: 'role.deleted',
-          role,
-        });
-      } catch (error) {
-        console.error('[roleSync] roleDelete error:', error);
-      }
+      await handleRoleEvent({
+        label: 'roleDelete',
+        guild: role?.guild,
+        antiNukeHandler: 'handleRoleDelete',
+        antiNukeArgs: [role],
+        event: 'role.deleted',
+        role,
+      });
     },
   },
 ];

@@ -1,4 +1,4 @@
-// src/functions/automod/automodDm.js
+// src/core/automod/automodDm.js
 
 const { EmbedBuilder } = require('discord.js');
 

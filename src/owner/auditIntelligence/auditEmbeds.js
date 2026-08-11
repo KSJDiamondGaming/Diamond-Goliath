@@ -3,7 +3,6 @@
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, MessageFlags, StringSelectMenuBuilder } = require('discord.js');
 
 const guildIntelligenceWired = new WeakSet();
-const actorIntelligenceWired = new WeakSet();
 
 const COLORS = {
   create: 0x57F287,
@@ -271,72 +270,8 @@ function ensureGuildIntelligenceControls(client) {
   });
 }
 
-function buildActorIntelligenceEmbed(userId, stored = {}) {
-  const actions = Array.isArray(stored.actorHistory) ? stored.actorHistory : [];
-  const guilds = new Set(actions.map((item) => item.guildId).filter(Boolean));
-  const categories = {};
-  for (const item of actions) {
-    const key = String(item.category || 'system');
-    categories[key] = Number(categories[key] || 0) + 1;
-  }
-  const categorySummary = Object.entries(categories)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 8)
-    .map(([name, count]) => `• **${name}** — ${count}`)
-    .join('\n') || 'No actions recorded.';
-  const lines = actions.slice(-20).reverse().map((item) => {
-    const guild = item.guildName || item.guildId || 'Unknown guild';
-    const target = item.target?.id ? `<@${item.target.id}>` : item.target?.label || item.target?.name || item.target?.id || 'Unknown target';
-    const channel = item.channelId ? ` in <#${item.channelId}>` : '';
-    const reason = item.reason ? ` — ${String(item.reason).slice(0, 100)}` : '';
-    const operation = item.operationId ? ` • op \`${item.operationId}\`` : '';
-    return `${discordTime(item.timestamp, 'R')} • \`${item.type || 'action'}\` • **${guild}** • ${target}${channel}${reason}${operation}`;
-  });
-
-  return new EmbedBuilder()
-    .setColor(COLORS.intelligence)
-    .setTitle('👤 Actor Intelligence • Actions Performed')
-    .setDescription(lines.length ? lines.join('\n').slice(0, 4000) : 'No actions performed by this user have been recorded yet.')
-    .addFields(
-      { name: 'Actor', value: `<@${userId}>\n\`${userId}\``, inline: true },
-      { name: 'Recorded Actions', value: `\`${actions.length}\``, inline: true },
-      { name: 'Guilds Acted In', value: `\`${guilds.size}\``, inline: true },
-      { name: 'Action Categories', value: categorySummary.slice(0, 1024), inline: false },
-    )
-    .setFooter({ text: 'Goliath Actor Intelligence • Newest 20 actions shown • Owner only' })
-    .setTimestamp();
-}
-
-function ensureActorIntelligenceControls(client) {
-  if (!client || actorIntelligenceWired.has(client)) return;
-  actorIntelligenceWired.add(client);
-  client.on('interactionCreate', async (interaction) => {
-    if (String(interaction?.customId || '') !== 'owner:audit:actions' || !interaction.isButton?.()) return;
-    const security = require('../../core/security/securityCore');
-    const auditStore = require('./auditStore');
-    if (!security.isBotOwner(interaction.user?.id)) {
-      if (!interaction.replied && !interaction.deferred) await interaction.reply({ content: '❌ Owner-only control.', flags: MessageFlags.Ephemeral }).catch(() => null);
-      return;
-    }
-    const config = auditStore.getConfig();
-    if (!config.commandCenter?.guildId || String(interaction.guildId || '') !== String(config.commandCenter.guildId)) {
-      if (!interaction.replied && !interaction.deferred) await interaction.reply({ content: '❌ Actor Intelligence is only available inside your private Goliath Command Center server.', flags: MessageFlags.Ephemeral }).catch(() => null);
-      return;
-    }
-    const match = String(interaction.channel?.topic || '').match(/GOLIATH_AUDIT_USER:(\d+):(\d+)/);
-    if (!match) {
-      if (!interaction.replied && !interaction.deferred) await interaction.reply({ content: '❌ This is not a Goliath user intelligence channel.', flags: MessageFlags.Ephemeral }).catch(() => null);
-      return;
-    }
-    const userId = match[2];
-    const stored = auditStore.getUser(userId) || {};
-    await interaction.reply({ embeds: [buildActorIntelligenceEmbed(userId, stored)], flags: MessageFlags.Ephemeral, allowedMentions: { parse: [] } }).catch(() => null);
-  });
-}
-
 function buildCommandCenterHome(client, guild, config = {}) {
   ensureGuildIntelligenceControls(client);
-  ensureActorIntelligenceControls(client);
   const monitored = Object.keys(config.guilds && typeof config.guilds === 'object' ? config.guilds : {})
     .filter((guildId) => String(guildId) !== String(guild?.id || config.commandCenter?.guildId || ''))
     .length;
@@ -437,6 +372,7 @@ function buildUserIntelligenceEmbed(report, sourceGuild) {
       { name: 'Moderation History', value: `\`${summary.moderationCount || 0}\` events`, inline: true },
       { name: 'Role Changes', value: `\`${summary.roleChangeCount || 0}\``, inline: true },
       { name: 'Voice Events', value: `\`${summary.voiceEventCount || 0}\``, inline: true },
+      { name: 'Actions Performed', value: `\`${(history.actions || []).length}\``, inline: true },
       { name: 'Current Roles', value: compact(roles), inline: false },
       { name: 'Known Names', value: latestNames.length ? compact(latestNames.join(' • ')) : 'None recorded', inline: false },
     )
@@ -449,6 +385,7 @@ function buildUserIntelligenceControls() {
     new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId('owner:audit:refresh').setLabel('Refresh').setEmoji('🔄').setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId('owner:audit:deep').setLabel('Deep Scan').setEmoji('🔎').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId('owner:audit:identity').setLabel('Identity History').setEmoji('🏷️').setStyle(ButtonStyle.Primary),
       new ButtonBuilder().setCustomId('owner:audit:guilds').setLabel('Guild History').setEmoji('🏰').setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId('owner:audit:moderation').setLabel('Moderation').setEmoji('🛡️').setStyle(ButtonStyle.Secondary),
     ),
@@ -472,11 +409,13 @@ function buildUserIntelligenceSectionEmbed(report, section, sourceGuild) {
   const currentGuilds = report?.currentState?.guilds || [];
   const titleMap = {
     deep: '🔎 Deep Scan',
+    identity: '🏷️ Identity History',
     guilds: '🏰 Guild History',
     moderation: '🛡️ Moderation History',
     roles: '🎭 Role History',
     voice: '🔊 Voice History',
     timeline: '🕒 Recent Timeline',
+    actions: '👤 Actions Performed',
   };
   const embed = new EmbedBuilder()
     .setColor(COLORS.intelligence)
@@ -485,14 +424,55 @@ function buildUserIntelligenceSectionEmbed(report, section, sourceGuild) {
     .setTimestamp(new Date(report.generatedAt || Date.now()));
 
   if (section === 'deep') {
-    const guildLines = currentGuilds.map((item) => {
-      const member = item.member || {};
-      return `**${item.guildName || item.guildId}** — ${member.joinedAt ? `joined ${discordTime(member.joinedAt, 'F')}` : 'join unknown'} — ${(member.roles || []).length} roles`;
-    }).join('\n') || 'No current guild memberships visible to Goliath.';
-    embed.setDescription(`Full live + stored scan for <@${report.userId}>.`).addFields(
-      { name: 'Identity', value: compact({ profile: report.profile, summary: report.summary }, 1000), inline: false },
-      { name: 'Current Guilds', value: compact(guildLines, 1000), inline: false },
-      { name: 'Event Totals', value: compact(report.counts, 1000), inline: false },
+    const deep = report?.deep || {};
+    const presence = deep.guildPresence || {};
+    const relations = deep.relations || {};
+    const activity = deep.activity || {};
+    const environmentLines = (deep.environments || []).map((item) => `• **${item.mode}** — ${item.eventCount || 0} events • ${discordTime(item.firstObservedAt, 'd')} → ${discordTime(item.lastObservedAt, 'R')}`).join('\n') || 'No stored environment coverage.';
+    const currentStored = (presence.currentGuilds || []).map((guild) => `• **${guild.guildName || guild.guildId}** — last seen ${discordTime(guild.lastObservedAt, 'R')}`).join('\n') || 'None recorded.';
+    const formerStored = (presence.formerGuilds || []).map((guild) => `• **${guild.guildName || guild.guildId}** — left ${discordTime(guild.lastLeftAt || guild.lastObservedAt, 'R')}`).join('\n') || 'None recorded.';
+    const topTypes = (activity.topEventTypes || []).map((item) => `• \`${item.key}\` — **${item.count}**`).join('\n') || 'None recorded.';
+    const topCategories = (activity.topCategories || []).map((item) => `• \`${item.key}\` — **${item.count}**`).join('\n') || 'None recorded.';
+    const recent = (deep.recentActivity || []).slice(0, 8).map((item) => `• ${discordTime(item.timestamp, 'R')} — \`${item.type || 'event'}\` — ${item.guildName || item.guildId || 'Unknown guild'}${item.relation ? ` • ${item.relation}` : ''}`).join('\n') || 'No recent activity recorded.';
+    const latestModeration = deep.latest?.moderation ? `\`${deep.latest.moderation.type || 'moderation'}\` in **${deep.latest.moderation.guildName || deep.latest.moderation.guildId || 'Unknown guild'}** • ${discordTime(deep.latest.moderation.timestamp, 'R')}${deep.latest.moderation.reason ? `\nReason: ${String(deep.latest.moderation.reason).slice(0, 180)}` : ''}` : 'None recorded.';
+    const latestAction = deep.latest?.action ? `\`${deep.latest.action.type || 'action'}\` in **${deep.latest.action.guildName || deep.latest.action.guildId || 'Unknown guild'}** • ${discordTime(deep.latest.action.timestamp, 'R')}` : 'None recorded.';
+
+    embed.setDescription(`Cross-environment live + stored intelligence scan for <@${report.userId}>.`).addFields(
+      { name: 'Environment Coverage', value: compact(environmentLines, 1024), inline: false },
+      { name: 'Guild Presence', value: `Known: **${presence.known || 0}** • Live visible: **${presence.liveVisible || 0}**\nCurrent stored: **${presence.currentStored || 0}** • Former: **${presence.formerStored || 0}** • Unknown: **${presence.unknownStored || 0}**`, inline: false },
+      { name: 'Current Guilds', value: compact(currentStored, 1024), inline: false },
+      { name: 'Former Guilds', value: compact(formerStored, 1024), inline: false },
+      { name: 'Observed Relationship', value: `Subject events: **${relations.subjectEvents || 0}**\nActor actions: **${relations.actorActions || 0}**`, inline: true },
+      { name: 'Activity Totals', value: `Events: **${activity.totalEvents || 0}**\nJoins: **${activity.joins || 0}** • Leaves: **${activity.leaves || 0}**\nModeration: **${activity.moderation || 0}** • Roles: **${activity.roleChanges || 0}**\nVoice: **${activity.voiceEvents || 0}** • Actions: **${activity.actionsPerformed || 0}**`, inline: true },
+      { name: 'Latest Moderation', value: compact(latestModeration, 1024), inline: false },
+      { name: 'Latest Action Performed', value: compact(latestAction, 1024), inline: false },
+      { name: 'Top Event Types', value: compact(topTypes, 1024), inline: true },
+      { name: 'Top Categories', value: compact(topCategories, 1024), inline: true },
+      { name: 'Recent Cross-Environment Activity', value: compact(recent, 1024), inline: false },
+    );
+    return embed;
+  }
+
+  if (section === 'identity') {
+    const identity = report?.identity || {};
+    const current = identity.current || {};
+    const historical = identity.historical || {};
+    const counts = identity.counts || {};
+    const environments = (identity.environments || []).map((mode) => `\`${mode}\``).join(' • ') || 'None recorded';
+    const usernames = (historical.usernames || []).slice(-15).reverse().map((value) => `• ${value}`).join('\n') || 'None recorded.';
+    const globalNames = (historical.globalNames || []).slice(-15).reverse().map((value) => `• ${value}`).join('\n') || 'None recorded.';
+    const displayNames = (historical.displayNames || []).slice(-15).reverse().map((value) => `• ${value}`).join('\n') || 'None recorded.';
+    const nicknames = (historical.nicknames || []).slice(-20).reverse().map((item) => `• **${item.guildName || item.guildId || 'Unknown guild'}** — ${item.nickname}${item.observedAt ? ` • ${discordTime(item.observedAt, 'R')}` : ''}`).join('\n') || 'None recorded.';
+    const liveNicknames = (identity.liveNicknames || []).map((item) => `• **${item.guildName || item.guildId || 'Unknown guild'}** — ${item.nickname}`).join('\n') || 'None visible right now.';
+    embed.setDescription(`Cross-environment identity history for <@${report.userId}>. This reflects names Goliath has actually observed; it does not infer unobserved Discord identity changes.`).addFields(
+      { name: 'Current Identity', value: `Username: **${current.username || 'Unknown'}**\nGlobal name: **${current.globalName || 'None'}**\nDisplay name: **${current.displayName || 'Unknown'}**`, inline: false },
+      { name: 'Observed Coverage', value: `Environments: ${environments}\nAccount created: ${discordTime(identity.accountCreatedAt, 'F')}\nFirst observed: ${discordTime(identity.firstObservedAt, 'F')}\nLast observed: ${discordTime(identity.lastObservedAt, 'R')}`, inline: false },
+      { name: 'Identity Counts', value: `Usernames: **${counts.usernames || 0}** • Global names: **${counts.globalNames || 0}**\nDisplay names: **${counts.displayNames || 0}** • Stored nicknames: **${counts.nicknames || 0}**\nLive nicknames: **${counts.liveNicknames || 0}**`, inline: false },
+      { name: 'Username History', value: compact(usernames, 1024), inline: true },
+      { name: 'Global Name History', value: compact(globalNames, 1024), inline: true },
+      { name: 'Display Name History', value: compact(displayNames, 1024), inline: true },
+      { name: 'Nickname History by Guild', value: compact(nicknames, 1024), inline: false },
+      { name: 'Current Live Nicknames', value: compact(liveNicknames, 1024), inline: false },
     );
     return embed;
   }
@@ -515,6 +495,18 @@ function buildUserIntelligenceSectionEmbed(report, section, sourceGuild) {
 
   if (section === 'voice') {
     embed.setDescription(listLines(history.voice, (item) => `**${discordTime(item.timestamp, 'F')}** — ${item.guildName || item.guildId || 'Unknown guild'} — ${item.before?.channelId || 'none'} → ${item.after?.channelId || 'none'}`, 20));
+    return embed;
+  }
+
+  if (section === 'actions') {
+    embed.setDescription(listLines(history.actions, (item) => {
+      const target = item.target?.id ? `<@${item.target.id}>` : item.target?.label || item.target?.name || item.target?.id || 'Unknown target';
+      const channel = item.channelId ? ` in <#${item.channelId}>` : '';
+      const reason = item.reason ? ` — ${String(item.reason).slice(0, 100)}` : '';
+      const result = item.result ? ` — ${item.result}` : '';
+      const operation = item.operationId ? ` • op \`${item.operationId}\`` : '';
+      return `**${discordTime(item.timestamp, 'F')}** — \`${item.type || 'action'}\` — ${item.guildName || item.guildId || 'Unknown guild'} — ${target}${channel}${reason}${result}${operation}`;
+    }, 20));
     return embed;
   }
 

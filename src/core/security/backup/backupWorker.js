@@ -1,4 +1,4 @@
-// src/security/backup/backupWorker.js
+// src/core/security/backup/backupWorker.js
 
 const {
   incrementSyncAttempt,
@@ -14,10 +14,6 @@ const {
 // BACKUP WORKER
 // Goliath Background Sync Worker
 // ======================================================
-//
-// Merged from:
-// - backupWorker.js
-// - startbackupWorker.js
 //
 // Responsibilities:
 // - Background sync processing
@@ -36,9 +32,6 @@ const {
 // ======================================================
 // CONSTANTS
 // ======================================================
-
-const WORKER_VERSION =
-  '1A_SYNC_WORKER';
 
 const DEFAULT_INTERVAL_MS =
   1000 * 60 * 5;
@@ -217,7 +210,7 @@ async function processPendingSyncs() {
 // WORKER RUNTIME
 // ======================================================
 
-function startbackupWorker(
+function startBackupWorker(
   options = {}
 ) {
   const intervalMs =
@@ -266,46 +259,10 @@ function startbackupWorker(
   };
 }
 
-function stopbackupWorker() {
-  if (!interval) {
-    return {
-      stopped: false,
-
-      reason:
-        'Backup sync worker is not running.',
-    };
-  }
-
-  clearInterval(interval);
-
-  interval = null;
-
-  return {
-    stopped: true,
-  };
-}
-
-function isbackupWorkerStarted() {
-  return Boolean(interval);
-}
-
-function isWorkerRunning() {
-  return workerRunning;
-}
-
 // ======================================================
 // EXPORTS
 // ======================================================
 
 module.exports = {
-  WORKER_VERSION,
-
-  processPendingSyncs,
-  processSyncEntry,
-
-  startbackupWorker,
-  stopbackupWorker,
-
-  isbackupWorkerStarted,
-  isWorkerRunning,
+  startBackupWorker,
 };

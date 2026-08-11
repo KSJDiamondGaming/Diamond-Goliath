@@ -80,7 +80,7 @@ function getRoutingSession(interaction) { return routingSessions.get(sessionKey(
 function setRoutingSession(interaction, patch) { const next = { ...getRoutingSession(interaction), ...patch }; routingSessions.set(sessionKey(interaction), next); return next; }
 function getMonitoringSession(interaction) { return monitoringSessions.get(sessionKey(interaction)) || { sourceGuildId: null, family: 'members' }; }
 function setMonitoringSession(interaction, patch) { const next = { ...getMonitoringSession(interaction), ...patch }; monitoringSessions.set(sessionKey(interaction), next); return next; }
-function getStructureSession(interaction) { return structureSessions.get(sessionKey(interaction)) || { sourceGuildId: null }; }
+function getStructureSession(interaction) { return structureSessions.get(sessionKey(interaction)) || { sourceGuildId: null, repairResult: null }; }
 function setStructureSession(interaction, patch) { const next = { ...getStructureSession(interaction), ...patch }; structureSessions.set(sessionKey(interaction), next); return next; }
 function getIntelligenceSession(interaction) { return intelligenceSessions.get(sessionKey(interaction)) || { sourceGuildId: null, userId: null, matches: [] }; }
 function setIntelligenceSession(interaction, patch) { const next = { ...getIntelligenceSession(interaction), ...patch }; intelligenceSessions.set(sessionKey(interaction), next); return next; }
@@ -122,6 +122,29 @@ function registryGuild(client, id) {
 function guildEnvironmentLabel(guild) {
   const modes = registryEnvironments(guild);
   return modes.length ? modes.join(' • ') : (guild?.live ? 'DEV' : 'Registry');
+}
+function liveProbeCollectorLabel(result) {
+  const collector = String(result?.collectorMode || result?.environment || result?.completedBy || '').trim().toUpperCase();
+  return collector || (result?.remote ? 'REMOTE' : 'DEV');
+}
+function liveProbeStatus(result) {
+  const collector = liveProbeCollectorLabel(result);
+  const duration = Number.isFinite(Number(result?.durationMs)) ? ` • ${Math.max(0, Number(result.durationMs))}ms` : '';
+  const lifecycle = result?.lifecycleStatus ? ` • ${String(result.lifecycleStatus).toUpperCase()}` : '';
+  if (result?.started) return `🟢 **Live event probe:** executed by **${collector}**${duration}${lifecycle} via temporary hidden channel \`${result.channelName || result.channelId}\`. Expect real **Channel Created** and **Channel Deleted** reports in Guild / System Events.`;
+  switch (result?.reason) {
+    case 'remote-timeout': return `🟠 **Live event probe:** timed out waiting for **${collector}**${lifecycle}. The remote request did not reach a terminal result within the Command Center wait window; normal route delivery still ran.`;
+    case 'expired': return `🟠 **Live event probe:** request expired for **${collector}**${lifecycle} before a collector could complete it. Normal route delivery still ran.`;
+    case 'remote-failed': return `🔴 **Live event probe:** remote collector **${collector}** failed the probe${duration}${lifecycle}. Check the collector logs before retrying.`;
+    case 'registry-only': return `🟡 **Live event probe:** skipped by **${collector}**${duration}${lifecycle} — that collector does not have live access to this guild. The configured route test still ran normally.`;
+    case 'cooldown': return `🟡 **Live event probe:** skipped by **${collector}**${duration}${lifecycle} — the 15-second safety cooldown is active. Wait briefly before another live probe.`;
+    case 'missing-manage-channels': return `🔴 **Live event probe:** blocked on **${collector}**${duration}${lifecycle} — Goliath does not have **Manage Channels** in the source guild.`;
+    case 'create-failed': return result?.remote
+      ? `🔴 **Live event probe:** remote collector **${collector}** failed to create the temporary verification channel${duration}${lifecycle}. Check its guild permissions and collector logs.`
+      : `🔴 **Live event probe:** failed on **${collector}**${duration}${lifecycle} — Goliath could not create the temporary hidden verification channel.`;
+    case 'invalid-guild': return `🔴 **Live event probe:** unavailable on **${collector}**${duration}${lifecycle} — the selected guild could not be resolved for live verification.`;
+    default: return `🟠 **Live event probe:** status unavailable from **${collector}**${duration}${lifecycle}. The normal route-delivery result below is still authoritative.`;
+  }
 }
 function sourceGuildSelect(customId, placeholder, sourceGuilds, selectedId) {
   return new StringSelectMenuBuilder()
@@ -223,22 +246,37 @@ function buildMonitoringPanel(client, interaction) {
   }
   return { embeds: [embed], components: rows, allowedMentions: { parse: [] } };
 }
+function structureRepairSummary(result) {
+  if (!result?.before || !result?.after) return null;
+  const beforeIssues = Array.isArray(result.before.issues) ? result.before.issues : [];
+  const afterIssues = Array.isArray(result.after.issues) ? result.after.issues : [];
+  const repaired = beforeIssues.filter((issue) => !afterIssues.includes(issue));
+  const lines = [
+    result.after.healthy ? '🟢 **Repair complete — structure is healthy.**' : '🟠 **Repair completed with manual attention still required.**',
+    `Before: **${beforeIssues.length}** issue(s) • After: **${afterIssues.length}** issue(s)`,
+  ];
+  if (repaired.length) lines.push('', '**Repaired automatically**', ...repaired.slice(0, 6).map((issue) => `✅ ${issue}`));
+  if (afterIssues.length) lines.push('', '**Still requires attention**', ...afterIssues.slice(0, 6).map((issue) => `⚠️ ${issue}`));
+  if (!repaired.length && !afterIssues.length) lines.push('', 'No faults remained after the repair/rescan.');
+  return lines.join('\n').slice(0, 1024);
+}
 async function buildStructurePanel(client, interaction) {
   const config = auditStore.getConfig();
   const session = getStructureSession(interaction);
-  const sourceGuilds = sourceGuildOptions(client, config.commandCenter?.guildId);
-  const selectedGuild = configuredGuild(client, session.sourceGuildId);
+  const sourceGuilds = registryGuildOptions(client, config.commandCenter?.guildId);
+  const selectedGuild = registryGuild(client, session.sourceGuildId);
   const report = selectedGuild ? await auditRouter.inspectStructure(client, selectedGuild) : null;
   const status = !report ? 'Select a guild first.' : report.healthy ? '🟢 Healthy' : report.systemChannel ? '🟠 Attention required' : '⚪ Not provisioned';
   const placement = !report?.systemChannel ? 'Not provisioned' : report.systemChannel.parentId ? `<#${report.systemChannel.id}> inside a category` : `<#${report.systemChannel.id}> uncategorised`;
   const issues = report?.issues?.length ? report.issues.map((issue) => `• ${issue}`).join('\n') : 'None';
   const categories = report?.categories?.length ? report.categories.map((category) => `• **${category.name}** — ${category.childCount} channel(s)`).join('\n') : 'None / owner-managed placement';
+  const repairSummary = structureRepairSummary(session.repairResult);
   const embed = new EmbedBuilder()
     .setColor(report?.healthy ? 0x57F287 : report?.systemChannel ? 0xFEE75C : 0x5865F2)
     .setTitle('📁 Audit Intelligence Structure')
     .setDescription(selectedGuild ? `Inspect and safely provision/repair **${selectedGuild.name}**. Goliath identifies resources by internal markers, so renamed or moved channels remain valid.` : 'Choose a source guild to inspect or provision.')
     .addFields(
-      { name: 'Source Guild', value: selectedGuild ? `**${selectedGuild.name}**\n\`${selectedGuild.id}\`` : 'Not selected', inline: true },
+      { name: 'Source Guild', value: selectedGuild ? `**${selectedGuild.name}**\n\`${selectedGuild.id}\`\n${guildEnvironmentLabel(selectedGuild)}` : 'Not selected', inline: true },
       { name: 'Status', value: status, inline: true },
       { name: 'Guild Events', value: placement, inline: false },
       { name: 'User Intelligence Channels', value: report ? String(report.userChannelCount) : '—', inline: true },
@@ -246,6 +284,7 @@ async function buildStructurePanel(client, interaction) {
       { name: 'Missing Routes', value: report ? String(report.missingRouteCount) : '—', inline: true },
       { name: 'Detected Categories', value: categories.slice(0, 1024), inline: false },
       { name: 'Issues', value: issues.slice(0, 1024), inline: false },
+      ...(repairSummary ? [{ name: 'Last Repair Result', value: repairSummary, inline: false }] : []),
     )
     .setFooter({ text: 'Goliath Command Center • Structure • Owner only • Repair never renames or moves valid resources' });
   const rows = [];
@@ -279,21 +318,23 @@ function intelligenceSearchModal() {
 async function buildIntelligencePanel(client, interaction) {
   const config = auditStore.getConfig();
   const session = getIntelligenceSession(interaction);
-  const sourceGuilds = sourceGuildOptions(client, config.commandCenter?.guildId);
-  const sourceGuild = configuredGuild(client, session.sourceGuildId);
+  const sourceGuilds = registryGuildOptions(client, config.commandCenter?.guildId);
+  const sourceGuild = registryGuild(client, session.sourceGuildId);
   const report = sourceGuild && session.userId ? await buildReport(client, session.userId) : null;
+  const liveGuild = sourceGuild ? configuredGuild(client, sourceGuild.id) : null;
   const embed = new EmbedBuilder()
     .setColor(0x5865F2)
     .setTitle('🔎 User Intelligence Lookup')
     .setDescription(sourceGuild
-      ? 'Search this guild by Discord **user ID or username**. Goliath combines live Discord state with its own stored Audit Intelligence history.'
+      ? `Search **${sourceGuild.name}** by Discord **user ID or username**. Goliath combines live Discord state when available with stored Audit Intelligence from every environment that has observed this guild.`
       : 'Choose the source guild that contains, or previously contained, the user you want to investigate.')
     .addFields(
-      { name: 'Source Guild', value: sourceGuild ? `**${sourceGuild.name}**\n\`${sourceGuild.id}\`` : 'Not selected', inline: true },
+      { name: 'Source Guild', value: sourceGuild ? `**${sourceGuild.name}**\n\`${sourceGuild.id}\`\n${guildEnvironmentLabel(sourceGuild)}` : 'Not selected', inline: true },
+      { name: 'Live Access', value: sourceGuild ? (liveGuild ? '🟢 DEV has live access' : '🟡 Registry / stored intelligence') : '—', inline: true },
       { name: 'Selected User', value: session.userId ? `<@${session.userId}>\n\`${session.userId}\`` : 'Not selected', inline: true },
-      { name: 'Search Results', value: session.matches?.length ? `${session.matches.length} matching member(s)` : 'None / not searched', inline: true },
+      { name: 'Search Results', value: session.matches?.length ? `${session.matches.length} matching user(s)` : 'None / not searched', inline: true },
     )
-    .setFooter({ text: 'Goliath Command Center • User Intelligence • Owner only' });
+    .setFooter({ text: 'Goliath Command Center • User Intelligence • Cross-mode stored search • Owner only' });
   const rows = [];
   if (sourceGuilds.length) rows.push(new ActionRowBuilder().addComponents(sourceGuildSelect('owner:commandcenter:intelligence:guild', '1. Select source guild', sourceGuilds, session.sourceGuildId)));
   if (sourceGuild) {
@@ -311,7 +352,7 @@ async function buildIntelligencePanel(client, interaction) {
       .addOptions(session.matches.slice(0, 25).map((match) => ({
         label: String(match.label || match.id).slice(0, 100),
         value: match.id,
-        description: `User ID: ${match.id}`.slice(0, 100),
+        description: `${match.environments?.length ? `${match.environments.join(' • ')} • ` : ''}User ID: ${match.id}`.slice(0, 100),
         default: match.id === session.userId,
       })));
     rows.push(new ActionRowBuilder().addComponents(resultSelect));
@@ -325,18 +366,51 @@ async function buildIntelligencePanel(client, interaction) {
 async function searchIntelligenceUser(client, sourceGuild, query) {
   const value = String(query || '').trim();
   if (!sourceGuild || !value) return [];
-  if (/^\d{16,22}$/.test(value)) {
-    const member = await sourceGuild.members.fetch(value).catch(() => null);
-    if (member) return [{ id: member.id, label: intelligenceMemberLabel(member) }];
-    const user = await client.users.fetch(value).catch(() => null);
-    return user ? [{ id: user.id, label: user.globalName || user.username || user.id }] : [{ id: value, label: `Stored user ${value}` }];
+  const merged = new Map();
+  const add = (entry) => {
+    if (!entry?.id) return;
+    const current = merged.get(String(entry.id)) || { id: String(entry.id), label: entry.label || String(entry.id), environments: [] };
+    if (entry.label && (!current.label || current.label === current.id)) current.label = entry.label;
+    current.environments = [...new Set([...(current.environments || []), ...(entry.environments || [])])];
+    merged.set(current.id, current);
+  };
+  for (const entry of auditStore.searchUsersAcrossModes?.(value, { guildId: sourceGuild.id, limit: 25 }) || []) add(entry);
+  const liveGuild = configuredGuild(client, sourceGuild.id);
+  if (liveGuild) {
+    if (/^\d{16,22}$/.test(value)) {
+      const member = await liveGuild.members.fetch(value).catch(() => null);
+      if (member) add({ id: member.id, label: intelligenceMemberLabel(member), environments: ['DEV'] });
+    } else {
+      const members = await liveGuild.members.search({ query: value, limit: 25 }).catch(() => null);
+      for (const member of members?.values?.() || []) add({ id: member.id, label: intelligenceMemberLabel(member), environments: ['DEV'] });
+    }
   }
-  const members = await sourceGuild.members.search({ query: value, limit: 25 }).catch(() => null);
-  if (!members?.size) return [];
-  return [...members.values()].map((member) => ({ id: member.id, label: intelligenceMemberLabel(member) }));
+  if (/^\d{16,22}$/.test(value) && !merged.has(value)) {
+    const stored = auditStore.getUserAcrossModes?.(value);
+    if (stored?.guilds?.[sourceGuild.id]) add({ id: value, label: stored.displayNames?.at?.(-1) || stored.globalNames?.at?.(-1) || stored.names?.at?.(-1) || `Stored user ${value}`, environments: Object.keys(stored.environments || {}) });
+  }
+  return [...merged.values()].slice(0, 25);
 }
 
-async function buildHealthPanel(client) {
+function healthRepairSummary(result) {
+  if (!result?.before || !result?.after) return null;
+  const beforeIssues = Array.isArray(result.before.issues) ? result.before.issues : [];
+  const afterIssues = Array.isArray(result.after.issues) ? result.after.issues : [];
+  const repairedGuilds = (result.actions || []).filter((action) => action.type === 'guild-structure' && action.repaired).length;
+  const failedGuilds = (result.actions || []).filter((action) => action.type === 'guild-structure' && !action.repaired).length;
+  const commandCenterAction = (result.actions || []).find((action) => action.type === 'command-center');
+  const lines = [
+    result.after.healthy ? '🟢 **Health repair complete — all critical checks are passing.**' : result.improved ? '🟡 **Health repair improved the system, but attention is still required.**' : '🟠 **Health repair completed, but no measurable health improvement was confirmed.**',
+    `Critical issues: **${beforeIssues.length} → ${afterIssues.length}**`,
+    `Structural failures: **${result.before.counts?.structuralFailures || 0} → ${result.after.counts?.structuralFailures || 0}**`,
+  ];
+  if (commandCenterAction) lines.push(`Command Center: ${commandCenterAction.repaired ? '✅ repaired' : '⚠️ repair attempted'}`);
+  if (repairedGuilds || failedGuilds) lines.push(`Guild structures: **${repairedGuilds} repaired**${failedGuilds ? ` • **${failedGuilds} still unhealthy**` : ''}`);
+  const remaining = afterIssues.slice(0, 5);
+  if (remaining.length) lines.push('', '**Still requires attention**', ...remaining.map((issue) => `⚠️ ${issue}`));
+  return lines.join('\n').slice(0, 1024);
+}
+async function buildHealthPanel(client, repairResult = null) {
   const report = await auditRouter.inspectHealth(client);
   const commandCenter = report.commandCenter || {};
   const permissions = commandCenter.permissions || {};
@@ -346,6 +420,7 @@ async function buildHealthPanel(client) {
     .filter((guild) => !guild.healthy)
     .slice(0, 12)
     .map((guild) => `• **${guild.guildName || guild.guildId}** — ${guild.issues.join('; ')}`);
+  const repairSummary = healthRepairSummary(repairResult);
   const embed = new EmbedBuilder()
     .setColor(report.healthy ? 0x57F287 : 0xED4245)
     .setTitle('🩺 Audit Intelligence Health')
@@ -375,11 +450,13 @@ async function buildHealthPanel(client) {
       ].join('\n'), inline: false },
       { name: 'Critical Issues', value: issueLines.join('\n').slice(0, 1024), inline: false },
       { name: 'Guild Attention', value: (guildIssueLines.length ? guildIssueLines.join('\n') : 'None').slice(0, 1024), inline: false },
+      ...(repairSummary ? [{ name: 'Last Health Repair', value: repairSummary, inline: false }] : []),
     )
     .setFooter({ text: `Goliath Command Center • Health • Owner only • Checked ${report.checkedAt || 'now'}` });
+  const repairButton = new ButtonBuilder().setCustomId('owner:commandcenter:health:repair').setLabel('Repair Health').setEmoji('🛠️').setStyle(report.healthy ? ButtonStyle.Secondary : ButtonStyle.Success).setDisabled(report.healthy);
   const rescanButton = new ButtonBuilder().setCustomId('owner:commandcenter:health:rescan').setLabel('Rescan Health').setStyle(ButtonStyle.Primary);
   const backButton = new ButtonBuilder().setCustomId('owner:commandcenter:refresh').setLabel('Back / Refresh Home').setStyle(ButtonStyle.Secondary);
-  return { embeds: [embed], components: [new ActionRowBuilder().addComponents(rescanButton, backButton)], allowedMentions: { parse: [] } };
+  return { embeds: [embed], components: [new ActionRowBuilder().addComponents(repairButton, rescanButton, backButton)], allowedMentions: { parse: [] } };
 }
 
 async function ensurePrivateCommandRegistration(client, guildId) {
@@ -497,9 +574,11 @@ async function handleCommandCenterInteraction(client, interaction) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch(() => null);
     await auditRouter.ensureReportRoutes(client, sourceGuild).catch(() => null);
     const categoryByRoute = { guild: 'guild', members: 'member', moderation: 'moderation', security: 'security', messages: 'message', voice: 'voice', roles: 'role', goliath: 'goliath', default: 'guild' };
-    const syntheticEvent = { type: `test.${session.routeKey}`, category: categoryByRoute[session.routeKey] || 'guild' };
+    const syntheticEvent = { type: `routing-check.${session.routeKey}`, category: categoryByRoute[session.routeKey] || 'guild' };
     const destination = await auditRouter.configuredRouteChannel(client, sourceGuild, syntheticEvent).catch(() => null);
     if (!destination?.isTextBased?.()) { await interaction.editReply({ content: '❌ No usable destination exists for that report family. Use Create / Repair Report Channels first.' }).catch(() => null); return true; }
+    const probe = await auditRouter.runLiveEndToEndProbe(client, sourceGuild).catch((error) => { console.warn('[Audit Intelligence] live routing probe failed:', error?.message || error); return { started: false, reason: 'create-failed' }; });
+    const probeStatus = liveProbeStatus(probe);
     const familyLabel = ROUTE_LABELS[session.routeKey] || ROUTE_LABELS.default;
     const testEmbed = new EmbedBuilder()
       .setColor(0x57F287)
@@ -511,13 +590,16 @@ async function handleCommandCenterInteraction(client, interaction) {
         { name: 'Destination', value: `<#${destination.id}>`, inline: true },
         { name: 'Requested By', value: `<@${interaction.user.id}>`, inline: true },
         { name: 'Environment Coverage', value: guildEnvironmentLabel(sourceGuild), inline: true },
-        { name: 'Status', value: '🟢 Route working', inline: true },
+        { name: 'Probe Collector', value: `**${liveProbeCollectorLabel(probe)}**${Number.isFinite(Number(probe?.durationMs)) ? `\n${Math.max(0, Number(probe.durationMs))}ms` : ''}`, inline: true },
+        { name: 'Route Status', value: '🟢 Route resolved', inline: true },
+        { name: 'Live End-to-End Probe', value: probeStatus, inline: false },
       )
       .setFooter({ text: 'Goliath Audit Intelligence • Test report only' })
       .setTimestamp();
     const sent = await destination.send({ embeds: [testEmbed], allowedMentions: { parse: [] } }).catch((error) => { console.warn('[Audit Intelligence] test report delivery failed:', error?.message || error); return null; });
     const link = sent ? `https://discord.com/channels/${interaction.guildId}/${destination.id}/${sent.id}` : null;
-    await interaction.editReply({ content: sent ? `✅ Test report delivered to <#${destination.id}>.${link ? `\n${link}` : ''}` : '❌ Goliath could resolve the route but could not send into the destination channel.' }).catch(() => null);
+    const deliveryStatus = sent ? `✅ **Normal route delivery:** test report delivered to <#${destination.id}>.${link ? `\n${link}` : ''}` : '❌ **Normal route delivery:** Goliath resolved the route but could not send into the destination channel.';
+    await interaction.editReply({ content: `${deliveryStatus}\n\n${probeStatus}` }).catch(() => null);
     return true;
   }
   if (customId === 'owner:commandcenter:routing:reset' && interaction.isButton?.()) {
@@ -545,20 +627,21 @@ async function handleCommandCenterInteraction(client, interaction) {
     auditStore.updateConfig({ guilds: { [session.sourceGuildId]: { ...existing, enabled: true, monitoring } } }); await interaction.update(buildMonitoringPanel(client, interaction)).catch(() => null); return true;
   }
   if (customId === 'owner:commandcenter:structure' && interaction.isButton?.()) {
-    structureSessions.set(sessionKey(interaction), { sourceGuildId: null });
+    structureSessions.set(sessionKey(interaction), { sourceGuildId: null, repairResult: null });
     await interaction.reply({ ...(await buildStructurePanel(client, interaction)), flags: MessageFlags.Ephemeral }).catch(() => null); return true;
   }
   if (customId === 'owner:commandcenter:structure:guild' && interaction.isStringSelectMenu?.()) {
-    const sourceGuildId = String(interaction.values?.[0] || ''); setStructureSession(interaction, { sourceGuildId });
+    const sourceGuildId = String(interaction.values?.[0] || ''); setStructureSession(interaction, { sourceGuildId, repairResult: null });
     const current = auditStore.getConfig(); const existing = current.guilds?.[sourceGuildId] || {};
     auditStore.updateConfig({ guilds: { [sourceGuildId]: { enabled: existing.enabled !== false, mode: existing.mode || 'auto', ...existing } } });
     await interaction.update(await buildStructurePanel(client, interaction)).catch(() => null); return true;
   }
-  if (customId === 'owner:commandcenter:structure:rescan' && interaction.isButton?.()) { await interaction.update(await buildStructurePanel(client, interaction)).catch(() => null); return true; }
+  if (customId === 'owner:commandcenter:structure:rescan' && interaction.isButton?.()) { setStructureSession(interaction, { repairResult: null }); await interaction.update(await buildStructurePanel(client, interaction)).catch(() => null); return true; }
   if (customId === 'owner:commandcenter:structure:repair' && interaction.isButton?.()) {
-    const session = getStructureSession(interaction); const sourceGuild = configuredGuild(client, session.sourceGuildId); if (!sourceGuild) return true;
+    const session = getStructureSession(interaction); const sourceGuild = registryGuild(client, session.sourceGuildId); if (!sourceGuild) return true;
     await interaction.deferUpdate().catch(() => null);
-    await auditRouter.repairStructure(client, sourceGuild);
+    const repairResult = await auditRouter.repairStructure(client, sourceGuild).catch((error) => { console.warn('[Audit Intelligence] structure repair failed:', error?.message || error); return null; });
+    setStructureSession(interaction, { repairResult });
     await interaction.editReply(await buildStructurePanel(client, interaction)).catch(() => null); return true;
   }
   if (customId === 'owner:commandcenter:intelligence' && interaction.isButton?.()) {
@@ -576,8 +659,8 @@ async function handleCommandCenterInteraction(client, interaction) {
   }
   if (customId === 'owner:commandcenter:intelligence:search-submit' && interaction.isModalSubmit?.()) {
     const session = getIntelligenceSession(interaction);
-    const sourceGuild = configuredGuild(client, session.sourceGuildId);
-    if (!sourceGuild) { await interaction.reply({ content: '❌ The selected source guild is no longer available.', flags: MessageFlags.Ephemeral }).catch(() => null); return true; }
+    const sourceGuild = registryGuild(client, session.sourceGuildId);
+    if (!sourceGuild) { await interaction.reply({ content: '❌ The selected source guild is no longer known to Goliath.', flags: MessageFlags.Ephemeral }).catch(() => null); return true; }
     const query = interaction.fields.getTextInputValue('query');
     const matches = await searchIntelligenceUser(client, sourceGuild, query);
     const userId = matches.length === 1 ? matches[0].id : null;
@@ -594,16 +677,27 @@ async function handleCommandCenterInteraction(client, interaction) {
   }
   if (customId === 'owner:commandcenter:intelligence:channel' && interaction.isButton?.()) {
     const session = getIntelligenceSession(interaction);
-    const sourceGuild = configuredGuild(client, session.sourceGuildId);
+    const sourceGuild = registryGuild(client, session.sourceGuildId);
     if (!sourceGuild || !session.userId) return true;
-    const member = await sourceGuild.members.fetch(session.userId).catch(() => null);
-    const user = member?.user || await client.users.fetch(session.userId).catch(() => ({ id: session.userId, username: `user-${String(session.userId).slice(-6)}` }));
+    const liveGuild = configuredGuild(client, sourceGuild.id);
+    const member = liveGuild ? await liveGuild.members.fetch(session.userId).catch(() => null) : null;
+    const stored = auditStore.getUserAcrossModes?.(session.userId);
+    const user = member?.user || await client.users.fetch(session.userId).catch(() => null) || {
+      id: session.userId,
+      username: stored?.names?.at?.(-1) || `user-${String(session.userId).slice(-6)}`,
+      globalName: stored?.globalNames?.at?.(-1) || null,
+    };
     const channel = await auditRouter.ensureUserAuditChannel(client, sourceGuild, { user });
     const link = channel ? `https://discord.com/channels/${interaction.guildId}/${channel.id}` : null;
     await interaction.reply({ content: link ? `✅ Intelligence channel ready: ${link}` : '❌ Intelligence channel could not be prepared.', flags: MessageFlags.Ephemeral }).catch(() => null); return true;
   }
   if (customId === 'owner:commandcenter:health' && interaction.isButton?.()) {
     await interaction.reply({ ...(await buildHealthPanel(client)), flags: MessageFlags.Ephemeral }).catch(() => null); return true;
+  }
+  if (customId === 'owner:commandcenter:health:repair' && interaction.isButton?.()) {
+    await interaction.deferUpdate().catch(() => null);
+    const repairResult = await auditRouter.repairHealth(client).catch((error) => { console.warn('[Audit Intelligence] health repair failed:', error?.message || error); return null; });
+    await interaction.editReply(await buildHealthPanel(client, repairResult)).catch(() => null); return true;
   }
   if (customId === 'owner:commandcenter:health:rescan' && interaction.isButton?.()) {
     await interaction.deferUpdate().catch(() => null);
@@ -666,8 +760,8 @@ async function handleOwnerAuditInteraction(client, interaction) {
   if (!security.isBotOwner(interaction.user?.id)) { if (!interaction.replied && !interaction.deferred) await interaction.reply({ content: '❌ Owner-only control.', flags: MessageFlags.Ephemeral }).catch(() => null); return true; }
   const context = auditChannelContext(interaction.channel);
   if (!context) { if (!interaction.replied && !interaction.deferred) await interaction.reply({ content: '❌ This is not a Goliath user intelligence channel.', flags: MessageFlags.Ephemeral }).catch(() => null); return true; }
-  const sourceGuild = client.guilds.cache.get(context.sourceGuildId) || await client.guilds.fetch(context.sourceGuildId).catch(() => null);
-  if (!sourceGuild) { if (!interaction.replied && !interaction.deferred) await interaction.reply({ content: '❌ Source guild is not currently available to Goliath.', flags: MessageFlags.Ephemeral }).catch(() => null); return true; }
+  const sourceGuild = registryGuild(client, context.sourceGuildId);
+  if (!sourceGuild) { if (!interaction.replied && !interaction.deferred) await interaction.reply({ content: '❌ Source guild is no longer known to Goliath.', flags: MessageFlags.Ephemeral }).catch(() => null); return true; }
   if (customId === 'owner:audit:refresh') {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch(() => null);
     const refreshed = await auditRouter.refreshUserSummary(client, sourceGuild, interaction.channel, context.userId, true);
@@ -675,7 +769,7 @@ async function handleOwnerAuditInteraction(client, interaction) {
     return true;
   }
   const section = customId.slice('owner:audit:'.length);
-  if (!['deep', 'guilds', 'moderation', 'roles', 'voice', 'timeline'].includes(section)) return false;
+  if (!['deep', 'identity', 'guilds', 'moderation', 'roles', 'voice', 'timeline', 'actions'].includes(section)) return false;
   await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch(() => null);
   const report = await buildReport(client, context.userId);
   const embed = buildUserIntelligenceSectionEmbed(report, section, sourceGuild);

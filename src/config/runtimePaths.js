@@ -26,27 +26,8 @@ function resolveBotMode(botMode = process.env.BOT_MODE) {
  * Local installs follow the same PROJECT_ROOT/src/runtime/<mode> layout.
  * Do not move guild/runtime data to a shared parent GoliathData directory.
  */
-function getPersistentDataRoot() {
-  return DEFAULT_DATA_ROOT;
-}
-
-function getLegacyRuntimeRoot(botMode = process.env.BOT_MODE) {
-  return path.join(DEFAULT_DATA_ROOT, resolveBotMode(botMode));
-}
-
-/*
- * Compatibility shim for callers that still use the old migration helper.
- * There is no migration anymore; the canonical runtime root is already the
- * deployment-local src/runtime/<mode> directory.
- */
-function migrateLegacyRuntime(botMode = process.env.BOT_MODE) {
-  return getLegacyRuntimeRoot(botMode);
-}
-
-/* ---------------- ROOT ---------------- */
-
 function getRuntimeRoot(botMode = process.env.BOT_MODE) {
-  return getLegacyRuntimeRoot(botMode);
+  return path.join(DEFAULT_DATA_ROOT, resolveBotMode(botMode));
 }
 
 /* ---------------- PATHS ---------------- */
@@ -114,9 +95,6 @@ function resolveRuntimePath(
 module.exports = {
   PROJECT_ROOT,
   DEFAULT_DATA_ROOT,
-  getPersistentDataRoot,
-  getLegacyRuntimeRoot,
-  migrateLegacyRuntime,
   resolveBotMode,
   getRuntimeRoot,
   getRuntimePaths,

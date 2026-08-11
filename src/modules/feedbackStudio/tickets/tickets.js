@@ -385,7 +385,7 @@ let ticketStoreApi;
     saveGuildSection,
     updateGuildSection,
   } = require('../../../core/guild/guildManager');
-  const planLimitManager = require('../../../server/billing/planLimitManager');
+  const planLimitManager = require('../../../core/billing/planLimitManager');
 
   const {
     DEFAULT_TICKET_SETTINGS,

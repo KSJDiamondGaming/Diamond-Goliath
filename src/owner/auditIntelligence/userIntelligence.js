@@ -81,9 +81,112 @@ function summariseStored(stored) {
   };
 }
 
+function topCountEntries(map, limit = 8) {
+  return Object.entries(map || {})
+    .map(([key, value]) => ({ key, count: Number(value || 0) }))
+    .filter((item) => item.count > 0)
+    .sort((a, b) => b.count - a.count || String(a.key).localeCompare(String(b.key)))
+    .slice(0, limit);
+}
+
+function buildIdentitySummary(stored, liveUser, liveGuilds) {
+  const usernames = [...new Set((stored.names || []).filter(Boolean))];
+  const globalNames = [...new Set((stored.globalNames || []).filter(Boolean))];
+  const displayNames = [...new Set((stored.displayNames || []).filter(Boolean))];
+  const nicknames = [...(stored.nicknames || [])]
+    .filter((entry) => entry?.nickname)
+    .sort((a, b) => String(a?.observedAt || '').localeCompare(String(b?.observedAt || '')));
+  const liveNicknames = liveGuilds
+    .filter((entry) => entry?.member?.nickname)
+    .map((entry) => ({
+      guildId: entry.guildId,
+      guildName: entry.guildName,
+      nickname: entry.member.nickname,
+      observedAt: null,
+      live: true,
+    }));
+  const environments = Object.keys(stored.environments || {});
+  return {
+    current: {
+      username: liveUser?.username || usernames.at?.(-1) || null,
+      globalName: liveUser?.globalName || globalNames.at?.(-1) || null,
+      displayName: liveUser?.displayName || displayNames.at?.(-1) || null,
+    },
+    historical: {
+      usernames,
+      globalNames,
+      displayNames,
+      nicknames,
+    },
+    liveNicknames,
+    counts: {
+      usernames: usernames.length,
+      globalNames: globalNames.length,
+      displayNames: displayNames.length,
+      nicknames: nicknames.length,
+      liveNicknames: liveNicknames.length,
+    },
+    environments,
+    firstObservedAt: stored.firstObservedAt || null,
+    lastObservedAt: stored.lastObservedAt || null,
+    accountCreatedAt: liveUser?.accountCreatedAt || stored.accountCreatedAt || null,
+  };
+}
+
+function buildDeepSummary(stored, liveGuilds) {
+  const guilds = Object.values(stored.guilds || {});
+  const currentStored = guilds.filter((guild) => guild.currentMember === true);
+  const formerStored = guilds.filter((guild) => guild.currentMember === false);
+  const unknownStored = guilds.filter((guild) => guild.currentMember !== true && guild.currentMember !== false);
+  const environments = Object.entries(stored.environments || {}).map(([mode, details]) => ({
+    mode,
+    firstObservedAt: details?.firstObservedAt || null,
+    lastObservedAt: details?.lastObservedAt || null,
+    eventCount: Number(details?.eventCount || 0),
+  }));
+  const recentActivity = [...(stored.recentEvents || [])]
+    .sort((a, b) => String(b?.timestamp || '').localeCompare(String(a?.timestamp || '')))
+    .slice(0, 12);
+  const moderation = stored.moderationHistory || [];
+  const actions = stored.actorHistory || [];
+  return {
+    environments,
+    guildPresence: {
+      known: guilds.length,
+      liveVisible: liveGuilds.length,
+      currentStored: currentStored.length,
+      formerStored: formerStored.length,
+      unknownStored: unknownStored.length,
+      currentGuilds: currentStored.slice(-10),
+      formerGuilds: formerStored.slice(-10),
+    },
+    relations: {
+      subjectEvents: Number(stored.relations?.subject || 0),
+      actorActions: Number(stored.relations?.actor || 0),
+    },
+    activity: {
+      totalEvents: Number(stored.eventCount || 0),
+      joins: (stored.joinHistory || []).length,
+      leaves: (stored.leaveHistory || []).length,
+      moderation: moderation.length,
+      roleChanges: (stored.roleHistory || []).length,
+      voiceEvents: (stored.voiceHistory || []).length,
+      actionsPerformed: actions.length,
+      topEventTypes: topCountEntries(stored.eventTypes, 8),
+      topCategories: topCountEntries(stored.categories, 8),
+    },
+    latest: {
+      moderation: moderation.at?.(-1) || null,
+      action: actions.at?.(-1) || null,
+      event: recentActivity[0] || null,
+    },
+    recentActivity,
+  };
+}
+
 async function buildReport(client, userId) {
   const id = String(userId);
-  const stored = auditStore.getUser(id) || {
+  const stored = auditStore.getUserAcrossModes?.(id) || auditStore.getUser(id) || {
     userId: id,
     eventCount: 0,
     guilds: {},
@@ -95,6 +198,7 @@ async function buildReport(client, userId) {
     roleHistory: [],
     moderationHistory: [],
     voiceHistory: [],
+    actorHistory: [],
     recentEvents: [],
   };
   const liveGuilds = [];
@@ -133,6 +237,8 @@ async function buildReport(client, userId) {
       accountCreatedAt: stored.accountCreatedAt || null,
     },
     summary: summariseStored(stored),
+    identity: buildIdentitySummary(stored, liveUser, liveGuilds),
+    deep: buildDeepSummary(stored, liveGuilds),
     currentState: {
       knownToDiscord: Boolean(liveUser),
       guilds: liveGuilds,
@@ -147,6 +253,7 @@ async function buildReport(client, userId) {
       roles: stored.roleHistory || [],
       moderation: stored.moderationHistory || [],
       voice: stored.voiceHistory || [],
+      actions: stored.actorHistory || [],
       recentEvents: stored.recentEvents || [],
     },
     counts: {
@@ -154,6 +261,7 @@ async function buildReport(client, userId) {
       byCategory: stored.categories || {},
       byRelation: stored.relations || { subject: 0, actor: 0 },
     },
+    environments: stored.environments || {},
     stored,
     generatedAt: new Date().toISOString(),
   };

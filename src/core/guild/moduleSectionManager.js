@@ -165,8 +165,6 @@ function updateModuleSection(guildId, moduleName, updater, fallback = {}, guildO
 }
 
 module.exports = {
-  getModules,
-  ensureModuleSection,
   getModuleSection,
   saveModuleSection,
   updateModuleSection,
