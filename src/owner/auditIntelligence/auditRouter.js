@@ -310,17 +310,31 @@ async function runLiveEndToEndProbe(client, sourceGuild) {
   if (!targetMode) return { started: false, reason: 'registry-only' };
   const request = auditStore.createLiveProbeRequest?.(guildId, targetMode, security.getBotOwnerId?.() || null);
   if (!request?.id) return { started: false, reason: 'registry-only' };
+  const terminalResult = (current) => {
+    const status = String(current?.status || '').toLowerCase();
+    const environment = current?.completedBy || current?.failedBy || current?.claimedBy || targetMode;
+    if (status === 'completed') {
+      const result = current.result && typeof current.result === 'object' ? current.result : { started: false, reason: 'create-failed' };
+      return { ...result, remote: true, environment, requestId: request.id, lifecycleStatus: status, channelName: result.started && result.channelName ? `${result.channelName} (${environment})` : result.channelName };
+    }
+    if (status === 'failed') {
+      const result = current.result && typeof current.result === 'object' ? current.result : { started: false, reason: 'remote-failed' };
+      return { ...result, started: false, reason: result.reason || 'remote-failed', remote: true, environment, requestId: request.id, lifecycleStatus: status };
+    }
+    if (status === 'expired') return { started: false, reason: 'expired', remote: true, environment, requestId: request.id, lifecycleStatus: status };
+    return null;
+  };
   const deadline = Date.now() + REMOTE_LIVE_PROBE_WAIT_MS;
   while (Date.now() < deadline) {
     const current = auditStore.getLiveProbeRequest?.(request.id);
-    if (current?.status === 'completed') {
-      const result = current.result && typeof current.result === 'object' ? current.result : { started: false, reason: 'create-failed' };
-      const environment = current.completedBy || targetMode;
-      return { ...result, remote: true, environment, requestId: request.id, channelName: result.started && result.channelName ? `${result.channelName} (${environment})` : result.channelName };
-    }
+    const terminal = terminalResult(current);
+    if (terminal) return terminal;
     await probeWait(REMOTE_LIVE_PROBE_POLL_MS);
   }
-  return { started: false, reason: 'registry-only', remote: true, environment: targetMode, requestId: request.id };
+  const current = auditStore.getLiveProbeRequest?.(request.id);
+  const terminal = terminalResult(current);
+  if (terminal) return terminal;
+  return { started: false, reason: 'remote-timeout', remote: true, environment: current?.claimedBy || targetMode, requestId: request.id, lifecycleStatus: current?.status || 'pending' };
 }
 async function configuredRouteChannel(client, sourceGuild, event) {
   if (String(event?.type || '').startsWith('test.')) await runLiveEndToEndProbe(client, sourceGuild).catch(() => null);
