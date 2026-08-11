@@ -1,6 +1,6 @@
 'use strict';
 
-const { PermissionFlagsBits } = require('discord.js');
+const { MessageFlags, PermissionFlagsBits } = require('discord.js');
 const original = require('./embedInteractionsLegacy');
 const panel = require('./embedPreviewCompat');
 const guildManager = require('../../../core/guild/guildManager');
@@ -47,9 +47,7 @@ async function handleInteraction(i) {
 
   if (customId === 'embed:update-existing') {
     const deployment = getEmbedDeployment(i.guild.id, getDeploymentKeyFromState(s));
-    const isV2Deployment = deployment?.renderer === 'components-v2-experiment';
-
-    if (!isV2Deployment) {
+    if (!deployment) {
       return original.handleInteraction(i);
     }
 
@@ -61,6 +59,23 @@ async function handleInteraction(i) {
         flags: 64,
       });
       return true;
+    }
+
+    let message;
+    try {
+      message = await channel.messages.fetch(deployment.messageId);
+    } catch {
+      return original.handleInteraction(i);
+    }
+
+    const isV2Message = Boolean(
+      deployment?.renderer === 'components-v2-experiment'
+      || message.flags?.has?.(MessageFlags.IsComponentsV2)
+      || ((Number(message.flags?.bitfield ?? message.flags ?? 0) & Number(MessageFlags.IsComponentsV2)) !== 0),
+    );
+
+    if (!isV2Message) {
+      return original.handleInteraction(i);
     }
 
     const access = await validateChannelAccess(
@@ -93,7 +108,6 @@ async function handleInteraction(i) {
     }
 
     try {
-      const message = await channel.messages.fetch(deployment.messageId);
       await message.edit(payload);
       saveEmbedDeployment(i.guild.id, getDeploymentKeyFromState(s), {
         ...deployment,
