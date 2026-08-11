@@ -111,17 +111,39 @@ function writeSharedControlRequests(requests) {
   writeJson(SHARED_CONFIG_FILE, next);
   return next.control.liveProbeRequests;
 }
+function liveProbeTerminalAt(request) {
+  return Date.parse(request?.completedAt || request?.failedAt || request?.expiredAt || '') || 0;
+}
+function normalizeLiveProbeLifecycle(request, now = Date.now()) {
+  if (!request || typeof request !== 'object') return request;
+  const status = String(request.status || 'pending').toLowerCase();
+  const expiresAt = Date.parse(request.expiresAt || '') || 0;
+  if ((status === 'pending' || status === 'claimed') && expiresAt && expiresAt <= now) {
+    return {
+      ...request,
+      status: 'expired',
+      expiredAt: request.expiredAt || new Date(now).toISOString(),
+      result: request.result || { started: false, reason: 'expired' },
+    };
+  }
+  return request;
+}
 function mutateLiveProbeRequests(mutator) {
   const now = Date.now();
   const current = getConfig().control?.liveProbeRequests || [];
-  const active = current.filter((request) => {
-    const expiresAt = Date.parse(request?.expiresAt || '') || 0;
-    const completedAt = Date.parse(request?.completedAt || '') || 0;
-    if (request?.status === 'completed') return !completedAt || now - completedAt < LIVE_PROBE_TTL_MS;
-    return !expiresAt || expiresAt > now;
-  });
+  const active = current
+    .map((request) => normalizeLiveProbeLifecycle(request, now))
+    .filter((request) => {
+      const status = String(request?.status || 'pending').toLowerCase();
+      if (!['completed', 'failed', 'expired'].includes(status)) return true;
+      const terminalAt = liveProbeTerminalAt(request);
+      return !terminalAt || now - terminalAt < LIVE_PROBE_TTL_MS;
+    });
   const next = mutator([...active]);
   return writeSharedControlRequests(Array.isArray(next) ? next : active);
+}
+function refreshLiveProbeLifecycle() {
+  return mutateLiveProbeRequests((requests) => requests);
 }
 function createLiveProbeRequest(guildId, targetMode, requestedBy = null) {
   const guild = String(guildId || '').trim();
@@ -137,8 +159,13 @@ function createLiveProbeRequest(guildId, targetMode, requestedBy = null) {
     status: 'pending',
     createdAt: new Date(now).toISOString(),
     expiresAt: new Date(now + LIVE_PROBE_TTL_MS).toISOString(),
+    claimedAt: null,
+    claimedBy: null,
     completedAt: null,
     completedBy: null,
+    failedAt: null,
+    failedBy: null,
+    expiredAt: null,
     result: null,
   };
   mutateLiveProbeRequests((requests) => [...requests, request]);
@@ -147,33 +174,72 @@ function createLiveProbeRequest(guildId, targetMode, requestedBy = null) {
 function getLiveProbeRequest(requestId) {
   const id = String(requestId || '');
   if (!id) return null;
-  return (getConfig().control?.liveProbeRequests || []).find((request) => String(request?.id || '') === id) || null;
+  const requests = refreshLiveProbeLifecycle();
+  return requests.find((request) => String(request?.id || '') === id) || null;
 }
 function getPendingLiveProbeRequests(mode = runtimeMode()) {
   const target = String(mode || runtimeMode()).toUpperCase();
-  const now = Date.now();
-  return (getConfig().control?.liveProbeRequests || []).filter((request) => {
-    if (request?.status !== 'pending' || String(request?.targetMode || '').toUpperCase() !== target) return false;
-    const expiresAt = Date.parse(request?.expiresAt || '') || 0;
-    return !expiresAt || expiresAt > now;
-  });
+  return refreshLiveProbeLifecycle().filter((request) => request?.status === 'pending' && String(request?.targetMode || '').toUpperCase() === target);
+}
+function claimLiveProbeRequest(requestId, claimedBy = runtimeMode()) {
+  const id = String(requestId || '');
+  const mode = String(claimedBy || runtimeMode()).toUpperCase();
+  if (!id || !REGISTRY_MODES.includes(mode)) return null;
+  let claimed = null;
+  mutateLiveProbeRequests((requests) => requests.map((request) => {
+    if (String(request?.id || '') !== id) return request;
+    if (request.status !== 'pending' || String(request.targetMode || '').toUpperCase() !== mode) return request;
+    claimed = {
+      ...request,
+      status: 'claimed',
+      claimedAt: new Date().toISOString(),
+      claimedBy: mode,
+    };
+    return claimed;
+  }));
+  return claimed;
 }
 function completeLiveProbeRequest(requestId, result = {}, completedBy = runtimeMode()) {
   const id = String(requestId || '');
+  const mode = String(completedBy || runtimeMode()).toUpperCase();
   if (!id) return null;
   let completed = null;
   mutateLiveProbeRequests((requests) => requests.map((request) => {
     if (String(request?.id || '') !== id) return request;
+    const owner = String(request.claimedBy || request.targetMode || '').toUpperCase();
+    if (!['claimed', 'pending'].includes(request.status) || owner !== mode) return request;
     completed = {
       ...request,
       status: 'completed',
       completedAt: new Date().toISOString(),
-      completedBy: String(completedBy || runtimeMode()).toUpperCase(),
+      completedBy: mode,
+      failedAt: null,
+      failedBy: null,
       result: result && typeof result === 'object' ? result : { started: false, reason: 'invalid-result' },
     };
     return completed;
   }));
   return completed;
+}
+function failLiveProbeRequest(requestId, result = {}, failedBy = runtimeMode()) {
+  const id = String(requestId || '');
+  const mode = String(failedBy || runtimeMode()).toUpperCase();
+  if (!id) return null;
+  let failed = null;
+  mutateLiveProbeRequests((requests) => requests.map((request) => {
+    if (String(request?.id || '') !== id) return request;
+    const owner = String(request.claimedBy || request.targetMode || '').toUpperCase();
+    if (!['claimed', 'pending'].includes(request.status) || owner !== mode) return request;
+    failed = {
+      ...request,
+      status: 'failed',
+      failedAt: new Date().toISOString(),
+      failedBy: mode,
+      result: result && typeof result === 'object' ? result : { started: false, reason: 'invalid-result' },
+    };
+    return failed;
+  }));
+  return failed;
 }
 
 function registryGuild(guild, observedAt) {
@@ -594,5 +660,8 @@ module.exports = {
   createLiveProbeRequest,
   getLiveProbeRequest,
   getPendingLiveProbeRequests,
+  claimLiveProbeRequest,
   completeLiveProbeRequest,
+  failLiveProbeRequest,
+  refreshLiveProbeLifecycle,
 };
