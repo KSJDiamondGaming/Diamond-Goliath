@@ -7,7 +7,7 @@ const express = require('express');
 const forms = require('../../../../modules/feedbackStudio/forms/forms');
 const formsPanel = require('../../../../modules/feedbackStudio/forms/formsPanel');
 const ticketStore = require('../../../../modules/feedbackStudio/tickets/tickets');
-const planLimitManager = require('../../../billing/planLimitManager');
+const planLimitManager = require('../../../../core/billing/planLimitManager');
 const guildManager = require('../../../../core/guild/guildManager');
 const {
   buildFormsWorkflowOverview,
