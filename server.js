@@ -34,8 +34,8 @@ function emptyRouter() { return express.Router(); }
 
 const { getBotModeConfig } = safeRequire('botModes', './src/config/botModes', { getBotModeConfig: () => ({ token: null }) }, { optional: false });
 const { enforceGuildAccess } = safeRequire('guildAccess', './src/config/guildAccess', { enforceGuildAccess: async () => true }, { optional: false });
-const { bootstrapRuntime, runBootValidation, safeLoad, registerEvents, syncStartupGuilds, printStartupFingerprint } = safeRequire('runtimeBootstrap', './src/runtime/runtimeBootstrap', {
-  bootstrapRuntime: () => ({}), runBootValidation: () => true, safeLoad: (_label, fn) => ({ ok: true, result: fn() }), registerEvents: () => ({ files: 0, groups: 0 }), syncStartupGuilds: async () => [], printStartupFingerprint: () => null,
+const { bootstrapRuntime, runBootValidation, safeLoad, registerEvents, syncStartupGuilds, runStartupTask, printStartupFingerprint } = safeRequire('runtimeBootstrap', './src/runtime/runtimeBootstrap', {
+  bootstrapRuntime: () => ({}), runBootValidation: () => true, safeLoad: (_label, fn) => ({ ok: true, result: fn() }), registerEvents: () => ({ files: 0, groups: 0 }), syncStartupGuilds: async () => [], runStartupTask: async (_label, fn) => fn(), printStartupFingerprint: () => null,
 }, { optional: false });
 const { initSocketHub } = safeRequire('socketHub', './src/server/sockets/socketHub', { initSocketHub: () => null }, { optional: false });
 const { prepareInteraction } = safeRequire('interaction response guard', './src/runtime/interactionResponseGuard', { prepareInteraction: async () => null }, { optional: false });
@@ -149,10 +149,6 @@ if (fs.existsSync(dashboardDist)) {
 safeLoad('commands', () => commandHandler.loadCommands(client));
 registerEvents(client, { prepareInteraction });
 auditEvents.registerAuditEvents?.(client);
-async function runStartupTask(label, fn) {
-  try { await fn(); console.log(`✅ ${label} startup complete`); }
-  catch (error) { console.error(`❌ ${label} startup failed`); console.error(error?.stack || error?.message || error); }
-}
 client.once('clientReady', async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
   console.log(`ℹ️ Guilds cached: ${client.guilds.cache.size}`);
