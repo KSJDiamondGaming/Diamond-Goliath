@@ -89,6 +89,50 @@ function topCountEntries(map, limit = 8) {
     .slice(0, limit);
 }
 
+function buildIdentitySummary(stored, liveUser, liveGuilds) {
+  const usernames = [...new Set((stored.names || []).filter(Boolean))];
+  const globalNames = [...new Set((stored.globalNames || []).filter(Boolean))];
+  const displayNames = [...new Set((stored.displayNames || []).filter(Boolean))];
+  const nicknames = [...(stored.nicknames || [])]
+    .filter((entry) => entry?.nickname)
+    .sort((a, b) => String(a?.observedAt || '').localeCompare(String(b?.observedAt || '')));
+  const liveNicknames = liveGuilds
+    .filter((entry) => entry?.member?.nickname)
+    .map((entry) => ({
+      guildId: entry.guildId,
+      guildName: entry.guildName,
+      nickname: entry.member.nickname,
+      observedAt: null,
+      live: true,
+    }));
+  const environments = Object.keys(stored.environments || {});
+  return {
+    current: {
+      username: liveUser?.username || usernames.at?.(-1) || null,
+      globalName: liveUser?.globalName || globalNames.at?.(-1) || null,
+      displayName: liveUser?.displayName || displayNames.at?.(-1) || null,
+    },
+    historical: {
+      usernames,
+      globalNames,
+      displayNames,
+      nicknames,
+    },
+    liveNicknames,
+    counts: {
+      usernames: usernames.length,
+      globalNames: globalNames.length,
+      displayNames: displayNames.length,
+      nicknames: nicknames.length,
+      liveNicknames: liveNicknames.length,
+    },
+    environments,
+    firstObservedAt: stored.firstObservedAt || null,
+    lastObservedAt: stored.lastObservedAt || null,
+    accountCreatedAt: liveUser?.accountCreatedAt || stored.accountCreatedAt || null,
+  };
+}
+
 function buildDeepSummary(stored, liveGuilds) {
   const guilds = Object.values(stored.guilds || {});
   const currentStored = guilds.filter((guild) => guild.currentMember === true);
@@ -193,6 +237,7 @@ async function buildReport(client, userId) {
       accountCreatedAt: stored.accountCreatedAt || null,
     },
     summary: summariseStored(stored),
+    identity: buildIdentitySummary(stored, liveUser, liveGuilds),
     deep: buildDeepSummary(stored, liveGuilds),
     currentState: {
       knownToDiscord: Boolean(liveUser),
