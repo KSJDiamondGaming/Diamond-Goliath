@@ -422,15 +422,31 @@ function buildUserIntelligenceSectionEmbed(report, section, sourceGuild) {
     .setTimestamp(new Date(report.generatedAt || Date.now()));
 
   if (section === 'deep') {
-    const guildLines = currentGuilds.map((item) => {
-      const member = item.member || {};
-      return `**${item.guildName || item.guildId}** — ${member.joinedAt ? `joined ${discordTime(member.joinedAt, 'F')}` : 'join unknown'} — ${(member.roles || []).length} roles`;
-    }).join('\n') || 'No current guild memberships visible to Goliath.';
-    embed.setDescription(`Full live + stored scan for <@${report.userId}>.`).addFields(
-      { name: 'Identity', value: compact({ profile: report.profile, summary: report.summary }, 1000), inline: false },
-      { name: 'Current Guilds', value: compact(guildLines, 1000), inline: false },
-      { name: 'Event Totals', value: compact(report.counts, 1000), inline: false },
-      { name: 'Actions Performed', value: `\`${(history.actions || []).length}\` recorded actor actions`, inline: false },
+    const deep = report?.deep || {};
+    const presence = deep.guildPresence || {};
+    const relations = deep.relations || {};
+    const activity = deep.activity || {};
+    const environmentLines = (deep.environments || []).map((item) => `• **${item.mode}** — ${item.eventCount || 0} events • ${discordTime(item.firstObservedAt, 'd')} → ${discordTime(item.lastObservedAt, 'R')}`).join('\n') || 'No stored environment coverage.';
+    const currentStored = (presence.currentGuilds || []).map((guild) => `• **${guild.guildName || guild.guildId}** — last seen ${discordTime(guild.lastObservedAt, 'R')}`).join('\n') || 'None recorded.';
+    const formerStored = (presence.formerGuilds || []).map((guild) => `• **${guild.guildName || guild.guildId}** — left ${discordTime(guild.lastLeftAt || guild.lastObservedAt, 'R')}`).join('\n') || 'None recorded.';
+    const topTypes = (activity.topEventTypes || []).map((item) => `• \`${item.key}\` — **${item.count}**`).join('\n') || 'None recorded.';
+    const topCategories = (activity.topCategories || []).map((item) => `• \`${item.key}\` — **${item.count}**`).join('\n') || 'None recorded.';
+    const recent = (deep.recentActivity || []).slice(0, 8).map((item) => `• ${discordTime(item.timestamp, 'R')} — \`${item.type || 'event'}\` — ${item.guildName || item.guildId || 'Unknown guild'}${item.relation ? ` • ${item.relation}` : ''}`).join('\n') || 'No recent activity recorded.';
+    const latestModeration = deep.latest?.moderation ? `\`${deep.latest.moderation.type || 'moderation'}\` in **${deep.latest.moderation.guildName || deep.latest.moderation.guildId || 'Unknown guild'}** • ${discordTime(deep.latest.moderation.timestamp, 'R')}${deep.latest.moderation.reason ? `\nReason: ${String(deep.latest.moderation.reason).slice(0, 180)}` : ''}` : 'None recorded.';
+    const latestAction = deep.latest?.action ? `\`${deep.latest.action.type || 'action'}\` in **${deep.latest.action.guildName || deep.latest.action.guildId || 'Unknown guild'}** • ${discordTime(deep.latest.action.timestamp, 'R')}` : 'None recorded.';
+
+    embed.setDescription(`Cross-environment live + stored intelligence scan for <@${report.userId}>.`).addFields(
+      { name: 'Environment Coverage', value: compact(environmentLines, 1024), inline: false },
+      { name: 'Guild Presence', value: `Known: **${presence.known || 0}** • Live visible: **${presence.liveVisible || 0}**\nCurrent stored: **${presence.currentStored || 0}** • Former: **${presence.formerStored || 0}** • Unknown: **${presence.unknownStored || 0}**`, inline: false },
+      { name: 'Current Guilds', value: compact(currentStored, 1024), inline: false },
+      { name: 'Former Guilds', value: compact(formerStored, 1024), inline: false },
+      { name: 'Observed Relationship', value: `Subject events: **${relations.subjectEvents || 0}**\nActor actions: **${relations.actorActions || 0}**`, inline: true },
+      { name: 'Activity Totals', value: `Events: **${activity.totalEvents || 0}**\nJoins: **${activity.joins || 0}** • Leaves: **${activity.leaves || 0}**\nModeration: **${activity.moderation || 0}** • Roles: **${activity.roleChanges || 0}**\nVoice: **${activity.voiceEvents || 0}** • Actions: **${activity.actionsPerformed || 0}**`, inline: true },
+      { name: 'Latest Moderation', value: compact(latestModeration, 1024), inline: false },
+      { name: 'Latest Action Performed', value: compact(latestAction, 1024), inline: false },
+      { name: 'Top Event Types', value: compact(topTypes, 1024), inline: true },
+      { name: 'Top Categories', value: compact(topCategories, 1024), inline: true },
+      { name: 'Recent Cross-Environment Activity', value: compact(recent, 1024), inline: false },
     );
     return embed;
   }
