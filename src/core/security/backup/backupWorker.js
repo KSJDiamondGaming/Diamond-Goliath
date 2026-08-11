@@ -262,25 +262,6 @@ function startBackupWorker(
   };
 }
 
-function stopBackupWorker() {
-  if (!interval) {
-    return {
-      stopped: false,
-
-      reason:
-        'Backup sync worker is not running.',
-    };
-  }
-
-  clearInterval(interval);
-
-  interval = null;
-
-  return {
-    stopped: true,
-  };
-}
-
 function isBackupWorkerStarted() {
   return Boolean(interval);
 }
@@ -300,7 +281,6 @@ module.exports = {
   processSyncEntry,
 
   startBackupWorker,
-  stopBackupWorker,
   isBackupWorkerStarted,
 
   isWorkerRunning,
