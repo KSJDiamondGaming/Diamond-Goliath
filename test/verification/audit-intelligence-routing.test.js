@@ -87,3 +87,25 @@ test('remote probe processor claims ownership before execution and respects clai
   assert.match(ready, /fresh\.claimedBy/);
   assert.match(ready, /auditStore\.failLiveProbeRequest/);
 });
+
+test('remote probe router preserves distinct terminal outcomes', () => {
+  assert.match(router, /status === 'completed'/);
+  assert.match(router, /status === 'failed'/);
+  assert.match(router, /status === 'expired'/);
+  assert.match(router, /reason: 'remote-failed'/);
+  assert.match(router, /reason: 'expired'/);
+  assert.match(router, /reason: 'remote-timeout'/);
+  assert.match(router, /lifecycleStatus/);
+  assert.match(router, /current\?\.claimedBy \|\| targetMode/);
+});
+
+test('Routing panel surfaces remote probe failure, expiry and timeout distinctly', () => {
+  assert.match(events, /case 'remote-timeout'/);
+  assert.match(events, /timed out waiting for/);
+  assert.match(events, /case 'expired'/);
+  assert.match(events, /request expired/);
+  assert.match(events, /case 'remote-failed'/);
+  assert.match(events, /remote collector/);
+  assert.match(events, /lifecycleStatus/);
+  assert.match(events, /Check the collector logs before retrying/);
+});
