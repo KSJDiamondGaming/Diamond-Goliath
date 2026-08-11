@@ -235,14 +235,7 @@ function loadCommands(commandsPath, mode) {
   const commands = [];
   const seen = new Set();
   const errors = [];
-
-  const userPanelCommand = path.join(process.cwd(), 'src', 'core', 'panels', 'user', 'user.js');
-  const modPanelCommand = path.join(process.cwd(), 'src', 'core', 'panels', 'mod', 'mod.js');
-  const commandFiles = [
-    ...getAllJsFiles(commandsPath),
-    ...(fs.existsSync(userPanelCommand) ? [userPanelCommand] : []),
-    ...(fs.existsSync(modPanelCommand) ? [modPanelCommand] : []),
-  ];
+  const commandFiles = getAllJsFiles(commandsPath);
 
   for (const filePath of commandFiles) {
     try {
