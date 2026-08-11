@@ -104,6 +104,46 @@ async function checkTikTok(account) {
     const { response, text } = await request(liveUrl, { headers: { Accept: 'text/html,application/xhtml+xml' } }, 12000);
     const finalUrl = response.url || liveUrl;
     const body = text.slice(0, 2000000);
+    const sigiMatch = body.match(/<script[^>]+id=["']SIGI_STATE["'][^>]*>([\s\S]*?)<\/script>/i);
+    if (sigiMatch?.[1]) {
+      try {
+        const sigi = JSON.parse(sigiMatch[1]);
+        const liveInfo = sigi?.LiveRoom?.liveRoomUserInfo || {};
+        const sigiUser = liveInfo.user && typeof liveInfo.user === 'object' ? liveInfo.user : {};
+        const sigiRoom = liveInfo.liveRoom && typeof liveInfo.liveRoom === 'object' ? liveInfo.liveRoom : {};
+        const sigiUsername = clean(sigiUser.uniqueId || sigiUser.unique_id);
+        const sigiRoomId = clean(sigiUser.roomId || sigiUser.room_id || sigiRoom.roomId || sigiRoom.room_id);
+        const sigiStatus = sigiRoom.status ?? sigiUser.status;
+        const usernameMatches = sigiUsername && sigiUsername.toLowerCase() === username.toLowerCase();
+        const hasSigiRoom = /^[1-9]\d*$/.test(sigiRoomId);
+        if (usernameMatches && Number(sigiStatus) === 2 && hasSigiRoom) {
+          const avatar = sigiUser.avatarLarger || sigiUser.avatarMedium || sigiUser.avatarThumb || null;
+          const cover = sigiRoom.coverUrl || sigiRoom.squareCoverImg || avatar || null;
+          const rawViewerCount = sigiRoom.liveRoomStats?.userCount ?? sigiRoom.userCount ?? sigiRoom.viewerCount;
+          const viewerCount = Number(rawViewerCount);
+          return result('tiktok', {
+            isLive: true,
+            providerSource: 'public_page_sigi',
+            confidence: 'high',
+            externalId: clean(sigiUser.id || sigiUser.userId || sigiUser.user_id || userId) || undefined,
+            url: profile,
+            avatar,
+            resolvedUsername: sigiUsername,
+            event: {
+              type: 'live',
+              id: sigiRoomId,
+              title: clean(sigiRoom.title) || `${sigiUsername} is LIVE on TikTok`,
+              url: liveUrl,
+              thumbnail: cover,
+              viewerCount: Number.isFinite(viewerCount) && viewerCount > 0 ? viewerCount : null,
+              startedAt: isoFromProviderEpoch(sigiRoom.startTime || sigiRoom.start_time),
+            },
+          });
+        }
+      } catch (sigiError) {
+        errors.push(`SIGI_STATE: ${sigiError.message}`);
+      }
+    }
     const ended = /LIVE\s+has\s+ended|live\s+(?:has\s+)?ended|room\s+(?:has\s+)?ended|stream\s+(?:has\s+)?ended/i.test(body);
     const hasRoom = /"roomId"\s*:\s*"?[1-9]\d*/i.test(body) || /"room_id"\s*:\s*"?[1-9]\d*/i.test(body);
     const directLiveStatus = /"status"\s*:\s*2\b/.test(body) || /"isLive"\s*:\s*true/i.test(body);
