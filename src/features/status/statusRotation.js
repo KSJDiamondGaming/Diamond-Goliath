@@ -120,14 +120,6 @@ function startStatusRotation(client) {
   client.statusRotationInterval = setInterval(rotate, STATUS_INTERVAL_MS);
 }
 
-function stopStatusRotation(client) {
-  if (!client?.statusRotationInterval) return;
-
-  clearInterval(client.statusRotationInterval);
-  client.statusRotationInterval = null;
-}
-
 module.exports = {
   startStatusRotation,
-  stopStatusRotation,
 };
