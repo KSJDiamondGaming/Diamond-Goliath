@@ -10,6 +10,8 @@ const router = fs.readFileSync(path.join(ROOT, 'src/owner/auditIntelligence/audi
 const events = fs.readFileSync(path.join(ROOT, 'src/owner/auditIntelligence/auditEvents.js'), 'utf8');
 const intelligence = fs.readFileSync(path.join(ROOT, 'src/owner/auditIntelligence/auditIntelligence.js'), 'utf8');
 const store = fs.readFileSync(path.join(ROOT, 'src/owner/auditIntelligence/auditStore.js'), 'utf8');
+const embeds = fs.readFileSync(path.join(ROOT, 'src/owner/auditIntelligence/auditEmbeds.js'), 'utf8');
+const userIntelligence = fs.readFileSync(path.join(ROOT, 'src/owner/auditIntelligence/userIntelligence.js'), 'utf8');
 const ready = fs.readFileSync(path.join(ROOT, 'src/events/client/ready.js'), 'utf8');
 
 test('audit delivery enforces per-guild pause and monitoring families', () => {
@@ -108,4 +110,31 @@ test('Routing panel surfaces remote probe failure, expiry and timeout distinctly
   assert.match(events, /remote collector/);
   assert.match(events, /lifecycleStatus/);
   assert.match(events, /Check the collector logs before retrying/);
+});
+
+test('user intelligence builds a structured cross-environment deep summary', () => {
+  assert.match(userIntelligence, /function buildDeepSummary\(stored, liveGuilds\)/);
+  assert.match(userIntelligence, /environments,/);
+  assert.match(userIntelligence, /guildPresence:/);
+  assert.match(userIntelligence, /subjectEvents:/);
+  assert.match(userIntelligence, /actorActions:/);
+  assert.match(userIntelligence, /actionsPerformed:/);
+  assert.match(userIntelligence, /topEventTypes:/);
+  assert.match(userIntelligence, /topCategories:/);
+  assert.match(userIntelligence, /recentActivity,/);
+  assert.match(userIntelligence, /deep: buildDeepSummary\(stored, liveGuilds\)/);
+});
+
+test('Deep Scan renders structured intelligence instead of raw count objects', () => {
+  assert.match(embeds, /const deep = report\?\.deep \|\| \{\}/);
+  assert.match(embeds, /Environment Coverage/);
+  assert.match(embeds, /Guild Presence/);
+  assert.match(embeds, /Subject vs Actor Activity/);
+  assert.match(embeds, /Activity Totals/);
+  assert.match(embeds, /Top Event Types/);
+  assert.match(embeds, /Top Categories/);
+  assert.match(embeds, /Recent Cross-Environment Activity/);
+  assert.match(embeds, /Latest Moderation/);
+  assert.match(embeds, /Latest Action Performed/);
+  assert.doesNotMatch(embeds, /name: 'Event Totals', value: compact\(report\.counts/);
 });
