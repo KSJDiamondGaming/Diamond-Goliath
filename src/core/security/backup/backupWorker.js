@@ -217,7 +217,7 @@ async function processPendingSyncs() {
 // WORKER RUNTIME
 // ======================================================
 
-function startbackupWorker(
+function startBackupWorker(
   options = {}
 ) {
   const intervalMs =
@@ -266,7 +266,7 @@ function startbackupWorker(
   };
 }
 
-function stopbackupWorker() {
+function stopBackupWorker() {
   if (!interval) {
     return {
       stopped: false,
@@ -285,13 +285,18 @@ function stopbackupWorker() {
   };
 }
 
-function isbackupWorkerStarted() {
+function isBackupWorkerStarted() {
   return Boolean(interval);
 }
 
 function isWorkerRunning() {
   return workerRunning;
 }
+
+// Backward-compatible aliases for existing callers while migration completes.
+const startbackupWorker = startBackupWorker;
+const stopbackupWorker = stopBackupWorker;
+const isbackupWorkerStarted = isBackupWorkerStarted;
 
 // ======================================================
 // EXPORTS
@@ -303,9 +308,13 @@ module.exports = {
   processPendingSyncs,
   processSyncEntry,
 
+  startBackupWorker,
+  stopBackupWorker,
+  isBackupWorkerStarted,
+
   startbackupWorker,
   stopbackupWorker,
-
   isbackupWorkerStarted,
+
   isWorkerRunning,
 };
