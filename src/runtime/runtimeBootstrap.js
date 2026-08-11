@@ -104,6 +104,34 @@ function registerEvents(client, options = {}) {
   return { files: files.length, groups: grouped.size };
 }
 
+/* ---------------- GUILD STARTUP SYNC ---------------- */
+
+async function syncStartupGuilds(client, options = {}) {
+  const enforceGuildAccess = typeof options.enforceGuildAccess === 'function'
+    ? options.enforceGuildAccess
+    : async () => true;
+  const guildManager = options.guildManager || {};
+  const resourceManager = options.resourceManager || {};
+  const botMode = options.botMode;
+  const config = options.config;
+
+  const results = [];
+
+  for (const guild of client?.guilds?.cache?.values?.() || []) {
+    try {
+      await enforceGuildAccess(guild, botMode, config);
+      guildManager.syncGuildMeta?.(guild);
+      await resourceManager.syncDiscordResources?.(guild);
+      results.push({ guildId: guild.id, ok: true });
+    } catch (error) {
+      console.error(`Guild startup sync failed for ${guild?.id}:`, error?.message || error);
+      results.push({ guildId: guild?.id || null, ok: false, error });
+    }
+  }
+
+  return results;
+}
+
 /* ---------------- MODE / RUNTIME ---------------- */
 
 function normalizeModeValue(mode) {
@@ -207,6 +235,7 @@ module.exports = {
   runBootValidation,
   safeLoad,
   registerEvents,
+  syncStartupGuilds,
   getStartupFingerprint,
   printStartupFingerprint,
 };
