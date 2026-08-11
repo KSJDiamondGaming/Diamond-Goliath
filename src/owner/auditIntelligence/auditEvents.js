@@ -80,7 +80,7 @@ function getRoutingSession(interaction) { return routingSessions.get(sessionKey(
 function setRoutingSession(interaction, patch) { const next = { ...getRoutingSession(interaction), ...patch }; routingSessions.set(sessionKey(interaction), next); return next; }
 function getMonitoringSession(interaction) { return monitoringSessions.get(sessionKey(interaction)) || { sourceGuildId: null, family: 'members' }; }
 function setMonitoringSession(interaction, patch) { const next = { ...getMonitoringSession(interaction), ...patch }; monitoringSessions.set(sessionKey(interaction), next); return next; }
-function getStructureSession(interaction) { return structureSessions.get(sessionKey(interaction)) || { sourceGuildId: null }; }
+function getStructureSession(interaction) { return structureSessions.get(sessionKey(interaction)) || { sourceGuildId: null, repairResult: null }; }
 function setStructureSession(interaction, patch) { const next = { ...getStructureSession(interaction), ...patch }; structureSessions.set(sessionKey(interaction), next); return next; }
 function getIntelligenceSession(interaction) { return intelligenceSessions.get(sessionKey(interaction)) || { sourceGuildId: null, userId: null, matches: [] }; }
 function setIntelligenceSession(interaction, patch) { const next = { ...getIntelligenceSession(interaction), ...patch }; intelligenceSessions.set(sessionKey(interaction), next); return next; }
@@ -240,6 +240,20 @@ function buildMonitoringPanel(client, interaction) {
   }
   return { embeds: [embed], components: rows, allowedMentions: { parse: [] } };
 }
+function structureRepairSummary(result) {
+  if (!result?.before || !result?.after) return null;
+  const beforeIssues = Array.isArray(result.before.issues) ? result.before.issues : [];
+  const afterIssues = Array.isArray(result.after.issues) ? result.after.issues : [];
+  const repaired = beforeIssues.filter((issue) => !afterIssues.includes(issue));
+  const lines = [
+    result.after.healthy ? '🟢 **Repair complete — structure is healthy.**' : '🟠 **Repair completed with manual attention still required.**',
+    `Before: **${beforeIssues.length}** issue(s) • After: **${afterIssues.length}** issue(s)`,
+  ];
+  if (repaired.length) lines.push('', '**Repaired automatically**', ...repaired.slice(0, 6).map((issue) => `✅ ${issue}`));
+  if (afterIssues.length) lines.push('', '**Still requires attention**', ...afterIssues.slice(0, 6).map((issue) => `⚠️ ${issue}`));
+  if (!repaired.length && !afterIssues.length) lines.push('', 'No faults remained after the repair/rescan.');
+  return lines.join('\n').slice(0, 1024);
+}
 async function buildStructurePanel(client, interaction) {
   const config = auditStore.getConfig();
   const session = getStructureSession(interaction);
@@ -250,6 +264,7 @@ async function buildStructurePanel(client, interaction) {
   const placement = !report?.systemChannel ? 'Not provisioned' : report.systemChannel.parentId ? `<#${report.systemChannel.id}> inside a category` : `<#${report.systemChannel.id}> uncategorised`;
   const issues = report?.issues?.length ? report.issues.map((issue) => `• ${issue}`).join('\n') : 'None';
   const categories = report?.categories?.length ? report.categories.map((category) => `• **${category.name}** — ${category.childCount} channel(s)`).join('\n') : 'None / owner-managed placement';
+  const repairSummary = structureRepairSummary(session.repairResult);
   const embed = new EmbedBuilder()
     .setColor(report?.healthy ? 0x57F287 : report?.systemChannel ? 0xFEE75C : 0x5865F2)
     .setTitle('📁 Audit Intelligence Structure')
@@ -263,6 +278,7 @@ async function buildStructurePanel(client, interaction) {
       { name: 'Missing Routes', value: report ? String(report.missingRouteCount) : '—', inline: true },
       { name: 'Detected Categories', value: categories.slice(0, 1024), inline: false },
       { name: 'Issues', value: issues.slice(0, 1024), inline: false },
+      ...(repairSummary ? [{ name: 'Last Repair Result', value: repairSummary, inline: false }] : []),
     )
     .setFooter({ text: 'Goliath Command Center • Structure • Owner only • Repair never renames or moves valid resources' });
   const rows = [];
@@ -584,20 +600,21 @@ async function handleCommandCenterInteraction(client, interaction) {
     auditStore.updateConfig({ guilds: { [session.sourceGuildId]: { ...existing, enabled: true, monitoring } } }); await interaction.update(buildMonitoringPanel(client, interaction)).catch(() => null); return true;
   }
   if (customId === 'owner:commandcenter:structure' && interaction.isButton?.()) {
-    structureSessions.set(sessionKey(interaction), { sourceGuildId: null });
+    structureSessions.set(sessionKey(interaction), { sourceGuildId: null, repairResult: null });
     await interaction.reply({ ...(await buildStructurePanel(client, interaction)), flags: MessageFlags.Ephemeral }).catch(() => null); return true;
   }
   if (customId === 'owner:commandcenter:structure:guild' && interaction.isStringSelectMenu?.()) {
-    const sourceGuildId = String(interaction.values?.[0] || ''); setStructureSession(interaction, { sourceGuildId });
+    const sourceGuildId = String(interaction.values?.[0] || ''); setStructureSession(interaction, { sourceGuildId, repairResult: null });
     const current = auditStore.getConfig(); const existing = current.guilds?.[sourceGuildId] || {};
     auditStore.updateConfig({ guilds: { [sourceGuildId]: { enabled: existing.enabled !== false, mode: existing.mode || 'auto', ...existing } } });
     await interaction.update(await buildStructurePanel(client, interaction)).catch(() => null); return true;
   }
-  if (customId === 'owner:commandcenter:structure:rescan' && interaction.isButton?.()) { await interaction.update(await buildStructurePanel(client, interaction)).catch(() => null); return true; }
+  if (customId === 'owner:commandcenter:structure:rescan' && interaction.isButton?.()) { setStructureSession(interaction, { repairResult: null }); await interaction.update(await buildStructurePanel(client, interaction)).catch(() => null); return true; }
   if (customId === 'owner:commandcenter:structure:repair' && interaction.isButton?.()) {
     const session = getStructureSession(interaction); const sourceGuild = registryGuild(client, session.sourceGuildId); if (!sourceGuild) return true;
     await interaction.deferUpdate().catch(() => null);
-    await auditRouter.repairStructure(client, sourceGuild);
+    const repairResult = await auditRouter.repairStructure(client, sourceGuild).catch((error) => { console.warn('[Audit Intelligence] structure repair failed:', error?.message || error); return null; });
+    setStructureSession(interaction, { repairResult });
     await interaction.editReply(await buildStructurePanel(client, interaction)).catch(() => null); return true;
   }
   if (customId === 'owner:commandcenter:intelligence' && interaction.isButton?.()) {
