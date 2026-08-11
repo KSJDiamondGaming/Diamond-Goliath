@@ -24,10 +24,10 @@ function getAllJsFiles(dir) {
 
 function loadCommands(client, options = {}) {
   const commandsPath = options.commandsPath || path.join(process.cwd(), 'src', 'commands');
-  const commandCenterCommand = path.join(process.cwd(), 'src', 'owner', 'auditIntelligence', 'auditEvents.js');
+  const ownerCommandModule = path.join(process.cwd(), 'src', 'owner', 'auditIntelligence', 'auditEvents.js');
   const files = [
     ...getAllJsFiles(commandsPath),
-    ...(fs.existsSync(commandCenterCommand) ? [commandCenterCommand] : []),
+    ...(fs.existsSync(ownerCommandModule) ? [ownerCommandModule] : []),
   ];
   const loaded = [];
   const skipped = [];
