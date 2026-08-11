@@ -251,6 +251,5 @@ module.exports = {
   registerEvents,
   syncStartupGuilds,
   runStartupTask,
-  getStartupFingerprint,
   printStartupFingerprint,
 };
