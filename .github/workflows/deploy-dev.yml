@@ -17,7 +17,7 @@ on:
           - production
 
 permissions:
-  contents: read
+  contents: write
   statuses: write
 
 # Never cancel an in-flight validation. Rapid pushes are queued so every commit gets a
@@ -54,13 +54,13 @@ jobs:
               PM2_NAME="goliath-dev"
               ;;
             beta)
-              SOURCE_BRANCH="beta"; TARGET_BRANCH="beta"
+              SOURCE_BRANCH="dev"; TARGET_BRANCH="beta"
               DEPLOY_SCRIPT="/home/goliath/deploy-beta.sh"
               APP_DIR="/home/goliath/beta"; RUNTIME_DIR="$APP_DIR/src/runtime/beta"
               PM2_NAME="goliath-beta"
               ;;
             production)
-              SOURCE_BRANCH="production"; TARGET_BRANCH="production"
+              SOURCE_BRANCH="beta"; TARGET_BRANCH="production"
               DEPLOY_SCRIPT="/home/goliath/deploy-production.sh"
               APP_DIR="/home/goliath/production"; RUNTIME_DIR="$APP_DIR/src/runtime/production"
               PM2_NAME="goliath-production"
@@ -68,8 +68,8 @@ jobs:
             *) exit 1 ;;
           esac
 
-          # Push-triggered DEV runs must validate the exact commit that triggered the run.
-          # Manual promotions intentionally resolve the current selected branch head.
+          # Push-triggered DEV runs validate the exact triggering commit.
+          # Manual promotions validate the current head of the previous environment.
           if [ "${{ github.event_name }}" = "push" ]; then
             SOURCE_REF="${{ github.sha }}"
           else
@@ -88,7 +88,7 @@ jobs:
   preflight:
     needs: resolve
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 40
     outputs:
       source_sha: ${{ steps.sha.outputs.source_sha }}
     steps:
@@ -152,11 +152,65 @@ jobs:
             "https://api.github.com/repos/${GITHUB_REPOSITORY}/statuses/${SHA}" \
             -d '{"state":"failure","context":"goliath/preflight","description":"Goliath preflight failed"}'
 
-  deploy:
+  promote:
     needs: [resolve, preflight]
     if: needs.preflight.result == 'success'
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 10
+    outputs:
+      deploy_sha: ${{ steps.promote.outputs.deploy_sha }}
+      previous_target_sha: ${{ steps.promote.outputs.previous_target_sha }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.preflight.outputs.source_sha }}
+          fetch-depth: 0
+      - name: Promote validated source into target branch
+        id: promote
+        shell: bash
+        env:
+          SOURCE_BRANCH: ${{ needs.resolve.outputs.source_branch }}
+          TARGET_BRANCH: ${{ needs.resolve.outputs.target_branch }}
+          SOURCE_SHA: ${{ needs.preflight.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+
+          if [ "$SOURCE_BRANCH" = "$TARGET_BRANCH" ]; then
+            echo "No branch promotion required for $TARGET_BRANCH."
+            echo "previous_target_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+            echo "deploy_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git fetch origin "$TARGET_BRANCH"
+          TARGET_SHA="$(git rev-parse "origin/$TARGET_BRANCH")"
+          SOURCE_TREE="$(git show -s --format=%T "$SOURCE_SHA")"
+
+          echo "Promoting validated $SOURCE_BRANCH $SOURCE_SHA into $TARGET_BRANCH (previous $TARGET_SHA)."
+
+          # Create a normal fast-forward promotion commit whose complete tree is exactly
+          # the validated source tree. This avoids risky merges/force-pushes while making
+          # the promoted environment's code byte-for-byte match what passed preflight.
+          git config user.name "Goliath Deploy"
+          git config user.email "goliath-deploy@users.noreply.github.com"
+          PROMOTED_SHA="$(printf 'Promote %s %s to %s\n' "$SOURCE_BRANCH" "$SOURCE_SHA" "$TARGET_BRANCH" | git commit-tree "$SOURCE_TREE" -p "$TARGET_SHA")"
+
+          git push origin "$PROMOTED_SHA:refs/heads/$TARGET_BRANCH"
+
+          REMOTE_SHA="$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | awk '{print $1}')"
+          [ "$REMOTE_SHA" = "$PROMOTED_SHA" ] || {
+            echo "Promotion verification failed: expected $PROMOTED_SHA, got $REMOTE_SHA" >&2
+            exit 1
+          }
+
+          echo "previous_target_sha=$TARGET_SHA" >> "$GITHUB_OUTPUT"
+          echo "deploy_sha=$PROMOTED_SHA" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: [resolve, preflight, promote]
+    if: needs.promote.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Deploy affected components
         uses: appleboy/ssh-action@v1.0.3
@@ -167,7 +221,7 @@ jobs:
           APP_DIR: ${{ needs.resolve.outputs.app_dir }}
           RUNTIME_DIR: ${{ needs.resolve.outputs.runtime_dir }}
           PM2_NAME: ${{ needs.resolve.outputs.pm2_name }}
-          EXPECTED_SHA: ${{ needs.preflight.outputs.source_sha }}
+          EXPECTED_SHA: ${{ needs.promote.outputs.deploy_sha }}
           FORCE_COMMAND_SYNC: ${{ github.event_name == 'workflow_dispatch' }}
           PUSH_TRIGGERED: ${{ github.event_name == 'push' }}
         with:
@@ -175,7 +229,7 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           password: ${{ secrets.VPS_PASSWORD }}
           port: 22
-          command_timeout: 20m
+          command_timeout: 25m
           envs: ENVIRONMENT,TARGET_BRANCH,DEPLOY_SCRIPT,APP_DIR,RUNTIME_DIR,PM2_NAME,EXPECTED_SHA,FORCE_COMMAND_SYNC,PUSH_TRIGGERED
           script: |
             set -euo pipefail
@@ -290,11 +344,14 @@ jobs:
         run: |
           echo "### 🚀 Goliath deployment" >> "$GITHUB_STEP_SUMMARY"
           echo "- Environment: **${{ needs.resolve.outputs.environment }}**" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Source: **${{ needs.resolve.outputs.source_branch }}**" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Validated ref: **${{ needs.resolve.outputs.source_ref }}**" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Protected branch: **${{ needs.resolve.outputs.target_branch }}**" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Validated commit: \`${{ needs.preflight.outputs.source_sha }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Promotion source: **${{ needs.resolve.outputs.source_branch }}**" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Validated source ref: **${{ needs.resolve.outputs.source_ref }}**" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Target branch: **${{ needs.resolve.outputs.target_branch }}**" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Validated source commit: \`${{ needs.preflight.outputs.source_sha }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Deployed target commit: \`${{ needs.promote.outputs.deploy_sha }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Promotion model: ✅ dev → beta → production" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Promotion method: ✅ exact validated source tree, fast-forward target commit" >> "$GITHUB_STEP_SUMMARY"
           echo "- Planner: ✅ scripts/goliath.js with safe full-deploy fallback" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Stale push protection: ✅ obsolete queued commits are validated but not deployed" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Stale DEV push protection: ✅ obsolete queued commits are validated but not deployed" >> "$GITHUB_STEP_SUMMARY"
           echo "- Manual command reconciliation: **${{ github.event_name == 'workflow_dispatch' }}**" >> "$GITHUB_STEP_SUMMARY"
           echo "- Runtime data: ✅ preserved" >> "$GITHUB_STEP_SUMMARY"
