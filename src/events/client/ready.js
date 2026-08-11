@@ -73,6 +73,20 @@ function liveProbeStillPending(requestId, mode) {
   return current;
 }
 
+function liveProbeCompletionResult(request, mode, result, startedAt, completedAt = Date.now()) {
+  return {
+    ...(result && typeof result === 'object' ? result : { started: false, reason: 'invalid-result' }),
+    requestId: String(request?.id || ''),
+    guildId: String(request?.guildId || ''),
+    targetMode: String(request?.targetMode || '').toUpperCase() || null,
+    requestedFrom: request?.requestedFrom ? String(request.requestedFrom).toUpperCase() : null,
+    collectorMode: String(mode || '').toUpperCase() || null,
+    startedAt: new Date(startedAt).toISOString(),
+    completedAt: new Date(completedAt).toISOString(),
+    durationMs: Math.max(0, completedAt - startedAt),
+  };
+}
+
 async function processAuditLiveProbeRequests(client) {
   const mode = auditStore.runtimeMode?.() || String(client?.botMode || process.env.BOT_MODE || 'DEV').toUpperCase();
   const requests = auditStore.getPendingLiveProbeRequests?.(mode) || [];
@@ -100,21 +114,24 @@ async function processAuditLiveProbeRequests(client) {
       const result = guild
         ? await auditRouter.runLocalEndToEndProbe(client, guild)
         : { started: false, reason: 'registry-only' };
+      const completedAt = Date.now();
+      const completion = liveProbeCompletionResult(current, mode, result, startedAt, completedAt);
 
       const fresh = auditStore.getLiveProbeRequest?.(requestId);
       if (fresh?.status === 'pending' && String(fresh.targetMode || '').toUpperCase() === mode) {
-        auditStore.completeLiveProbeRequest?.(requestId, result, mode);
+        auditStore.completeLiveProbeRequest?.(requestId, completion, mode);
       }
 
       processed += 1;
-      const durationMs = Date.now() - startedAt;
-      terminal.info(`Audit live probe request ${requestId} completed by ${mode} for guild ${guildId} in ${durationMs}ms: ${result.started ? 'started' : result.reason || 'not-started'}${current.requestedFrom ? ` (requested from ${current.requestedFrom})` : ''}`);
+      terminal.info(`Audit live probe request ${requestId} completed by ${mode} for guild ${guildId} in ${completion.durationMs}ms: ${completion.started ? 'started' : completion.reason || 'not-started'}${current.requestedFrom ? ` (requested from ${current.requestedFrom})` : ''}`);
     } catch (error) {
+      const completedAt = Date.now();
+      const completion = liveProbeCompletionResult(current, mode, { started: false, reason: 'create-failed', error: String(error?.message || error).slice(0, 500) }, startedAt, completedAt);
       const fresh = auditStore.getLiveProbeRequest?.(requestId);
       if (fresh?.status === 'pending' && String(fresh.targetMode || '').toUpperCase() === mode) {
-        auditStore.completeLiveProbeRequest?.(requestId, { started: false, reason: 'create-failed' }, mode);
+        auditStore.completeLiveProbeRequest?.(requestId, completion, mode);
       }
-      terminal.error(`Audit live probe request ${requestId} failed in ${mode} after ${Date.now() - startedAt}ms: ${error?.message || error}`);
+      terminal.error(`Audit live probe request ${requestId} failed in ${mode} after ${completion.durationMs}ms: ${error?.message || error}`);
     } finally {
       auditLiveProbeInFlight.delete(requestId);
     }
