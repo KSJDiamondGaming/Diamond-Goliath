@@ -86,7 +86,7 @@ const ownerDeploymentRoutes = route('owner deployment routes', './src/server/rou
 const publicCommunityRoutes = route('public community routes', './src/server/routes/publicCommunity');
 
 const commandHandler = safeRequire('command handler', './src/core/commands/commandLoader', { loadCommands: () => null });
-const backupScheduler = safeRequire('backup scheduler', './src/core/backup/backupScheduler', { startBackupScheduler: () => null });
+const backupScheduler = safeRequire('backup scheduler', './src/core/security/serverBackupScheduler', { startServerBackupScheduler: () => null });
 const guildManager = safeRequire('guild manager', './src/core/guild/guildManager', { syncGuildMeta: () => null }, { optional: false });
 const resourceManager = safeRequire('discord resource manager', './src/core/guild/discordResourceManager', { syncDiscordResources: async () => null }, { optional: false });
 const auditEvents = safeRequire('owner audit intelligence', './src/owner/auditIntelligence/auditEvents', { registerAuditEvents: () => false }, { optional: false });
@@ -217,7 +217,7 @@ client.once('clientReady', async () => {
     }),
     runStartupTask('Verification', () => require('./src/modules/securityStudio/verification').startupVerification(client)),
   ]);
-  backupScheduler.startBackupScheduler?.(client);
+  backupScheduler.startServerBackupScheduler?.(client);
 });
 
 const token = resolveToken(botMode, config);
