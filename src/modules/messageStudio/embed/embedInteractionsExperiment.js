@@ -7,6 +7,7 @@ const guildManager = require('../../../core/guild/guildManager');
 const { validateChannelAccess } = require('../../../core/security/goliathPermissionGuard');
 const {
   saveEmbedDeployment,
+  getEmbedDeployment,
   getDeploymentKeyFromState,
 } = require('./embedDeployments');
 const { buildComponentsV2Payload } = require('./embedComponentsV2Experiment');
@@ -42,11 +43,74 @@ async function buildV2(state, interaction, ephemeral = false) {
 
 async function handleInteraction(i) {
   const customId = String(i.customId || '');
+  const s = getSession(i);
+
+  if (customId === 'embed:update-existing') {
+    const deployment = getEmbedDeployment(i.guild.id, getDeploymentKeyFromState(s));
+    const isV2Deployment = deployment?.renderer === 'components-v2-experiment';
+
+    if (!isV2Deployment) {
+      return original.handleInteraction(i);
+    }
+
+    const channel = i.guild.channels.cache.get(deployment.channelId)
+      || (await i.guild.channels.fetch(deployment.channelId).catch(() => null));
+    if (!isTextBasedChannel(channel)) {
+      await i.reply({
+        content: '⚠️ The original embed channel no longer exists or is not text-based.',
+        flags: 64,
+      });
+      return true;
+    }
+
+    const access = await validateChannelAccess(
+      i.guild,
+      channel.id,
+      [
+        PermissionFlagsBits.ViewChannel,
+        PermissionFlagsBits.ReadMessageHistory,
+        PermissionFlagsBits.SendMessages,
+        PermissionFlagsBits.EmbedLinks,
+      ],
+      { scope: 'embed.update.v2' },
+    );
+    if (!access.ok) {
+      await i.reply({ content: trim(access.message, 1800), flags: 64 });
+      return true;
+    }
+
+    let payload;
+    try {
+      payload = await buildV2(s, i, false);
+      payload.allowedMentions = allowedMentions(s, i);
+    } catch (error) {
+      console.error('[EmbedV2] update payload failed:', error);
+      await i.reply({
+        content: `❌ The embed could not be built: ${error?.message || error}`,
+        flags: 64,
+      });
+      return true;
+    }
+
+    try {
+      const message = await channel.messages.fetch(deployment.messageId);
+      await message.edit(payload);
+      saveEmbedDeployment(i.guild.id, getDeploymentKeyFromState(s), {
+        ...deployment,
+        lastUpdatedBy: i.user.id,
+        renderer: 'components-v2-experiment',
+      });
+      await i.reply({ content: '✅ Existing embed updated.', flags: 64 });
+    } catch (error) {
+      console.error('[EmbedV2] failed to update existing embed:', error);
+      await i.reply({ content: embedOperationError(error, channel.id, 'update'), flags: 64 });
+    }
+    return true;
+  }
+
   if (customId !== 'embed:test-send' && customId !== 'embed:use') {
     return original.handleInteraction(i);
   }
-
-  const s = getSession(i);
 
   if (customId === 'embed:test-send') {
     try {
