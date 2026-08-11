@@ -9,7 +9,7 @@ const {
 } = require('../../core/security/lockdownSystem');
 
 const {
-  startbackupWorker,
+  startBackupWorker,
 } = require('../../core/security/backup/backupWorker');
 
 const {
@@ -259,7 +259,7 @@ module.exports = {
     await sendAuditStartupSummary(client, auditRestore);
 
     restoreLockdownReminders(client);
-    startbackupWorker(client);
+    startBackupWorker(client);
     startStatusRotation(client);
 
     try {
