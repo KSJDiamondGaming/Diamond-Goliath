@@ -34,8 +34,8 @@ function emptyRouter() { return express.Router(); }
 
 const { getBotModeConfig } = safeRequire('botModes', './src/config/botModes', { getBotModeConfig: () => ({ token: null }) }, { optional: false });
 const { enforceGuildAccess } = safeRequire('guildAccess', './src/config/guildAccess', { enforceGuildAccess: async () => true }, { optional: false });
-const { bootstrapRuntime, runBootValidation, safeLoad, registerEvents, printStartupFingerprint } = safeRequire('runtimeBootstrap', './src/runtime/runtimeBootstrap', {
-  bootstrapRuntime: () => ({}), runBootValidation: () => true, safeLoad: (_label, fn) => ({ ok: true, result: fn() }), registerEvents: () => ({ files: 0, groups: 0 }), printStartupFingerprint: () => null,
+const { bootstrapRuntime, runBootValidation, safeLoad, registerEvents, syncStartupGuilds, printStartupFingerprint } = safeRequire('runtimeBootstrap', './src/runtime/runtimeBootstrap', {
+  bootstrapRuntime: () => ({}), runBootValidation: () => true, safeLoad: (_label, fn) => ({ ok: true, result: fn() }), registerEvents: () => ({ files: 0, groups: 0 }), syncStartupGuilds: async () => [], printStartupFingerprint: () => null,
 }, { optional: false });
 const { initSocketHub } = safeRequire('socketHub', './src/server/sockets/socketHub', { initSocketHub: () => null }, { optional: false });
 const { prepareInteraction } = safeRequire('interaction response guard', './src/runtime/interactionResponseGuard', { prepareInteraction: async () => null }, { optional: false });
@@ -156,10 +156,7 @@ async function runStartupTask(label, fn) {
 client.once('clientReady', async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
   console.log(`ℹ️ Guilds cached: ${client.guilds.cache.size}`);
-  for (const guild of client.guilds.cache.values()) {
-    try { await enforceGuildAccess(guild, botMode, config); guildManager.syncGuildMeta?.(guild); await resourceManager.syncDiscordResources?.(guild); }
-    catch (error) { console.error(`Guild startup sync failed for ${guild?.id}:`, error?.message || error); }
-  }
+  await syncStartupGuilds(client, { enforceGuildAccess, guildManager, resourceManager, botMode, config });
   await Promise.all([
     runStartupTask('Tickets', () => require('./src/modules/feedbackStudio/tickets/tickets').startup.startupTickets(client)),
     runStartupTask('Timed Roles', () => require('./src/modules/roleStudio/timedRoles/timedRoles').startup(client)),
