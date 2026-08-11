@@ -1,4 +1,4 @@
-// src/security/backup/backupWorker.js
+// src/core/security/backup/backupWorker.js
 
 const {
   incrementSyncAttempt,
