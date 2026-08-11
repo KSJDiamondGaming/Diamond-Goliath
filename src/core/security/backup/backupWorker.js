@@ -269,7 +269,5 @@ function startBackupWorker(
 module.exports = {
   WORKER_VERSION,
 
-  processPendingSyncs,
-
   startBackupWorker,
 };
