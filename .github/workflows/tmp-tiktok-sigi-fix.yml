@@ -1,0 +1,56 @@
+name: Temporary TikTok SIGI Live Fix
+
+on:
+  push:
+    branches:
+      - beta
+    paths:
+      - .github/workflows/tmp-tiktok-sigi-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix-tiktok-live:
+    if: ${{ !contains(github.event.head_commit.message, '[tiktok-sigi-fix]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout beta
+        uses: actions/checkout@v4
+        with:
+          ref: beta
+          fetch-depth: 0
+
+      - name: Patch TikTok SIGI_STATE live detection
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/modules/socialStudio/socialAlerts/providers/tiktok.js')
+          source = path.read_text(encoding='utf-8')
+          anchor = "    const body = text.slice(0, 2000000);\n"
+          insert = '''    const sigiMatch = body.match(/<script[^>]+id=["']SIGI_STATE["'][^>]*>([\\s\\S]*?)<\\/script>/i);\n    if (sigiMatch?.[1]) {\n      try {\n        const sigi = JSON.parse(sigiMatch[1]);\n        const liveInfo = sigi?.LiveRoom?.liveRoomUserInfo || {};\n        const sigiUser = liveInfo.user && typeof liveInfo.user === 'object' ? liveInfo.user : {};\n        const sigiRoom = liveInfo.liveRoom && typeof liveInfo.liveRoom === 'object' ? liveInfo.liveRoom : {};\n        const sigiUsername = clean(sigiUser.uniqueId || sigiUser.unique_id);\n        const sigiRoomId = clean(sigiUser.roomId || sigiUser.room_id || sigiRoom.roomId || sigiRoom.room_id);\n        const sigiStatus = sigiRoom.status ?? sigiUser.status;\n        const usernameMatches = sigiUsername && sigiUsername.toLowerCase() === username.toLowerCase();\n        const hasSigiRoom = /^[1-9]\\d*$/.test(sigiRoomId);\n        if (usernameMatches && Number(sigiStatus) === 2 && hasSigiRoom) {\n          const avatar = sigiUser.avatarLarger || sigiUser.avatarMedium || sigiUser.avatarThumb || null;\n          const cover = sigiRoom.coverUrl || sigiRoom.squareCoverImg || avatar || null;\n          const rawViewerCount = sigiRoom.liveRoomStats?.userCount ?? sigiRoom.userCount ?? sigiRoom.viewerCount;\n          const viewerCount = Number(rawViewerCount);\n          return result('tiktok', {\n            isLive: true,\n            providerSource: 'public_page_sigi',\n            confidence: 'high',\n            externalId: clean(sigiUser.id || sigiUser.userId || sigiUser.user_id || userId) || undefined,\n            url: profile,\n            avatar,\n            resolvedUsername: sigiUsername,\n            event: {\n              type: 'live',\n              id: sigiRoomId,\n              title: clean(sigiRoom.title) || `${sigiUsername} is LIVE on TikTok`,\n              url: liveUrl,\n              thumbnail: cover,\n              viewerCount: Number.isFinite(viewerCount) && viewerCount > 0 ? viewerCount : null,\n              startedAt: isoFromProviderEpoch(sigiRoom.startTime || sigiRoom.start_time),\n            },\n          });\n        }\n      } catch (sigiError) {\n        errors.push(`SIGI_STATE: ${sigiError.message}`);\n      }\n    }\n'''
+          if source.count(anchor) != 1:
+              raise SystemExit(f'Expected one TikTok body anchor, found {source.count(anchor)}')
+          if "providerSource: 'public_page_sigi'" in source:
+              raise SystemExit('SIGI_STATE fix already present')
+          source = source.replace(anchor, anchor + insert)
+          path.write_text(source, encoding='utf-8')
+          print('Patched TikTok SIGI_STATE live detection.')
+          PY
+
+      - name: Validate provider syntax
+        run: node -c src/modules/socialStudio/socialAlerts/providers/tiktok.js
+
+      - name: Remove temporary workflow
+        run: rm .github/workflows/tmp-tiktok-sigi-fix.yml
+
+      - name: Commit fix to beta
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/modules/socialStudio/socialAlerts/providers/tiktok.js .github/workflows/tmp-tiktok-sigi-fix.yml
+          git commit -m "fix: detect TikTok LIVE from SIGI_STATE [tiktok-sigi-fix]"
+          git push origin HEAD:beta
