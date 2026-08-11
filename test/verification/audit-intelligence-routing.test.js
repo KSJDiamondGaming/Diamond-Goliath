@@ -7,6 +7,7 @@ const test = require('node:test');
 
 const ROOT = path.resolve(__dirname, '../..');
 const router = fs.readFileSync(path.join(ROOT, 'src/owner/auditIntelligence/auditRouter.js'), 'utf8');
+const events = fs.readFileSync(path.join(ROOT, 'src/owner/auditIntelligence/auditEvents.js'), 'utf8');
 const intelligence = fs.readFileSync(path.join(ROOT, 'src/owner/auditIntelligence/auditIntelligence.js'), 'utf8');
 
 test('audit delivery enforces per-guild pause and monitoring families', () => {
@@ -16,7 +17,7 @@ test('audit delivery enforces per-guild pause and monitoring families', () => {
 });
 
 test('audit delivery honours configured category routes and default fallback', () => {
-  assert.match(router, /routes\[key\] \|\| \(key !== 'default' \? routes\.default : null\)/);
+  assert.match(router, /routes\[key\] \|\| routes\.default/);
   assert.match(router, /configuredRouteChannel\(client, sourceGuild, event\)/);
   assert.match(router, /routedChannel\.send\(payload\)/);
 });
@@ -30,4 +31,33 @@ test('captured audit events are stored before Discord delivery is attempted', ()
 
 test('audit delivery excludes the private owner Command Center guild', () => {
   assert.match(router, /sourceGuild\.id === getOwnerAuditGuildId\(\)/);
+});
+
+test('managed audit routes self-heal required Goliath delivery permissions', () => {
+  assert.match(router, /async function repairManagedChannelPermissions/);
+  assert.match(router, /ViewChannel: true, SendMessages: true, ReadMessageHistory: true/);
+  assert.match(router, /unhealthy report route repair failed/);
+});
+
+test('structure repair re-provisions report routes and returns before-after health', () => {
+  assert.match(router, /async function repairStructure/);
+  assert.match(router, /ensureReportRoutes\(client, sourceGuild\)/);
+  assert.match(router, /return \{ before, after: await inspectStructure\(client, sourceGuild\) \}/);
+  assert.match(events, /Last Repair Result/);
+  assert.match(events, /structureRepairSummary\(session\.repairResult\)/);
+});
+
+test('health repair orchestrates Command Center and guild structure recovery', () => {
+  assert.match(router, /async function repairHealth\(client\)/);
+  assert.match(router, /needsCommandCenterRepair/);
+  assert.match(router, /repairStructure\(client,/);
+  assert.match(router, /repairHealth,/);
+});
+
+test('Command Center exposes health repair control and visible repair outcome', () => {
+  assert.match(events, /owner:commandcenter:health:repair/);
+  assert.match(events, /setLabel\('Repair Health'\)/);
+  assert.match(events, /auditRouter\.repairHealth\(client\)/);
+  assert.match(events, /Last Health Repair/);
+  assert.match(events, /healthRepairSummary\(repairResult\)/);
 });
