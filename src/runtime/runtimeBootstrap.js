@@ -132,6 +132,20 @@ async function syncStartupGuilds(client, options = {}) {
   return results;
 }
 
+/* ---------------- STARTUP TASKS ---------------- */
+
+async function runStartupTask(label, fn, logger = console) {
+  try {
+    const result = await fn();
+    logger.log(`✅ ${label} startup complete`);
+    return { ok: true, label, result, error: null };
+  } catch (error) {
+    logger.error(`❌ ${label} startup failed`);
+    logger.error(error?.stack || error?.message || error);
+    return { ok: false, label, result: null, error };
+  }
+}
+
 /* ---------------- MODE / RUNTIME ---------------- */
 
 function normalizeModeValue(mode) {
@@ -236,6 +250,7 @@ module.exports = {
   safeLoad,
   registerEvents,
   syncStartupGuilds,
+  runStartupTask,
   getStartupFingerprint,
   printStartupFingerprint,
 };
