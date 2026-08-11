@@ -293,11 +293,6 @@ function isWorkerRunning() {
   return workerRunning;
 }
 
-// Backward-compatible aliases for existing callers while migration completes.
-const startbackupWorker = startBackupWorker;
-const stopbackupWorker = stopBackupWorker;
-const isbackupWorkerStarted = isBackupWorkerStarted;
-
 // ======================================================
 // EXPORTS
 // ======================================================
@@ -311,10 +306,6 @@ module.exports = {
   startBackupWorker,
   stopBackupWorker,
   isBackupWorkerStarted,
-
-  startbackupWorker,
-  stopbackupWorker,
-  isbackupWorkerStarted,
 
   isWorkerRunning,
 };
