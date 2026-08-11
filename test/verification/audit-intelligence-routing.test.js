@@ -9,6 +9,8 @@ const ROOT = path.resolve(__dirname, '../..');
 const router = fs.readFileSync(path.join(ROOT, 'src/owner/auditIntelligence/auditRouter.js'), 'utf8');
 const events = fs.readFileSync(path.join(ROOT, 'src/owner/auditIntelligence/auditEvents.js'), 'utf8');
 const intelligence = fs.readFileSync(path.join(ROOT, 'src/owner/auditIntelligence/auditIntelligence.js'), 'utf8');
+const store = fs.readFileSync(path.join(ROOT, 'src/owner/auditIntelligence/auditStore.js'), 'utf8');
+const ready = fs.readFileSync(path.join(ROOT, 'src/events/client/ready.js'), 'utf8');
 
 test('audit delivery enforces per-guild pause and monitoring families', () => {
   assert.match(router, /guildConfig\.enabled === false/);
@@ -60,4 +62,28 @@ test('Command Center exposes health repair control and visible repair outcome', 
   assert.match(events, /auditRouter\.repairHealth\(client\)/);
   assert.match(events, /Last Health Repair/);
   assert.match(events, /healthRepairSummary\(repairResult\)/);
+});
+
+test('remote live probes expose explicit lifecycle states and ownership metadata', () => {
+  assert.match(store, /status: 'pending'/);
+  assert.match(store, /status: 'claimed'/);
+  assert.match(store, /status: 'completed'/);
+  assert.match(store, /status: 'failed'/);
+  assert.match(store, /status: 'expired'/);
+  assert.match(store, /claimedAt/);
+  assert.match(store, /claimedBy/);
+  assert.match(store, /failedAt/);
+  assert.match(store, /failedBy/);
+});
+
+test('remote probe processor claims ownership before execution and respects claimant on completion', () => {
+  const claimAt = ready.indexOf('auditStore.claimLiveProbeRequest');
+  const executeAt = ready.indexOf('auditRouter.runLocalEndToEndProbe');
+  const completeAt = ready.indexOf('auditStore.completeLiveProbeRequest');
+  assert.ok(claimAt >= 0, 'processor must claim the request');
+  assert.ok(executeAt > claimAt, 'collector must claim before executing the probe');
+  assert.ok(completeAt > executeAt, 'collector must complete only after execution');
+  assert.match(ready, /fresh\?\.status === 'claimed'/);
+  assert.match(ready, /fresh\.claimedBy/);
+  assert.match(ready, /auditStore\.failLiveProbeRequest/);
 });
