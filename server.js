@@ -155,7 +155,6 @@ client.once('clientReady', async () => {
   await syncStartupGuilds(client, { enforceGuildAccess, guildManager, resourceManager, botMode, config });
   await Promise.all([
     runStartupTask('Tickets', () => require('./src/modules/feedbackStudio/tickets/tickets').startup.startupTickets(client)),
-    runStartupTask('Timed Roles', () => require('./src/modules/roleStudio/timedRoles/timedRoles').startup(client)),
     runStartupTask('Translation', () => require('./src/modules/utilityStudio/translation/translationStartup').startupTranslation(client)),
     runStartupTask('Goodbye', () => {
       const enabledGuilds = client.guilds.cache.filter((guild) => guildManager.isModuleEnabled(guild.id, 'goodbye'));
