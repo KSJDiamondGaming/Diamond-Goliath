@@ -149,10 +149,8 @@ if (fs.existsSync(dashboardDist)) {
 safeLoad('commands', () => commandHandler.loadCommands(client));
 registerEvents(client, { prepareInteraction });
 auditEvents.registerAuditEvents?.(client);
-client.once('clientReady', async () => {
-  console.log(`✅ Logged in as ${client.user.tag}`);
-  console.log(`ℹ️ Guilds cached: ${client.guilds.cache.size}`);
-  await syncStartupGuilds(client, { enforceGuildAccess, guildManager, resourceManager, botMode, config });
+
+async function startConfiguredModules(client) {
   await Promise.all([
     runStartupTask('Tickets', () => require('./src/modules/feedbackStudio/tickets/tickets').startup.startupTickets(client)),
     runStartupTask('Translation', () => require('./src/modules/utilityStudio/translation/translationStartup').startupTranslation(client)),
@@ -170,6 +168,13 @@ client.once('clientReady', async () => {
     }),
     runStartupTask('Verification', () => require('./src/modules/securityStudio/verification').startupVerification(client)),
   ]);
+}
+
+client.once('clientReady', async () => {
+  console.log(`✅ Logged in as ${client.user.tag}`);
+  console.log(`ℹ️ Guilds cached: ${client.guilds.cache.size}`);
+  await syncStartupGuilds(client, { enforceGuildAccess, guildManager, resourceManager, botMode, config });
+  await startConfiguredModules(client);
   backupScheduler.startServerBackupScheduler?.(client);
 });
 
