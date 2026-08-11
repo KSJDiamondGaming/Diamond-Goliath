@@ -859,7 +859,7 @@ async function handleAutomationInteraction(i, context) {
   if (id === `${P}main`) {
     return respond(
       i,
-      buildMainPanel(i, config),
+      buildMainPanel(i.guild, who(i)),
     );
   }
 
@@ -895,7 +895,7 @@ async function handleAdminSocialEntry(i, context) {
   if (i.customId === 'admin:social') {
     return respond(
       i,
-      buildMainPanel(i, config),
+      buildMainPanel(i.guild, who(i)),
     );
   }
 
