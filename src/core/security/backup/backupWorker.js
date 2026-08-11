@@ -15,10 +15,6 @@ const {
 // Goliath Background Sync Worker
 // ======================================================
 //
-// Merged from:
-// - backupWorker.js
-// - startbackupWorker.js
-//
 // Responsibilities:
 // - Background sync processing
 // - Queue execution
