@@ -262,10 +262,6 @@ function startBackupWorker(
   };
 }
 
-function isBackupWorkerStarted() {
-  return Boolean(interval);
-}
-
 function isWorkerRunning() {
   return workerRunning;
 }
@@ -281,7 +277,5 @@ module.exports = {
   processSyncEntry,
 
   startBackupWorker,
-  isBackupWorkerStarted,
-
   isWorkerRunning,
 };
