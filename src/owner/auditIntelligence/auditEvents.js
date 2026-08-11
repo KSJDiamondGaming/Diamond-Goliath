@@ -386,7 +386,25 @@ async function searchIntelligenceUser(client, sourceGuild, query) {
   return [...merged.values()].slice(0, 25);
 }
 
-async function buildHealthPanel(client) {
+function healthRepairSummary(result) {
+  if (!result?.before || !result?.after) return null;
+  const beforeIssues = Array.isArray(result.before.issues) ? result.before.issues : [];
+  const afterIssues = Array.isArray(result.after.issues) ? result.after.issues : [];
+  const repairedGuilds = (result.actions || []).filter((action) => action.type === 'guild-structure' && action.repaired).length;
+  const failedGuilds = (result.actions || []).filter((action) => action.type === 'guild-structure' && !action.repaired).length;
+  const commandCenterAction = (result.actions || []).find((action) => action.type === 'command-center');
+  const lines = [
+    result.after.healthy ? '🟢 **Health repair complete — all critical checks are passing.**' : result.improved ? '🟡 **Health repair improved the system, but attention is still required.**' : '🟠 **Health repair completed, but no measurable health improvement was confirmed.**',
+    `Critical issues: **${beforeIssues.length} → ${afterIssues.length}**`,
+    `Structural failures: **${result.before.counts?.structuralFailures || 0} → ${result.after.counts?.structuralFailures || 0}**`,
+  ];
+  if (commandCenterAction) lines.push(`Command Center: ${commandCenterAction.repaired ? '✅ repaired' : '⚠️ repair attempted'}`);
+  if (repairedGuilds || failedGuilds) lines.push(`Guild structures: **${repairedGuilds} repaired**${failedGuilds ? ` • **${failedGuilds} still unhealthy**` : ''}`);
+  const remaining = afterIssues.slice(0, 5);
+  if (remaining.length) lines.push('', '**Still requires attention**', ...remaining.map((issue) => `⚠️ ${issue}`));
+  return lines.join('\n').slice(0, 1024);
+}
+async function buildHealthPanel(client, repairResult = null) {
   const report = await auditRouter.inspectHealth(client);
   const commandCenter = report.commandCenter || {};
   const permissions = commandCenter.permissions || {};
@@ -396,6 +414,7 @@ async function buildHealthPanel(client) {
     .filter((guild) => !guild.healthy)
     .slice(0, 12)
     .map((guild) => `• **${guild.guildName || guild.guildId}** — ${guild.issues.join('; ')}`);
+  const repairSummary = healthRepairSummary(repairResult);
   const embed = new EmbedBuilder()
     .setColor(report.healthy ? 0x57F287 : 0xED4245)
     .setTitle('🩺 Audit Intelligence Health')
@@ -425,11 +444,13 @@ async function buildHealthPanel(client) {
       ].join('\n'), inline: false },
       { name: 'Critical Issues', value: issueLines.join('\n').slice(0, 1024), inline: false },
       { name: 'Guild Attention', value: (guildIssueLines.length ? guildIssueLines.join('\n') : 'None').slice(0, 1024), inline: false },
+      ...(repairSummary ? [{ name: 'Last Health Repair', value: repairSummary, inline: false }] : []),
     )
     .setFooter({ text: `Goliath Command Center • Health • Owner only • Checked ${report.checkedAt || 'now'}` });
+  const repairButton = new ButtonBuilder().setCustomId('owner:commandcenter:health:repair').setLabel('Repair Health').setEmoji('🛠️').setStyle(report.healthy ? ButtonStyle.Secondary : ButtonStyle.Success).setDisabled(report.healthy);
   const rescanButton = new ButtonBuilder().setCustomId('owner:commandcenter:health:rescan').setLabel('Rescan Health').setStyle(ButtonStyle.Primary);
   const backButton = new ButtonBuilder().setCustomId('owner:commandcenter:refresh').setLabel('Back / Refresh Home').setStyle(ButtonStyle.Secondary);
-  return { embeds: [embed], components: [new ActionRowBuilder().addComponents(rescanButton, backButton)], allowedMentions: { parse: [] } };
+  return { embeds: [embed], components: [new ActionRowBuilder().addComponents(repairButton, rescanButton, backButton)], allowedMentions: { parse: [] } };
 }
 
 async function ensurePrivateCommandRegistration(client, guildId) {
@@ -666,6 +687,11 @@ async function handleCommandCenterInteraction(client, interaction) {
   }
   if (customId === 'owner:commandcenter:health' && interaction.isButton?.()) {
     await interaction.reply({ ...(await buildHealthPanel(client)), flags: MessageFlags.Ephemeral }).catch(() => null); return true;
+  }
+  if (customId === 'owner:commandcenter:health:repair' && interaction.isButton?.()) {
+    await interaction.deferUpdate().catch(() => null);
+    const repairResult = await auditRouter.repairHealth(client).catch((error) => { console.warn('[Audit Intelligence] health repair failed:', error?.message || error); return null; });
+    await interaction.editReply(await buildHealthPanel(client, repairResult)).catch(() => null); return true;
   }
   if (customId === 'owner:commandcenter:health:rescan' && interaction.isButton?.()) {
     await interaction.deferUpdate().catch(() => null);
