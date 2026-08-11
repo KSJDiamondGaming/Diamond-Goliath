@@ -33,9 +33,6 @@ const {
 // CONSTANTS
 // ======================================================
 
-const WORKER_VERSION =
-  '1A_SYNC_WORKER';
-
 const DEFAULT_INTERVAL_MS =
   1000 * 60 * 5;
 
@@ -267,7 +264,5 @@ function startBackupWorker(
 // ======================================================
 
 module.exports = {
-  WORKER_VERSION,
-
   startBackupWorker,
 };
