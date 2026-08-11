@@ -34,8 +34,8 @@ function emptyRouter() { return express.Router(); }
 
 const { getBotModeConfig } = safeRequire('botModes', './src/config/botModes', { getBotModeConfig: () => ({ token: null }) }, { optional: false });
 const { enforceGuildAccess } = safeRequire('guildAccess', './src/config/guildAccess', { enforceGuildAccess: async () => true }, { optional: false });
-const { bootstrapRuntime, runBootValidation, safeLoad, printStartupFingerprint } = safeRequire('runtimeBootstrap', './src/runtime/runtimeBootstrap', {
-  bootstrapRuntime: () => ({}), runBootValidation: () => true, safeLoad: (_label, fn) => ({ ok: true, result: fn() }), printStartupFingerprint: () => null,
+const { bootstrapRuntime, runBootValidation, safeLoad, registerEvents, printStartupFingerprint } = safeRequire('runtimeBootstrap', './src/runtime/runtimeBootstrap', {
+  bootstrapRuntime: () => ({}), runBootValidation: () => true, safeLoad: (_label, fn) => ({ ok: true, result: fn() }), registerEvents: () => ({ files: 0, groups: 0 }), printStartupFingerprint: () => null,
 }, { optional: false });
 const { initSocketHub } = safeRequire('socketHub', './src/server/sockets/socketHub', { initSocketHub: () => null }, { optional: false });
 const { prepareInteraction } = safeRequire('interaction response guard', './src/runtime/interactionResponseGuard', { prepareInteraction: async () => null }, { optional: false });
@@ -147,46 +147,7 @@ if (fs.existsSync(dashboardDist)) {
 }
 
 safeLoad('commands', () => commandHandler.loadCommands(client));
-function registerEvents() {
-  const eventsPath = path.join(process.cwd(), 'src', 'events');
-  if (!fs.existsSync(eventsPath)) return;
-  const files = [];
-  const grouped = new Map();
-  const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).forEach((entry) => { const full = path.join(dir, entry.name); if (entry.isDirectory()) walk(full); else if (entry.isFile() && entry.name.endsWith('.js')) files.push(full); });
-  walk(eventsPath);
-  files.sort((a, b) => a.localeCompare(b));
-
-  for (const file of files) {
-    try {
-      const loaded = require(file);
-      for (const handler of (Array.isArray(loaded) ? loaded : [loaded])) {
-        if (!handler?.name || typeof handler.execute !== 'function') continue;
-        const eventName = String(handler.name);
-        const groupKey = `${eventName}:${handler.once === true ? 'once' : 'on'}`;
-        if (!grouped.has(groupKey)) grouped.set(groupKey, { eventName, once: handler.once === true, handlers: [] });
-        grouped.get(groupKey).handlers.push({ file, execute: handler.execute });
-      }
-    } catch (error) {
-      console.warn(`⚠️ Event skipped: ${file}`);
-      console.warn(error?.message || error);
-    }
-  }
-
-  for (const { eventName, once, handlers } of grouped.values()) {
-    const listener = async (...args) => {
-      if (eventName === 'interactionCreate') await prepareInteraction(args[0]);
-      for (const handler of handlers) {
-        try { await handler.execute(...args, client); }
-        catch (error) {
-          console.error(`[Events] ${eventName} handler failed: ${handler.file}`);
-          console.error(error?.stack || error?.message || error);
-        }
-      }
-    };
-    if (once) client.once(eventName, listener); else client.on(eventName, listener);
-  }
-}
-registerEvents();
+registerEvents(client, { prepareInteraction });
 auditEvents.registerAuditEvents?.(client);
 async function runStartupTask(label, fn) {
   try { await fn(); console.log(`✅ ${label} startup complete`); }
