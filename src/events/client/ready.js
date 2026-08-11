@@ -259,7 +259,7 @@ module.exports = {
     await sendAuditStartupSummary(client, auditRestore);
 
     restoreLockdownReminders(client);
-    startBackupWorker(client);
+    startBackupWorker();
     startStatusRotation(client);
 
     try {
