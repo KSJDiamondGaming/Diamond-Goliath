@@ -16,6 +16,12 @@ let ticketStoreApi;
 {
   'use strict';
 
+  /*
+  |--------------------------------------------------------------------------
+  | Ticket Types
+  |--------------------------------------------------------------------------
+  */
+
   const TICKET_TYPES = {
     SUPPORT: 'support',
     APPEAL: 'appeal',
@@ -25,12 +31,24 @@ let ticketStoreApi;
     OTHER: 'other',
   };
 
+  /*
+  |--------------------------------------------------------------------------
+  | Ticket Priority
+  |--------------------------------------------------------------------------
+  */
+
   const TICKET_PRIORITY = {
     LOW: 'low',
     NORMAL: 'normal',
     HIGH: 'high',
     URGENT: 'urgent',
   };
+
+  /*
+  |--------------------------------------------------------------------------
+  | Ticket Status
+  |--------------------------------------------------------------------------
+  */
 
   const TICKET_STATUS = {
     OPEN: 'open',
@@ -43,6 +61,12 @@ let ticketStoreApi;
     ARCHIVED: 'archived',
     DELETED: 'deleted',
   };
+
+  /*
+  |--------------------------------------------------------------------------
+  | Ticket Sources
+  |--------------------------------------------------------------------------
+  */
 
   const TICKET_SOURCE = {
     DISCORD_PANEL: 'discord_panel',
@@ -65,106 +89,224 @@ let ticketStoreApi;
     TRANSCRIPT_UPLOADED: 'ticket_transcript_uploaded', SYSTEM: 'ticket_system',
   });
 
+  /*
+  |--------------------------------------------------------------------------
+  | SLA Defaults
+  |--------------------------------------------------------------------------
+  */
+
   const DEFAULT_SLA = {
-    low: 1440,
-    normal: 720,
-    high: 120,
-    urgent: 15,
+    low: 1440,     // 24h
+    normal: 720,   // 12h
+    high: 120,     // 2h
+    urgent: 15,    // 15m
   };
+
+  /*
+  |--------------------------------------------------------------------------
+  | Reminder Defaults
+  |--------------------------------------------------------------------------
+  */
 
   const DEFAULT_REMINDERS = {
     enabled: true,
+
     repeat: true,
     repeatMinutes: 60,
+
     escalationMinutes: 60,
+
     pingRoleIds: [],
     escalationRoleIds: [],
   };
 
+  /*
+  |--------------------------------------------------------------------------
+  | Default Ticket Settings
+  |--------------------------------------------------------------------------
+  */
+
   const DEFAULT_TICKET_SETTINGS = {
     enabled: true,
+
     numbering: {
       nextNumber: 1,
       prefix: 'ticket',
       padding: 4,
     },
+
     tickets: {
       enabled: true,
+
       createPrivateChannels: true,
+
       maxActiveTicketsPerUser: 5,
+
       defaultPriority: TICKET_PRIORITY.LOW,
+
       defaultCooldownMs: 60 * 1000,
+
       allowUserClose: false,
       allowUserAddMembers: false,
     },
+
     permissions: {
       administratorOverride: true,
+
       staffRoles: [],
       managerRoles: [],
       viewerRoles: [],
     },
+
     transcripts: {
       enabled: true,
+
       saveOnClose: true,
       saveOnArchive: true,
       saveOnDelete: true,
+
       transcriptChannelId: null,
     },
+
     analytics: {
       enabled: true,
     },
   };
 
+  /*
+  |--------------------------------------------------------------------------
+  | Default Ticket Panel
+  |--------------------------------------------------------------------------
+  */
+
   const DEFAULT_TICKET_PANEL = {
     enabled: true,
+
     deployed: false,
     status: 'draft',
+
     name: 'Support Panel',
+
     ticketType: TICKET_TYPES.SUPPORT,
     ticketPriority: TICKET_PRIORITY.LOW,
+
+    /*
+    |--------------------------------------------------------------------------
+    | Limits
+    |--------------------------------------------------------------------------
+    */
+
     maxOpenTicketsPerUser: 2,
+
     maxActiveTicketsPerUser: 2,
+
     oneActivePerType: true,
+
     cooldownMs: 60 * 1000,
+
+    /*
+    |--------------------------------------------------------------------------
+    | Routing
+    |--------------------------------------------------------------------------
+    */
+
     outputCategoryId: null,
     archiveCategoryId: null,
+
     logsChannelId: null,
     transcriptsChannelId: null,
+
+    /*
+    |--------------------------------------------------------------------------
+    | Roles
+    |--------------------------------------------------------------------------
+    */
+
     staffRoleIds: [],
     managerRoleIds: [],
     viewerRoleIds: [],
+
     allowedRoleIds: [],
     blockedRoleIds: [],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Behaviour
+    |--------------------------------------------------------------------------
+    */
+
     createPrivateChannel: true,
+
     useThreads: false,
+
     autoAssignStaff: false,
+
     allowUserClose: false,
     allowUserAddMembers: false,
+
     autoCloseEnabled: false,
     autoCloseHours: 72,
+
     autoArchiveEnabled: false,
     autoArchiveHours: 72,
+
     priorityIndicators: true,
+
     dmCreatorOnOpen: true,
     dmCreatorOnClose: true,
+
     notifyStaffOnOpen: true,
+
+    /*
+    |--------------------------------------------------------------------------
+    | SLA
+    |--------------------------------------------------------------------------
+    */
+
     sla: {
       ...DEFAULT_SLA,
     },
+
+    /*
+    |--------------------------------------------------------------------------
+    | Reminders
+    |--------------------------------------------------------------------------
+    */
+
     reminders: {
       ...DEFAULT_REMINDERS,
     },
+
+    /*
+    |--------------------------------------------------------------------------
+    | Appearance
+    |--------------------------------------------------------------------------
+    */
+
     appearance: {
       title: 'Need Support?',
-      description: 'Press the button below to open a private support ticket.',
+      description:
+        'Press the button below to open a private support ticket.',
+
       color: '#5865F2',
+
       buttonLabel: 'Open Support Ticket',
       buttonEmoji: '🎫',
+
       imageUrl: null,
       thumbnailUrl: null,
+
       footerText: 'Goliath • Ticket System',
     },
+
     buttonStyle: 'Primary',
+
+    /*
+    |--------------------------------------------------------------------------
+    | Analytics
+    |--------------------------------------------------------------------------
+    */
+
     analytics: {
       opens: 0,
       closes: 0,
@@ -172,29 +314,42 @@ let ticketStoreApi;
       archives: 0,
       averageCloseTimeMs: 0,
     },
+
     metadata: {},
   };
+
+  /*
+  |--------------------------------------------------------------------------
+  | Utility Helpers
+  |--------------------------------------------------------------------------
+  */
 
   function createDefaultPanel(overrides = {}) {
     return {
       ...DEFAULT_TICKET_PANEL,
+
       ...overrides,
+
       appearance: {
         ...DEFAULT_TICKET_PANEL.appearance,
         ...(overrides.appearance || {}),
       },
+
       sla: {
         ...DEFAULT_SLA,
         ...(overrides.sla || {}),
       },
+
       reminders: {
         ...DEFAULT_REMINDERS,
         ...(overrides.reminders || {}),
       },
+
       analytics: {
         ...DEFAULT_TICKET_PANEL.analytics,
         ...(overrides.analytics || {}),
       },
+
       metadata: {
         ...DEFAULT_TICKET_PANEL.metadata,
         ...(overrides.metadata || {}),
@@ -208,14 +363,20 @@ let ticketStoreApi;
     TICKET_STATUS,
     TICKET_SOURCE,
     TICKET_TIMELINE_EVENTS,
+
     DEFAULT_SLA,
     DEFAULT_REMINDERS,
+
     DEFAULT_TICKET_SETTINGS,
     DEFAULT_TICKET_PANEL,
+
     createDefaultPanel,
   };
 }
 
+// ============================================================================
+// ticketStore
+// ============================================================================
 {
   const crypto = require('crypto');
 
@@ -250,13 +411,21 @@ let ticketStoreApi;
 
   function asNumber(value, fallback = 0) {
     const number = Number(value);
-    if (!Number.isFinite(number)) return fallback;
+
+    if (!Number.isFinite(number)) {
+      return fallback;
+    }
+
     return number;
   }
 
   function asNonNegativeInt(value, fallback = 0) {
     const number = asNumber(value, fallback);
-    if (number < 0) return fallback;
+
+    if (number < 0) {
+      return fallback;
+    }
+
     return Math.floor(number);
   }
 
@@ -266,7 +435,11 @@ let ticketStoreApi;
 
   function normalisePriority(priority = 'low') {
     const value = String(priority || 'low').toLowerCase();
-    if (['low', 'normal', 'high', 'urgent'].includes(value)) return value;
+
+    if (['low', 'normal', 'high', 'urgent'].includes(value)) {
+      return value;
+    }
+
     return 'low';
   }
 
@@ -292,9 +465,11 @@ let ticketStoreApi;
 
   function normalizeTicketSection(section = {}) {
     const base = defaultTicketSection();
+
     return {
       ...base,
       ...(section || {}),
+
       settings: {
         ...base.settings,
         ...(section.settings || {}),
@@ -319,18 +494,22 @@ let ticketStoreApi;
           ...(section.settings?.analytics || {}),
         },
       },
+
       panels: Array.isArray(section.panels)
         ? section.panels.map(normalizePanel)
         : [],
+
       tickets: Array.isArray(section.tickets)
         ? section.tickets.map(normalizeTicket)
         : [],
+
       analytics: asObject(section.analytics, {}),
     };
   }
 
   function normalizeTicket(ticket = {}) {
     const createdAt = ticket.createdAt || now();
+
     return {
       ...ticket,
       ticketId: ticket.ticketId || ticket.id || crypto.randomUUID(),
@@ -383,6 +562,7 @@ let ticketStoreApi;
 
   function defaultPanelAppearance(panel = {}) {
     const type = normaliseTicketType(panel.ticketType || panel.type || 'support');
+
     let title = 'Open a Ticket';
     let description = 'Need help? Open a ticket and our staff team will assist you.';
     let buttonLabel = 'Open Ticket';
@@ -394,18 +574,21 @@ let ticketStoreApi;
       buttonLabel = 'Open Support Ticket';
       buttonEmoji = '🎫';
     }
+
     if (type === 'appeal') {
       title = 'Submit an Appeal';
       description = 'Press the button below to open a private appeal ticket.';
       buttonLabel = 'Open Appeal Ticket';
       buttonEmoji = '⚖️';
     }
+
     if (type === 'report') {
       title = 'Submit a Report';
       description = 'Press the button below to report an issue privately.';
       buttonLabel = 'Open Report Ticket';
       buttonEmoji = '🚨';
     }
+
     if (type === 'application') {
       title = 'Submit an Application';
       description = 'Press the button below to open a private application ticket.';
@@ -427,9 +610,11 @@ let ticketStoreApi;
 
   function defaultPanelLimit(type) {
     const cleanType = normaliseTicketType(type);
+
     if (cleanType === 'appeal') return 1;
     if (cleanType === 'application') return 1;
     if (cleanType === 'report') return 3;
+
     return 2;
   }
 
@@ -559,9 +744,14 @@ let ticketStoreApi;
   }
 
   function getTicket(guildId, ticketId) {
-    return getAllTickets(guildId).find(
-      (ticket) => ticket.ticketId === ticketId || ticket.id === ticketId || ticket.displayId === ticketId
-    ) || null;
+    return (
+      getAllTickets(guildId).find(
+        (ticket) =>
+          ticket.ticketId === ticketId ||
+          ticket.id === ticketId ||
+          ticket.displayId === ticketId
+      ) || null
+    );
   }
 
   function saveTickets(guildId, data = {}) {
@@ -610,6 +800,7 @@ let ticketStoreApi;
     const index = section.tickets.findIndex(
       (ticket) => ticket.ticketId === ticketId || ticket.id === ticketId || ticket.displayId === ticketId
     );
+
     if (index === -1) return null;
 
     const existing = normalizeTicket(section.tickets[index]);
@@ -635,9 +826,11 @@ let ticketStoreApi;
   function deleteTicket(guildId, ticketId) {
     const section = getTicketSection(guildId);
     const before = section.tickets.length;
+
     section.tickets = section.tickets.filter(
       (ticket) => ticket.ticketId !== ticketId && ticket.id !== ticketId && ticket.displayId !== ticketId
     );
+
     const changed = before !== section.tickets.length;
     if (changed) saveTicketSection(guildId, section);
     return changed;
@@ -660,6 +853,7 @@ let ticketStoreApi;
 
   function incrementTicketNumber(guildId) {
     const section = getTicketSection(guildId);
+
     if (!section.settings.numbering) {
       section.settings.numbering = {
         nextNumber: 1,
@@ -667,6 +861,7 @@ let ticketStoreApi;
         padding: 4,
       };
     }
+
     section.settings.numbering.nextNumber = asNonNegativeInt(section.settings.numbering.nextNumber || 1, 1) + 1;
     saveTicketSection(guildId, section);
     return section.settings.numbering.nextNumber;
@@ -682,18 +877,22 @@ let ticketStoreApi;
     const nextPanels = Array.isArray(data.panels)
       ? data.panels.map((panel) => normalizePanel({ ...panel, guildId }))
       : [];
+
     if (nextPanels.length > section.panels.length) {
       assertTicketPanelLimitForTotal(guildId, nextPanels.length);
     }
+
     section.panels = nextPanels;
     saveTicketSection(guildId, section);
     return true;
   }
 
   function getPanel(guildId, panelId) {
-    return getPanels(guildId).panels.find(
-      (panel) => panel.panelId === panelId || panel.id === panelId
-    ) || null;
+    return (
+      getPanels(guildId).panels.find(
+        (panel) => panel.panelId === panelId || panel.id === panelId
+      ) || null
+    );
   }
 
   function createPanel(guildId, panelData = {}) {
@@ -707,6 +906,7 @@ let ticketStoreApi;
     const existingIndex = section.panels.findIndex(
       (existingPanel) => existingPanel.panelId === panel.panelId || existingPanel.id === panel.panelId
     );
+
     if (existingIndex !== -1) {
       section.panels[existingIndex] = normalizePanel({
         ...section.panels[existingIndex],
@@ -717,6 +917,7 @@ let ticketStoreApi;
       saveTicketSection(guildId, section);
       return section.panels[existingIndex];
     }
+
     assertTicketPanelLimitForNewPanel(guildId, section.panels.length);
     section.panels.push(panel);
     saveTicketSection(guildId, section);
@@ -727,6 +928,7 @@ let ticketStoreApi;
     const section = getTicketSection(guildId);
     const index = section.panels.findIndex((panel) => panel.panelId === panelId || panel.id === panelId);
     if (index === -1) return null;
+
     const existing = normalizePanel(section.panels[index]);
     const updated = normalizePanel({
       ...existing,
@@ -754,6 +956,7 @@ let ticketStoreApi;
       },
       updatedAt: now(),
     });
+
     section.panels[index] = updated;
     saveTicketSection(guildId, section);
     return updated;
@@ -838,6 +1041,7 @@ const coreApi = {
   ticketStore: ticketStoreApi,
 };
 
+// Publish persistence/defaults before loading dependent layers.
 module.exports = coreApi;
 
 const lifecycle = require('./ticketsLifecycle');
