@@ -139,6 +139,17 @@ function channelDeliveryState(channel, ownerGuild) {
   const history = permissions?.has(PermissionFlagsBits.ReadMessageHistory) ?? false;
   return { exists: true, view, send, history, healthy: view && send && history };
 }
+async function repairManagedChannelPermissions(channel, ownerGuild, reason) {
+  if (!channel?.isTextBased?.() || !ownerGuild?.members?.me) return false;
+  const state = channelDeliveryState(channel, ownerGuild);
+  if (state.healthy) return true;
+  const botId = ownerGuild.members.me.id;
+  const overwrite = channel.permissionOverwrites?.cache?.get(botId) || null;
+  const allow = new Set(overwrite?.allow?.toArray?.() || []);
+  for (const permission of ['ViewChannel', 'SendMessages', 'ReadMessageHistory']) allow.add(permission);
+  await channel.permissionOverwrites.edit(botId, { ViewChannel: true, SendMessages: true, ReadMessageHistory: true }, { reason }).catch((error) => console.warn('[Audit Intelligence] managed route permission repair failed:', error?.message || error));
+  return channelDeliveryState(channel, ownerGuild).healthy;
+}
 async function ensureReportFeedHeader(channel, sourceGuild, routeKey, label) {
   if (!channel?.isTextBased?.() || !sourceGuild?.id) return null;
   const marker = reportFeedMarker(sourceGuild, routeKey);
@@ -177,6 +188,7 @@ async function ensureReportRoutes(client, sourceGuild) {
 
   if (!await resolveTextChannel(ownerGuild, routes.guild)) routes.guild = systemChannel.id;
   if (!await resolveTextChannel(ownerGuild, routes.default)) routes.default = systemChannel.id;
+  await repairManagedChannelPermissions(systemChannel, ownerGuild, `Repair Goliath guild audit route for ${sourceGuild.name}`).catch(() => false);
   await ensureReportFeedHeader(systemChannel, sourceGuild, 'guild', 'Guild / System Events').catch(() => null);
 
   for (const [routeKey, definition] of Object.entries(REPORT_ROUTE_CHANNELS)) {
@@ -195,6 +207,7 @@ async function ensureReportRoutes(client, sourceGuild) {
     if (channel?.isTextBased?.()) {
       routes[routeKey] = channel.id;
       if (String(channel.topic || '').includes(reportRouteMarker(sourceGuild, routeKey))) {
+        await repairManagedChannelPermissions(channel, ownerGuild, `Repair Goliath ${definition.label} audit route for ${sourceGuild.name}`).catch(() => false);
         await ensureReportFeedHeader(channel, sourceGuild, routeKey, definition.label).catch(() => null);
       }
     }
@@ -473,6 +486,7 @@ async function repairStructure(client, sourceGuild) {
       if (!ownerGuild.channels.cache.get(String(channelId))) { delete routes[key]; changed = true; }
     }
     if (changed) auditStore.updateConfig({ guilds: { [sourceGuild.id]: { ...existing, routes, mode: Object.keys(routes).length ? 'custom' : 'auto' } } });
+    await ensureReportRoutes(client, sourceGuild).catch((error) => console.warn('[Audit Intelligence] report route self-repair failed:', error?.message || error));
   }
   return { before, after: await inspectStructure(client, sourceGuild) };
 }
@@ -580,6 +594,10 @@ async function deliver(client, sourceGuild, event) {
   if (!sourceGuild || sourceGuild.id === getOwnerAuditGuildId() || !monitoringEnabled(sourceGuild, event)) return false;
   const userId = eventUserId(event);
   let routedChannel = await configuredRouteChannel(client, sourceGuild, event);
+  if (routedChannel && !channelDeliveryState(routedChannel, routedChannel.guild).healthy && autoProvisionEnabled()) {
+    await ensureReportRoutes(client, sourceGuild).catch((error) => console.warn('[Audit Intelligence] unhealthy report route repair failed:', error?.message || error));
+    routedChannel = await configuredRouteChannel(client, sourceGuild, event);
+  }
   if (!routedChannel && autoProvisionEnabled()) {
     await ensureReportRoutes(client, sourceGuild).catch((error) => console.warn('[Audit Intelligence] automatic report route provisioning failed:', error?.message || error));
     routedChannel = await configuredRouteChannel(client, sourceGuild, event);
