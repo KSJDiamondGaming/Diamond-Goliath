@@ -292,6 +292,8 @@ function buildActorIntelligenceEmbed(userId, stored = {}) {
     const operation = item.operationId ? ` • op \`${item.operationId}\`` : '';
     return `${discordTime(item.timestamp, 'R')} • \`${item.type || 'action'}\` • **${guild}** • ${target}${channel}${reason}${operation}`;
   });
+  const environments = Object.keys(stored.environments || {});
+  const environmentLabel = environments.length ? environments.join(' • ') : runtimeMode();
 
   return new EmbedBuilder()
     .setColor(COLORS.intelligence)
@@ -301,9 +303,10 @@ function buildActorIntelligenceEmbed(userId, stored = {}) {
       { name: 'Actor', value: `<@${userId}>\n\`${userId}\``, inline: true },
       { name: 'Recorded Actions', value: `\`${actions.length}\``, inline: true },
       { name: 'Guilds Acted In', value: `\`${guilds.size}\``, inline: true },
+      { name: 'Environment Coverage', value: environmentLabel.slice(0, 1024), inline: false },
       { name: 'Action Categories', value: categorySummary.slice(0, 1024), inline: false },
     )
-    .setFooter({ text: 'Goliath Actor Intelligence • Newest 20 actions shown • Owner only' })
+    .setFooter({ text: 'Goliath Actor Intelligence • Cross-environment • Newest 20 actions shown • Owner only' })
     .setTimestamp();
 }
 
@@ -329,7 +332,7 @@ function ensureActorIntelligenceControls(client) {
       return;
     }
     const userId = match[2];
-    const stored = auditStore.getUser(userId) || {};
+    const stored = auditStore.getUserAcrossModes?.(userId) || auditStore.getUser(userId) || {};
     await interaction.reply({ embeds: [buildActorIntelligenceEmbed(userId, stored)], flags: MessageFlags.Ephemeral, allowedMentions: { parse: [] } }).catch(() => null);
   });
 }
