@@ -26,6 +26,37 @@ const now = () => new Date().toISOString();
 const clean = (value, max = 2000) => String(value ?? '').trim().slice(0, max);
 const intText = (value) => Number.isFinite(Number(value)) ? Number(value).toLocaleString('en-GB') : '';
 
+function validTimeZone(value) {
+  const timezone = String(value || '').trim();
+  if (!timezone) return false;
+  try { new Intl.DateTimeFormat('en-GB', { timeZone: timezone }).format(new Date()); return true; }
+  catch { return false; }
+}
+
+function quietHoursActive(settings, date = new Date()) {
+  const quiet = settings?.quietHours && typeof settings.quietHours === 'object' ? settings.quietHours : null;
+  if (!quiet || quiet.enabled !== true) return false;
+  const timezone = String(quiet.timezone || '').trim();
+  if (!validTimeZone(timezone)) return false;
+  const parseTime = (value) => {
+    const match = String(value || '').trim().match(/^(\d{2}):(\d{2})$/);
+    if (!match) return null;
+    const hours = Number(match[1]);
+    const minutes = Number(match[2]);
+    if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
+    return hours * 60 + minutes;
+  };
+  const start = parseTime(quiet.start);
+  const end = parseTime(quiet.end);
+  if (start === null || end === null || start === end) return false;
+  const parts = new Intl.DateTimeFormat('en-GB', { timeZone: timezone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(date);
+  const hour = Number(parts.find((part) => part.type === 'hour')?.value);
+  const minute = Number(parts.find((part) => part.type === 'minute')?.value);
+  if (!Number.isInteger(hour) || !Number.isInteger(minute)) return false;
+  const current = hour * 60 + minute;
+  return start < end ? current >= start && current < end : current >= start || current < end;
+}
+
 function stripTrailingDivider(value) {
   return String(value || '').replace(/(?:\n\s*)+(?:[\u2500\-_]{8,}\s*)+$/u, '').trim();
 }
@@ -691,24 +722,27 @@ async function buildEventPayload(client, guildId, config, account, creator, even
 
   const mentionMode = account.mentionMode || 'none';
   const content = mentionMode === 'everyone' ? '@everyone' : mentionMode === 'here' ? '@here' : mentionMode === 'role' && account.mentionRoleId ? `<@&${account.mentionRoleId}>` : undefined;
+  const quiet = quietHoursActive(config.settings);
   return {
     channel,
+    quietHoursPingSuppressed: quiet && Boolean(content),
     payload: {
       content,
       embeds: [embed],
       components: [],
       allowedMentions: {
-        parse: mentionMode === 'everyone' || mentionMode === 'here' ? ['everyone'] : [],
-        roles: account.mentionRoleId ? [account.mentionRoleId] : [],
+        parse: !quiet && (mentionMode === 'everyone' || mentionMode === 'here') ? ['everyone'] : [],
+        roles: !quiet && account.mentionRoleId ? [account.mentionRoleId] : [],
       },
     },
   };
 }
 
 async function sendEvent(client, guildId, config, account, creator, event) {
-  const { channel, payload } = await buildEventPayload(client, guildId, config, account, creator, event);
+  const { channel, payload, quietHoursPingSuppressed } = await buildEventPayload(client, guildId, config, account, creator, event);
   const message = await channel.send(payload);
   message.socialStudioChannelId = channel.id;
+  message.socialStudioQuietHoursPingSuppressed = quietHoursPingSuppressed === true;
   return message;
 }
 
@@ -830,7 +864,7 @@ async function checkGuildAccounts(client, guildId, options = {}) {
           state.lastAlertChannelId = message.socialStudioChannelId || message.channelId || null;
           state.lastDeliveryError = null;
           config.analytics.alertsSent = Number(config.analytics.alertsSent || 0) + 1;
-          addHistory(config, { status: 'alert_sent', accountId: account.accountId, creatorId: creator?.creatorId || null, creator: creator?.displayName || account.displayName, platform: account.platform, alertType: event.type, contentId: event.id || null, messageId: message.id, channelId: state.lastAlertChannelId });
+          addHistory(config, { status: 'alert_sent', accountId: account.accountId, creatorId: creator?.creatorId || null, creator: creator?.displayName || account.displayName, platform: account.platform, alertType: event.type, contentId: event.id || null, messageId: message.id, channelId: state.lastAlertChannelId, quietHoursPingSuppressed: message.socialStudioQuietHoursPingSuppressed === true });
           delivered.push({ type: event.type, id: event.id || null, messageId: message.id, channelId: state.lastAlertChannelId });
         } catch (error) {
           state.lastDeliveryError = error.message;
