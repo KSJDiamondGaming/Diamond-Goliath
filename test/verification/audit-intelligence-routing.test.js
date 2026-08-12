@@ -256,3 +256,21 @@ test('Voice section renders structured live and stored voice intelligence', () =
   assert.match(embeds, /Server mute\/deaf/);
   assert.match(embeds, /Self mute\/deaf/);
 });
+
+test('former user discovery searches stored cross-environment identity evidence', () => {
+  assert.match(store, /function searchUsersAcrossModes\(query, options = \{\}\)/);
+  assert.match(store, /record\.guilds\?\.\[guildId\]/);
+  assert.match(store, /record\.names \|\| \[\]/);
+  assert.match(store, /record\.globalNames \|\| \[\]/);
+  assert.match(store, /record\.displayNames \|\| \[\]/);
+  assert.match(store, /record\.nicknames \|\| \[\]/);
+  assert.match(events, /auditStore\.searchUsersAcrossModes\?\.\(value, \{ guildId: sourceGuild\.id, limit: 25 \}\)/);
+});
+
+test('former users remain discoverable by exact Discord ID after leaving a selected guild', () => {
+  assert.match(events, /\^\\d\{16,22\}\$/);
+  assert.match(events, /auditStore\.getUserAcrossModes\?\.\(value\)/);
+  assert.match(events, /stored\?\.guilds\?\.\[sourceGuild\.id\]/);
+  assert.match(events, /stored\.displayNames\?\.at\?\.\(-1\)/);
+  assert.match(events, /Object\.keys\(stored\.environments \|\| \{\}\)/);
+});
