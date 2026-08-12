@@ -133,6 +133,47 @@ function buildIdentitySummary(stored, liveUser, liveGuilds) {
   };
 }
 
+function buildModerationSummary(stored) {
+  const events = [...(stored.moderationHistory || [])]
+    .filter(Boolean)
+    .sort((a, b) => String(a?.timestamp || '').localeCompare(String(b?.timestamp || '')));
+  const byType = {};
+  const byGuild = {};
+  const byActor = {};
+  let reasoned = 0;
+  let unresolvedActor = 0;
+
+  for (const event of events) {
+    const type = String(event.type || 'moderation');
+    byType[type] = Number(byType[type] || 0) + 1;
+    const guildKey = String(event.guildName || event.guildId || 'Unknown guild');
+    byGuild[guildKey] = Number(byGuild[guildKey] || 0) + 1;
+    if (event.reason) reasoned += 1;
+    if (event.actorId) {
+      const actorKey = String(event.actorId);
+      byActor[actorKey] = Number(byActor[actorKey] || 0) + 1;
+    } else {
+      unresolvedActor += 1;
+    }
+  }
+
+  const environments = [...new Set(events.map((event) => event.environment || event.mode).filter(Boolean))];
+  return {
+    total: events.length,
+    first: events[0] || null,
+    latest: events.at?.(-1) || null,
+    reasoned,
+    withoutReason: Math.max(0, events.length - reasoned),
+    attributedActorCount: Object.keys(byActor).length,
+    unresolvedActor,
+    environments,
+    topTypes: topCountEntries(byType, 8),
+    topGuilds: topCountEntries(byGuild, 8),
+    topActors: topCountEntries(byActor, 8),
+    recent: events.slice(-12).reverse(),
+  };
+}
+
 function buildDeepSummary(stored, liveGuilds) {
   const guilds = Object.values(stored.guilds || {});
   const currentStored = guilds.filter((guild) => guild.currentMember === true);
@@ -238,6 +279,7 @@ async function buildReport(client, userId) {
     },
     summary: summariseStored(stored),
     identity: buildIdentitySummary(stored, liveUser, liveGuilds),
+    moderation: buildModerationSummary(stored),
     deep: buildDeepSummary(stored, liveGuilds),
     currentState: {
       knownToDiscord: Boolean(liveUser),
