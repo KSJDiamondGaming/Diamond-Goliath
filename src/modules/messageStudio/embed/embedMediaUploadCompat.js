@@ -4,6 +4,7 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  EmbedBuilder,
   FileUploadBuilder,
   LabelBuilder,
   ModalBuilder,
@@ -29,7 +30,6 @@ panel.mediaUploadModal = () => new ModalBuilder()
 function componentCount(row) {
   return Array.isArray(row?.components) ? row.components.length : 0;
 }
-
 function enforceComponentLimits(rows = []) {
   return rows
     .filter(Boolean)
@@ -40,7 +40,15 @@ function enforceComponentLimits(rows = []) {
       return row;
     });
 }
-
+function resolvePreviewSource(source, interaction) {
+  const raw = String(source || '').trim();
+  if (!raw) return '';
+  try {
+    const resolved = typeof panel.replaceVars === 'function' ? panel.replaceVars(raw, interaction) : raw;
+    const url = new URL(String(resolved || '').trim());
+    return url.protocol === 'https:' ? url.toString() : '';
+  } catch { return ''; }
+}
 function validationSummary(interaction) {
   const state = panel.getSession(interaction);
   const media = panel.getPanelMedia(state);
@@ -52,6 +60,29 @@ function validationSummary(interaction) {
   if (!media.thumbnail?.source && !report.gallery.length && !report.files.length) lines.push('➖ No media configured yet.');
   lines.push(`Ready: **${report.ready}** • Warnings: **${report.warnings}** • Invalid: **${report.invalid}**`);
   return lines.join('\n').slice(0, 1500);
+}
+function visualPreview(interaction) {
+  const state = panel.getSession(interaction);
+  const media = panel.getPanelMedia(state);
+  const selected = Number.isInteger(state.selectedMediaIndex) ? media.gallery?.[state.selectedMediaIndex] : null;
+  const selectedSource = resolvePreviewSource(selected?.source, interaction);
+  const thumbnailSource = resolvePreviewSource(media.thumbnail?.source, interaction);
+  const selectedType = String(selected?.type || 'auto').toLowerCase();
+
+  if (selected && selectedType === 'video') {
+    const embed = new EmbedBuilder().setColor(0x5865F2).setTitle('🎬 Selected Video Preview');
+    if (selectedSource) embed.setDescription(`[Open selected video](${selectedSource})${selected.alt ? `\n\n${String(selected.alt).slice(0, 800)}` : ''}`);
+    else embed.setDescription('The selected video uses a variable or source that cannot be previewed here yet. It will be resolved when the message is sent.');
+    return embed;
+  }
+
+  if (selectedSource) {
+    const embed = new EmbedBuilder().setColor(0x5865F2).setTitle('🖼️ Selected Media Preview').setImage(selectedSource);
+    if (selected?.alt) embed.setDescription(String(selected.alt).slice(0, 800));
+    return embed;
+  }
+  if (thumbnailSource) return new EmbedBuilder().setColor(0x5865F2).setTitle('🖼️ Thumbnail Preview').setImage(thumbnailSource);
+  return null;
 }
 
 if (!panel.__mediaUploadButtonPatched && typeof panel.buildMediaManagerPanel === 'function') {
@@ -74,8 +105,11 @@ if (!panel.__mediaUploadButtonPatched && typeof panel.buildMediaManagerPanel ===
       const status = validationSummary(interaction);
       embed.setDescription(`${current}\n\n${status}`.slice(0, 4096));
     }
+    const preview = visualPreview(interaction);
+    const embeds = Array.isArray(payload?.embeds) ? [...payload.embeds] : [];
+    if (preview && embeds.length < 10) embeds.push(preview);
 
-    return { ...payload, components: enforceComponentLimits(rows) };
+    return { ...payload, embeds, components: enforceComponentLimits(rows) };
   };
   panel.buildMediaManager = panel.buildMediaManagerPanel;
   panel.__mediaUploadButtonPatched = true;
