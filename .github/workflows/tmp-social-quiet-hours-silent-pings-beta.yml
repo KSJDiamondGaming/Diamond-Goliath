@@ -1,166 +1,22 @@
 name: Apply Social Studio quiet-hours silent pings BETA
-on:
-  push:
-    paths:
-      - '.github/workflows/tmp-social-quiet-hours-silent-pings-beta.yml'
+on: [push]
 permissions:
   contents: write
 jobs:
   patch:
+    if: github.ref == 'refs/heads/beta'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           ref: beta
-      - name: Patch quiet hours
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          monitor = Path('src/modules/socialStudio/socialAlerts/socialStudioMonitorCore.js')
-          text = monitor.read_text()
-
-          marker = "const intText = (value) => Number.isFinite(Number(value)) ? Number(value).toLocaleString('en-GB') : '';\n"
-          helper = r'''
-
-function validTimeZone(value) {
-  const timezone = String(value || '').trim();
-  if (!timezone) return false;
-  try {
-    new Intl.DateTimeFormat('en-GB', { timeZone: timezone }).format(new Date());
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function quietHoursActive(settings, date = new Date()) {
-  const quiet = settings?.quietHours && typeof settings.quietHours === 'object' ? settings.quietHours : null;
-  if (!quiet || quiet.enabled !== true) return false;
-  const timezone = String(quiet.timezone || '').trim();
-  if (!validTimeZone(timezone)) return false;
-  const parseTime = (value) => {
-    const match = String(value || '').trim().match(/^(\d{2}):(\d{2})$/);
-    if (!match) return null;
-    const hours = Number(match[1]);
-    const minutes = Number(match[2]);
-    if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
-    return hours * 60 + minutes;
-  };
-  const start = parseTime(quiet.start);
-  const end = parseTime(quiet.end);
-  if (start === null || end === null || start === end) return false;
-  const parts = new Intl.DateTimeFormat('en-GB', {
-    timeZone: timezone,
-    hour: '2-digit',
-    minute: '2-digit',
-    hourCycle: 'h23',
-  }).formatToParts(date);
-  const hour = Number(parts.find((part) => part.type === 'hour')?.value);
-  const minute = Number(parts.find((part) => part.type === 'minute')?.value);
-  if (!Number.isInteger(hour) || !Number.isInteger(minute)) return false;
-  const current = hour * 60 + minute;
-  return start < end
-    ? current >= start && current < end
-    : current >= start || current < end;
-}
-'''
-          if 'function quietHoursActive(' not in text:
-              if marker not in text:
-                  raise SystemExit('monitor helper insertion marker not found')
-              text = text.replace(marker, marker + helper, 1)
-
-          old = """  const mentionMode = account.mentionMode || 'none';
-  const content = mentionMode === 'everyone' ? '@everyone' : mentionMode === 'here' ? '@here' : mentionMode === 'role' && account.mentionRoleId ? `<@&${account.mentionRoleId}>` : undefined;
-  return {
-    channel,
-    payload: {
-      content,
-      embeds: [embed],
-      components: [],
-      allowedMentions: {
-        parse: mentionMode === 'everyone' || mentionMode === 'here' ? ['everyone'] : [],
-        roles: account.mentionRoleId ? [account.mentionRoleId] : [],
-      },
-    },
-  };
-"""
-          new = """  const mentionMode = account.mentionMode || 'none';
-  const content = mentionMode === 'everyone' ? '@everyone' : mentionMode === 'here' ? '@here' : mentionMode === 'role' && account.mentionRoleId ? `<@&${account.mentionRoleId}>` : undefined;
-  const quiet = quietHoursActive(config.settings);
-  return {
-    channel,
-    quietHoursPingSuppressed: quiet && Boolean(content),
-    payload: {
-      content,
-      embeds: [embed],
-      components: [],
-      allowedMentions: {
-        parse: !quiet && (mentionMode === 'everyone' || mentionMode === 'here') ? ['everyone'] : [],
-        roles: !quiet && account.mentionRoleId ? [account.mentionRoleId] : [],
-      },
-    },
-  };
-"""
-          if old in text:
-              text = text.replace(old, new, 1)
-          elif 'quietHoursPingSuppressed' not in text:
-              raise SystemExit('monitor mention payload block not found')
-
-          old_send = """async function sendEvent(client, guildId, config, account, creator, event) {
-  const { channel, payload } = await buildEventPayload(client, guildId, config, account, creator, event);
-  const message = await channel.send(payload);
-  message.socialStudioChannelId = channel.id;
-  return message;
-}
-"""
-          new_send = """async function sendEvent(client, guildId, config, account, creator, event) {
-  const { channel, payload, quietHoursPingSuppressed } = await buildEventPayload(client, guildId, config, account, creator, event);
-  const message = await channel.send(payload);
-  message.socialStudioChannelId = channel.id;
-  message.socialStudioQuietHoursPingSuppressed = quietHoursPingSuppressed === true;
-  return message;
-}
-"""
-          if old_send in text:
-              text = text.replace(old_send, new_send, 1)
-          elif 'socialStudioQuietHoursPingSuppressed' not in text:
-              raise SystemExit('sendEvent block not found')
-
-          old_history = "channelId: state.lastAlertChannelId });"
-          new_history = "channelId: state.lastAlertChannelId, quietHoursPingSuppressed: message.socialStudioQuietHoursPingSuppressed === true });"
-          if old_history in text:
-              text = text.replace(old_history, new_history, 1)
-
-          monitor.write_text(text)
-
-          compat = Path('src/modules/socialStudio/socialAlerts/socialStudioCreatorActionCompat.js')
-          c = compat.read_text()
-          old_validate = """      if (!timezone) throw new Error('Quiet Hours timezone is required.');
-      config.settings.quietHours = {
-"""
-          new_validate = """      if (!timezone) throw new Error('Quiet Hours timezone is required.');
-      try {
-        new Intl.DateTimeFormat('en-GB', { timeZone: timezone }).format(new Date());
-      } catch {
-        throw new Error('Quiet Hours timezone must be a valid IANA timezone, for example Europe/London.');
-      }
-      if (start === end) throw new Error('Quiet Hours start and end times must be different.');
-      config.settings.quietHours = {
-"""
-          if old_validate in c:
-              c = c.replace(old_validate, new_validate, 1)
-          elif 'valid IANA timezone' not in c:
-              raise SystemExit('quiet hours validation block not found')
-          compat.write_text(c)
-          PY
-      - name: Sanity check
+      - name: Apply patch
+        run: python3 .github/scripts/patch-social-quiet-hours.py
+      - name: Validate
         run: |
           node --check src/modules/socialStudio/socialAlerts/socialStudioMonitorCore.js
           node --check src/modules/socialStudio/socialAlerts/socialStudioCreatorActionCompat.js
-          grep -n "quietHoursPingSuppressed\|quietHoursActive" src/modules/socialStudio/socialAlerts/socialStudioMonitorCore.js
-          grep -n "valid IANA timezone\|start and end times" src/modules/socialStudio/socialAlerts/socialStudioCreatorActionCompat.js
-      - name: Commit patch
+      - name: Commit
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
