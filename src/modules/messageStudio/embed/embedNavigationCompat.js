@@ -87,7 +87,7 @@ if (!panel.__embedNavigationPatched) {
       findComponent(rows, 'embed:edit-content'),
       findComponent(rows, 'embed:panels') || new ButtonBuilder().setCustomId('embed:panels').setLabel(`🧩 Panels (${state.panels?.length || 1})`).setStyle(ButtonStyle.Primary),
       findComponent(rows, 'embed:edit-appearance'),
-      findComponent(rows, 'embed:edit-media'),
+      findComponent(rows, 'embed:edit-images') || findComponent(rows, 'embed:edit-media'),
     );
 
     const detailRow = rowFromComponents(
