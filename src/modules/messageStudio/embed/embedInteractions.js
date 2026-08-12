@@ -16,12 +16,16 @@ const {
   trim,
   embedOperationError,
   getSession,
+  saveSelected,
+  markUnsaved,
   allowedMentions,
   presetData,
   setDefault,
   clearUnsaved,
   buildPreviewEmbeds,
+  buildBuilderPanel,
   buttonRows,
+  imageModal,
 } = panel;
 
 function isTextBasedChannel(channel) {
@@ -45,6 +49,41 @@ async function handleInteraction(i) {
   const customId = String(i.customId || '');
   const s = getSession(i);
 
+  if (customId === 'embed:edit-images' && i.isButton?.()) {
+    await i.showModal(imageModal(s));
+    return true;
+  }
+
+  if (i.isModalSubmit?.() && customId.startsWith('embed:save-content-clean:')) {
+    markUnsaved(i, saveSelected(s, {
+      title: i.fields.getTextInputValue('title'),
+      description: i.fields.getTextInputValue('description'),
+    }));
+    await i.reply({ ...buildBuilderPanel(i, panel.memberName(i)), flags: 64 });
+    return true;
+  }
+
+  if (i.isModalSubmit?.() && customId.startsWith('embed:save-appearance:')) {
+    markUnsaved(i, saveSelected(s, {
+      authorName: i.fields.getTextInputValue('authorName'),
+      authorIcon: i.fields.getTextInputValue('authorIcon'),
+      authorUrl: i.fields.getTextInputValue('authorUrl'),
+      footer: i.fields.getTextInputValue('footer'),
+      footerIcon: i.fields.getTextInputValue('footerIcon'),
+    }));
+    await i.reply({ ...buildBuilderPanel(i, panel.memberName(i)), flags: 64 });
+    return true;
+  }
+
+  if (i.isModalSubmit?.() && customId.startsWith('embed:save-images:')) {
+    markUnsaved(i, saveSelected(s, {
+      thumbnail: i.fields.getTextInputValue('thumbnail'),
+      image: i.fields.getTextInputValue('image'),
+    }));
+    await i.reply({ ...buildBuilderPanel(i, panel.memberName(i)), flags: 64 });
+    return true;
+  }
+
   if (customId === 'embed:update-existing') {
     const deployment = getEmbedDeployment(i.guild.id, getDeploymentKeyFromState(s));
     if (!deployment) return original.handleInteraction(i);
@@ -52,22 +91,14 @@ async function handleInteraction(i) {
     const channel = i.guild.channels.cache.get(deployment.channelId)
       || (await i.guild.channels.fetch(deployment.channelId).catch(() => null));
     if (!isTextBasedChannel(channel)) {
-      await i.reply({
-        content: '⚠️ The original embed channel no longer exists or is not text-based.',
-        flags: 64,
-      });
+      await i.reply({ content: '⚠️ The original embed channel no longer exists or is not text-based.', flags: 64 });
       return true;
     }
 
     const access = await validateChannelAccess(
       i.guild,
       channel.id,
-      [
-        PermissionFlagsBits.ViewChannel,
-        PermissionFlagsBits.ReadMessageHistory,
-        PermissionFlagsBits.SendMessages,
-        PermissionFlagsBits.EmbedLinks,
-      ],
+      [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.SendMessages, PermissionFlagsBits.EmbedLinks],
       { scope: 'embed.update' },
     );
     if (!access.ok) {
@@ -91,19 +122,13 @@ async function handleInteraction(i) {
       payload.allowedMentions = allowedMentions(s, i);
     } catch (error) {
       console.error('[Embed] update payload failed:', error);
-      await i.reply({
-        content: `❌ The embed could not be built: ${error?.message || error}`,
-        flags: 64,
-      });
+      await i.reply({ content: `❌ The embed could not be built: ${error?.message || error}`, flags: 64 });
       return true;
     }
 
     try {
       await message.edit(payload);
-      saveEmbedDeployment(i.guild.id, getDeploymentKeyFromState(s), {
-        ...deployment,
-        lastUpdatedBy: i.user.id,
-      });
+      saveEmbedDeployment(i.guild.id, getDeploymentKeyFromState(s), { ...deployment, lastUpdatedBy: i.user.id });
       await i.reply({ content: '✅ Existing embed updated.', flags: 64 });
     } catch (error) {
       console.error('[Embed] failed to update existing embed:', error);
@@ -135,16 +160,11 @@ async function handleInteraction(i) {
     return true;
   }
 
-  const access = await validateChannelAccess(
-    i.guild,
-    channel.id,
-    [
-      PermissionFlagsBits.ViewChannel,
-      PermissionFlagsBits.SendMessages,
-      PermissionFlagsBits.EmbedLinks,
-    ],
-    { scope: 'embed.deploy' },
-  );
+  const access = await validateChannelAccess(i.guild, channel.id, [
+    PermissionFlagsBits.ViewChannel,
+    PermissionFlagsBits.SendMessages,
+    PermissionFlagsBits.EmbedLinks,
+  ], { scope: 'embed.deploy' });
   if (!access.ok) {
     await i.reply({ content: trim(access.message, 1800), flags: 64 });
     return true;
@@ -183,14 +203,10 @@ async function handleInteraction(i) {
   clearUnsaved(i, { ...s, selectedPreset: presetName });
 
   await i.reply({
-    content: ok
-      ? `✅ Embed posted to <#${s.channelId}> and saved as active`
-      : '⚠️ Preset saved, but default assignment failed.',
+    content: ok ? `✅ Embed posted to <#${s.channelId}> and saved as active` : '⚠️ Preset saved, but default assignment failed.',
     flags: 64,
   });
   return true;
 }
 
-module.exports = {
-  handleInteraction,
-};
+module.exports = { handleInteraction };
