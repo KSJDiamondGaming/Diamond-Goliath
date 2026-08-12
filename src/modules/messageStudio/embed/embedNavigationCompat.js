@@ -110,6 +110,8 @@ if (!panel.__embedNavigationPatched) {
         findComponent(rows, 'embed:panel-add'),
         findComponent(rows, 'embed:panel-duplicate'),
         findComponent(rows, 'embed:panel-remove'),
+      ),
+      rowFromComponents(
         findComponent(rows, 'embed:panel-up'),
         findComponent(rows, 'embed:panel-down'),
       ),
