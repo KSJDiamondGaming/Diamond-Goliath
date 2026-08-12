@@ -2,9 +2,10 @@
 
 const { MessageFlags, PermissionFlagsBits } = require('discord.js');
 const original = require('./embedInteractionsLegacy');
-const panel = require('./embedPreviewCompat');
+const panel = require('./embedMediaUploadCompat');
 const guildManager = require('../../../core/guild/guildManager');
 const { validateChannelAccess } = require('../../../core/security/goliathPermissionGuard');
+const { ensureAssetCached } = require('./embedAssetStore');
 const {
   saveEmbedDeployment,
   getEmbedDeployment,
@@ -30,6 +31,7 @@ const {
   thumbnailModal,
   galleryItemModal,
   fileItemModal,
+  mediaUploadModal,
   mediaModel,
 } = panel;
 
@@ -63,6 +65,19 @@ async function buildPayload(state, interaction, ephemeral = false) {
   });
 }
 
+function uploadType(attachment) {
+  const type = String(attachment?.contentType || '').toLowerCase();
+  if (type.startsWith('image/')) return 'image';
+  if (type.startsWith('video/')) return 'video';
+  return 'file';
+}
+
+async function cacheUploadedAttachment(attachment) {
+  if (!attachment?.url) return;
+  try { await ensureAssetCached('global', attachment.url); }
+  catch (error) { console.warn('[Embed Media] upload persistence failed:', attachment?.name || attachment?.url, error?.message || error); }
+}
+
 async function handleInteraction(i) {
   const customId = String(i.customId || '');
   const s = getSession(i);
@@ -83,6 +98,7 @@ async function handleInteraction(i) {
     const media = panel.getPanelMedia(s);
     const galleryIndex = Number.isInteger(s.selectedMediaIndex) ? s.selectedMediaIndex : null;
     const fileIndex = Number.isInteger(s.selectedFileIndex) ? s.selectedFileIndex : null;
+    if (customId === 'embed:media-upload') { await i.showModal(mediaUploadModal()); return true; }
     if (customId === 'embed:media-thumbnail') { await i.showModal(thumbnailModal(s)); return true; }
     if (customId === 'embed:media-gallery-add') {
       if (media.gallery.length >= mediaModel.MAX_GALLERY_ITEMS) { await i.reply({ content: `Maximum of ${mediaModel.MAX_GALLERY_ITEMS} gallery items reached.`, flags: 64 }); return true; }
@@ -121,6 +137,51 @@ async function handleInteraction(i) {
       saveMediaState(i, s, { ...media, files }, { selectedFileIndex: null });
       return updateMediaPanel(i);
     }
+  }
+
+  if (i.isModalSubmit?.() && customId === 'embed:media-upload-save') {
+    const uploaded = i.fields.getUploadedFiles('media_files', true);
+    const attachments = [...(uploaded?.values?.() || [])];
+    if (!attachments.length) { await i.reply({ content: 'No files were uploaded.', flags: 64 }); return true; }
+
+    const media = panel.getPanelMedia(s);
+    const gallery = [...media.gallery];
+    const files = [...media.files];
+    let addedGallery = 0;
+    let addedFiles = 0;
+    let skipped = 0;
+
+    for (const attachment of attachments) {
+      await cacheUploadedAttachment(attachment);
+      const kind = uploadType(attachment);
+      if ((kind === 'image' || kind === 'video') && gallery.length < mediaModel.MAX_GALLERY_ITEMS) {
+        gallery.push(mediaModel.normalizeGalleryItem({
+          source: attachment.url,
+          alt: attachment.description || attachment.name || '',
+          type: kind,
+          spoiler: Boolean(attachment.spoiler),
+        }));
+        addedGallery += 1;
+      } else if (files.length < mediaModel.MAX_FILES) {
+        files.push(mediaModel.normalizeFile({
+          source: attachment.url,
+          name: attachment.name || '',
+          description: attachment.description || '',
+          spoiler: Boolean(attachment.spoiler),
+        }));
+        addedFiles += 1;
+      } else skipped += 1;
+    }
+
+    saveMediaState(i, s, { ...media, gallery, files }, {
+      selectedMediaIndex: addedGallery ? gallery.length - 1 : s.selectedMediaIndex,
+      selectedFileIndex: addedFiles ? files.length - 1 : s.selectedFileIndex,
+    });
+    await i.reply({
+      content: `✅ Added ${addedGallery} gallery media item(s) and ${addedFiles} attached file(s).${skipped ? ` ${skipped} item(s) could not be added because the panel limits were reached.` : ''}`,
+      flags: 64,
+    });
+    return true;
   }
 
   if (i.isModalSubmit?.() && customId.startsWith('embed:save-content-clean:')) {
