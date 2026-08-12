@@ -6,12 +6,30 @@ function clone(value, fallback = null) {
   try { return JSON.parse(JSON.stringify(value ?? fallback)); } catch { return fallback; }
 }
 
+function normalizeState(state) {
+  if (!state || typeof state !== 'object') return state;
+  const source = state.media || state.mediaV2 || null;
+  if (!source) return state;
+  return { ...state, media: clone(source), mediaV2: clone(source) };
+}
+
 if (!panel.__neutralMediaStoragePatched) {
+  if (typeof panel.getSession === 'function') {
+    const originalGetSession = panel.getSession.bind(panel);
+    panel.getSession = (interaction) => normalizeState(originalGetSession(interaction));
+  }
+
+  if (typeof panel.saveSession === 'function') {
+    const originalSaveSession = panel.saveSession.bind(panel);
+    panel.saveSession = (interaction, state) => originalSaveSession(interaction, normalizeState(state));
+  }
+
   if (typeof panel.presetData === 'function') {
     const originalPresetData = panel.presetData.bind(panel);
     panel.presetData = (state) => {
-      const preset = originalPresetData(state) || {};
-      const media = clone(preset.media || preset.mediaV2 || state?.media || state?.mediaV2, null);
+      const normalized = normalizeState(state);
+      const preset = originalPresetData(normalized) || {};
+      const media = clone(preset.media || preset.mediaV2 || normalized?.media || normalized?.mediaV2, null);
       const output = { ...preset };
       delete output.mediaV2;
       if (media) output.media = media;
@@ -25,10 +43,7 @@ if (!panel.__neutralMediaStoragePatched) {
       const source = preset?.media || preset?.mediaV2 || null;
       const compatiblePreset = source ? { ...preset, mediaV2: clone(source) } : preset;
       const result = originalApplyPreset(interaction, name, compatiblePreset);
-      if (!result || typeof result !== 'object') return result;
-      const output = { ...result };
-      if (source) output.media = clone(source);
-      return output;
+      return normalizeState(source ? { ...result, media: clone(source) } : result);
     };
   }
 
