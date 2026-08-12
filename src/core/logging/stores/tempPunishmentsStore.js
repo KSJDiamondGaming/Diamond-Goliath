@@ -98,33 +98,8 @@ function removePunishment(id) {
   return removed;
 }
 
-function purgeExpired() {
-  const currentTime = Date.now();
-  let removedCount = 0;
-
-  for (const runtimeGuildId of getGuildIdsFromRuntime()) {
-    const security = guildManager.getSecurityConfig(runtimeGuildId);
-    const punishments = ensureTempPunishments(security);
-    const filtered = punishments.filter(
-      (punishment) => !punishment.expiresAt || new Date(punishment.expiresAt).getTime() > currentTime
-    );
-
-    if (filtered.length === punishments.length) continue;
-
-    removedCount += punishments.length - filtered.length;
-
-    guildManager.updateSecurityConfig(runtimeGuildId, (currentSecurity) => ({
-      ...currentSecurity,
-      tempPunishments: filtered,
-    }));
-  }
-
-  return removedCount;
-}
-
 module.exports = {
   getPunishments,
   addPunishment,
   removePunishment,
-  purgeExpired,
 };
