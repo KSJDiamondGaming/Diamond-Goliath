@@ -8,7 +8,7 @@ function saveButtons(i, state, buttons, selectedButtonIndex = state.selectedButt
 async function updateButtons(i) { await i.update(panel.buildButtonsManagerPanel(i)); return true; }
 async function updateButtonOptions(i) { await i.update(panel.buildButtonOptionsPanel(i)); return true; }
 async function replyButtons(i) { await i.reply({ ...panel.buildButtonsManagerPanel(i), flags: 64 }); return true; }
-function normalizeAction(value) { return String(value || '').trim().replace(/[^a-zA-Z0-9:_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80); }
+function normalizeAction(value) { return String(value || '').trim().toLowerCase().replace(/_/g, '-').replace(/[^a-z0-9:-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80); }
 function validUrlOrVariable(value) { const raw = String(value || '').trim(); if (!raw) return true; if (/\{[a-zA-Z0-9_]+\}/.test(raw)) return true; try { const url = new URL(raw); return ['http:', 'https:'].includes(url.protocol); } catch { return false; } }
 
 async function handleInteraction(i) {
@@ -66,12 +66,21 @@ async function handleInteraction(i) {
     const emoji = String(i.fields.getTextInputValue('emoji') || '').trim().slice(0, 100);
     const url = String(i.fields.getTextInputValue('url') || '').trim();
     const action = normalizeAction(i.fields.getTextInputValue('action'));
+    const actionValue = String(i.fields.getTextInputValue('actionValue') || '').trim().slice(0, 1000);
     if (!label) { await i.reply({ content: 'A button label is required.', flags: 64 }); return true; }
     if (!validUrlOrVariable(url)) { await i.reply({ content: 'Button links must be HTTP/HTTPS URLs or a URL-producing Embed Studio variable.', flags: 64 }); return true; }
-    if (url && action) { await i.reply({ content: 'Choose either a link URL or a custom action, not both.', flags: 64 }); return true; }
+    if (url && action) { await i.reply({ content: 'Choose either a link URL or an action, not both.', flags: 64 }); return true; }
     const editingIndex = customId === 'embed:button-manager-save-new' ? null : Number(customId.split(':').pop());
     const existing = Number.isInteger(editingIndex) ? (buttons[editingIndex] || {}) : {};
-    const entry = { ...existing, label, emoji, url, action, style: ['primary', 'secondary', 'success', 'danger'].includes(String(existing.style || '').toLowerCase()) ? String(existing.style).toLowerCase() : 'primary' };
+    const entry = {
+      ...existing,
+      label,
+      emoji,
+      url,
+      action,
+      actionValue,
+      style: ['primary', 'secondary', 'success', 'danger'].includes(String(existing.style || '').toLowerCase()) ? String(existing.style).toLowerCase() : 'primary',
+    };
     let selectedButtonIndex;
     if (editingIndex == null) {
       if (buttons.length >= panel.MAX_EMBED_BUTTONS) { await i.reply({ content: `Maximum of ${panel.MAX_EMBED_BUTTONS} buttons reached.`, flags: 64 }); return true; }
