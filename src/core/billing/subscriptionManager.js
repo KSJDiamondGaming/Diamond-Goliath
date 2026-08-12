@@ -123,18 +123,10 @@ function hasActivePro(guildId) {
 }
 
 module.exports = {
-  ACTIVE_STATUS,
-  EXPIRED_STATUS,
-  CANCELLED_STATUS,
-  defaultSubscription,
-  normalizeSubscription,
-  isExpired,
   getSubscription,
-  saveSubscription,
   setSubscription,
   clearSubscription,
   getActivePlan,
-  getActivePlanDefinition,
   hasActivePremium,
   hasActivePro,
 };
