@@ -8,8 +8,11 @@ const {
   LabelBuilder,
   ModalBuilder,
 } = require('discord.js');
-const panel = require('./embedPreviewCompat');
+const panel = require('./embedMediaStorageCompat');
 const { validatePanelMedia, statusIcon } = require('./embedMediaValidation');
+
+const MAX_COMPONENTS_PER_ROW = 5;
+const MAX_ACTION_ROWS = 5;
 
 panel.mediaUploadModal = () => new ModalBuilder()
   .setCustomId('embed:media-upload-save')
@@ -22,6 +25,21 @@ panel.mediaUploadModal = () => new ModalBuilder()
         new FileUploadBuilder().setCustomId('media_files').setMinValues(1).setMaxValues(10).setRequired(true),
       ),
   );
+
+function componentCount(row) {
+  return Array.isArray(row?.components) ? row.components.length : 0;
+}
+
+function enforceComponentLimits(rows = []) {
+  return rows
+    .filter(Boolean)
+    .slice(0, MAX_ACTION_ROWS)
+    .map((row) => {
+      if (!Array.isArray(row?.components) || row.components.length <= MAX_COMPONENTS_PER_ROW) return row;
+      row.components = row.components.slice(0, MAX_COMPONENTS_PER_ROW);
+      return row;
+    });
+}
 
 function validationSummary(interaction) {
   const state = panel.getSession(interaction);
@@ -40,25 +58,33 @@ if (!panel.__mediaUploadButtonPatched && typeof panel.buildMediaManagerPanel ===
   const original = panel.buildMediaManagerPanel.bind(panel);
   panel.buildMediaManagerPanel = (interaction, requestedBy = null) => {
     const payload = original(interaction, requestedBy);
-    const rows = Array.isArray(payload?.components) ? payload.components : [];
-    const lastRow = rows[rows.length - 1];
+    const rows = Array.isArray(payload?.components) ? [...payload.components] : [];
     const hasUpload = rows.some((row) => row?.components?.some((component) => component?.data?.custom_id === 'embed:media-upload'));
+
     if (!hasUpload) {
       const upload = new ButtonBuilder().setCustomId('embed:media-upload').setLabel('📤 Upload Media').setStyle(ButtonStyle.Success);
-      if (lastRow?.components?.length < 5) lastRow.addComponents(upload);
-      else if (rows.length < 5) rows.push(new ActionRowBuilder().addComponents(upload));
+      const availableRow = [...rows].reverse().find((row) => componentCount(row) < MAX_COMPONENTS_PER_ROW);
+      if (availableRow) availableRow.addComponents(upload);
+      else if (rows.length < MAX_ACTION_ROWS) rows.push(new ActionRowBuilder().addComponents(upload));
     }
+
     const embed = payload?.embeds?.[0];
     if (embed?.data) {
       const current = String(embed.data.description || '');
       const status = validationSummary(interaction);
       embed.setDescription(`${current}\n\n${status}`.slice(0, 4096));
     }
-    return { ...payload, components: rows.slice(0, 5) };
+
+    return { ...payload, components: enforceComponentLimits(rows) };
   };
   panel.buildMediaManager = panel.buildMediaManagerPanel;
   panel.__mediaUploadButtonPatched = true;
 }
 
 panel.validatePanelMedia = validatePanelMedia;
+panel.EMBED_COMPONENT_LIMITS = Object.freeze({
+  maxComponentsPerRow: MAX_COMPONENTS_PER_ROW,
+  maxActionRows: MAX_ACTION_ROWS,
+});
+
 module.exports = panel;
