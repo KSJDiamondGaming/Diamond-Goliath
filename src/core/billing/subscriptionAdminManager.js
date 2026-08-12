@@ -211,7 +211,6 @@ function processExpiredSubscriptions({ actor = 'subscription_worker' } = {}) {
 module.exports = {
   listSubscriptions,
   listHistory,
-  addHistory,
   grantSubscription,
   extendSubscription,
   removeSubscription,
