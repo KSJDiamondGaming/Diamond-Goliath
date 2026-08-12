@@ -33,11 +33,7 @@ function assetId(url) {
 function pathsFor(guildId, url) {
   const id = assetId(url);
   const root = assetRoot(guildId);
-  return {
-    id,
-    data: path.join(root, `${id}.bin`),
-    meta: path.join(root, `${id}.json`),
-  };
+  return { id, data: path.join(root, `${id}.bin`), meta: path.join(root, `${id}.json`) };
 }
 
 function getCachedAsset(guildId, url) {
@@ -50,9 +46,7 @@ function getCachedAsset(guildId, url) {
     let meta = {};
     if (fs.existsSync(p.meta)) meta = JSON.parse(fs.readFileSync(p.meta, 'utf8'));
     return { buffer, meta, id: p.id };
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
 function saveCachedAsset(guildId, url, buffer, meta = {}) {
@@ -60,11 +54,8 @@ function saveCachedAsset(guildId, url, buffer, meta = {}) {
   const p = pathsFor(guildId, url);
   fs.writeFileSync(p.data, buffer);
   fs.writeFileSync(p.meta, JSON.stringify({
-    sourceKey: stableSourceKey(url),
-    sourceUrl: String(url),
-    contentType: meta.contentType || null,
-    bytes: buffer.length,
-    savedAt: new Date().toISOString(),
+    sourceKey: stableSourceKey(url), sourceUrl: String(url), contentType: meta.contentType || null,
+    bytes: buffer.length, savedAt: new Date().toISOString(),
   }, null, 2));
   return { id: p.id, path: p.data };
 }
@@ -73,14 +64,7 @@ function supportedPersistentType(contentType) {
   const type = String(contentType || '').toLowerCase().split(';')[0].trim();
   if (!type) return true;
   if (type.startsWith('image/') || type.startsWith('video/') || type.startsWith('audio/')) return true;
-  return new Set([
-    'application/pdf',
-    'application/zip',
-    'application/x-zip-compressed',
-    'application/octet-stream',
-    'text/plain',
-    'text/csv',
-  ]).has(type);
+  return new Set(['application/pdf', 'application/zip', 'application/x-zip-compressed', 'application/octet-stream', 'text/plain', 'text/csv']).has(type);
 }
 
 async function downloadAsset(url) {
@@ -97,9 +81,7 @@ async function downloadAsset(url) {
     const buffer = await response.buffer();
     if (buffer.length > MAX_ASSET_BYTES) throw new Error('Media exceeds the 8 MB persistence limit.');
     return { buffer, contentType };
-  } finally {
-    clearTimeout(timer);
-  }
+  } finally { clearTimeout(timer); }
 }
 
 async function ensureAssetCached(guildId, url) {
@@ -116,8 +98,8 @@ function addHttpsSource(urls, value) {
   if (/^https:\/\//i.test(source)) urls.add(source);
 }
 
-function collectMediaV2Urls(urls, mediaV2) {
-  for (const panel of Array.isArray(mediaV2?.panels) ? mediaV2.panels : []) {
+function collectMediaUrls(urls, media) {
+  for (const panel of Array.isArray(media?.panels) ? media.panels : []) {
     addHttpsSource(urls, panel?.thumbnail?.source);
     for (const item of Array.isArray(panel?.gallery) ? panel.gallery : []) addHttpsSource(urls, item?.source);
     for (const file of Array.isArray(panel?.files) ? panel.files : []) addHttpsSource(urls, file?.source);
@@ -130,7 +112,7 @@ async function persistPresetMedia(guildId, preset) {
   for (const panel of panels) {
     for (const key of ['image', 'thumbnail', 'authorIcon', 'footerIcon']) addHttpsSource(urls, panel?.[key]);
   }
-  collectMediaV2Urls(urls, preset?.mediaV2);
+  collectMediaUrls(urls, preset?.media || preset?.mediaV2);
 
   const results = [];
   for (const url of urls) {
