@@ -83,7 +83,6 @@ function startStatusRotation(client) {
 
   if (client.statusRotationInterval) {
     clearInterval(client.statusRotationInterval);
-    client.statusRotationInterval = null;
   }
 
   const initialActivities = buildActivities(client);
