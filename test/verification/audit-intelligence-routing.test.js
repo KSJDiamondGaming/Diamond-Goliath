@@ -14,6 +14,17 @@ const embeds = fs.readFileSync(path.join(ROOT, 'src/owner/auditIntelligence/audi
 const userIntelligence = fs.readFileSync(path.join(ROOT, 'src/owner/auditIntelligence/userIntelligence.js'), 'utf8');
 const ready = fs.readFileSync(path.join(ROOT, 'src/events/client/ready.js'), 'utf8');
 
+const auditSources = { router, events, intelligence, store, embeds, userIntelligence };
+
+test('Audit Intelligence source files are not placeholder stubs', () => {
+  for (const [name, source] of Object.entries(auditSources)) {
+    const trimmed = source.trim();
+    assert.ok(trimmed.length > 100, `${name} must contain a real implementation`);
+    assert.notEqual(trimmed, 'PLACEHOLDER', `${name} must not be replaced by a placeholder stub`);
+    assert.doesNotMatch(source, /^\s*PLACEHOLDER\s*;?\s*$/m, `${name} must not contain a standalone PLACEHOLDER stub`);
+  }
+});
+
 test('audit delivery enforces per-guild pause and monitoring families', () => {
   assert.match(router, /guildConfig\.enabled === false/);
   assert.match(router, /monitoring\[monitorKeyForEvent\(event\)\] !== false/);
