@@ -32,10 +32,10 @@ function ensureDir(dirPath) {
 }
 
 function read(filePath, fallback = {}) {
-  try {
-    if (!filePath || typeof filePath !== 'string') return clone(fallback);
-    if (!fs.existsSync(filePath)) return clone(fallback);
+  if (!filePath || typeof filePath !== 'string') return clone(fallback);
+  if (!fs.existsSync(filePath)) return clone(fallback);
 
+  try {
     const raw = fs.readFileSync(filePath, 'utf8');
     if (!raw || !raw.trim()) return clone(fallback);
 
@@ -43,7 +43,7 @@ function read(filePath, fallback = {}) {
     return parsed && typeof parsed === 'object' ? parsed : clone(fallback);
   } catch (error) {
     console.error(`[fileStore] Failed to read file: ${filePath}`, error);
-    return clone(fallback);
+    throw error;
   }
 }
 
