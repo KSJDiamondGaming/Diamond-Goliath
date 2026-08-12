@@ -138,3 +138,25 @@ test('Deep Scan renders structured intelligence instead of raw count objects', (
   assert.match(embeds, /Latest Action Performed/);
   assert.doesNotMatch(embeds, /name: 'Event Totals', value: compact\(report\.counts/);
 });
+
+test('User Intelligence exposes identity and actor-history controls', () => {
+  assert.match(embeds, /owner:audit:identity/);
+  assert.match(embeds, /setLabel\('Identity History'\)/);
+  assert.match(embeds, /owner:audit:actions/);
+  assert.match(embeds, /setLabel\('Actions Performed'\)/);
+  assert.match(events, /\['deep', 'identity', 'guilds', 'moderation', 'roles', 'voice', 'timeline', 'actions'\]/);
+});
+
+test('Identity History renders observed cross-environment identity evidence', () => {
+  assert.match(userIntelligence, /function buildIdentitySummary\(stored, liveUser, liveGuilds\)/);
+  assert.match(userIntelligence, /identity: buildIdentitySummary\(stored, liveUser, liveGuilds\)/);
+  assert.match(embeds, /section === 'identity'/);
+  assert.match(embeds, /Current Identity/);
+  assert.match(embeds, /Observed Coverage/);
+  assert.match(embeds, /Username History/);
+  assert.match(embeds, /Global Name History/);
+  assert.match(embeds, /Display Name History/);
+  assert.match(embeds, /Nickname History by Guild/);
+  assert.match(embeds, /Current Live Nicknames/);
+  assert.match(embeds, /does not infer unobserved Discord identity changes/);
+});
