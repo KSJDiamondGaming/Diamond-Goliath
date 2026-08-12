@@ -3,9 +3,6 @@
 const path = require('node:path');
 const guildManager = require('../../guild/guildManager');
 
-const dataDir = null;
-const filePath = null;
-
 function clone(value) {
   return JSON.parse(JSON.stringify(value || []));
 }
@@ -126,9 +123,6 @@ function purgeExpired() {
 }
 
 module.exports = {
-  dataDir,
-  filePath,
-
   getPunishments,
   addPunishment,
   removePunishment,
