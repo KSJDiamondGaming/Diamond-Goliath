@@ -60,10 +60,55 @@ function snapshotUser(user) {
   };
 }
 
-function summariseStored(stored) {
-  const guilds = Object.values(stored.guilds || {});
+function reconcileGuildPresence(stored, liveGuilds) {
+  const liveById = new Map((liveGuilds || []).filter((entry) => entry?.guildId).map((entry) => [String(entry.guildId), entry]));
+  const storedGuilds = Object.values(stored.guilds || {}).map((guild) => ({ ...guild }));
+  const reconciled = [];
+  const seen = new Set();
+
+  for (const guild of storedGuilds) {
+    const guildId = String(guild.guildId || '');
+    if (!guildId) continue;
+    const live = liveById.get(guildId) || null;
+    seen.add(guildId);
+    reconciled.push({
+      ...guild,
+      guildId,
+      guildName: live?.guildName || guild.guildName || guildId,
+      storedCurrentMember: guild.currentMember,
+      currentMember: Boolean(live) ? true : guild.currentMember === false ? false : null,
+      liveVisible: Boolean(live),
+      presenceSource: live ? 'live' : guild.currentMember === false ? 'stored-leave' : 'stored-history',
+    });
+  }
+
+  for (const live of liveGuilds || []) {
+    const guildId = String(live?.guildId || '');
+    if (!guildId || seen.has(guildId)) continue;
+    reconciled.push({
+      guildId,
+      guildName: live.guildName || guildId,
+      firstObservedAt: null,
+      lastObservedAt: null,
+      eventCount: 0,
+      joinCount: 0,
+      leaveCount: 0,
+      currentMember: true,
+      storedCurrentMember: null,
+      liveVisible: true,
+      presenceSource: 'live',
+      eventTypes: {},
+    });
+  }
+
+  return reconciled.sort((a, b) => String(a.guildName || a.guildId).localeCompare(String(b.guildName || b.guildId)));
+}
+
+function summariseStored(stored, liveGuilds = []) {
+  const guilds = reconcileGuildPresence(stored, liveGuilds);
   const currentGuilds = guilds.filter((guild) => guild.currentMember === true);
   const formerGuilds = guilds.filter((guild) => guild.currentMember === false);
+  const unknownGuilds = guilds.filter((guild) => guild.currentMember !== true && guild.currentMember !== false);
   return {
     firstObservedAt: stored.firstObservedAt || null,
     lastObservedAt: stored.lastObservedAt || null,
@@ -71,6 +116,8 @@ function summariseStored(stored) {
     knownGuildCount: guilds.length,
     currentGuildCount: currentGuilds.length,
     formerGuildCount: formerGuilds.length,
+    unknownGuildCount: unknownGuilds.length,
+    liveVisibleGuildCount: guilds.filter((guild) => guild.liveVisible).length,
     joinCount: (stored.joinHistory || []).length,
     leaveCount: (stored.leaveHistory || []).length,
     moderationCount: (stored.moderationHistory || []).length,
@@ -98,13 +145,7 @@ function buildIdentitySummary(stored, liveUser, liveGuilds) {
     .sort((a, b) => String(a?.observedAt || '').localeCompare(String(b?.observedAt || '')));
   const liveNicknames = liveGuilds
     .filter((entry) => entry?.member?.nickname)
-    .map((entry) => ({
-      guildId: entry.guildId,
-      guildName: entry.guildName,
-      nickname: entry.member.nickname,
-      observedAt: null,
-      live: true,
-    }));
+    .map((entry) => ({ guildId: entry.guildId, guildName: entry.guildName, nickname: entry.member.nickname, observedAt: null, live: true }));
   const environments = Object.keys(stored.environments || {});
   return {
     current: {
@@ -112,20 +153,9 @@ function buildIdentitySummary(stored, liveUser, liveGuilds) {
       globalName: liveUser?.globalName || globalNames.at?.(-1) || null,
       displayName: liveUser?.displayName || displayNames.at?.(-1) || null,
     },
-    historical: {
-      usernames,
-      globalNames,
-      displayNames,
-      nicknames,
-    },
+    historical: { usernames, globalNames, displayNames, nicknames },
     liveNicknames,
-    counts: {
-      usernames: usernames.length,
-      globalNames: globalNames.length,
-      displayNames: displayNames.length,
-      nicknames: nicknames.length,
-      liveNicknames: liveNicknames.length,
-    },
+    counts: { usernames: usernames.length, globalNames: globalNames.length, displayNames: displayNames.length, nicknames: nicknames.length, liveNicknames: liveNicknames.length },
     environments,
     firstObservedAt: stored.firstObservedAt || null,
     lastObservedAt: stored.lastObservedAt || null,
@@ -134,58 +164,31 @@ function buildIdentitySummary(stored, liveUser, liveGuilds) {
 }
 
 function buildModerationSummary(stored) {
-  const events = [...(stored.moderationHistory || [])]
-    .filter(Boolean)
-    .sort((a, b) => String(a?.timestamp || '').localeCompare(String(b?.timestamp || '')));
-  const byType = {};
-  const byGuild = {};
-  const byActor = {};
-  let reasoned = 0;
-  let unresolvedActor = 0;
-
+  const events = [...(stored.moderationHistory || [])].filter(Boolean).sort((a, b) => String(a?.timestamp || '').localeCompare(String(b?.timestamp || '')));
+  const byType = {}; const byGuild = {}; const byActor = {};
+  let reasoned = 0; let unresolvedActor = 0;
   for (const event of events) {
     const type = String(event.type || 'moderation');
     byType[type] = Number(byType[type] || 0) + 1;
     const guildKey = String(event.guildName || event.guildId || 'Unknown guild');
     byGuild[guildKey] = Number(byGuild[guildKey] || 0) + 1;
     if (event.reason) reasoned += 1;
-    if (event.actorId) {
-      const actorKey = String(event.actorId);
-      byActor[actorKey] = Number(byActor[actorKey] || 0) + 1;
-    } else {
-      unresolvedActor += 1;
-    }
+    if (event.actorId) byActor[String(event.actorId)] = Number(byActor[String(event.actorId)] || 0) + 1;
+    else unresolvedActor += 1;
   }
-
   const environments = [...new Set(events.map((event) => event.environment || event.mode).filter(Boolean))];
   return {
-    total: events.length,
-    first: events[0] || null,
-    latest: events.at?.(-1) || null,
-    reasoned,
-    withoutReason: Math.max(0, events.length - reasoned),
-    attributedActorCount: Object.keys(byActor).length,
-    unresolvedActor,
-    environments,
-    topTypes: topCountEntries(byType, 8),
-    topGuilds: topCountEntries(byGuild, 8),
-    topActors: topCountEntries(byActor, 8),
-    recent: events.slice(-12).reverse(),
+    total: events.length, first: events[0] || null, latest: events.at?.(-1) || null, reasoned,
+    withoutReason: Math.max(0, events.length - reasoned), attributedActorCount: Object.keys(byActor).length,
+    unresolvedActor, environments, topTypes: topCountEntries(byType, 8), topGuilds: topCountEntries(byGuild, 8),
+    topActors: topCountEntries(byActor, 8), recent: events.slice(-12).reverse(),
   };
 }
 
 function buildRoleSummary(stored, liveGuilds) {
-  const events = [...(stored.roleHistory || [])]
-    .filter(Boolean)
-    .sort((a, b) => String(a?.timestamp || '').localeCompare(String(b?.timestamp || '')));
-  const byType = {};
-  const byGuild = {};
-  const byActor = {};
-  let additions = 0;
-  let removals = 0;
-  let replacements = 0;
-  let unresolvedActor = 0;
-
+  const events = [...(stored.roleHistory || [])].filter(Boolean).sort((a, b) => String(a?.timestamp || '').localeCompare(String(b?.timestamp || '')));
+  const byType = {}; const byGuild = {}; const byActor = {};
+  let additions = 0; let removals = 0; let replacements = 0; let unresolvedActor = 0;
   for (const event of events) {
     const type = String(event.type || 'member.roles');
     byType[type] = Number(byType[type] || 0) + 1;
@@ -194,21 +197,10 @@ function buildRoleSummary(stored, liveGuilds) {
     if (type === 'member.role.add') additions += 1;
     else if (type === 'member.role.remove') removals += 1;
     else replacements += 1;
-    if (event.actorId) {
-      const actorKey = String(event.actorId);
-      byActor[actorKey] = Number(byActor[actorKey] || 0) + 1;
-    } else {
-      unresolvedActor += 1;
-    }
+    if (event.actorId) byActor[String(event.actorId)] = Number(byActor[String(event.actorId)] || 0) + 1;
+    else unresolvedActor += 1;
   }
-
-  const currentGuilds = liveGuilds.map((entry) => ({
-    guildId: entry.guildId,
-    guildName: entry.guildName,
-    roles: entry.member?.roles || [],
-    highestRole: entry.member?.highestRole || null,
-    permissions: entry.member?.permissions || null,
-  }));
+  const currentGuilds = liveGuilds.map((entry) => ({ guildId: entry.guildId, guildName: entry.guildName, roles: entry.member?.roles || [], highestRole: entry.member?.highestRole || null, permissions: entry.member?.permissions || null }));
   const uniqueCurrentRoles = new Map();
   for (const guild of currentGuilds) {
     for (const role of guild.roles || []) {
@@ -216,46 +208,26 @@ function buildRoleSummary(stored, liveGuilds) {
       if (!uniqueCurrentRoles.has(key)) uniqueCurrentRoles.set(key, { ...role, guildId: guild.guildId, guildName: guild.guildName });
     }
   }
-
   return {
-    total: events.length,
-    additions,
-    removals,
-    replacements,
-    first: events[0] || null,
-    latest: events.at?.(-1) || null,
-    attributedActorCount: Object.keys(byActor).length,
-    unresolvedActor,
-    topTypes: topCountEntries(byType, 8),
-    topGuilds: topCountEntries(byGuild, 8),
-    topActors: topCountEntries(byActor, 8),
-    currentGuildCount: currentGuilds.length,
-    currentRoleCount: [...uniqueCurrentRoles.values()].length,
-    currentGuilds,
+    total: events.length, additions, removals, replacements, first: events[0] || null, latest: events.at?.(-1) || null,
+    attributedActorCount: Object.keys(byActor).length, unresolvedActor, topTypes: topCountEntries(byType, 8),
+    topGuilds: topCountEntries(byGuild, 8), topActors: topCountEntries(byActor, 8), currentGuildCount: currentGuilds.length,
+    currentRoleCount: [...uniqueCurrentRoles.values()].length, currentGuilds,
     currentRoles: [...uniqueCurrentRoles.values()].sort((a, b) => Number(b.position || 0) - Number(a.position || 0)).slice(0, 25),
     recent: events.slice(-12).reverse(),
   };
 }
 
 function buildVoiceSummary(stored, liveGuilds) {
-  const events = [...(stored.voiceHistory || [])]
-    .filter(Boolean)
-    .sort((a, b) => String(a?.timestamp || '').localeCompare(String(b?.timestamp || '')));
-  const byType = {};
-  const byGuild = {};
-  const byChannel = {};
-  let joins = 0;
-  let leaves = 0;
-  let moves = 0;
-  let stateChanges = 0;
-
+  const events = [...(stored.voiceHistory || [])].filter(Boolean).sort((a, b) => String(a?.timestamp || '').localeCompare(String(b?.timestamp || '')));
+  const byType = {}; const byGuild = {}; const byChannel = {};
+  let joins = 0; let leaves = 0; let moves = 0; let stateChanges = 0;
   for (const event of events) {
     const type = String(event.type || 'voice.update');
     byType[type] = Number(byType[type] || 0) + 1;
     const guildKey = String(event.guildName || event.guildId || 'Unknown guild');
     byGuild[guildKey] = Number(byGuild[guildKey] || 0) + 1;
-    const beforeChannel = event.before?.channelId || null;
-    const afterChannel = event.after?.channelId || null;
+    const beforeChannel = event.before?.channelId || null; const afterChannel = event.after?.channelId || null;
     if (!beforeChannel && afterChannel) joins += 1;
     else if (beforeChannel && !afterChannel) leaves += 1;
     else if (beforeChannel && afterChannel && String(beforeChannel) !== String(afterChannel)) moves += 1;
@@ -263,12 +235,7 @@ function buildVoiceSummary(stored, liveGuilds) {
     if (beforeChannel) byChannel[String(beforeChannel)] = Number(byChannel[String(beforeChannel)] || 0) + 1;
     if (afterChannel) byChannel[String(afterChannel)] = Number(byChannel[String(afterChannel)] || 0) + 1;
   }
-
-  const currentGuilds = liveGuilds.map((entry) => ({
-    guildId: entry.guildId,
-    guildName: entry.guildName,
-    voice: entry.member?.voice || null,
-  }));
+  const currentGuilds = liveGuilds.map((entry) => ({ guildId: entry.guildId, guildName: entry.guildName, voice: entry.member?.voice || null }));
   const connected = currentGuilds.filter((entry) => entry.voice?.channelId);
   const streaming = currentGuilds.filter((entry) => entry.voice?.streaming);
   const video = currentGuilds.filter((entry) => entry.voice?.selfVideo);
@@ -276,80 +243,41 @@ function buildVoiceSummary(stored, liveGuilds) {
   const serverDeafened = currentGuilds.filter((entry) => entry.voice?.serverDeaf);
   const selfMuted = currentGuilds.filter((entry) => entry.voice?.selfMute);
   const selfDeafened = currentGuilds.filter((entry) => entry.voice?.selfDeaf);
-
   return {
-    total: events.length,
-    joins,
-    leaves,
-    moves,
-    stateChanges,
-    first: events[0] || null,
-    latest: events.at?.(-1) || null,
-    topTypes: topCountEntries(byType, 8),
-    topGuilds: topCountEntries(byGuild, 8),
-    topChannels: topCountEntries(byChannel, 10),
-    current: {
-      visibleGuilds: currentGuilds.length,
-      connectedGuilds: connected.length,
-      streamingGuilds: streaming.length,
-      videoGuilds: video.length,
-      serverMutedGuilds: serverMuted.length,
-      serverDeafenedGuilds: serverDeafened.length,
-      selfMutedGuilds: selfMuted.length,
-      selfDeafenedGuilds: selfDeafened.length,
-      guilds: currentGuilds,
-    },
+    total: events.length, joins, leaves, moves, stateChanges, first: events[0] || null, latest: events.at?.(-1) || null,
+    topTypes: topCountEntries(byType, 8), topGuilds: topCountEntries(byGuild, 8), topChannels: topCountEntries(byChannel, 10),
+    current: { visibleGuilds: currentGuilds.length, connectedGuilds: connected.length, streamingGuilds: streaming.length, videoGuilds: video.length, serverMutedGuilds: serverMuted.length, serverDeafenedGuilds: serverDeafened.length, selfMutedGuilds: selfMuted.length, selfDeafenedGuilds: selfDeafened.length, guilds: currentGuilds },
     recent: events.slice(-15).reverse(),
   };
 }
 
 function buildDeepSummary(stored, liveGuilds) {
-  const guilds = Object.values(stored.guilds || {});
+  const guilds = reconcileGuildPresence(stored, liveGuilds);
   const currentStored = guilds.filter((guild) => guild.currentMember === true);
   const formerStored = guilds.filter((guild) => guild.currentMember === false);
   const unknownStored = guilds.filter((guild) => guild.currentMember !== true && guild.currentMember !== false);
-  const environments = Object.entries(stored.environments || {}).map(([mode, details]) => ({
-    mode,
-    firstObservedAt: details?.firstObservedAt || null,
-    lastObservedAt: details?.lastObservedAt || null,
-    eventCount: Number(details?.eventCount || 0),
-  }));
-  const recentActivity = [...(stored.recentEvents || [])]
-    .sort((a, b) => String(b?.timestamp || '').localeCompare(String(a?.timestamp || '')))
-    .slice(0, 12);
-  const moderation = stored.moderationHistory || [];
-  const actions = stored.actorHistory || [];
+  const environments = Object.entries(stored.environments || {}).map(([mode, details]) => ({ mode, firstObservedAt: details?.firstObservedAt || null, lastObservedAt: details?.lastObservedAt || null, eventCount: Number(details?.eventCount || 0) }));
+  const recentActivity = [...(stored.recentEvents || [])].sort((a, b) => String(b?.timestamp || '').localeCompare(String(a?.timestamp || ''))).slice(0, 12);
+  const moderation = stored.moderationHistory || []; const actions = stored.actorHistory || [];
   return {
     environments,
     guildPresence: {
       known: guilds.length,
-      liveVisible: liveGuilds.length,
+      liveVisible: guilds.filter((guild) => guild.liveVisible).length,
       currentStored: currentStored.length,
       formerStored: formerStored.length,
       unknownStored: unknownStored.length,
       currentGuilds: currentStored.slice(-10),
       formerGuilds: formerStored.slice(-10),
+      unknownGuilds: unknownStored.slice(-10),
     },
-    relations: {
-      subjectEvents: Number(stored.relations?.subject || 0),
-      actorActions: Number(stored.relations?.actor || 0),
-    },
+    relations: { subjectEvents: Number(stored.relations?.subject || 0), actorActions: Number(stored.relations?.actor || 0) },
     activity: {
-      totalEvents: Number(stored.eventCount || 0),
-      joins: (stored.joinHistory || []).length,
-      leaves: (stored.leaveHistory || []).length,
-      moderation: moderation.length,
-      roleChanges: (stored.roleHistory || []).length,
-      voiceEvents: (stored.voiceHistory || []).length,
-      actionsPerformed: actions.length,
-      topEventTypes: topCountEntries(stored.eventTypes, 8),
-      topCategories: topCountEntries(stored.categories, 8),
+      totalEvents: Number(stored.eventCount || 0), joins: (stored.joinHistory || []).length, leaves: (stored.leaveHistory || []).length,
+      moderation: moderation.length, roleChanges: (stored.roleHistory || []).length, voiceEvents: (stored.voiceHistory || []).length,
+      actionsPerformed: actions.length, topEventTypes: topCountEntries(stored.eventTypes, 8), topCategories: topCountEntries(stored.categories, 8),
     },
-    latest: {
-      moderation: moderation.at?.(-1) || null,
-      action: actions.at?.(-1) || null,
-      event: recentActivity[0] || null,
-    },
+    latest: { moderation: moderation.at?.(-1) || null, action: actions.at?.(-1) || null, event: recentActivity[0] || null },
     recentActivity,
   };
 }
@@ -357,45 +285,27 @@ function buildDeepSummary(stored, liveGuilds) {
 async function buildReport(client, userId) {
   const id = String(userId);
   const stored = auditStore.getUserAcrossModes?.(id) || auditStore.getUser(id) || {
-    userId: id,
-    eventCount: 0,
-    guilds: {},
-    eventTypes: {},
-    categories: {},
-    relations: { subject: 0, actor: 0 },
-    joinHistory: [],
-    leaveHistory: [],
-    roleHistory: [],
-    moderationHistory: [],
-    voiceHistory: [],
-    actorHistory: [],
-    recentEvents: [],
+    userId: id, eventCount: 0, guilds: {}, eventTypes: {}, categories: {}, relations: { subject: 0, actor: 0 },
+    joinHistory: [], leaveHistory: [], roleHistory: [], moderationHistory: [], voiceHistory: [], actorHistory: [], recentEvents: [],
   };
   const liveGuilds = [];
-
   for (const guild of client?.guilds?.cache?.values?.() || []) {
     const member = guild.members.cache.get(id) || await guild.members.fetch(id).catch(() => null);
     if (!member) continue;
-    liveGuilds.push({
-      guildId: guild.id,
-      guildName: guild.name,
-      member: snapshotMember(member),
-    });
+    liveGuilds.push({ guildId: guild.id, guildName: guild.name, member: snapshotMember(member) });
   }
 
   let liveUser = null;
   for (const item of liveGuilds) {
     const member = client.guilds.cache.get(item.guildId)?.members.cache.get(id) || null;
-    if (member?.user) {
-      liveUser = snapshotUser(member.user);
-      break;
-    }
+    if (member?.user) { liveUser = snapshotUser(member.user); break; }
   }
   if (!liveUser && client?.users?.fetch) {
     const fetched = await client.users.fetch(id).catch(() => null);
     if (fetched) liveUser = snapshotUser(fetched);
   }
 
+  const reconciledGuilds = reconcileGuildPresence(stored, liveGuilds);
   return {
     userId: id,
     profile: liveUser || {
@@ -406,7 +316,7 @@ async function buildReport(client, userId) {
       bot: stored.bot ?? null,
       accountCreatedAt: stored.accountCreatedAt || null,
     },
-    summary: summariseStored(stored),
+    summary: summariseStored(stored, liveGuilds),
     identity: buildIdentitySummary(stored, liveUser, liveGuilds),
     moderation: buildModerationSummary(stored),
     roles: buildRoleSummary(stored, liveGuilds),
@@ -415,28 +325,17 @@ async function buildReport(client, userId) {
     currentState: {
       knownToDiscord: Boolean(liveUser),
       guilds: liveGuilds,
+      reconciledGuilds,
+      formerGuilds: reconciledGuilds.filter((guild) => guild.currentMember === false),
+      unknownGuilds: reconciledGuilds.filter((guild) => guild.currentMember !== true && guild.currentMember !== false),
     },
     history: {
-      names: stored.names || [],
-      globalNames: stored.globalNames || [],
-      displayNames: stored.displayNames || [],
-      nicknames: stored.nicknames || [],
-      joins: stored.joinHistory || [],
-      leaves: stored.leaveHistory || [],
-      roles: stored.roleHistory || [],
-      moderation: stored.moderationHistory || [],
-      voice: stored.voiceHistory || [],
-      actions: stored.actorHistory || [],
-      recentEvents: stored.recentEvents || [],
+      names: stored.names || [], globalNames: stored.globalNames || [], displayNames: stored.displayNames || [], nicknames: stored.nicknames || [],
+      joins: stored.joinHistory || [], leaves: stored.leaveHistory || [], roles: stored.roleHistory || [], moderation: stored.moderationHistory || [],
+      voice: stored.voiceHistory || [], actions: stored.actorHistory || [], recentEvents: stored.recentEvents || [],
     },
-    counts: {
-      byEventType: stored.eventTypes || {},
-      byCategory: stored.categories || {},
-      byRelation: stored.relations || { subject: 0, actor: 0 },
-    },
-    environments: stored.environments || {},
-    stored,
-    generatedAt: new Date().toISOString(),
+    counts: { byEventType: stored.eventTypes || {}, byCategory: stored.categories || {}, byRelation: stored.relations || { subject: 0, actor: 0 } },
+    environments: stored.environments || {}, stored, generatedAt: new Date().toISOString(),
   };
 }
 
