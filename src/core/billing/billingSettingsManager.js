@@ -93,8 +93,6 @@ function updateBillingSettings(updates = {}, actor = 'owner') {
 }
 
 module.exports = {
-  DEFAULT_PRICING,
-  DEFAULT_SETTINGS,
   getBillingSettings,
   updateBillingSettings,
 };
