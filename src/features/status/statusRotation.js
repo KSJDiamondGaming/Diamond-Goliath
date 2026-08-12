@@ -3,35 +3,31 @@ const { normalizeBotMode } = require('../../config/botModes');
 
 const STATUS_INTERVAL_MS = 180_000;
 
-function buildDevActivities() {
-  return [
-    { name: '🔵 DEV | Building Goliath', type: ActivityType.Watching },
-    { name: '🧪 Testing New Modules', type: ActivityType.Playing },
-    { name: '🛠️ KSJ Development Server', type: ActivityType.Watching },
-    { name: '⚙️ Dashboard Changes', type: ActivityType.Watching },
-    { name: '📊 Dashboard Online', type: ActivityType.Watching },
-    { name: '🎟️ Ticket System Tests', type: ActivityType.Playing },
-    { name: '📋 Forms Engine Tests', type: ActivityType.Watching },
-    { name: '🌐 Translation Hub Tests', type: ActivityType.Competing },
-    { name: '🔒 Security Center Checks', type: ActivityType.Watching },
-    { name: '💾 Backup System Tests', type: ActivityType.Watching },
-  ];
-}
+const DEV_ACTIVITIES = [
+  { name: '🔵 DEV | Building Goliath', type: ActivityType.Watching },
+  { name: '🧪 Testing New Modules', type: ActivityType.Playing },
+  { name: '🛠️ KSJ Development Server', type: ActivityType.Watching },
+  { name: '⚙️ Dashboard Changes', type: ActivityType.Watching },
+  { name: '📊 Dashboard Online', type: ActivityType.Watching },
+  { name: '🎟️ Ticket System Tests', type: ActivityType.Playing },
+  { name: '📋 Forms Engine Tests', type: ActivityType.Watching },
+  { name: '🌐 Translation Hub Tests', type: ActivityType.Competing },
+  { name: '🔒 Security Center Checks', type: ActivityType.Watching },
+  { name: '💾 Backup System Tests', type: ActivityType.Watching },
+];
 
-function buildBetaActivities() {
-  return [
-    { name: '🟡 BETA | Staging Goliath', type: ActivityType.Watching },
-    { name: '🚧 Testing Upcoming Features', type: ActivityType.Playing },
-    { name: '🔍 Watching Beta Feedback', type: ActivityType.Watching },
-    { name: '⚡ Stability Testing', type: ActivityType.Competing },
-    { name: '📊 Dashboard Online', type: ActivityType.Watching },
-    { name: '🎟️ Validating Ticket Tools', type: ActivityType.Watching },
-    { name: '📋 Reviewing Forms Flow', type: ActivityType.Watching },
-    { name: '🌐 Testing Translation Hub', type: ActivityType.Competing },
-    { name: '🛡️ Security Systems Online', type: ActivityType.Watching },
-    { name: '💾 Backup Systems Ready', type: ActivityType.Watching },
-  ];
-}
+const BETA_ACTIVITIES = [
+  { name: '🟡 BETA | Staging Goliath', type: ActivityType.Watching },
+  { name: '🚧 Testing Upcoming Features', type: ActivityType.Playing },
+  { name: '🔍 Watching Beta Feedback', type: ActivityType.Watching },
+  { name: '⚡ Stability Testing', type: ActivityType.Competing },
+  { name: '📊 Dashboard Online', type: ActivityType.Watching },
+  { name: '🎟️ Validating Ticket Tools', type: ActivityType.Watching },
+  { name: '📋 Reviewing Forms Flow', type: ActivityType.Watching },
+  { name: '🌐 Testing Translation Hub', type: ActivityType.Competing },
+  { name: '🛡️ Security Systems Online', type: ActivityType.Watching },
+  { name: '💾 Backup Systems Ready', type: ActivityType.Watching },
+];
 
 function buildProductionActivities(client) {
   const guildCount = client.guilds.cache.size;
@@ -63,10 +59,10 @@ function buildActivities(client) {
   }
 
   if (mode === 'BETA') {
-    return buildBetaActivities();
+    return BETA_ACTIVITIES;
   }
 
-  return buildDevActivities();
+  return DEV_ACTIVITIES;
 }
 
 function startStatusRotation(client) {
