@@ -14,6 +14,11 @@ async function handleInteraction(interaction) {
     return true;
   }
 
+  if (interaction.isButton?.() && customId === 'embed:actions') {
+    await interaction.update(panel.buildActionsPanel(interaction));
+    return true;
+  }
+
   return original.handleInteraction(interaction);
 }
 
