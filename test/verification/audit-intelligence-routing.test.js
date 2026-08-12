@@ -186,3 +186,33 @@ test('Moderation section renders structured cross-environment intelligence', () 
   assert.match(embeds, /Recent Moderation History/);
   assert.match(embeds, /Unresolved actor/);
 });
+
+test('User Intelligence builds structured role intelligence', () => {
+  assert.match(userIntelligence, /function buildRoleSummary\(stored, liveGuilds\)/);
+  assert.match(userIntelligence, /roles: buildRoleSummary\(stored, liveGuilds\)/);
+  assert.match(userIntelligence, /additions:/);
+  assert.match(userIntelligence, /removals:/);
+  assert.match(userIntelligence, /replacements:/);
+  assert.match(userIntelligence, /attributedActorCount:/);
+  assert.match(userIntelligence, /unresolvedActor,/);
+  assert.match(userIntelligence, /topTypes:/);
+  assert.match(userIntelligence, /topGuilds:/);
+  assert.match(userIntelligence, /topActors:/);
+  assert.match(userIntelligence, /currentGuilds:/);
+  assert.match(userIntelligence, /uniqueCurrentRoles:/);
+  assert.match(userIntelligence, /recent:/);
+});
+
+test('Roles section renders structured live and stored role intelligence', () => {
+  assert.match(embeds, /const roles = report\?\.roles \|\| \{\}/);
+  assert.match(embeds, /Role Change Overview/);
+  assert.match(embeds, /First Recorded Role Change/);
+  assert.match(embeds, /Latest Role Change/);
+  assert.match(embeds, /Top Role Event Types/);
+  assert.match(embeds, /Top Guilds/);
+  assert.match(embeds, /Top Attributed Actors/);
+  assert.match(embeds, /Current Live Role State/);
+  assert.match(embeds, /Highest Roles/);
+  assert.match(embeds, /Unique Current Roles/);
+  assert.match(embeds, /Recent Role History/);
+});
