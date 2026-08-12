@@ -3,13 +3,6 @@ const { normalizeBotMode } = require('../../config/botModes');
 
 const STATUS_INTERVAL_MS = 180_000;
 
-function getTotalMembers(client) {
-  return client.guilds.cache.reduce(
-    (total, guild) => total + (guild.memberCount || 0),
-    0
-  );
-}
-
 function buildDevActivities() {
   return [
     { name: '🔵 DEV | Building Goliath', type: ActivityType.Watching },
@@ -42,7 +35,9 @@ function buildBetaActivities() {
 
 function buildProductionActivities(client) {
   const guildCount = client.guilds.cache.size;
-  const memberCount = getTotalMembers(client).toLocaleString();
+  const memberCount = client.guilds.cache
+    .reduce((total, guild) => total + (guild.memberCount || 0), 0)
+    .toLocaleString();
 
   return [
     { name: '🟢 Goliath | Protecting Servers', type: ActivityType.Watching },
