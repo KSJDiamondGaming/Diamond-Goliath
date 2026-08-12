@@ -16,6 +16,11 @@ function validUrlOrVariable(value) {
   try { const url = new URL(raw); return ['http:', 'https:'].includes(url.protocol); } catch { return false; }
 }
 function roleAction(action) { return ['toggle-role', 'add-role', 'remove-role'].includes(String(action || '').toLowerCase()); }
+function manualRow(value) {
+  if (value === 'auto' || value == null || value === '') return null;
+  const row = Number(value);
+  return Number.isInteger(row) && row >= 0 && row < panel.MAX_DEPLOYED_BUTTON_ROWS ? row : null;
+}
 
 async function handleInteraction(i) {
   const customId = String(i.customId || '');
@@ -83,6 +88,22 @@ async function handleInteraction(i) {
       saveButtons(i, state, buttons, index);
       return updateButtonOptions(i);
     }
+    if (customId === 'embed:button-row-select') {
+      if (index == null) return updateButtons(i);
+      const raw = String(i.values?.[0] || 'auto');
+      const row = manualRow(raw);
+      if (raw !== 'auto' && row == null) return true;
+      if (row != null) {
+        const manuallyAssigned = buttons.filter((button, buttonIndex) => buttonIndex !== index && manualRow(button?.row) === row).length;
+        if (manuallyAssigned >= panel.MAX_BUTTONS_PER_ROW) {
+          await i.reply({ content: `⚠️ Row ${row + 1} already has ${panel.MAX_BUTTONS_PER_ROW} explicitly placed buttons. Choose another row or Auto placement.`, flags: 64 });
+          return true;
+        }
+      }
+      buttons[index] = { ...buttons[index], row: row == null ? null : row };
+      saveButtons(i, state, buttons, index);
+      return updateButtonOptions(i);
+    }
   }
 
   if (i.isRoleSelectMenu?.() && customId === 'embed:button-action-role') {
@@ -117,7 +138,7 @@ async function handleInteraction(i) {
     let selectedButtonIndex;
     if (editingIndex == null) {
       if (buttons.length >= panel.MAX_EMBED_BUTTONS) { await i.reply({ content: `Maximum of ${panel.MAX_EMBED_BUTTONS} buttons reached.`, flags: 64 }); return true; }
-      buttons.push({ ...entry, action: '', actionValue: '' }); selectedButtonIndex = buttons.length - 1;
+      buttons.push({ ...entry, action: '', actionValue: '', row: null }); selectedButtonIndex = buttons.length - 1;
     } else { buttons[editingIndex] = entry; selectedButtonIndex = editingIndex; }
     saveButtons(i, state, buttons, selectedButtonIndex);
     return replyButtons(i);
