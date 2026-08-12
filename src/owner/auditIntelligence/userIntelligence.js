@@ -237,6 +237,72 @@ function buildRoleSummary(stored, liveGuilds) {
   };
 }
 
+function buildVoiceSummary(stored, liveGuilds) {
+  const events = [...(stored.voiceHistory || [])]
+    .filter(Boolean)
+    .sort((a, b) => String(a?.timestamp || '').localeCompare(String(b?.timestamp || '')));
+  const byType = {};
+  const byGuild = {};
+  const byChannel = {};
+  let joins = 0;
+  let leaves = 0;
+  let moves = 0;
+  let stateChanges = 0;
+
+  for (const event of events) {
+    const type = String(event.type || 'voice.update');
+    byType[type] = Number(byType[type] || 0) + 1;
+    const guildKey = String(event.guildName || event.guildId || 'Unknown guild');
+    byGuild[guildKey] = Number(byGuild[guildKey] || 0) + 1;
+    const beforeChannel = event.before?.channelId || null;
+    const afterChannel = event.after?.channelId || null;
+    if (!beforeChannel && afterChannel) joins += 1;
+    else if (beforeChannel && !afterChannel) leaves += 1;
+    else if (beforeChannel && afterChannel && String(beforeChannel) !== String(afterChannel)) moves += 1;
+    else stateChanges += 1;
+    if (beforeChannel) byChannel[String(beforeChannel)] = Number(byChannel[String(beforeChannel)] || 0) + 1;
+    if (afterChannel) byChannel[String(afterChannel)] = Number(byChannel[String(afterChannel)] || 0) + 1;
+  }
+
+  const currentGuilds = liveGuilds.map((entry) => ({
+    guildId: entry.guildId,
+    guildName: entry.guildName,
+    voice: entry.member?.voice || null,
+  }));
+  const connected = currentGuilds.filter((entry) => entry.voice?.channelId);
+  const streaming = currentGuilds.filter((entry) => entry.voice?.streaming);
+  const video = currentGuilds.filter((entry) => entry.voice?.selfVideo);
+  const serverMuted = currentGuilds.filter((entry) => entry.voice?.serverMute);
+  const serverDeafened = currentGuilds.filter((entry) => entry.voice?.serverDeaf);
+  const selfMuted = currentGuilds.filter((entry) => entry.voice?.selfMute);
+  const selfDeafened = currentGuilds.filter((entry) => entry.voice?.selfDeaf);
+
+  return {
+    total: events.length,
+    joins,
+    leaves,
+    moves,
+    stateChanges,
+    first: events[0] || null,
+    latest: events.at?.(-1) || null,
+    topTypes: topCountEntries(byType, 8),
+    topGuilds: topCountEntries(byGuild, 8),
+    topChannels: topCountEntries(byChannel, 10),
+    current: {
+      visibleGuilds: currentGuilds.length,
+      connectedGuilds: connected.length,
+      streamingGuilds: streaming.length,
+      videoGuilds: video.length,
+      serverMutedGuilds: serverMuted.length,
+      serverDeafenedGuilds: serverDeafened.length,
+      selfMutedGuilds: selfMuted.length,
+      selfDeafenedGuilds: selfDeafened.length,
+      guilds: currentGuilds,
+    },
+    recent: events.slice(-15).reverse(),
+  };
+}
+
 function buildDeepSummary(stored, liveGuilds) {
   const guilds = Object.values(stored.guilds || {});
   const currentStored = guilds.filter((guild) => guild.currentMember === true);
@@ -344,6 +410,7 @@ async function buildReport(client, userId) {
     identity: buildIdentitySummary(stored, liveUser, liveGuilds),
     moderation: buildModerationSummary(stored),
     roles: buildRoleSummary(stored, liveGuilds),
+    voice: buildVoiceSummary(stored, liveGuilds),
     deep: buildDeepSummary(stored, liveGuilds),
     currentState: {
       knownToDiscord: Boolean(liveUser),
