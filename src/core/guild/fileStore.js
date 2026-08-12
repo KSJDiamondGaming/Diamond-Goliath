@@ -174,7 +174,7 @@ function write(filePath, data = {}) {
       console.error(`[fileStore] Failed to restore backup: ${filePath}`, restoreError);
     }
 
-    return false;
+    throw error;
   }
 }
 
