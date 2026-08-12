@@ -16,6 +16,5 @@ function resolveBillingPath(...segments) {
 }
 
 module.exports = {
-  getBillingDir,
   resolveBillingPath,
 };
