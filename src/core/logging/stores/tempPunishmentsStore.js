@@ -1,7 +1,7 @@
 'use strict';
 
 const path = require('path');
-const guildManager = require('../../core/guild/guildManager');
+const guildManager = require('../../guild/guildManager');
 
 const dataDir = null;
 const filePath = null;
