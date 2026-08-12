@@ -316,6 +316,12 @@ async function handleMonitoringAction(interaction, id) {
         throw new Error('Quiet Hours times must be valid 24-hour times, for example 23:00 and 08:00.');
       }
       if (!timezone) throw new Error('Quiet Hours timezone is required.');
+      try {
+        new Intl.DateTimeFormat('en-GB', { timeZone: timezone }).format(new Date());
+      } catch {
+        throw new Error('Quiet Hours timezone must be a valid IANA timezone, for example Europe/London.');
+      }
+      if (start === end) throw new Error('Quiet Hours start and end times must be different.');
       config.settings.quietHours = {
         enabled: enabledRaw === 'yes',
         start,
