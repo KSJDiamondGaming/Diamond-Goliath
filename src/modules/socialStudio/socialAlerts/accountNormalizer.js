@@ -57,7 +57,7 @@ function extractUsername(platform, rawValue) {
 
   switch (platform) {
     case 'twitch':
-      return firstUsefulSegment(parsed.pathname, ['directory', 'downloads', 'jobs', 'p', 'settings', 'videos']);
+      return firstUsefulSegment(parsed.pathname, ['directory', 'downloads', 'jobs', 'moderator', 'p', 'settings', 'videos']);
     case 'tiktok':
       return cleanHandle((segments.find((value) => value.startsWith('@')) || segments[0] || '').replace(/^@/, ''));
     case 'youtube': {
