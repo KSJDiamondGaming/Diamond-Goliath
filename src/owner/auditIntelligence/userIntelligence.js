@@ -306,6 +306,10 @@ async function buildReport(client, userId) {
   }
 
   const reconciledGuilds = reconcileGuildPresence(stored, liveGuilds);
+  const reconciledGuildMap = Object.fromEntries(reconciledGuilds.map((guild) => [guild.guildId, guild]));
+  const currentGuilds = reconciledGuilds.filter((guild) => guild.currentMember === true);
+  const formerGuilds = reconciledGuilds.filter((guild) => guild.currentMember === false);
+  const unknownGuilds = reconciledGuilds.filter((guild) => guild.currentMember !== true && guild.currentMember !== false);
   return {
     userId: id,
     profile: liveUser || {
@@ -322,12 +326,18 @@ async function buildReport(client, userId) {
     roles: buildRoleSummary(stored, liveGuilds),
     voice: buildVoiceSummary(stored, liveGuilds),
     deep: buildDeepSummary(stored, liveGuilds),
+    guildPresence: {
+      all: reconciledGuilds,
+      current: currentGuilds,
+      former: formerGuilds,
+      unknown: unknownGuilds,
+    },
     currentState: {
       knownToDiscord: Boolean(liveUser),
       guilds: liveGuilds,
       reconciledGuilds,
-      formerGuilds: reconciledGuilds.filter((guild) => guild.currentMember === false),
-      unknownGuilds: reconciledGuilds.filter((guild) => guild.currentMember !== true && guild.currentMember !== false),
+      formerGuilds,
+      unknownGuilds,
     },
     history: {
       names: stored.names || [], globalNames: stored.globalNames || [], displayNames: stored.displayNames || [], nicknames: stored.nicknames || [],
@@ -335,7 +345,9 @@ async function buildReport(client, userId) {
       voice: stored.voiceHistory || [], actions: stored.actorHistory || [], recentEvents: stored.recentEvents || [],
     },
     counts: { byEventType: stored.eventTypes || {}, byCategory: stored.categories || {}, byRelation: stored.relations || { subject: 0, actor: 0 } },
-    environments: stored.environments || {}, stored, generatedAt: new Date().toISOString(),
+    environments: stored.environments || {},
+    stored: { ...stored, guilds: reconciledGuildMap },
+    generatedAt: new Date().toISOString(),
   };
 }
 
