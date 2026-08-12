@@ -1,5 +1,5 @@
-const fs = require('fs');
-const path = require('path');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
 const DEFAULT_DATA_ROOT = path.join(PROJECT_ROOT, 'src', 'runtime');
