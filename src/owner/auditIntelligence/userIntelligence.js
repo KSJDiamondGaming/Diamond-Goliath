@@ -174,6 +174,69 @@ function buildModerationSummary(stored) {
   };
 }
 
+function buildRoleSummary(stored, liveGuilds) {
+  const events = [...(stored.roleHistory || [])]
+    .filter(Boolean)
+    .sort((a, b) => String(a?.timestamp || '').localeCompare(String(b?.timestamp || '')));
+  const byType = {};
+  const byGuild = {};
+  const byActor = {};
+  let additions = 0;
+  let removals = 0;
+  let replacements = 0;
+  let unresolvedActor = 0;
+
+  for (const event of events) {
+    const type = String(event.type || 'member.roles');
+    byType[type] = Number(byType[type] || 0) + 1;
+    const guildKey = String(event.guildName || event.guildId || 'Unknown guild');
+    byGuild[guildKey] = Number(byGuild[guildKey] || 0) + 1;
+    if (type === 'member.role.add') additions += 1;
+    else if (type === 'member.role.remove') removals += 1;
+    else replacements += 1;
+    if (event.actorId) {
+      const actorKey = String(event.actorId);
+      byActor[actorKey] = Number(byActor[actorKey] || 0) + 1;
+    } else {
+      unresolvedActor += 1;
+    }
+  }
+
+  const currentGuilds = liveGuilds.map((entry) => ({
+    guildId: entry.guildId,
+    guildName: entry.guildName,
+    roles: entry.member?.roles || [],
+    highestRole: entry.member?.highestRole || null,
+    permissions: entry.member?.permissions || null,
+  }));
+  const uniqueCurrentRoles = new Map();
+  for (const guild of currentGuilds) {
+    for (const role of guild.roles || []) {
+      const key = String(role.id || `${guild.guildId}:${role.name || 'role'}`);
+      if (!uniqueCurrentRoles.has(key)) uniqueCurrentRoles.set(key, { ...role, guildId: guild.guildId, guildName: guild.guildName });
+    }
+  }
+
+  return {
+    total: events.length,
+    additions,
+    removals,
+    replacements,
+    first: events[0] || null,
+    latest: events.at?.(-1) || null,
+    attributedActorCount: Object.keys(byActor).length,
+    unresolvedActor,
+    topTypes: topCountEntries(byType, 8),
+    topGuilds: topCountEntries(byGuild, 8),
+    topActors: topCountEntries(byActor, 8),
+    currentGuildCount: currentGuilds.length,
+    currentRoleCount: [...uniqueCurrentRoles.values()].length,
+    currentGuilds,
+    currentRoles: [...uniqueCurrentRoles.values()].sort((a, b) => Number(b.position || 0) - Number(a.position || 0)).slice(0, 25),
+    recent: events.slice(-12).reverse(),
+  };
+}
+
 function buildDeepSummary(stored, liveGuilds) {
   const guilds = Object.values(stored.guilds || {});
   const currentStored = guilds.filter((guild) => guild.currentMember === true);
@@ -280,6 +343,7 @@ async function buildReport(client, userId) {
     summary: summariseStored(stored),
     identity: buildIdentitySummary(stored, liveUser, liveGuilds),
     moderation: buildModerationSummary(stored),
+    roles: buildRoleSummary(stored, liveGuilds),
     deep: buildDeepSummary(stored, liveGuilds),
     currentState: {
       knownToDiscord: Boolean(liveUser),
