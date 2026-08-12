@@ -100,8 +100,6 @@ if (!panel.__embedNavigationPatched) {
     return payload;
   };
 
-  // Content Panels follows the same flow rules: selector first, related actions together,
-  // and navigation isolated on the final row.
   const originalPanels = panel.buildPanelsPanel.bind(panel);
   panel.buildPanelsPanel = (interaction, ...args) => {
     const payload = originalPanels(interaction, ...args);
@@ -112,6 +110,8 @@ if (!panel.__embedNavigationPatched) {
         findComponent(rows, 'embed:panel-add'),
         findComponent(rows, 'embed:panel-duplicate'),
         findComponent(rows, 'embed:panel-remove'),
+      ),
+      rowFromComponents(
         findComponent(rows, 'embed:panel-up'),
         findComponent(rows, 'embed:panel-down'),
       ),
