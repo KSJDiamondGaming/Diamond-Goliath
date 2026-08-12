@@ -27,6 +27,7 @@ const {
   buildPreviewEmbeds,
   buildBuilderPanel,
   buildMediaManagerPanel,
+  buildMediaOptionsPanel,
   buttonRows,
   thumbnailModal,
   galleryItemModal,
@@ -52,6 +53,7 @@ function saveMediaState(i, state, media, extra = {}) {
   return saveSession(i, next);
 }
 async function updateMediaPanel(i) { await i.update(buildMediaManagerPanel(i, who(i))); return true; }
+async function updateMediaOptions(i) { await i.update(buildMediaOptionsPanel(i)); return true; }
 async function replyMediaPanel(i) { await i.reply({ ...buildMediaManagerPanel(i, who(i)), flags: 64 }); return true; }
 async function buildPayload(state, interaction, ephemeral = false) {
   return buildEmbedPayload({
@@ -100,6 +102,28 @@ async function handleInteraction(i) {
     const fileIndex = Number.isInteger(s.selectedFileIndex) ? s.selectedFileIndex : null;
     if (customId === 'embed:media-upload') { await i.showModal(mediaUploadModal()); return true; }
     if (customId === 'embed:media-thumbnail') { await i.showModal(thumbnailModal(s)); return true; }
+    if (customId === 'embed:media-options') {
+      if (galleryIndex == null || !media.gallery[galleryIndex]) { await i.reply({ content: 'Select a gallery item first.', flags: 64 }); return true; }
+      return updateMediaOptions(i);
+    }
+    if (customId === 'embed:media-options-back') return updateMediaPanel(i);
+    if (customId.startsWith('embed:media-type:')) {
+      if (galleryIndex == null || !media.gallery[galleryIndex]) return updateMediaPanel(i);
+      const type = customId.split(':').pop();
+      if (!['auto', 'image', 'video'].includes(type)) return true;
+      const gallery = [...media.gallery];
+      gallery[galleryIndex] = mediaModel.normalizeGalleryItem({ ...gallery[galleryIndex], type });
+      saveMediaState(i, s, { ...media, gallery }, { selectedMediaIndex: galleryIndex });
+      return updateMediaOptions(i);
+    }
+    if (customId.startsWith('embed:media-spoiler:')) {
+      if (galleryIndex == null || !media.gallery[galleryIndex]) return updateMediaPanel(i);
+      const spoiler = customId.endsWith(':on');
+      const gallery = [...media.gallery];
+      gallery[galleryIndex] = mediaModel.normalizeGalleryItem({ ...gallery[galleryIndex], spoiler });
+      saveMediaState(i, s, { ...media, gallery }, { selectedMediaIndex: galleryIndex });
+      return updateMediaOptions(i);
+    }
     if (customId === 'embed:media-gallery-add') {
       if (media.gallery.length >= mediaModel.MAX_GALLERY_ITEMS) { await i.reply({ content: `Maximum of ${mediaModel.MAX_GALLERY_ITEMS} gallery items reached.`, flags: 64 }); return true; }
       await i.showModal(galleryItemModal(s)); return true;
@@ -200,15 +224,20 @@ async function handleInteraction(i) {
   }
   if (i.isModalSubmit?.() && (customId === 'embed:media-gallery-save-new' || customId.startsWith('embed:media-gallery-save:'))) {
     const media = panel.getPanelMedia(s);
+    const editingIndex = customId === 'embed:media-gallery-save-new' ? null : Number(customId.split(':').pop());
+    const existing = Number.isInteger(editingIndex) ? (media.gallery[editingIndex] || {}) : {};
     const entry = mediaModel.normalizeGalleryItem({
-      source: i.fields.getTextInputValue('source'), alt: i.fields.getTextInputValue('alt'), type: i.fields.getTextInputValue('type'), spoiler: parseYes(i.fields.getTextInputValue('spoiler')),
+      source: i.fields.getTextInputValue('source'),
+      alt: i.fields.getTextInputValue('alt'),
+      type: existing.type || 'auto',
+      spoiler: existing.spoiler === true,
     });
     if (!entry.source) { await i.reply({ content: 'A media URL or variable is required.', flags: 64 }); return true; }
     const gallery = [...media.gallery]; let selectedMediaIndex;
     if (customId === 'embed:media-gallery-save-new') {
       if (gallery.length >= mediaModel.MAX_GALLERY_ITEMS) { await i.reply({ content: `Maximum of ${mediaModel.MAX_GALLERY_ITEMS} gallery items reached.`, flags: 64 }); return true; }
       gallery.push(entry); selectedMediaIndex = gallery.length - 1;
-    } else { selectedMediaIndex = Number(customId.split(':').pop()); gallery[selectedMediaIndex] = entry; }
+    } else { selectedMediaIndex = editingIndex; gallery[selectedMediaIndex] = entry; }
     saveMediaState(i, s, { ...media, gallery }, { selectedMediaIndex }); return replyMediaPanel(i);
   }
   if (i.isModalSubmit?.() && (customId === 'embed:media-file-save-new' || customId.startsWith('embed:media-file-save:'))) {
