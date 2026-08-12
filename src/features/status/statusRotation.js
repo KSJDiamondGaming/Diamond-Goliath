@@ -14,13 +14,6 @@ function getTotalMembers(client) {
   );
 }
 
-function getDynamicStats(client) {
-  return {
-    guildCount: client.guilds.cache.size,
-    memberCount: getTotalMembers(client).toLocaleString(),
-  };
-}
-
 function buildDevActivities() {
   return [
     { name: '🔵 DEV | Building Goliath', type: ActivityType.Watching },
@@ -52,7 +45,8 @@ function buildBetaActivities() {
 }
 
 function buildProductionActivities(client) {
-  const { guildCount, memberCount } = getDynamicStats(client);
+  const guildCount = client.guilds.cache.size;
+  const memberCount = getTotalMembers(client).toLocaleString();
 
   return [
     { name: '🟢 Goliath | Protecting Servers', type: ActivityType.Watching },
