@@ -23,27 +23,9 @@ function queuePersistentMediaImport(presetLike) {
 function textInput(id, label, style, value = '', maxLength = 4000) {
   return new TextInputBuilder().setCustomId(id).setLabel(label).setStyle(style).setRequired(false).setMaxLength(maxLength).setValue(String(value || '').slice(0, maxLength));
 }
-function mediaSessionKey(interaction) { return `${interaction.guildId}:${interaction.user?.id || 'unknown'}`; }
-const mediaSessions = new Map();
-function getMediaSession(interaction, state) {
-  const media = mediaModel.mediaForPanel(state);
-  const current = mediaSessions.get(mediaSessionKey(interaction)) || { selected: 0 };
-  current.selected = Math.max(0, Math.min(Number(current.selected) || 0, Math.max(0, media.gallery.length - 1)));
-  mediaSessions.set(mediaSessionKey(interaction), current);
-  return current;
-}
-function setMediaSession(interaction, patch) {
-  const next = { ...(mediaSessions.get(mediaSessionKey(interaction)) || { selected: 0 }), ...patch };
-  mediaSessions.set(mediaSessionKey(interaction), next);
-  return next;
-}
 function shortSource(value) {
   const source = String(value || '');
   return source.length > 72 ? `${source.slice(0, 69)}...` : source || 'Not set';
-}
-function galleryLabel(item, index) {
-  const type = item?.type === 'video' ? 'Video' : item?.type === 'image' ? 'Image' : 'Media';
-  return `${index + 1}. ${type}${item?.spoiler ? ' • spoiler' : ''}`.slice(0, 100);
 }
 
 panel.contentModal = (state) => new ModalBuilder()
@@ -70,59 +52,111 @@ panel.imageModal = (state) => new ModalBuilder()
     new ActionRowBuilder().addComponents(textInput('thumbnail', 'Small thumbnail URL / variable', TextInputStyle.Short, state.thumbnail)),
     new ActionRowBuilder().addComponents(textInput('image', 'Primary image URL / variable', TextInputStyle.Short, state.image)),
   );
-panel.mediaItemModal = (item = {}, mode = 'add') => new ModalBuilder()
-  .setCustomId(`embed:media-item-save:${mode}:${Date.now()}`)
-  .setTitle(mode === 'edit' ? 'Edit Gallery Media' : 'Add Gallery Media')
-  .addComponents(
-    new ActionRowBuilder().addComponents(textInput('source', 'Media URL / variable', TextInputStyle.Short, item.source || '')),
-    new ActionRowBuilder().addComponents(textInput('alt', 'Alt text / description', TextInputStyle.Paragraph, item.alt || '', 1024)),
-    new ActionRowBuilder().addComponents(textInput('type', 'Type: auto, image or video', TextInputStyle.Short, item.type || 'auto', 10)),
-    new ActionRowBuilder().addComponents(textInput('spoiler', 'Spoiler? yes / no', TextInputStyle.Short, item.spoiler ? 'yes' : 'no', 5)),
-  );
-panel.thumbnailModal = (thumbnail = {}) => new ModalBuilder()
-  .setCustomId(`embed:media-thumbnail-save:${Date.now()}`)
-  .setTitle('Edit Thumbnail')
-  .addComponents(
-    new ActionRowBuilder().addComponents(textInput('source', 'Thumbnail URL / variable', TextInputStyle.Short, thumbnail.source || '')),
-    new ActionRowBuilder().addComponents(textInput('alt', 'Thumbnail alt text', TextInputStyle.Paragraph, thumbnail.alt || '', 1024)),
-  );
 
-panel.buildMediaManager = (interaction) => {
+panel.thumbnailModal = (state) => {
+  const thumbnail = mediaModel.mediaForPanel(state).thumbnail || {};
+  return new ModalBuilder()
+    .setCustomId(`embed:media-thumbnail-save:${Date.now()}`)
+    .setTitle('Edit Thumbnail')
+    .addComponents(
+      new ActionRowBuilder().addComponents(textInput('source', 'Thumbnail URL / variable', TextInputStyle.Short, thumbnail.source || '')),
+      new ActionRowBuilder().addComponents(textInput('alt', 'Thumbnail alt text', TextInputStyle.Paragraph, thumbnail.alt || '', 1024)),
+    );
+};
+panel.galleryItemModal = (state, index = null) => {
+  const media = mediaModel.mediaForPanel(state);
+  const item = Number.isInteger(index) ? (media.gallery[index] || {}) : {};
+  const customId = Number.isInteger(index) ? `embed:media-gallery-save:${index}` : 'embed:media-gallery-save-new';
+  return new ModalBuilder()
+    .setCustomId(customId)
+    .setTitle(Number.isInteger(index) ? 'Edit Gallery Media' : 'Add Gallery Media')
+    .addComponents(
+      new ActionRowBuilder().addComponents(textInput('source', 'Media URL / variable', TextInputStyle.Short, item.source || '')),
+      new ActionRowBuilder().addComponents(textInput('alt', 'Alt text / description', TextInputStyle.Paragraph, item.alt || '', 1024)),
+      new ActionRowBuilder().addComponents(textInput('type', 'Type: auto, image or video', TextInputStyle.Short, item.type || 'auto', 10)),
+      new ActionRowBuilder().addComponents(textInput('spoiler', 'Spoiler? yes / no', TextInputStyle.Short, item.spoiler ? 'yes' : 'no', 5)),
+    );
+};
+panel.fileItemModal = (state, index = null) => {
+  const media = mediaModel.mediaForPanel(state);
+  const item = Number.isInteger(index) ? (media.files[index] || {}) : {};
+  const customId = Number.isInteger(index) ? `embed:media-file-save:${index}` : 'embed:media-file-save-new';
+  return new ModalBuilder()
+    .setCustomId(customId)
+    .setTitle(Number.isInteger(index) ? 'Edit Attached File' : 'Add Attached File')
+    .addComponents(
+      new ActionRowBuilder().addComponents(textInput('source', 'File URL / variable', TextInputStyle.Short, item.source || '')),
+      new ActionRowBuilder().addComponents(textInput('name', 'Display filename', TextInputStyle.Short, item.name || '', 256)),
+      new ActionRowBuilder().addComponents(textInput('description', 'File description', TextInputStyle.Paragraph, item.description || '', 1024)),
+      new ActionRowBuilder().addComponents(textInput('spoiler', 'Spoiler? yes / no', TextInputStyle.Short, item.spoiler ? 'yes' : 'no', 5)),
+    );
+};
+
+panel.buildMediaManagerPanel = (interaction, requestedBy = null) => {
   const state = panel.getSession(interaction);
   const media = mediaModel.mediaForPanel(state);
-  const session = getMediaSession(interaction, state);
-  const selected = media.gallery[session.selected] || null;
+  const galleryIndex = Number.isInteger(state.selectedMediaIndex) && media.gallery[state.selectedMediaIndex] ? state.selectedMediaIndex : null;
+  const fileIndex = Number.isInteger(state.selectedFileIndex) && media.files[state.selectedFileIndex] ? state.selectedFileIndex : null;
+  const galleryItem = galleryIndex == null ? null : media.gallery[galleryIndex];
+  const fileItem = fileIndex == null ? null : media.files[fileIndex];
   const lines = [
-    `**Panel:** ${Math.max(1, (Number(state.selectedPanelIndex) || 0) + 1)} / ${state.panels?.length || 1}`,
+    `**Panel:** ${(Number(state.selectedPanelIndex) || 0) + 1} / ${state.panels?.length || 1}`,
     `**Thumbnail:** ${media.thumbnail?.source ? shortSource(media.thumbnail.source) : 'Not set'}`,
     `**Gallery:** ${media.gallery.length}/${mediaModel.MAX_GALLERY_ITEMS}`,
-    `**Files:** ${media.files.length}/${mediaModel.MAX_FILES} *(file manager coming next)*`,
+    `**Files:** ${media.files.length}/${mediaModel.MAX_FILES}`,
     '',
-    selected ? `**Selected media ${session.selected + 1}:**\n${shortSource(selected.source)}\nType: ${selected.type || 'auto'} • Spoiler: ${selected.spoiler ? 'Yes' : 'No'}${selected.alt ? `\nAlt: ${selected.alt.slice(0, 300)}` : ''}` : '**Selected media:** None',
+    galleryItem ? `**Selected gallery ${galleryIndex + 1}:** ${shortSource(galleryItem.source)}\nType: ${galleryItem.type || 'auto'} • Spoiler: ${galleryItem.spoiler ? 'Yes' : 'No'}${galleryItem.alt ? `\nAlt: ${galleryItem.alt.slice(0, 300)}` : ''}` : '**Selected gallery:** None',
     '',
-    'Gallery items support URL/variable sources, alt text, image/video hints and spoiler state. Existing single-image panels remain compatible.',
+    fileItem ? `**Selected file ${fileIndex + 1}:** ${fileItem.name || shortSource(fileItem.source)}\n${shortSource(fileItem.source)}${fileItem.description ? `\n${fileItem.description.slice(0, 300)}` : ''}` : '**Selected file:** None',
+    '',
+    'Sources support direct HTTPS links and Embed Studio variables. Existing single-image presets remain backwards compatible.',
   ];
   const components = [];
   if (media.gallery.length) {
     components.push(new ActionRowBuilder().addComponents(
-      new StringSelectMenuBuilder().setCustomId('embed:media-select').setPlaceholder('Select gallery media').setMinValues(1).setMaxValues(1)
-        .addOptions(media.gallery.map((item, index) => ({ label: galleryLabel(item, index), value: String(index), description: shortSource(item.source).slice(0, 100), default: index === session.selected }))),
+      new StringSelectMenuBuilder().setCustomId('embed:media-gallery-select').setPlaceholder('Select gallery media').setMinValues(1).setMaxValues(1)
+        .addOptions(media.gallery.map((item, index) => ({
+          label: `${index + 1}. ${item.type === 'video' ? 'Video' : item.type === 'image' ? 'Image' : 'Media'}${item.spoiler ? ' • spoiler' : ''}`.slice(0, 100),
+          value: String(index),
+          description: shortSource(item.source).slice(0, 100),
+          default: index === galleryIndex,
+        }))),
+    ));
+  }
+  if (media.files.length) {
+    components.push(new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder().setCustomId('embed:media-file-select').setPlaceholder('Select attached file').setMinValues(1).setMaxValues(1)
+        .addOptions(media.files.map((item, index) => ({
+          label: `${index + 1}. ${item.name || 'File'}`.slice(0, 100),
+          value: String(index),
+          description: shortSource(item.source).slice(0, 100),
+          default: index === fileIndex,
+        }))),
     ));
   }
   components.push(new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('embed:media-add').setLabel('➕ Add Media').setStyle(ButtonStyle.Primary).setDisabled(media.gallery.length >= mediaModel.MAX_GALLERY_ITEMS),
-    new ButtonBuilder().setCustomId('embed:media-edit').setLabel('✏️ Edit').setStyle(ButtonStyle.Secondary).setDisabled(!selected),
-    new ButtonBuilder().setCustomId('embed:media-remove').setLabel('🗑️ Remove').setStyle(ButtonStyle.Danger).setDisabled(!selected),
     new ButtonBuilder().setCustomId('embed:media-thumbnail').setLabel('🖼️ Thumbnail').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('embed:media-gallery-add').setLabel('➕ Add Media').setStyle(ButtonStyle.Primary).setDisabled(media.gallery.length >= mediaModel.MAX_GALLERY_ITEMS),
+    new ButtonBuilder().setCustomId('embed:media-gallery-edit').setLabel('✏️ Edit Media').setStyle(ButtonStyle.Secondary).setDisabled(galleryIndex == null),
+    new ButtonBuilder().setCustomId('embed:media-gallery-remove').setLabel('🗑️ Remove').setStyle(ButtonStyle.Danger).setDisabled(galleryIndex == null),
   ));
   components.push(new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('embed:media-up').setLabel('⬆️ Up').setStyle(ButtonStyle.Secondary).setDisabled(!selected || session.selected <= 0),
-    new ButtonBuilder().setCustomId('embed:media-down').setLabel('⬇️ Down').setStyle(ButtonStyle.Secondary).setDisabled(!selected || session.selected >= media.gallery.length - 1),
-    new ButtonBuilder().setCustomId('embed:builder').setLabel('⬅️ Builder').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId('embed:media-refresh').setLabel('🔄 Refresh').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('embed:media-gallery-up').setLabel('⬆️ Media').setStyle(ButtonStyle.Secondary).setDisabled(galleryIndex == null || galleryIndex <= 0),
+    new ButtonBuilder().setCustomId('embed:media-gallery-down').setLabel('⬇️ Media').setStyle(ButtonStyle.Secondary).setDisabled(galleryIndex == null || galleryIndex >= media.gallery.length - 1),
+    new ButtonBuilder().setCustomId('embed:media-file-add').setLabel('📎 Add File').setStyle(ButtonStyle.Primary).setDisabled(media.files.length >= mediaModel.MAX_FILES),
+    new ButtonBuilder().setCustomId('embed:media-file-edit').setLabel('✏️ Edit File').setStyle(ButtonStyle.Secondary).setDisabled(fileIndex == null),
+    new ButtonBuilder().setCustomId('embed:media-file-remove').setLabel('🗑️ File').setStyle(ButtonStyle.Danger).setDisabled(fileIndex == null),
   ));
-  return { embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('🖼️ Media Manager').setDescription(lines.join('\n')).setFooter({ text: `Requested by ${panel.memberName(interaction)}` }).setTimestamp()], components };
+  components.push(new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('embed:builder').setLabel('⬅️ Builder').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('embed:edit-images').setLabel('🔄 Refresh').setStyle(ButtonStyle.Secondary),
+  ));
+  return {
+    embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('🖼️ Media Manager').setDescription(lines.join('\n')).setFooter({ text: `Requested by ${requestedBy || panel.memberName(interaction)}` }).setTimestamp()],
+    components,
+  };
 };
+panel.buildMediaManager = panel.buildMediaManagerPanel;
 
 if (!panel.__mediaV2Patched) {
   if (typeof panel.getSession === 'function') {
@@ -165,8 +199,6 @@ if (!panel.__mediaV2Patched) {
   panel.getPanelMedia = (state, index = null) => mediaModel.mediaForPanel(state, index);
   panel.setPanelMedia = (state, index, media) => mediaModel.setPanelMedia(state, index, media);
   panel.mediaModel = mediaModel;
-  panel.getMediaSession = getMediaSession;
-  panel.setMediaSession = setMediaSession;
   panel.__mediaV2Patched = true;
 }
 
