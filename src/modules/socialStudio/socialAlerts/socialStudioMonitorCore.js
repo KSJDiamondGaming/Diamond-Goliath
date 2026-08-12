@@ -865,7 +865,7 @@ async function checkGuildAccounts(client, guildId, options = {}) {
           state.lastDeliveryError = null;
           config.analytics.alertsSent = Number(config.analytics.alertsSent || 0) + 1;
           addHistory(config, { status: 'alert_sent', accountId: account.accountId, creatorId: creator?.creatorId || null, creator: creator?.displayName || account.displayName, platform: account.platform, alertType: event.type, contentId: event.id || null, messageId: message.id, channelId: state.lastAlertChannelId, quietHoursPingSuppressed: message.socialStudioQuietHoursPingSuppressed === true });
-          delivered.push({ type: event.type, id: event.id || null, messageId: message.id, channelId: state.lastAlertChannelId });
+          delivered.push({ type: event.type, id: event.id || null, messageId: message.id, channelId: state.lastAlertChannelId, quietHoursPingSuppressed: message.socialStudioQuietHoursPingSuppressed === true });
         } catch (error) {
           state.lastDeliveryError = error.message;
           config.analytics.failures = Number(config.analytics.failures || 0) + 1;
