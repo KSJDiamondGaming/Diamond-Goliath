@@ -44,6 +44,20 @@ panel.galleryItemModal = (state, index = null) => {
     );
 };
 
+panel.fileItemModal = (state, index = null) => {
+  const media = panel.getPanelMedia(state);
+  const item = Number.isInteger(index) ? (media.files[index] || {}) : {};
+  const customId = Number.isInteger(index) ? `embed:media-file-save:${index}` : 'embed:media-file-save-new';
+  return new ModalBuilder()
+    .setCustomId(customId)
+    .setTitle(Number.isInteger(index) ? 'Edit Attached File' : 'Add Attached File')
+    .addComponents(
+      new ActionRowBuilder().addComponents(textInput('source', 'File URL / variable', TextInputStyle.Short, item.source || '')),
+      new ActionRowBuilder().addComponents(textInput('name', 'Display filename', TextInputStyle.Short, item.name || '', 256)),
+      new ActionRowBuilder().addComponents(textInput('description', 'File description', TextInputStyle.Paragraph, item.description || '', 1024)),
+    );
+};
+
 function componentCount(row) {
   return Array.isArray(row?.components) ? row.components.length : 0;
 }
@@ -97,6 +111,23 @@ function visualPreview(interaction) {
   if (thumbnailSource) return new EmbedBuilder().setColor(0x5865F2).setTitle('🖼️ Thumbnail Preview').setImage(thumbnailSource);
   return null;
 }
+function filePreview(interaction) {
+  const state = panel.getSession(interaction);
+  const media = panel.getPanelMedia(state);
+  const index = Number.isInteger(state.selectedFileIndex) && media.files[state.selectedFileIndex] ? state.selectedFileIndex : null;
+  if (index == null) return null;
+  const file = media.files[index];
+  const source = resolvePreviewSource(file.source, interaction);
+  const lines = [
+    `**File ${index + 1} of ${media.files.length}**`,
+    `**Name:** ${file.name || 'Automatic filename'}`,
+    `**Spoiler:** ${file.spoiler ? 'On' : 'Off'}`,
+  ];
+  if (file.description) lines.push(`**Description:** ${String(file.description).slice(0, 800)}`);
+  if (source) lines.push(`[Open selected file](${source})`);
+  else lines.push('The file source uses a variable or cannot be previewed here yet. It will be resolved when the message is sent.');
+  return new EmbedBuilder().setColor(0x5865F2).setTitle('📎 Selected File').setDescription(lines.join('\n'));
+}
 
 panel.buildMediaOptionsPanel = (interaction) => {
   const state = panel.getSession(interaction);
@@ -128,6 +159,35 @@ panel.buildMediaOptionsPanel = (interaction) => {
   };
 };
 
+panel.buildFileOptionsPanel = (interaction) => {
+  const state = panel.getSession(interaction);
+  const media = panel.getPanelMedia(state);
+  const index = Number.isInteger(state.selectedFileIndex) && media.files[state.selectedFileIndex] ? state.selectedFileIndex : null;
+  const item = index == null ? null : media.files[index];
+  if (!item) return panel.buildMediaManagerPanel(interaction, panel.memberName(interaction));
+  const source = resolvePreviewSource(item.source, interaction);
+  const description = [
+    `**File:** ${index + 1} / ${media.files.length}`,
+    `**Name:** ${item.name || 'Automatic filename'}`,
+    `**Spoiler:** ${item.spoiler ? 'On' : 'Off'}`,
+    item.description ? `**Description:** ${String(item.description).slice(0, 900)}` : '**Description:** Not set',
+    '',
+    source ? `[Open selected file](${source})` : 'The source will be resolved when the message is sent.',
+    '',
+    'Use the buttons below to control whether Discord hides the attachment behind a spoiler warning.',
+  ].join('\n');
+  return {
+    embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('⚙️ File Options').setDescription(description.slice(0, 4096))],
+    components: enforceComponentLimits([
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('embed:file-spoiler:off').setLabel('👁️ Normal').setStyle(item.spoiler ? ButtonStyle.Secondary : ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId('embed:file-spoiler:on').setLabel('🙈 Spoiler').setStyle(item.spoiler ? ButtonStyle.Primary : ButtonStyle.Secondary),
+      ),
+      new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('embed:file-options-back').setLabel('⬅️ Media Manager').setStyle(ButtonStyle.Secondary)),
+    ]),
+  };
+};
+
 if (!panel.__mediaUploadButtonPatched && typeof panel.buildMediaManagerPanel === 'function') {
   const original = panel.buildMediaManagerPanel.bind(panel);
   panel.buildMediaManagerPanel = (interaction, requestedBy = null) => {
@@ -136,13 +196,21 @@ if (!panel.__mediaUploadButtonPatched && typeof panel.buildMediaManagerPanel ===
     const state = panel.getSession(interaction);
     const media = panel.getPanelMedia(state);
     const hasSelectedMedia = Number.isInteger(state.selectedMediaIndex) && Boolean(media.gallery[state.selectedMediaIndex]);
+    const hasSelectedFile = Number.isInteger(state.selectedFileIndex) && Boolean(media.files[state.selectedFileIndex]);
     const hasUpload = rows.some((row) => row?.components?.some((component) => component?.data?.custom_id === 'embed:media-upload'));
     const hasOptions = rows.some((row) => row?.components?.some((component) => component?.data?.custom_id === 'embed:media-options'));
+    const hasFileOptions = rows.some((row) => row?.components?.some((component) => component?.data?.custom_id === 'embed:file-options'));
 
     if (!hasOptions) {
       const targetRow = rows.find((row) => row?.components?.some((component) => component?.data?.custom_id === 'embed:media-gallery-edit'));
       if (targetRow && componentCount(targetRow) < MAX_COMPONENTS_PER_ROW) targetRow.addComponents(
         new ButtonBuilder().setCustomId('embed:media-options').setLabel('⚙️ Options').setStyle(ButtonStyle.Secondary).setDisabled(!hasSelectedMedia),
+      );
+    }
+    if (!hasFileOptions) {
+      const fileRow = rows.find((row) => row?.components?.some((component) => component?.data?.custom_id === 'embed:media-file-edit'));
+      if (fileRow && componentCount(fileRow) < MAX_COMPONENTS_PER_ROW) fileRow.addComponents(
+        new ButtonBuilder().setCustomId('embed:file-options').setLabel('⚙️ File Options').setStyle(ButtonStyle.Secondary).setDisabled(!hasSelectedFile),
       );
     }
     if (!hasUpload) {
@@ -154,9 +222,11 @@ if (!panel.__mediaUploadButtonPatched && typeof panel.buildMediaManagerPanel ===
 
     const embed = payload?.embeds?.[0];
     if (embed?.data) embed.setDescription(`${String(embed.data.description || '')}\n\n${validationSummary(interaction)}`.slice(0, 4096));
-    const preview = visualPreview(interaction);
     const embeds = Array.isArray(payload?.embeds) ? [...payload.embeds] : [];
+    const preview = visualPreview(interaction);
+    const selectedFile = filePreview(interaction);
     if (preview && embeds.length < 10) embeds.push(preview);
+    if (selectedFile && embeds.length < 10) embeds.push(selectedFile);
     return { ...payload, embeds, components: enforceComponentLimits(rows) };
   };
   panel.buildMediaManager = panel.buildMediaManagerPanel;
