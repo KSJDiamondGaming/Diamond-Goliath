@@ -54,8 +54,9 @@ function mainNavigationRow() {
     new ButtonBuilder().setCustomId('admin:modules').setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary),
   );
 }
-function builderNavigationRow() {
+function builderNavigationRow(rows) {
   return rowFromComponents(
+    findComponent(rows, 'embed:helpers'),
     new ButtonBuilder().setCustomId('embed:back').setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary),
   );
 }
@@ -74,6 +75,9 @@ panel.buildActionsPanel = (interaction) => {
     ? (report.warnings?.length ? '🟡 Ready with warnings' : '🟢 Ready')
     : '🔴 Needs review';
 
+  const base = panel.buildBuilderPanel(interaction, panel.memberName(interaction));
+  const rows = Array.isArray(base?.components) ? base.components : [];
+
   return {
     embeds: [
       new EmbedBuilder()
@@ -83,15 +87,13 @@ panel.buildActionsPanel = (interaction) => {
           `**Status:** ${status}`,
           `**Panel:** ${(Number(state.selectedPanelIndex) || 0) + 1}/${state.panels?.length || 1}`,
           '',
-          'Review the embed, send a private test, update the existing post, or reset the current builder session.',
+          'Configure delivery behaviour for this embed.',
         ].join('\n')),
     ],
     components: [
       rowFromComponents(
-        new ButtonBuilder().setCustomId('embed:readiness').setLabel('✅ Review').setStyle(ButtonStyle.Success),
-        new ButtonBuilder().setCustomId('embed:test-send').setLabel('🧪 Test Send').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('embed:update-existing').setLabel('♻️ Update Existing').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('embed:reset').setLabel('♻️ Reset').setStyle(ButtonStyle.Danger),
+        findComponent(rows, 'embed:toggle-ping'),
+        findComponent(rows, 'embed:toggle-timestamp'),
       ),
       actionsNavigationRow(),
     ].filter(Boolean),
@@ -130,16 +132,17 @@ if (!panel.__embedNavigationPatched) {
 
     const configureRow = rowFromComponents(
       findComponent(rows, 'embed:panels') || new ButtonBuilder().setCustomId('embed:panels').setLabel(`🧩 Panels (${state.panels?.length || 1})`).setStyle(ButtonStyle.Primary),
-      findComponent(rows, 'embed:toggle-ping'),
-      findComponent(rows, 'embed:toggle-timestamp'),
-      findComponent(rows, 'embed:helpers'),
-    );
-
-    const actionsRow = rowFromComponents(
       new ButtonBuilder().setCustomId('embed:actions').setLabel('🚀 Actions').setStyle(ButtonStyle.Success),
+      findComponent(rows, 'embed:readiness'),
+      findComponent(rows, 'embed:test-send'),
+      findComponent(rows, 'embed:update-existing'),
     );
 
-    payload.components = [contextRow, editRow, configureRow, actionsRow, builderNavigationRow()].filter(Boolean).slice(0, 5);
+    const utilityRow = rowFromComponents(
+      findComponent(rows, 'embed:reset'),
+    );
+
+    payload.components = [contextRow, editRow, configureRow, utilityRow, builderNavigationRow(rows)].filter(Boolean).slice(0, 5);
     return payload;
   };
 
