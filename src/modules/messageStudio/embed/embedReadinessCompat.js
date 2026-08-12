@@ -108,10 +108,27 @@ function getReadinessReport(interaction, state = panel.getSession(interaction)) 
   return { ready: errors.length === 0, errors, warnings, checks };
 }
 
+function getReadinessFixTarget(report) {
+  const issue = String(report?.errors?.[0] || report?.warnings?.[0] || '');
+  if (!issue) return { type: 'builder', label: '🛠️ Builder' };
+  if (/destination channel/i.test(issue)) return { type: 'channel', label: '📢 Fix Channel' };
+  const panelMatch = issue.match(/Panel\s+(\d+)/i);
+  const fieldMatch = issue.match(/field\s+(\d+)/i);
+  const buttonMatch = issue.match(/Button\s+(\d+)/i);
+  if (buttonMatch || /button row/i.test(issue)) return { type: 'button', index: buttonMatch ? Math.max(0, Number(buttonMatch[1]) - 1) : null, label: '🔘 Fix Button' };
+  if (panelMatch && /media|thumbnail|gallery|file|image|author icon|footer icon|author url/i.test(issue)) return { type: 'media', panelIndex: Math.max(0, Number(panelMatch[1]) - 1), label: '🖼️ Fix Media' };
+  if (panelMatch && fieldMatch) return { type: 'field', panelIndex: Math.max(0, Number(panelMatch[1]) - 1), fieldIndex: Math.max(0, Number(fieldMatch[1]) - 1), label: '📋 Fix Field' };
+  if (panelMatch) return { type: 'panel', panelIndex: Math.max(0, Number(panelMatch[1]) - 1), label: '🧩 Fix Panel' };
+  if (/Variable/i.test(issue)) return { type: 'variables', label: '📖 Variables' };
+  return { type: 'builder', label: '🛠️ Builder' };
+}
+
 panel.getReadinessReport = getReadinessReport;
+panel.getReadinessFixTarget = getReadinessFixTarget;
 panel.buildReadinessPanel = (interaction) => {
   const state = panel.getSession(interaction);
   const report = getReadinessReport(interaction, state);
+  const fix = getReadinessFixTarget(report);
   const status = report.ready ? (report.warnings.length ? '🟡 Ready with warnings' : '🟢 Ready to Send') : '🔴 Not Ready';
   const lines = [
     `**Status:** ${status}`,
@@ -123,8 +140,11 @@ panel.buildReadinessPanel = (interaction) => {
   ];
   if (report.warnings.length) lines.push('', `### ⚠️ Warnings\n${report.warnings.slice(0, 8).map((item) => `• ${item}`).join('\n')}${report.warnings.length > 8 ? `\n• And ${report.warnings.length - 8} more...` : ''}`);
   if (report.checks.length) lines.push('', `### 🔎 Checked\n${report.checks.slice(0, 8).map((item) => `• ${item}`).join('\n')}`);
+  const first = report.ready
+    ? new ButtonBuilder().setCustomId('embed:readiness-refresh').setLabel('🔄 Recheck').setStyle(ButtonStyle.Secondary)
+    : new ButtonBuilder().setCustomId('embed:readiness-fix').setLabel(fix.label).setStyle(ButtonStyle.Primary);
   const controls = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('embed:readiness-refresh').setLabel('🔄 Recheck').setStyle(ButtonStyle.Secondary),
+    first,
     new ButtonBuilder().setCustomId('embed:test-send').setLabel('🧪 Test').setStyle(ButtonStyle.Secondary).setDisabled(!report.ready),
     new ButtonBuilder().setCustomId('embed:use').setLabel('✅ Use Embed').setStyle(ButtonStyle.Success).setDisabled(!report.ready),
     new ButtonBuilder().setCustomId('embed:update-existing').setLabel('♻️ Update Existing').setStyle(ButtonStyle.Secondary).setDisabled(!report.ready),
