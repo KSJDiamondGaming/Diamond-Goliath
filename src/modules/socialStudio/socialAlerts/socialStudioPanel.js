@@ -330,7 +330,7 @@ function creatorLivePostState(config, creator, options = {}) {
 function buildMainPanel(guild, requestedBy = 'Unknown User') {
   const c = getConfig(guild.id), creators = Object.keys(c.creators).length, accounts = Object.keys(c.accounts).length, ready = creators && accounts && c.alertsChannelId, stats = dashboardStats(c);
   const d = [`${ready ? '✅' : '⚠️'} **${ready ? 'Social Studio is ready.' : 'Setup required'}**`, '', `**Creators:** ${creators}  •  **Accounts:** ${accounts}`, `🔴 **LIVE:** ${stats.live}  •  ⚫ **Offline:** ${stats.offline}  •  🟡 **Issues:** ${stats.unavailable}`, `📡 **Monitoring:** ${stats.monitored}/${accounts}`, `📨 **Alerts Sent:** ${Number(c.analytics?.alertsSent || 0).toLocaleString('en-GB')}`, `📂 **Default Channel:** ${c.alertsChannelId ? `<#${c.alertsChannelId}>` : 'Not configured'}`, `🔔 **Notifications:** ${c.enabled ? '🟢 Enabled' : '🔴 Disabled'}`].join('\n');
-  return { embeds: [embed(c, '📣 Social Studio', d, requestedBy)], components: [row(btn(`${P}creators`, '👥 Creator Profiles', ButtonStyle.Primary), btn(`${P}channels`, '📂 Channels'), btn(`${P}templates`, '🎨 Templates', ButtonStyle.Secondary, true)), navigation('main')] };
+  return { embeds: [embed(c, '📣 Social Studio', d, requestedBy)], components: [row(btn(`${P}creators`, '👥 Creator Profiles', ButtonStyle.Primary), btn(`${P}channels`, '📂 Channels'), btn(`${P}refresh`, '🔄 Refresh', ButtonStyle.Secondary), btn(`${P}templates`, '🎨 Templates', ButtonStyle.Secondary, true)), navigation('main')] };
 }
 function buildCreatorPanel(i, config, creators) {
   const view = getCreatorSession(i), pages = Math.max(1, Math.ceil(creators.length / PAGE_SIZE)); if (view.page >= pages) setCreatorSession(i, { page: pages - 1 });
@@ -856,10 +856,10 @@ async function handleAutomationInteraction(i, context) {
   } = context;
 
   if (id === `${P}creator:rebuild`) { const linked = new Set(Object.values(config.creators).flatMap((c) => c.accountIds || [])); for (const a of Object.values(config.accounts)) if (!linked.has(a.accountId)) { const cid = makeId('creator'); config.creators[cid] = { creatorId: cid, displayName: a.displayName || a.username || a.externalId, group: '', tags: [a.platform], notes: '', enabled: true, accountIds: [a.accountId], createdAt: now(), updatedAt: now() }; } saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'creators')); }
-  if (id === `${P}main`) {
+  if (id === `${P}main` || id === `${P}refresh`) {
     return respond(
       i,
-      buildMainPanel(i, config),
+      buildMainPanel(i.guild, who(i)),
     );
   }
 
@@ -895,7 +895,7 @@ async function handleAdminSocialEntry(i, context) {
   if (i.customId === 'admin:social') {
     return respond(
       i,
-      buildMainPanel(i, config),
+      buildMainPanel(i.guild, who(i)),
     );
   }
 
