@@ -44,6 +44,15 @@ function actionLabel(action) {
     'server-info': 'Server Info',
   }[String(action || '').toLowerCase()] || 'None';
 }
+function normalizedRow(value) {
+  if (value === '' || value == null || value === 'auto') return null;
+  const row = Number(value);
+  return Number.isInteger(row) && row >= 0 && row < MAX_DEPLOYED_BUTTON_ROWS ? row : null;
+}
+function rowLabel(value) {
+  const row = normalizedRow(value);
+  return row == null ? 'Auto' : `Row ${row + 1}`;
+}
 function resolved(value, interaction) { return typeof panel.replaceVars === 'function' && interaction ? panel.replaceVars(String(value || ''), interaction) : String(value || ''); }
 function resolveUrl(value, interaction) { const raw = resolved(value, interaction).trim(); if (!raw) return ''; try { const url = new URL(raw); return ['https:', 'http:'].includes(url.protocol) ? url.toString() : ''; } catch { return ''; } }
 function styleValue(style) { return { secondary: ButtonStyle.Secondary, success: ButtonStyle.Success, danger: ButtonStyle.Danger }[normalizedStyle(style)] || ButtonStyle.Primary; }
@@ -55,24 +64,44 @@ function roleDisplay(interaction, roleId) {
   const role = interaction?.guild?.roles?.cache?.get?.(String(roleId || '').replace(/\D/g, ''));
   return role ? `<@&${role.id}>` : roleId ? `Role ${roleId}` : 'Not selected';
 }
+function layoutButtons(buttons = []) {
+  const rows = Array.from({ length: MAX_DEPLOYED_BUTTON_ROWS }, () => []);
+  const automatic = [];
+  buttons.slice(0, MAX_BUTTONS).forEach((button, index) => {
+    const row = normalizedRow(button?.row);
+    if (row != null && rows[row].length < MAX_COMPONENTS_PER_ROW) rows[row].push({ button, index });
+    else automatic.push({ button, index });
+  });
+  for (const entry of automatic) {
+    const target = rows.findIndex((row) => row.length < MAX_COMPONENTS_PER_ROW);
+    if (target < 0) break;
+    rows[target].push(entry);
+  }
+  return rows;
+}
+function deployedRowFor(buttons, index) {
+  const rows = layoutButtons(buttons);
+  const row = rows.findIndex((entries) => entries.some((entry) => entry.index === index));
+  return row >= 0 ? row : null;
+}
 
 panel.buttonRows = (state, interaction = null) => {
-  const rows = [];
-  const buttons = (Array.isArray(state?.buttons) ? state.buttons : []).slice(0, MAX_BUTTONS);
-  for (let start = 0; start < buttons.length && rows.length < MAX_DEPLOYED_BUTTON_ROWS; start += MAX_COMPONENTS_PER_ROW) {
+  const output = [];
+  for (const entries of layoutButtons(Array.isArray(state?.buttons) ? state.buttons : [])) {
+    if (!entries.length) continue;
     const row = new ActionRowBuilder();
-    buttons.slice(start, start + MAX_COMPONENTS_PER_ROW).forEach((button, offset) => {
+    for (const { button, index } of entries) {
       const label = short(resolved(button?.label || 'Button', interaction), 80) || 'Button';
       const url = resolveUrl(button?.url, interaction);
       const builder = new ButtonBuilder().setLabel(label);
       if (button?.emoji) builder.setEmoji(button.emoji);
       if (url) builder.setStyle(ButtonStyle.Link).setURL(url);
-      else builder.setStyle(styleValue(button?.style)).setCustomId(actionId(button, start + offset));
+      else builder.setStyle(styleValue(button?.style)).setCustomId(actionId(button, index));
       row.addComponents(builder);
-    });
-    rows.push(row);
+    }
+    output.push(row);
   }
-  return rows;
+  return output.slice(0, MAX_DEPLOYED_BUTTON_ROWS);
 };
 
 panel.buttonEditorModal = (state, index = null) => {
@@ -101,16 +130,19 @@ panel.buildButtonOptionsPanel = (interaction) => {
   const item = buttons[index], style = normalizedStyle(item.style);
   const action = String(item.action || '').toLowerCase();
   const currentAction = BUILT_IN_ACTIONS.includes(action) ? action : 'none';
+  const configuredRow = normalizedRow(item.row);
+  const actualRow = deployedRowFor(buttons, index);
   const destination = item.url ? `Link: ${short(item.url, 800)}` : action ? `Action: ${actionLabel(action)}${BUILT_IN_ACTIONS.includes(action) ? '' : ' (unsupported legacy action)'}` : 'No destination configured';
   const details = [
     `**Button:** ${index + 1} / ${buttons.length}`,
     `**Label:** ${item.label || 'Button'}`,
     `**Style:** ${styleLabel(style)}`,
     `**Destination:** ${destination}`,
+    `**Layout:** ${rowLabel(item.row)}${actualRow != null ? ` → deploys on Row ${actualRow + 1}` : ''}`,
   ];
   if (ROLE_ACTIONS.has(action)) details.push(`**Role:** ${roleDisplay(interaction, item.actionValue)}`);
   if (action === 'reply') details.push(`**Reply:** ${item.actionValue ? short(resolved(item.actionValue, interaction), 900) : 'Not configured'}`);
-  details.push('', 'Choose an action from the menu. Role actions use Discord’s role picker, so role IDs never need to be typed manually. Link buttons are configured from Edit Button.');
+  details.push('', 'Choose the action and row placement below. Auto placement fills the first available row. A Discord button row can never contain more than 5 buttons.');
 
   const rows = [
     new ActionRowBuilder().addComponents(
@@ -130,6 +162,17 @@ panel.buildButtonOptionsPanel = (interaction) => {
         { label: 'Server Info', value: 'server-info', description: 'Show information about this server', default: currentAction === 'server-info' },
       ]),
     ),
+    new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder().setCustomId('embed:button-row-select').setPlaceholder('Choose button row').setMinValues(1).setMaxValues(1).addOptions([
+        { label: 'Auto placement', value: 'auto', description: 'Fill the first available row automatically', default: configuredRow == null },
+        ...Array.from({ length: MAX_DEPLOYED_BUTTON_ROWS }, (_, row) => ({
+          label: `Row ${row + 1}`,
+          value: String(row),
+          description: `Place this button on Discord button row ${row + 1}`,
+          default: configuredRow === row,
+        })),
+      ]),
+    ),
   ];
   if (ROLE_ACTIONS.has(action)) {
     rows.push(new ActionRowBuilder().addComponents(
@@ -146,26 +189,31 @@ panel.buildButtonOptionsPanel = (interaction) => {
 
 panel.buildButtonsManagerPanel = (interaction) => {
   const state = panel.getSession(interaction), buttons = Array.isArray(state.buttons) ? state.buttons : [], index = selectedIndex(state), item = index == null ? null : buttons[index];
-  const lines = [`**Buttons:** ${buttons.length}/${MAX_BUTTONS}`, `**Rows used when deployed:** ${buttons.length ? Math.ceil(buttons.length / MAX_COMPONENTS_PER_ROW) : 0}/${MAX_DEPLOYED_BUTTON_ROWS}`, ''];
+  const layout = layoutButtons(buttons);
+  const usedRows = layout.filter((row) => row.length).length;
+  const lines = [`**Buttons:** ${buttons.length}/${MAX_BUTTONS}`, `**Rows used when deployed:** ${usedRows}/${MAX_DEPLOYED_BUTTON_ROWS}`, ''];
   if (item) {
     const destination = item.url ? `Link: ${short(item.url, 1000)}` : item.action ? `Action: ${actionLabel(item.action)}` : 'No destination configured';
-    lines.push(`**Selected button ${index + 1}:** ${item.emoji ? `${item.emoji} ` : ''}${item.label || 'Button'}`, `**Style:** ${styleLabel(item.style)}`, `**Destination:** ${destination}`);
+    const actualRow = deployedRowFor(buttons, index);
+    lines.push(`**Selected button ${index + 1}:** ${item.emoji ? `${item.emoji} ` : ''}${item.label || 'Button'}`, `**Style:** ${styleLabel(item.style)}`, `**Destination:** ${destination}`, `**Row:** ${rowLabel(item.row)}${actualRow != null ? ` → Row ${actualRow + 1}` : ''}`);
     if (ROLE_ACTIONS.has(String(item.action || '').toLowerCase())) lines.push(`**Role:** ${roleDisplay(interaction, item.actionValue)}`);
     if (item.action === 'reply' && item.actionValue) lines.push(`**Reply:** ${short(resolved(item.actionValue, interaction), 900)}`);
   } else lines.push('**Selected button:** None');
-  lines.push('', 'Buttons deploy in rows of up to 5, with a maximum of 20 buttons across 4 button rows. Use Edit for label/emoji/link, then Options for style and bot actions.');
+  lines.push('', 'Buttons support automatic or explicit row placement. Discord limits are enforced: up to 5 buttons per row and up to 20 buttons across 4 button rows.');
   const embeds = [new EmbedBuilder().setColor(0x5865F2).setTitle('🔘 Buttons').setDescription(lines.join('\n').slice(0, 4096))];
   if (item) {
     const previewLabel = short(resolved(item.label || 'Button', interaction), 80) || 'Button';
     const previewUrl = resolveUrl(item.url, interaction);
+    const actualRow = deployedRowFor(buttons, index);
     embeds.push(new EmbedBuilder().setColor(0x5865F2).setTitle('👁️ Selected Button Preview').setDescription([
       `**Label:** ${item.emoji ? `${item.emoji} ` : ''}${previewLabel}`,
       `**Style:** ${previewUrl ? 'Link' : styleLabel(item.style)}`,
       `**Destination:** ${previewUrl ? previewUrl : item.action ? `Action: ${actionLabel(item.action)}` : 'Not configured'}`,
+      `**Deploy row:** ${actualRow == null ? 'Not placed' : actualRow + 1}`,
     ].join('\n').slice(0, 4096)));
   }
   const rows = [];
-  if (buttons.length) rows.push(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('embed:button-manager-select').setPlaceholder('Select button').setMinValues(1).setMaxValues(1).addOptions(buttons.map((button, buttonIndex) => ({ label: `${buttonIndex + 1}. ${short(button.label || 'Button', 80)}`, value: String(buttonIndex), description: short(button.url || actionLabel(button.action) || styleLabel(button.style), 100), default: buttonIndex === index })))));
+  if (buttons.length) rows.push(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('embed:button-manager-select').setPlaceholder('Select button').setMinValues(1).setMaxValues(1).addOptions(buttons.map((button, buttonIndex) => ({ label: `${buttonIndex + 1}. ${short(button.label || 'Button', 80)}`, value: String(buttonIndex), description: short(`${rowLabel(button.row)} • ${button.url || actionLabel(button.action) || styleLabel(button.style)}`, 100), default: buttonIndex === index })))));
   rows.push(new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('embed:button-manager-add').setLabel('➕ Add').setStyle(ButtonStyle.Success).setDisabled(buttons.length >= MAX_BUTTONS),
     new ButtonBuilder().setCustomId('embed:button-manager-edit').setLabel('✏️ Edit').setStyle(ButtonStyle.Primary).setDisabled(index == null),
@@ -184,4 +232,6 @@ panel.MAX_BUTTONS_PER_ROW = MAX_COMPONENTS_PER_ROW;
 panel.MAX_DEPLOYED_BUTTON_ROWS = MAX_DEPLOYED_BUTTON_ROWS;
 panel.EMBED_BUTTON_ACTIONS = BUILT_IN_ACTIONS;
 panel.EMBED_ROLE_BUTTON_ACTIONS = ROLE_ACTIONS;
+panel.layoutEmbedButtons = layoutButtons;
+panel.embedButtonRow = normalizedRow;
 module.exports = panel;
