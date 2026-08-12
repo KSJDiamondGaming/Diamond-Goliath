@@ -4,6 +4,7 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  EmbedBuilder,
   StringSelectMenuBuilder,
 } = require('discord.js');
 const panel = require('./embedReadinessCompat');
@@ -58,6 +59,44 @@ function builderNavigationRow() {
     new ButtonBuilder().setCustomId('embed:back').setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary),
   );
 }
+function actionsNavigationRow() {
+  return rowFromComponents(
+    new ButtonBuilder().setCustomId('embed:builder').setLabel('⬅️ Builder').setStyle(ButtonStyle.Secondary),
+  );
+}
+
+panel.buildActionsPanel = (interaction) => {
+  const state = panel.getSession(interaction);
+  const report = typeof panel.getReadinessReport === 'function'
+    ? panel.getReadinessReport(interaction, state)
+    : { ready: true, warnings: [], errors: [] };
+  const status = report.ready
+    ? (report.warnings?.length ? '🟡 Ready with warnings' : '🟢 Ready')
+    : '🔴 Needs review';
+
+  return {
+    embeds: [
+      new EmbedBuilder()
+        .setColor(report.ready ? (report.warnings?.length ? 0xFEE75C : 0x57F287) : 0xED4245)
+        .setTitle('🚀 Embed Actions')
+        .setDescription([
+          `**Status:** ${status}`,
+          `**Panel:** ${(Number(state.selectedPanelIndex) || 0) + 1}/${state.panels?.length || 1}`,
+          '',
+          'Review the embed, send a private test, update the existing post, or reset the current builder session.',
+        ].join('\n')),
+    ],
+    components: [
+      rowFromComponents(
+        new ButtonBuilder().setCustomId('embed:readiness').setLabel('✅ Review').setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId('embed:test-send').setLabel('🧪 Test Send').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('embed:update-existing').setLabel('♻️ Update Existing').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('embed:reset').setLabel('♻️ Reset').setStyle(ButtonStyle.Danger),
+      ),
+      actionsNavigationRow(),
+    ].filter(Boolean),
+  };
+};
 
 if (!panel.__embedNavigationPatched) {
   const originalEditor = panel.buildEditorPanel.bind(panel);
@@ -79,19 +118,16 @@ if (!panel.__embedNavigationPatched) {
     const state = panel.getSession(interaction);
     const rows = Array.isArray(payload?.components) ? payload.components : [];
 
-    // Row 1: current content-panel context.
     const contextRow = panelSelector(state);
 
-    // Row 2: content creation/editing only.
     const editRow = rowFromComponents(
       findComponent(rows, 'embed:edit-content'),
       findComponent(rows, 'embed:edit-appearance'),
       findComponent(rows, 'embed:fields'),
-      findComponent(rows, 'embed:buttons'),
       findComponent(rows, 'embed:edit-media'),
+      findComponent(rows, 'embed:buttons'),
     ) || findRow(rows, 'embed:edit-content');
 
-    // Row 3: builder configuration only.
     const configureRow = rowFromComponents(
       findComponent(rows, 'embed:panels') || new ButtonBuilder().setCustomId('embed:panels').setLabel(`🧩 Panels (${state.panels?.length || 1})`).setStyle(ButtonStyle.Primary),
       findComponent(rows, 'embed:toggle-ping'),
@@ -99,17 +135,11 @@ if (!panel.__embedNavigationPatched) {
       findComponent(rows, 'embed:helpers'),
     );
 
-    // Row 4: validate/test/deployment actions. Review starts this row so the flow
-    // is configure -> review -> test/update/reset.
-    const actionRow = rowFromComponents(
-      findComponent(rows, 'embed:readiness') || new ButtonBuilder().setCustomId('embed:readiness').setLabel('✅ Review').setStyle(ButtonStyle.Success),
-      findComponent(rows, 'embed:test-send'),
-      findComponent(rows, 'embed:update-existing'),
-      findComponent(rows, 'embed:reset'),
+    const actionsRow = rowFromComponents(
+      new ButtonBuilder().setCustomId('embed:actions').setLabel('🚀 Actions').setStyle(ButtonStyle.Success),
     );
 
-    // Row 5: navigation is always last.
-    payload.components = [contextRow, editRow, configureRow, actionRow, builderNavigationRow()].filter(Boolean).slice(0, 5);
+    payload.components = [contextRow, editRow, configureRow, actionsRow, builderNavigationRow()].filter(Boolean).slice(0, 5);
     return payload;
   };
 
