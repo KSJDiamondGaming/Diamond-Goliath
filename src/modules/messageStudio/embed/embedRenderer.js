@@ -31,6 +31,43 @@ function resolveSource(value, interaction) {
   const resolved = interaction ? replaceVars(String(value || ''), interaction) : String(value || '');
   return String(resolved || '').trim();
 }
+function contentTypeBase(value) {
+  return String(value || '').toLowerCase().split(';')[0].trim();
+}
+function expectedTypeOk(contentType, expected = 'media') {
+  const type = contentTypeBase(contentType);
+  if (!type) return true;
+  if (expected === 'thumbnail') return type.startsWith('image/');
+  if (expected === 'image') return type.startsWith('image/');
+  if (expected === 'video') return type.startsWith('video/');
+  if (expected === 'media') return type.startsWith('image/') || type.startsWith('video/');
+  return true;
+}
+async function probeRemoteSource(url, expected = 'media') {
+  if (!isHttpsUrl(url)) throw new Error(`Media source must resolve to a valid HTTPS URL: ${String(url || '').slice(0, 160)}`);
+  const cached = getCachedAsset('global', url);
+  if (cached?.buffer) {
+    const cachedType = cached.meta?.contentType || '';
+    if (!expectedTypeOk(cachedType, expected)) throw new Error(`Media source returned ${cachedType || 'an unsupported type'}.`);
+    return { ok: true, contentType: cachedType, bytes: cached.buffer.length, cached: true };
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  timer.unref?.();
+  try {
+    let response = await fetch(url, { method: 'HEAD', signal: controller.signal, redirect: 'follow' });
+    if (response.status === 405 || response.status === 403) {
+      response = await fetch(url, { method: 'GET', headers: { Range: 'bytes=0-0' }, signal: controller.signal, redirect: 'follow' });
+    }
+    if (!response.ok && response.status !== 206) throw new Error(`Media source returned HTTP ${response.status}.`);
+    const contentType = String(response.headers.get('content-type') || '');
+    const declared = Number(response.headers.get('content-length') || 0);
+    if (!expectedTypeOk(contentType, expected)) throw new Error(`Media source returned ${contentType || 'an unsupported type'}.`);
+    if (declared > MAX_SOURCE_BYTES) throw new Error(`Media source exceeds the ${Math.floor(MAX_SOURCE_BYTES / 1024 / 1024)} MB processing limit.`);
+    return { ok: true, contentType, bytes: declared || null, cached: false };
+  } finally { clearTimeout(timer); }
+}
 async function fetchImage(url) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
@@ -94,8 +131,8 @@ function footerText(data) {
   }
   return bits.length ? `-# ${bits.join(' · ')}` : '';
 }
-function panelMedia(mediaV2, index) {
-  return Array.isArray(mediaV2?.panels) ? (mediaV2.panels[index] || null) : null;
+function panelMedia(mediaState, index) {
+  return Array.isArray(mediaState?.panels) ? (mediaState.panels[index] || null) : null;
 }
 function isEnhancedMedia(media) {
   if (!media) return false;
@@ -104,14 +141,18 @@ function isEnhancedMedia(media) {
   return gallery.length > 1 || Boolean(first.alt) || first.spoiler === true || first.type === 'video'
     || Boolean(media.thumbnail?.alt) || (Array.isArray(media.files) && media.files.length > 0);
 }
-function galleryItems(media, interaction) {
-  return (Array.isArray(media?.gallery) ? media.gallery : []).slice(0, 10).map((item) => {
+async function galleryItems(media, interaction) {
+  const output = [];
+  for (const item of (Array.isArray(media?.gallery) ? media.gallery : []).slice(0, 10)) {
     const source = resolveSource(item?.source, interaction);
-    if (!isHttpsUrl(source)) return null;
+    if (!source) continue;
+    const expected = item?.type === 'image' ? 'image' : item?.type === 'video' ? 'video' : 'media';
+    await probeRemoteSource(source, expected);
     const builder = new MediaGalleryItemBuilder().setURL(source).setSpoiler(item?.spoiler === true);
     if (item?.alt) builder.setDescription(String(item.alt).slice(0, 1024));
-    return builder;
-  }).filter(Boolean);
+    output.push(builder);
+  }
+  return output;
 }
 function safeFilename(name, fallback) {
   const base = String(name || fallback || 'file').trim().replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '');
@@ -128,7 +169,7 @@ async function addMediaFiles(container, media, interaction, payloadFiles, panelI
   for (let fileIndex = 0; fileIndex < entries.length; fileIndex += 1) {
     const entry = entries[fileIndex];
     const source = resolveSource(entry?.source, interaction);
-    if (!isHttpsUrl(source)) continue;
+    if (!isHttpsUrl(source)) throw new Error(`Attached file source must resolve to a valid HTTPS URL: ${String(source || '').slice(0, 160)}`);
     try {
       const cached = await ensureAssetCached('global', source);
       if (!cached?.buffer) throw new Error('File could not be downloaded.');
@@ -140,13 +181,17 @@ async function addMediaFiles(container, media, interaction, payloadFiles, panelI
       payloadFiles.push(attachment);
       container.addFileComponents(new FileBuilder().setURL(`attachment://${name}`).setSpoiler(entry?.spoiler === true));
     } catch (error) {
-      container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`📎 [${String(entry?.name || 'Attached file').slice(0, 100)}](${source})`));
-      console.warn(`[Embed] panel ${panelIndex + 1}: file attachment failed:`, error?.message || error);
+      throw new Error(`Attached file "${entry?.name || sourceFilename(source, 'file')}" could not be prepared: ${error?.message || error}`);
     }
   }
 }
 
-async function buildEmbedPayload({ embeds = [], actionRows = [], allowUserPing = false, userId = null, ephemeral = false, mediaV2 = null, interaction = null }) {
+async function buildEmbedPayload(options = {}) {
+  const {
+    embeds = [], actionRows = [], allowUserPing = false, userId = null,
+    ephemeral = false, interaction = null,
+  } = options;
+  const mediaState = options.media || options.mediaV2 || null;
   const components = [];
   const files = [];
   if (allowUserPing && userId) components.push(new TextDisplayBuilder().setContent(`<@${userId}>`));
@@ -156,12 +201,13 @@ async function buildEmbedPayload({ embeds = [], actionRows = [], allowUserPing =
     const data = typeof embed?.toJSON === 'function' ? embed.toJSON() : embed;
     if (!data || typeof data !== 'object') continue;
 
-    const media = panelMedia(mediaV2, index);
+    const media = panelMedia(mediaState, index);
     const container = new ContainerBuilder();
     if (Number.isInteger(data.color)) container.setAccentColor(data.color);
     const text = panelText(data);
 
     const thumbSource = resolveSource(media?.thumbnail?.source || data.thumbnail?.url, interaction);
+    if (thumbSource) await probeRemoteSource(thumbSource, 'thumbnail');
     if (text && isHttpsUrl(thumbSource)) {
       const thumbnail = new ThumbnailBuilder().setURL(thumbSource);
       if (media?.thumbnail?.alt) thumbnail.setDescription(String(media.thumbnail.alt).slice(0, 1024));
@@ -171,7 +217,7 @@ async function buildEmbedPayload({ embeds = [], actionRows = [], allowUserPing =
     }
 
     const enhanced = isEnhancedMedia(media);
-    const items = enhanced ? galleryItems(media, interaction) : [];
+    const items = enhanced ? await galleryItems(media, interaction) : [];
     if (items.length) {
       container.addMediaGalleryComponents(new MediaGalleryBuilder().addItems(...items));
     } else {
@@ -186,8 +232,7 @@ async function buildEmbedPayload({ embeds = [], actionRows = [], allowUserPing =
             container.addMediaGalleryComponents(new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(`attachment://${name}`)));
           }
         } catch (error) {
-          container.addMediaGalleryComponents(new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(imageUrl)));
-          console.warn(`[Embed] panel ${index + 1}: centered media processing failed:`, error?.message || error);
+          throw new Error(`Panel ${index + 1} image could not be prepared: ${error?.message || error}`);
         }
       }
     }
@@ -211,4 +256,5 @@ module.exports = {
   PORTRAIT_SHIFT_RIGHT,
   PANEL_BG,
   buildEmbedPayload,
+  probeRemoteSource,
 };
