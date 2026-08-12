@@ -16,6 +16,7 @@ const MAX_BUTTONS = 20;
 const MAX_COMPONENTS_PER_ROW = panel.EMBED_COMPONENT_LIMITS?.maxComponentsPerRow || 5;
 const MAX_ACTION_ROWS = panel.EMBED_COMPONENT_LIMITS?.maxActionRows || 5;
 const MAX_DEPLOYED_BUTTON_ROWS = 4;
+const BUILT_IN_ACTIONS = Object.freeze(['reply', 'toggle-role', 'add-role', 'remove-role', 'user-info', 'server-info']);
 
 function enforceLimits(rows = []) {
   return rows.filter(Boolean).slice(0, MAX_ACTION_ROWS).map((row) => {
@@ -34,7 +35,17 @@ function styleLabel(style) { return { primary: 'Primary', secondary: 'Secondary'
 function resolved(value, interaction) { return typeof panel.replaceVars === 'function' && interaction ? panel.replaceVars(String(value || ''), interaction) : String(value || ''); }
 function resolveUrl(value, interaction) { const raw = resolved(value, interaction).trim(); if (!raw) return ''; try { const url = new URL(raw); return ['https:', 'http:'].includes(url.protocol) ? url.toString() : ''; } catch { return ''; } }
 function styleValue(style) { return { secondary: ButtonStyle.Secondary, success: ButtonStyle.Success, danger: ButtonStyle.Danger }[normalizedStyle(style)] || ButtonStyle.Primary; }
-function actionId(button, absoluteIndex) { const raw = String(button?.id || button?.action || 'custom').trim().replace(/[^a-zA-Z0-9:_-]+/g, '-').slice(0, 70) || 'custom'; return button?.id ? raw : `embed-action:${raw}:${absoluteIndex}`.slice(0, 100); }
+function actionId(button, absoluteIndex) {
+  if (button?.id) return String(button.id).trim().replace(/[^a-zA-Z0-9:_-]+/g, '-').slice(0, 100);
+  return `embed:action:${absoluteIndex}`;
+}
+function actionValueHelp(action) {
+  const key = String(action || '').toLowerCase();
+  if (key === 'reply') return 'Action value = reply text. Variables are supported.';
+  if (['toggle-role', 'add-role', 'remove-role'].includes(key)) return 'Action value = role ID or role mention.';
+  if (['user-info', 'server-info'].includes(key)) return 'This action does not need an action value.';
+  return 'Built-ins: reply, toggle-role, add-role, remove-role, user-info, server-info.';
+}
 
 panel.buttonRows = (state, interaction = null) => {
   const rows = [];
@@ -62,7 +73,8 @@ panel.buttonEditorModal = (state, index = null) => {
     new ActionRowBuilder().addComponents(input('label', 'Button label', item.label || '', 80, true)),
     new ActionRowBuilder().addComponents(input('emoji', 'Emoji (optional)', item.emoji || '', 100, false)),
     new ActionRowBuilder().addComponents(input('url', 'Link URL / variable (optional)', item.url || '', 4000, false)),
-    new ActionRowBuilder().addComponents(input('action', 'Custom action name (advanced)', item.action || '', 80, false)),
+    new ActionRowBuilder().addComponents(input('action', 'Action (optional)', item.action || '', 80, false)),
+    new ActionRowBuilder().addComponents(input('actionValue', 'Action value (optional)', item.actionValue || item.value || '', 1000, false)),
   );
 };
 
@@ -71,7 +83,15 @@ panel.buildButtonOptionsPanel = (interaction) => {
   if (index == null) return panel.buildButtonsManagerPanel(interaction);
   const item = buttons[index], style = normalizedStyle(item.style);
   const destination = item.url ? `Link: ${short(item.url, 800)}` : item.action ? `Action: ${short(item.action, 300)}` : 'No destination configured';
-  return { embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('⚙️ Button Options').setDescription([`**Button:** ${index + 1} / ${buttons.length}`, `**Label:** ${item.label || 'Button'}`, `**Style:** ${styleLabel(style)}`, `**Destination:** ${destination}`, '', 'Choose the Discord button style below. Link buttons automatically use Discord’s Link style when a valid URL is configured.'].join('\n').slice(0, 4096))], components: enforceLimits([
+  return { embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('⚙️ Button Options').setDescription([
+    `**Button:** ${index + 1} / ${buttons.length}`,
+    `**Label:** ${item.label || 'Button'}`,
+    `**Style:** ${styleLabel(style)}`,
+    `**Destination:** ${destination}`,
+    item.actionValue ? `**Action value:** ${short(item.actionValue, 900)}` : null,
+    '', actionValueHelp(item.action),
+    '', 'Choose the Discord button style below. Link buttons automatically use Discord’s Link style when a valid URL is configured.',
+  ].filter(Boolean).join('\n').slice(0, 4096))], components: enforceLimits([
     new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId('embed:button-style:primary').setLabel('🔵 Primary').setStyle(style === 'primary' ? ButtonStyle.Primary : ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId('embed:button-style:secondary').setLabel('⚪ Secondary').setStyle(style === 'secondary' ? ButtonStyle.Primary : ButtonStyle.Secondary),
@@ -85,10 +105,23 @@ panel.buildButtonOptionsPanel = (interaction) => {
 panel.buildButtonsManagerPanel = (interaction) => {
   const state = panel.getSession(interaction), buttons = Array.isArray(state.buttons) ? state.buttons : [], index = selectedIndex(state), item = index == null ? null : buttons[index];
   const lines = [`**Buttons:** ${buttons.length}/${MAX_BUTTONS}`, `**Rows used when deployed:** ${buttons.length ? Math.ceil(buttons.length / MAX_COMPONENTS_PER_ROW) : 0}/${MAX_DEPLOYED_BUTTON_ROWS}`, ''];
-  if (item) { const destination = item.url ? `Link: ${short(item.url, 1000)}` : item.action ? `Action: ${short(item.action, 500)}` : 'No destination configured'; lines.push(`**Selected button ${index + 1}:** ${item.emoji ? `${item.emoji} ` : ''}${item.label || 'Button'}`, `**Style:** ${styleLabel(item.style)}`, `**Destination:** ${destination}`); } else lines.push('**Selected button:** None');
-  lines.push('', 'Buttons deploy in rows of up to 5, with a maximum of 20 buttons across 4 button rows. Labels and link URLs support Embed Studio variables.');
+  if (item) {
+    const destination = item.url ? `Link: ${short(item.url, 1000)}` : item.action ? `Action: ${short(item.action, 500)}` : 'No destination configured';
+    lines.push(`**Selected button ${index + 1}:** ${item.emoji ? `${item.emoji} ` : ''}${item.label || 'Button'}`, `**Style:** ${styleLabel(item.style)}`, `**Destination:** ${destination}`);
+    if (item.actionValue) lines.push(`**Action value:** ${short(item.actionValue, 900)}`);
+  } else lines.push('**Selected button:** None');
+  lines.push('', 'Buttons deploy in rows of up to 5, with a maximum of 20 buttons across 4 button rows. Labels, link URLs and reply text can use Embed Studio variables.', '', `Built-in actions: ${BUILT_IN_ACTIONS.map((x) => `\`${x}\``).join(', ')}.`);
   const embeds = [new EmbedBuilder().setColor(0x5865F2).setTitle('🔘 Buttons').setDescription(lines.join('\n').slice(0, 4096))];
-  if (item) { const previewLabel = short(resolved(item.label || 'Button', interaction), 80) || 'Button'; const previewUrl = resolveUrl(item.url, interaction); embeds.push(new EmbedBuilder().setColor(0x5865F2).setTitle('👁️ Selected Button Preview').setDescription([`**Label:** ${item.emoji ? `${item.emoji} ` : ''}${previewLabel}`, `**Style:** ${previewUrl ? 'Link' : styleLabel(item.style)}`, `**Destination:** ${previewUrl ? previewUrl : item.action ? `Custom action: ${item.action}` : 'Not configured'}`].join('\n').slice(0, 4096))); }
+  if (item) {
+    const previewLabel = short(resolved(item.label || 'Button', interaction), 80) || 'Button';
+    const previewUrl = resolveUrl(item.url, interaction);
+    embeds.push(new EmbedBuilder().setColor(0x5865F2).setTitle('👁️ Selected Button Preview').setDescription([
+      `**Label:** ${item.emoji ? `${item.emoji} ` : ''}${previewLabel}`,
+      `**Style:** ${previewUrl ? 'Link' : styleLabel(item.style)}`,
+      `**Destination:** ${previewUrl ? previewUrl : item.action ? `Action: ${item.action}` : 'Not configured'}`,
+      item.actionValue ? `**Action value:** ${short(resolved(item.actionValue, interaction), 1000)}` : null,
+    ].filter(Boolean).join('\n').slice(0, 4096)));
+  }
   const rows = [];
   if (buttons.length) rows.push(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('embed:button-manager-select').setPlaceholder('Select button').setMinValues(1).setMaxValues(1).addOptions(buttons.map((button, buttonIndex) => ({ label: `${buttonIndex + 1}. ${short(button.label || 'Button', 80)}`, value: String(buttonIndex), description: short(button.url || button.action || styleLabel(button.style), 100), default: buttonIndex === index })))));
   rows.push(new ActionRowBuilder().addComponents(
@@ -107,4 +140,5 @@ panel.buildButtonsManagerPanel = (interaction) => {
 panel.MAX_EMBED_BUTTONS = MAX_BUTTONS;
 panel.MAX_BUTTONS_PER_ROW = MAX_COMPONENTS_PER_ROW;
 panel.MAX_DEPLOYED_BUTTON_ROWS = MAX_DEPLOYED_BUTTON_ROWS;
+panel.EMBED_BUTTON_ACTIONS = BUILT_IN_ACTIONS;
 module.exports = panel;
