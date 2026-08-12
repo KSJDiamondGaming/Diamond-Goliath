@@ -23,6 +23,8 @@ const PORTRAIT_SHIFT_RIGHT = 0;
 const MAX_SOURCE_BYTES = 8 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 8000;
 const PANEL_BG = { r: 19, g: 20, b: 22, alpha: 1 };
+const STATIC_RASTER_TYPES = new Set(['image/png', 'image/jpeg', 'image/jpg']);
+const NATIVE_IMAGE_TYPES = new Set(['image/gif', 'image/webp', 'image/avif', 'image/svg+xml']);
 
 function isHttpsUrl(value) {
   try { return new URL(String(value || '')).protocol === 'https:'; } catch { return false; }
@@ -84,12 +86,12 @@ async function fetchImage(url) {
     return { buffer, contentType };
   } finally { clearTimeout(timer); }
 }
-async function sourceBuffer(url) {
+async function sourceImage(url) {
   const cached = getCachedAsset('global', url);
-  if (cached?.buffer) return cached.buffer;
+  if (cached?.buffer) return { buffer: cached.buffer, contentType: cached.meta?.contentType || '' };
   const remote = await fetchImage(url);
   saveCachedAsset('global', url, remote.buffer, { contentType: remote.contentType });
-  return remote.buffer;
+  return remote;
 }
 function circleMaskSvg(size) {
   const radius = size / 2;
@@ -185,6 +187,29 @@ async function addMediaFiles(container, media, interaction, payloadFiles, panelI
     }
   }
 }
+function nativeImageShouldPassThrough(contentType) {
+  const type = contentTypeBase(contentType);
+  return NATIVE_IMAGE_TYPES.has(type) || (type.startsWith('image/') && !STATIC_RASTER_TYPES.has(type));
+}
+async function addLegacyImage(container, imageUrl, files, index) {
+  if (!isHttpsUrl(imageUrl)) return;
+  const probe = await probeRemoteSource(imageUrl, 'image');
+  if (nativeImageShouldPassThrough(probe.contentType)) {
+    container.addMediaGalleryComponents(new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(imageUrl)));
+    return;
+  }
+  const source = await sourceImage(imageUrl);
+  if (nativeImageShouldPassThrough(source.contentType)) {
+    container.addMediaGalleryComponents(new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(imageUrl)));
+    return;
+  }
+  const centered = await makeCenteredPortrait(source.buffer);
+  if (centered) {
+    const name = `embed-panel-${index + 1}.png`;
+    files.push(new AttachmentBuilder(centered, { name }));
+    container.addMediaGalleryComponents(new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(`attachment://${name}`)));
+  }
+}
 
 async function buildEmbedPayload(options = {}) {
   const {
@@ -221,19 +246,10 @@ async function buildEmbedPayload(options = {}) {
     if (items.length) {
       container.addMediaGalleryComponents(new MediaGalleryBuilder().addItems(...items));
     } else {
-      const imageUrl = data.image?.url;
+      const imageUrl = resolveSource(media?.gallery?.[0]?.source || data.image?.url, interaction);
       if (isHttpsUrl(imageUrl)) {
-        try {
-          const source = await sourceBuffer(imageUrl);
-          const centered = await makeCenteredPortrait(source);
-          if (centered) {
-            const name = `embed-panel-${index + 1}.png`;
-            files.push(new AttachmentBuilder(centered, { name }));
-            container.addMediaGalleryComponents(new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(`attachment://${name}`)));
-          }
-        } catch (error) {
-          throw new Error(`Panel ${index + 1} image could not be prepared: ${error?.message || error}`);
-        }
+        try { await addLegacyImage(container, imageUrl, files, index); }
+        catch (error) { throw new Error(`Panel ${index + 1} image could not be prepared: ${error?.message || error}`); }
       }
     }
 
