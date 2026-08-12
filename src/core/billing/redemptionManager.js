@@ -190,11 +190,8 @@ function revokeCode(code, revokedBy = 'system') {
 }
 
 module.exports = {
-  VALID_DURATIONS,
-  cleanCode,
   generateCodes,
   listCodes,
-  findCode,
   redeemCode,
   revokeCode,
 };
