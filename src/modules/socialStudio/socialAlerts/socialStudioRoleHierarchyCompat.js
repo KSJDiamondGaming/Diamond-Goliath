@@ -153,12 +153,6 @@ function payload(interaction) {
     components: [
       manager.row,
       user.row,
-      row(
-        button(`${P}roles:page:prev`, '⬆️ Manager Previous', manager.page <= 0),
-        button(`${P}roles:page:next`, 'Manager Next ⬇️', manager.page >= manager.pageCount - 1),
-        button(`${P}userroles:page:prev`, '⬆️ User Previous', user.page <= 0),
-        button(`${P}userroles:page:next`, 'User Next ⬇️', user.page >= user.pageCount - 1),
-      ),
       notificationSelect(interaction, config),
       row(button(`${P}settings`, '⬅️ Back'), button(`${P}main`, '🏠 Social Studio')),
     ],
@@ -199,13 +193,6 @@ async function handle(interaction) {
   }
 
   const state = getSession(interaction);
-  const roleCount = sortedRoles(interaction).length;
-  const pageCount = Math.max(1, Math.ceil(roleCount / PAGE_SIZE));
-
-  if (id === `${P}roles:page:prev`) { setSession(interaction, { managerPage: clampPage(state.managerPage - 1, pageCount) }); return update(interaction); }
-  if (id === `${P}roles:page:next`) { setSession(interaction, { managerPage: clampPage(state.managerPage + 1, pageCount) }); return update(interaction); }
-  if (id === `${P}userroles:page:prev`) { setSession(interaction, { userPage: clampPage(state.userPage - 1, pageCount) }); return update(interaction); }
-  if (id === `${P}userroles:page:next`) { setSession(interaction, { userPage: clampPage(state.userPage + 1, pageCount) }); return update(interaction); }
 
   if (id === `${P}roles:select`) {
     const config = store.getConfig(interaction.guildId);
