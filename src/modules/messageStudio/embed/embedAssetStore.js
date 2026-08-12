@@ -19,8 +19,6 @@ function stableSourceKey(url) {
   const text = String(url || '').trim();
   try {
     const parsed = new URL(text);
-    // Discord attachment query strings are temporary signed tokens. Key by the
-    // durable attachment path so refreshed URLs map back to the same asset.
     if (parsed.hostname === 'cdn.discordapp.com' || parsed.hostname === 'media.discordapp.net') {
       return `${parsed.hostname.replace('media.', 'cdn.')}${parsed.pathname}`;
     }
@@ -71,15 +69,29 @@ function saveCachedAsset(guildId, url, buffer, meta = {}) {
   return { id: p.id, path: p.data };
 }
 
+function supportedPersistentType(contentType) {
+  const type = String(contentType || '').toLowerCase().split(';')[0].trim();
+  if (!type) return true;
+  if (type.startsWith('image/') || type.startsWith('video/') || type.startsWith('audio/')) return true;
+  return new Set([
+    'application/pdf',
+    'application/zip',
+    'application/x-zip-compressed',
+    'application/octet-stream',
+    'text/plain',
+    'text/csv',
+  ]).has(type);
+}
+
 async function downloadAsset(url) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   timer.unref?.();
   try {
     const response = await fetch(url, { signal: controller.signal });
-    if (!response.ok) throw new Error(`Image fetch failed with HTTP ${response.status}`);
+    if (!response.ok) throw new Error(`Media fetch failed with HTTP ${response.status}`);
     const contentType = String(response.headers.get('content-type') || '').toLowerCase();
-    if (contentType && !contentType.startsWith('image/')) throw new Error(`Media URL returned ${contentType}`);
+    if (!supportedPersistentType(contentType)) throw new Error(`Unsupported media type: ${contentType || 'unknown'}`);
     const declared = Number(response.headers.get('content-length') || 0);
     if (declared > MAX_ASSET_BYTES) throw new Error('Media exceeds the 8 MB persistence limit.');
     const buffer = await response.buffer();
@@ -99,15 +111,27 @@ async function ensureAssetCached(guildId, url) {
   return { ...downloaded, id: assetId(url), cached: false };
 }
 
+function addHttpsSource(urls, value) {
+  const source = String(value || '').trim();
+  if (/^https:\/\//i.test(source)) urls.add(source);
+}
+
+function collectMediaV2Urls(urls, mediaV2) {
+  for (const panel of Array.isArray(mediaV2?.panels) ? mediaV2.panels : []) {
+    addHttpsSource(urls, panel?.thumbnail?.source);
+    for (const item of Array.isArray(panel?.gallery) ? panel.gallery : []) addHttpsSource(urls, item?.source);
+    for (const file of Array.isArray(panel?.files) ? panel.files : []) addHttpsSource(urls, file?.source);
+  }
+}
+
 async function persistPresetMedia(guildId, preset) {
   const urls = new Set();
   const panels = Array.isArray(preset?.panels) ? preset.panels : [preset];
   for (const panel of panels) {
-    for (const key of ['image', 'thumbnail', 'authorIcon', 'footerIcon']) {
-      const value = String(panel?.[key] || '').trim();
-      if (/^https:\/\//i.test(value)) urls.add(value);
-    }
+    for (const key of ['image', 'thumbnail', 'authorIcon', 'footerIcon']) addHttpsSource(urls, panel?.[key]);
   }
+  collectMediaV2Urls(urls, preset?.mediaV2);
+
   const results = [];
   for (const url of urls) {
     try {
@@ -121,6 +145,8 @@ async function persistPresetMedia(guildId, preset) {
 }
 
 module.exports = {
+  MAX_ASSET_BYTES,
+  supportedPersistentType,
   stableSourceKey,
   getCachedAsset,
   saveCachedAsset,
