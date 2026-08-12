@@ -10,6 +10,7 @@ const {
 } = require('discord.js');
 const panel = require('./embedPanel');
 const { persistPresetMedia } = require('./embedAssetStore');
+const mediaModel = require('./embedMediaModel');
 
 function queuePersistentMediaImport(presetLike) {
   persistPresetMedia('global', presetLike).then((results) => {
@@ -49,17 +50,56 @@ panel.imageModal = (state) => new ModalBuilder()
     new ActionRowBuilder().addComponents(textInput('image', 'Large banner/image URL', TextInputStyle.Short, state.image)),
   );
 
+if (!panel.__mediaV2Patched) {
+  if (typeof panel.getSession === 'function') {
+    const originalGetSession = panel.getSession.bind(panel);
+    panel.getSession = (interaction) => mediaModel.ensureStateMedia(originalGetSession(interaction));
+  }
+  if (typeof panel.saveSession === 'function') {
+    const originalSaveSession = panel.saveSession.bind(panel);
+    panel.saveSession = (interaction, state) => originalSaveSession(interaction, mediaModel.ensureStateMedia(state));
+  }
+  if (typeof panel.resetSession === 'function') {
+    const originalResetSession = panel.resetSession.bind(panel);
+    panel.resetSession = (interaction) => {
+      const result = originalResetSession(interaction);
+      return panel.saveSession(interaction, mediaModel.ensureStateMedia(result));
+    };
+  }
+  if (typeof panel.applyTemplate === 'function') {
+    const originalApplyTemplate = panel.applyTemplate.bind(panel);
+    panel.applyTemplate = (interaction, name) => {
+      const result = originalApplyTemplate(interaction, name);
+      return panel.saveSession(interaction, mediaModel.ensureStateMedia({ ...result, mediaV2: undefined }));
+    };
+  }
+  if (typeof panel.applyPreset === 'function') {
+    const originalApplyPreset = panel.applyPreset.bind(panel);
+    panel.applyPreset = (interaction, name, preset) => {
+      const result = originalApplyPreset(interaction, name, preset);
+      const restored = mediaModel.ensureStateMedia({ ...result, mediaV2: preset?.mediaV2 || result?.mediaV2 });
+      return panel.saveSession(interaction, restored);
+    };
+  }
+  panel.getPanelMedia = (state, index = null) => mediaModel.mediaForPanel(state, index);
+  panel.setPanelMedia = (state, index, media) => mediaModel.setPanelMedia(state, index, media);
+  panel.mediaModel = mediaModel;
+  panel.__mediaV2Patched = true;
+}
+
 if (!panel.__persistentMediaPatched && typeof panel.saveSelected === 'function') {
   const originalSaveSelected = panel.saveSelected.bind(panel);
   panel.saveSelected = (state, patch = {}) => {
-    const result = originalSaveSelected(state, patch);
-    if (['image', 'thumbnail', 'authorIcon', 'footerIcon'].some((key) => patch && patch[key])) queuePersistentMediaImport({ panels: [patch] });
+    let result = originalSaveSelected(state, patch);
+    result = mediaModel.syncLegacyPatch({ ...result, mediaV2: state?.mediaV2 }, patch);
+    if (['image', 'thumbnail', 'authorIcon', 'footerIcon'].some((key) => patch && patch[key])) queuePersistentMediaImport({ panels: [patch], mediaV2: result.mediaV2 });
     return result;
   };
   if (typeof panel.presetData === 'function') {
     const originalPresetData = panel.presetData.bind(panel);
     panel.presetData = (state) => {
-      const preset = originalPresetData(state);
+      const safeState = mediaModel.ensureStateMedia(state);
+      const preset = { ...originalPresetData(safeState), mediaV2: safeState.mediaV2 };
       queuePersistentMediaImport(preset);
       return preset;
     };
