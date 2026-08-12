@@ -18,7 +18,6 @@ function queuePersistentMediaImport(presetLike) {
     if (failed.length) console.warn('[EmbedAssets] persistence import failed:', failed.map((result) => ({ url: String(result.url).slice(0, 120), error: result.error })));
   }).catch((error) => console.warn('[EmbedAssets] persistence import failed:', error?.message || error));
 }
-
 function textInput(id, label, style, value = '', maxLength = 4000) {
   return new TextInputBuilder().setCustomId(id).setLabel(label).setStyle(style).setRequired(false).setMaxLength(maxLength).setValue(String(value || '').slice(0, maxLength));
 }
@@ -30,7 +29,6 @@ panel.contentModal = (state) => new ModalBuilder()
     new ActionRowBuilder().addComponents(textInput('title', 'Panel title', TextInputStyle.Short, state.title, 256)),
     new ActionRowBuilder().addComponents(textInput('description', 'Panel message/content', TextInputStyle.Paragraph, state.description, 4000)),
   );
-
 panel.mediaModal = (state) => new ModalBuilder()
   .setCustomId(`embed:save-appearance:${Date.now()}`)
   .setTitle('Media & Appearance')
@@ -41,7 +39,6 @@ panel.mediaModal = (state) => new ModalBuilder()
     new ActionRowBuilder().addComponents(textInput('footer', 'Footer text', TextInputStyle.Short, state.footer, 2048)),
     new ActionRowBuilder().addComponents(textInput('footerIcon', 'Footer icon URL / variable', TextInputStyle.Short, state.footerIcon)),
   );
-
 panel.imageModal = (state) => new ModalBuilder()
   .setCustomId(`embed:save-images:${Date.now()}`)
   .setTitle('Panel Images')
@@ -58,6 +55,13 @@ if (!panel.__mediaV2Patched) {
   if (typeof panel.saveSession === 'function') {
     const originalSaveSession = panel.saveSession.bind(panel);
     panel.saveSession = (interaction, state) => originalSaveSession(interaction, mediaModel.ensureStateMedia(state));
+  }
+  if (typeof panel.markUnsaved === 'function') {
+    const originalMarkUnsaved = panel.markUnsaved.bind(panel);
+    panel.markUnsaved = (interaction, state) => {
+      const previous = panel.getSession(interaction);
+      return originalMarkUnsaved(interaction, mediaModel.reconcileMediaByPanels(previous, state));
+    };
   }
   if (typeof panel.resetSession === 'function') {
     const originalResetSession = panel.resetSession.bind(panel);
@@ -128,9 +132,7 @@ if (!panel.__compactPreviewPatched) {
     if (firstRow?.components?.length) {
       const mediaButton = firstRow.components.find((component) => component?.data?.custom_id === 'embed:edit-media');
       if (mediaButton) mediaButton.setLabel('🎨 Appearance');
-      if (!firstRow.components.some((component) => component?.data?.custom_id === 'embed:edit-images')) {
-        firstRow.addComponents(new ButtonBuilder().setCustomId('embed:edit-images').setLabel('🖼️ Images').setStyle(ButtonStyle.Primary));
-      }
+      if (!firstRow.components.some((component) => component?.data?.custom_id === 'embed:edit-images')) firstRow.addComponents(new ButtonBuilder().setCustomId('embed:edit-images').setLabel('🖼️ Images').setStyle(ButtonStyle.Primary));
     }
     return payload;
   });
