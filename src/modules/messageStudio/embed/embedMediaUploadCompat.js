@@ -18,13 +18,7 @@ const MAX_COMPONENTS_PER_ROW = 5;
 const MAX_ACTION_ROWS = 5;
 
 function textInput(id, label, style, value = '', maxLength = 4000) {
-  return new TextInputBuilder()
-    .setCustomId(id)
-    .setLabel(label)
-    .setStyle(style)
-    .setRequired(false)
-    .setMaxLength(maxLength)
-    .setValue(String(value || '').slice(0, maxLength));
+  return new TextInputBuilder().setCustomId(id).setLabel(label).setStyle(style).setRequired(false).setMaxLength(maxLength).setValue(String(value || '').slice(0, maxLength));
 }
 
 panel.mediaUploadModal = () => new ModalBuilder()
@@ -34,9 +28,7 @@ panel.mediaUploadModal = () => new ModalBuilder()
     new LabelBuilder()
       .setLabel('Upload media or files')
       .setDescription('Add up to 10 files. Images and videos go to the gallery; other files are attached.')
-      .setFileUploadComponent(
-        new FileUploadBuilder().setCustomId('media_files').setMinValues(1).setMaxValues(10).setRequired(true),
-      ),
+      .setFileUploadComponent(new FileUploadBuilder().setCustomId('media_files').setMinValues(1).setMaxValues(10).setRequired(true)),
   );
 
 panel.galleryItemModal = (state, index = null) => {
@@ -55,18 +47,22 @@ panel.galleryItemModal = (state, index = null) => {
 function componentCount(row) {
   return Array.isArray(row?.components) ? row.components.length : 0;
 }
-
 function enforceComponentLimits(rows = []) {
-  return rows
-    .filter(Boolean)
-    .slice(0, MAX_ACTION_ROWS)
-    .map((row) => {
-      if (!Array.isArray(row?.components) || row.components.length <= MAX_COMPONENTS_PER_ROW) return row;
-      row.components = row.components.slice(0, MAX_COMPONENTS_PER_ROW);
-      return row;
-    });
+  return rows.filter(Boolean).slice(0, MAX_ACTION_ROWS).map((row) => {
+    if (!Array.isArray(row?.components) || row.components.length <= MAX_COMPONENTS_PER_ROW) return row;
+    row.components = row.components.slice(0, MAX_COMPONENTS_PER_ROW);
+    return row;
+  });
 }
-
+function resolvePreviewSource(source, interaction) {
+  const raw = String(source || '').trim();
+  if (!raw) return '';
+  try {
+    const resolved = typeof panel.replaceVars === 'function' ? panel.replaceVars(raw, interaction) : raw;
+    const url = new URL(String(resolved || '').trim());
+    return url.protocol === 'https:' ? url.toString() : '';
+  } catch { return ''; }
+}
 function validationSummary(interaction) {
   const state = panel.getSession(interaction);
   const media = panel.getPanelMedia(state);
@@ -79,6 +75,28 @@ function validationSummary(interaction) {
   lines.push(`Ready: **${report.ready}** • Warnings: **${report.warnings}** • Invalid: **${report.invalid}**`);
   return lines.join('\n').slice(0, 1500);
 }
+function visualPreview(interaction) {
+  const state = panel.getSession(interaction);
+  const media = panel.getPanelMedia(state);
+  const selected = Number.isInteger(state.selectedMediaIndex) ? media.gallery?.[state.selectedMediaIndex] : null;
+  const selectedSource = resolvePreviewSource(selected?.source, interaction);
+  const thumbnailSource = resolvePreviewSource(media.thumbnail?.source, interaction);
+  const selectedType = String(selected?.type || 'auto').toLowerCase();
+
+  if (selected && selectedType === 'video') {
+    const embed = new EmbedBuilder().setColor(0x5865F2).setTitle('🎬 Selected Video Preview');
+    if (selectedSource) embed.setDescription(`[Open selected video](${selectedSource})${selected.alt ? `\n\n${String(selected.alt).slice(0, 800)}` : ''}`);
+    else embed.setDescription('The selected video uses a variable or source that cannot be previewed here yet. It will be resolved when the message is sent.');
+    return embed;
+  }
+  if (selectedSource) {
+    const embed = new EmbedBuilder().setColor(0x5865F2).setTitle('🖼️ Selected Media Preview').setImage(selectedSource);
+    if (selected?.alt) embed.setDescription(String(selected.alt).slice(0, 800));
+    return embed;
+  }
+  if (thumbnailSource) return new EmbedBuilder().setColor(0x5865F2).setTitle('🖼️ Thumbnail Preview').setImage(thumbnailSource);
+  return null;
+}
 
 panel.buildMediaOptionsPanel = (interaction) => {
   const state = panel.getSession(interaction);
@@ -86,37 +104,27 @@ panel.buildMediaOptionsPanel = (interaction) => {
   const index = Number.isInteger(state.selectedMediaIndex) && media.gallery[state.selectedMediaIndex] ? state.selectedMediaIndex : null;
   const item = index == null ? null : media.gallery[index];
   if (!item) return panel.buildMediaManagerPanel(interaction, panel.memberName(interaction));
-
   const type = ['auto', 'image', 'video'].includes(item.type) ? item.type : 'auto';
-  const rows = [
-    new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('embed:media-type:auto').setLabel('✨ Auto Detect').setStyle(type === 'auto' ? ButtonStyle.Primary : ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId('embed:media-type:image').setLabel('🖼️ Image').setStyle(type === 'image' ? ButtonStyle.Primary : ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId('embed:media-type:video').setLabel('🎬 Video').setStyle(type === 'video' ? ButtonStyle.Primary : ButtonStyle.Secondary),
-    ),
-    new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('embed:media-spoiler:off').setLabel('👁️ Normal').setStyle(item.spoiler ? ButtonStyle.Secondary : ButtonStyle.Primary),
-      new ButtonBuilder().setCustomId('embed:media-spoiler:on').setLabel('🙈 Spoiler').setStyle(item.spoiler ? ButtonStyle.Primary : ButtonStyle.Secondary),
-    ),
-    new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('embed:media-options-back').setLabel('⬅️ Media Manager').setStyle(ButtonStyle.Secondary),
-    ),
-  ];
-
   return {
-    embeds: [
-      new EmbedBuilder()
-        .setColor(0x5865F2)
-        .setTitle('⚙️ Media Options')
-        .setDescription([
-          `**Gallery item:** ${index + 1} / ${media.gallery.length}`,
-          `**Type handling:** ${type === 'auto' ? 'Auto detect' : type === 'image' ? 'Image' : 'Video'}`,
-          `**Spoiler:** ${item.spoiler ? 'On' : 'Off'}`,
-          '',
-          'Use the buttons below instead of typing media settings manually. Auto Detect is recommended unless you need to force image or video validation.',
-        ].join('\n')),
-    ],
-    components: enforceComponentLimits(rows),
+    embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('⚙️ Media Options').setDescription([
+      `**Gallery item:** ${index + 1} / ${media.gallery.length}`,
+      `**Type handling:** ${type === 'auto' ? 'Auto detect' : type === 'image' ? 'Image' : 'Video'}`,
+      `**Spoiler:** ${item.spoiler ? 'On' : 'Off'}`,
+      '',
+      'Use the buttons below instead of typing media settings manually. Auto Detect is recommended unless you need to force image or video validation.',
+    ].join('\n'))],
+    components: enforceComponentLimits([
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('embed:media-type:auto').setLabel('✨ Auto Detect').setStyle(type === 'auto' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('embed:media-type:image').setLabel('🖼️ Image').setStyle(type === 'image' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('embed:media-type:video').setLabel('🎬 Video').setStyle(type === 'video' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+      ),
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('embed:media-spoiler:off').setLabel('👁️ Normal').setStyle(item.spoiler ? ButtonStyle.Secondary : ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId('embed:media-spoiler:on').setLabel('🙈 Spoiler').setStyle(item.spoiler ? ButtonStyle.Primary : ButtonStyle.Secondary),
+      ),
+      new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('embed:media-options-back').setLabel('⬅️ Media Manager').setStyle(ButtonStyle.Secondary)),
+    ]),
   };
 };
 
@@ -133,13 +141,10 @@ if (!panel.__mediaUploadButtonPatched && typeof panel.buildMediaManagerPanel ===
 
     if (!hasOptions) {
       const targetRow = rows.find((row) => row?.components?.some((component) => component?.data?.custom_id === 'embed:media-gallery-edit'));
-      if (targetRow && componentCount(targetRow) < MAX_COMPONENTS_PER_ROW) {
-        targetRow.addComponents(
-          new ButtonBuilder().setCustomId('embed:media-options').setLabel('⚙️ Options').setStyle(ButtonStyle.Secondary).setDisabled(!hasSelectedMedia),
-        );
-      }
+      if (targetRow && componentCount(targetRow) < MAX_COMPONENTS_PER_ROW) targetRow.addComponents(
+        new ButtonBuilder().setCustomId('embed:media-options').setLabel('⚙️ Options').setStyle(ButtonStyle.Secondary).setDisabled(!hasSelectedMedia),
+      );
     }
-
     if (!hasUpload) {
       const upload = new ButtonBuilder().setCustomId('embed:media-upload').setLabel('📤 Upload Media').setStyle(ButtonStyle.Success);
       const availableRow = [...rows].reverse().find((row) => componentCount(row) < MAX_COMPONENTS_PER_ROW);
@@ -148,22 +153,16 @@ if (!panel.__mediaUploadButtonPatched && typeof panel.buildMediaManagerPanel ===
     }
 
     const embed = payload?.embeds?.[0];
-    if (embed?.data) {
-      const current = String(embed.data.description || '');
-      const status = validationSummary(interaction);
-      embed.setDescription(`${current}\n\n${status}`.slice(0, 4096));
-    }
-
-    return { ...payload, components: enforceComponentLimits(rows) };
+    if (embed?.data) embed.setDescription(`${String(embed.data.description || '')}\n\n${validationSummary(interaction)}`.slice(0, 4096));
+    const preview = visualPreview(interaction);
+    const embeds = Array.isArray(payload?.embeds) ? [...payload.embeds] : [];
+    if (preview && embeds.length < 10) embeds.push(preview);
+    return { ...payload, embeds, components: enforceComponentLimits(rows) };
   };
   panel.buildMediaManager = panel.buildMediaManagerPanel;
   panel.__mediaUploadButtonPatched = true;
 }
 
 panel.validatePanelMedia = validatePanelMedia;
-panel.EMBED_COMPONENT_LIMITS = Object.freeze({
-  maxComponentsPerRow: MAX_COMPONENTS_PER_ROW,
-  maxActionRows: MAX_ACTION_ROWS,
-});
-
+panel.EMBED_COMPONENT_LIMITS = Object.freeze({ maxComponentsPerRow: MAX_COMPONENTS_PER_ROW, maxActionRows: MAX_ACTION_ROWS });
 module.exports = panel;
