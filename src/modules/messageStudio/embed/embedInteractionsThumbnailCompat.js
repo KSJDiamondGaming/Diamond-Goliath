@@ -1,6 +1,6 @@
 'use strict';
 
-const original = require('./embedInteractions');
+const original = require('./embedInteractionsCore');
 const panel = require('./embedThumbnailCompat');
 const { ensureAssetCached } = require('./embedAssetStore');
 
