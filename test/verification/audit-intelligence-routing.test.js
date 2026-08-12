@@ -160,3 +160,29 @@ test('Identity History renders observed cross-environment identity evidence', ()
   assert.match(embeds, /Current Live Nicknames/);
   assert.match(embeds, /does not infer unobserved Discord identity changes/);
 });
+
+test('User Intelligence builds structured moderation intelligence', () => {
+  assert.match(userIntelligence, /function buildModerationSummary\(stored\)/);
+  assert.match(userIntelligence, /moderation: buildModerationSummary\(stored\)/);
+  assert.match(userIntelligence, /reasoned,/);
+  assert.match(userIntelligence, /withoutReason:/);
+  assert.match(userIntelligence, /attributedActorCount:/);
+  assert.match(userIntelligence, /unresolvedActor,/);
+  assert.match(userIntelligence, /topTypes:/);
+  assert.match(userIntelligence, /topGuilds:/);
+  assert.match(userIntelligence, /topActors:/);
+  assert.match(userIntelligence, /recent:/);
+});
+
+test('Moderation section renders structured cross-environment intelligence', () => {
+  assert.match(embeds, /const moderation = report\?\.moderation \|\| \{\}/);
+  assert.match(embeds, /Moderation Overview/);
+  assert.match(embeds, /Environment Coverage/);
+  assert.match(embeds, /First Recorded Moderation/);
+  assert.match(embeds, /Latest Moderation/);
+  assert.match(embeds, /Top Moderation Types/);
+  assert.match(embeds, /Top Guilds/);
+  assert.match(embeds, /Top Attributed Actors/);
+  assert.match(embeds, /Recent Moderation History/);
+  assert.match(embeds, /Unresolved actor/);
+});
