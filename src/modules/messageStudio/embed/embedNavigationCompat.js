@@ -80,39 +80,41 @@ if (!panel.__embedNavigationPatched) {
     const payload = originalBuilder(interaction, ...args);
     const state = panel.getSession(interaction);
     const rows = Array.isArray(payload?.components) ? payload.components : [];
-
     const contextRow = panelSelector(state);
-
-    // Exact requested Row 2: Content -> Panels -> Appearance -> Media.
-    // Appearance is internally embed:edit-media; Media is embed:edit-images.
     const buildRow = rowFromComponents(
       findComponent(rows, 'embed:edit-content'),
       findComponent(rows, 'embed:panels') || new ButtonBuilder().setCustomId('embed:panels').setLabel(`🧩 Panels (${state.panels?.length || 1})`).setStyle(ButtonStyle.Primary),
       findComponent(rows, 'embed:edit-media'),
       findComponent(rows, 'embed:edit-images'),
     );
-
-    // Exact requested Row 3: Fields -> Buttons -> Update.
     const detailRow = rowFromComponents(
       findComponent(rows, 'embed:fields'),
       findComponent(rows, 'embed:buttons'),
       findComponent(rows, 'embed:update-existing'),
     );
-
-    // Exact requested Row 4 after removing the redundant Actions submenu: Review -> Test.
     const finishRow = rowFromComponents(
       findComponent(rows, 'embed:readiness'),
       findComponent(rows, 'embed:test-send'),
     );
+    payload.components = [contextRow, buildRow, detailRow, finishRow, builderNavigationRow(rows)].filter(Boolean).slice(0, 5);
+    return payload;
+  };
 
-    // Exact requested Row 5: Back -> Variables -> Reset.
+  const originalPanels = panel.buildPanelsPanel.bind(panel);
+  panel.buildPanelsPanel = (interaction, ...args) => {
+    const payload = originalPanels(interaction, ...args);
+    const rows = Array.isArray(payload?.components) ? payload.components : [];
     payload.components = [
-      contextRow,
-      buildRow,
-      detailRow,
-      finishRow,
-      builderNavigationRow(rows),
-    ].filter(Boolean).slice(0, 5);
+      findRow(rows, 'embed:panel-select'),
+      rowFromComponents(
+        findComponent(rows, 'embed:panel-add'),
+        findComponent(rows, 'embed:panel-duplicate'),
+        findComponent(rows, 'embed:panel-remove'),
+        findComponent(rows, 'embed:panel-up'),
+        findComponent(rows, 'embed:panel-down'),
+      ),
+      rowFromComponents(findComponent(rows, 'embed:builder')),
+    ].filter(Boolean);
     return payload;
   };
 
