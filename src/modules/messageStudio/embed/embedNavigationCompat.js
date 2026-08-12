@@ -14,11 +14,23 @@ function componentId(component) {
 function findRow(rows, id) {
   return rows.find((row) => Array.isArray(row?.components) && row.components.some((component) => componentId(component) === id));
 }
+function findComponent(rows, id) {
+  for (const row of rows) {
+    const component = Array.isArray(row?.components)
+      ? row.components.find((entry) => componentId(entry) === id)
+      : null;
+    if (component) return component;
+  }
+  return null;
+}
+function rowFromComponents(...components) {
+  const safe = components.filter(Boolean).slice(0, 5);
+  return safe.length ? new ActionRowBuilder().addComponents(...safe) : null;
+}
 function cloneRowWithout(row, ids = []) {
   if (!row || !Array.isArray(row.components)) return null;
   const kept = row.components.filter((component) => !ids.includes(componentId(component)));
-  if (!kept.length) return null;
-  return new ActionRowBuilder().addComponents(...kept);
+  return rowFromComponents(...kept);
 }
 function panelSelector(state) {
   const panels = Array.isArray(state?.panels) && state.panels.length ? state.panels : [{}];
@@ -37,12 +49,12 @@ function panelSelector(state) {
   );
 }
 function mainNavigationRow() {
-  return new ActionRowBuilder().addComponents(
+  return rowFromComponents(
     new ButtonBuilder().setCustomId('admin:modules').setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary),
   );
 }
 function builderNavigationRow() {
-  return new ActionRowBuilder().addComponents(
+  return rowFromComponents(
     new ButtonBuilder().setCustomId('embed:back').setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary),
   );
 }
@@ -67,22 +79,37 @@ if (!panel.__embedNavigationPatched) {
     const state = panel.getSession(interaction);
     const rows = Array.isArray(payload?.components) ? payload.components : [];
 
-    const editRow = findRow(rows, 'embed:edit-content');
-    const toggleRowSource = findRow(rows, 'embed:toggle-ping');
-    const deliveryRowSource = findRow(rows, 'embed:test-send');
+    // Row 1: current content-panel context.
+    const contextRow = panelSelector(state);
 
-    const toggleComponents = Array.isArray(toggleRowSource?.components) ? [...toggleRowSource.components] : [];
-    const hasPanels = toggleComponents.some((component) => componentId(component) === 'embed:panels');
-    if (!hasPanels) toggleComponents.unshift(
-      new ButtonBuilder().setCustomId('embed:panels').setLabel(`🧩 Panels (${state.panels?.length || 1})`).setStyle(ButtonStyle.Primary),
+    // Row 2: content creation/editing only.
+    const editRow = rowFromComponents(
+      findComponent(rows, 'embed:edit-content'),
+      findComponent(rows, 'embed:edit-appearance'),
+      findComponent(rows, 'embed:fields'),
+      findComponent(rows, 'embed:buttons'),
+      findComponent(rows, 'embed:edit-media'),
+    ) || findRow(rows, 'embed:edit-content');
+
+    // Row 3: builder configuration only.
+    const configureRow = rowFromComponents(
+      findComponent(rows, 'embed:panels') || new ButtonBuilder().setCustomId('embed:panels').setLabel(`🧩 Panels (${state.panels?.length || 1})`).setStyle(ButtonStyle.Primary),
+      findComponent(rows, 'embed:toggle-ping'),
+      findComponent(rows, 'embed:toggle-timestamp'),
+      findComponent(rows, 'embed:helpers'),
     );
-    if (!toggleComponents.some((component) => componentId(component) === 'embed:readiness')) {
-      toggleComponents.push(new ButtonBuilder().setCustomId('embed:readiness').setLabel('✅ Review').setStyle(ButtonStyle.Success));
-    }
-    const controls = new ActionRowBuilder().addComponents(...toggleComponents.slice(0, 5));
 
-    const delivery = cloneRowWithout(deliveryRowSource, ['embed:back']);
-    payload.components = [panelSelector(state), editRow, controls, delivery, builderNavigationRow()].filter(Boolean).slice(0, 5);
+    // Row 4: validate/test/deployment actions. Review starts this row so the flow
+    // is configure -> review -> test/update/reset.
+    const actionRow = rowFromComponents(
+      findComponent(rows, 'embed:readiness') || new ButtonBuilder().setCustomId('embed:readiness').setLabel('✅ Review').setStyle(ButtonStyle.Success),
+      findComponent(rows, 'embed:test-send'),
+      findComponent(rows, 'embed:update-existing'),
+      findComponent(rows, 'embed:reset'),
+    );
+
+    // Row 5: navigation is always last.
+    payload.components = [contextRow, editRow, configureRow, actionRow, builderNavigationRow()].filter(Boolean).slice(0, 5);
     return payload;
   };
 
