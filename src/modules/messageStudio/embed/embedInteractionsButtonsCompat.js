@@ -8,8 +8,14 @@ function saveButtons(i, state, buttons, selectedButtonIndex = state.selectedButt
 async function updateButtons(i) { await i.update(panel.buildButtonsManagerPanel(i)); return true; }
 async function updateButtonOptions(i) { await i.update(panel.buildButtonOptionsPanel(i)); return true; }
 async function replyButtons(i) { await i.reply({ ...panel.buildButtonsManagerPanel(i), flags: 64 }); return true; }
-function normalizeAction(value) { return String(value || '').trim().toLowerCase().replace(/_/g, '-').replace(/[^a-z0-9:-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80); }
-function validUrlOrVariable(value) { const raw = String(value || '').trim(); if (!raw) return true; if (/\{[a-zA-Z0-9_]+\}/.test(raw)) return true; try { const url = new URL(raw); return ['http:', 'https:'].includes(url.protocol); } catch { return false; } }
+async function replyButtonOptions(i) { await i.reply({ ...panel.buildButtonOptionsPanel(i), flags: 64 }); return true; }
+function validUrlOrVariable(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return true;
+  if (/\{[a-zA-Z0-9_]+\}/.test(raw)) return true;
+  try { const url = new URL(raw); return ['http:', 'https:'].includes(url.protocol); } catch { return false; }
+}
+function roleAction(action) { return ['toggle-role', 'add-role', 'remove-role'].includes(String(action || '').toLowerCase()); }
 
 async function handleInteraction(i) {
   const customId = String(i.customId || '');
@@ -32,6 +38,11 @@ async function handleInteraction(i) {
       return updateButtonOptions(i);
     }
     if (customId === 'embed:button-options-back') return updateButtons(i);
+    if (customId === 'embed:button-reply-edit') {
+      if (index == null || String(buttons[index]?.action || '').toLowerCase() !== 'reply') return updateButtonOptions(i);
+      await i.showModal(panel.buttonReplyModal(state));
+      return true;
+    }
     if (customId.startsWith('embed:button-style:')) {
       if (index == null) return updateButtons(i);
       const style = customId.split(':').pop();
@@ -56,20 +67,43 @@ async function handleInteraction(i) {
     }
   }
 
-  if (i.isStringSelectMenu?.() && customId === 'embed:button-manager-select') {
-    panel.saveSession(i, { ...state, selectedButtonIndex: Math.max(0, Number(i.values?.[0]) || 0) });
-    return updateButtons(i);
+  if (i.isStringSelectMenu?.()) {
+    if (customId === 'embed:button-manager-select') {
+      panel.saveSession(i, { ...state, selectedButtonIndex: Math.max(0, Number(i.values?.[0]) || 0) });
+      return updateButtons(i);
+    }
+    if (customId === 'embed:button-action-select') {
+      if (index == null) return updateButtons(i);
+      const action = String(i.values?.[0] || 'none').toLowerCase();
+      if (action !== 'none' && !panel.EMBED_BUTTON_ACTIONS.includes(action)) return true;
+      const existing = buttons[index] || {};
+      buttons[index] = action === 'none'
+        ? { ...existing, action: '', actionValue: '' }
+        : { ...existing, url: '', action, actionValue: '' };
+      saveButtons(i, state, buttons, index);
+      return updateButtonOptions(i);
+    }
+  }
+
+  if (i.isRoleSelectMenu?.() && customId === 'embed:button-action-role') {
+    if (index == null || !roleAction(buttons[index]?.action)) return updateButtonOptions(i);
+    const roleId = String(i.values?.[0] || '');
+    const role = i.guild?.roles?.cache?.get?.(roleId) || (await i.guild?.roles?.fetch?.(roleId).catch(() => null));
+    if (!role || role.id === i.guildId || role.managed) {
+      await i.reply({ content: '⚠️ Select a normal server role. Managed/integration roles and @everyone cannot be used.', flags: 64 });
+      return true;
+    }
+    buttons[index] = { ...buttons[index], actionValue: role.id };
+    saveButtons(i, state, buttons, index);
+    return updateButtonOptions(i);
   }
 
   if (i.isModalSubmit?.() && (customId === 'embed:button-manager-save-new' || customId.startsWith('embed:button-manager-save:'))) {
     const label = String(i.fields.getTextInputValue('label') || '').trim().slice(0, 80);
     const emoji = String(i.fields.getTextInputValue('emoji') || '').trim().slice(0, 100);
     const url = String(i.fields.getTextInputValue('url') || '').trim();
-    const action = normalizeAction(i.fields.getTextInputValue('action'));
-    const actionValue = String(i.fields.getTextInputValue('actionValue') || '').trim().slice(0, 1000);
     if (!label) { await i.reply({ content: 'A button label is required.', flags: 64 }); return true; }
     if (!validUrlOrVariable(url)) { await i.reply({ content: 'Button links must be HTTP/HTTPS URLs or a URL-producing Embed Studio variable.', flags: 64 }); return true; }
-    if (url && action) { await i.reply({ content: 'Choose either a link URL or an action, not both.', flags: 64 }); return true; }
     const editingIndex = customId === 'embed:button-manager-save-new' ? null : Number(customId.split(':').pop());
     const existing = Number.isInteger(editingIndex) ? (buttons[editingIndex] || {}) : {};
     const entry = {
@@ -77,17 +111,28 @@ async function handleInteraction(i) {
       label,
       emoji,
       url,
-      action,
-      actionValue,
+      ...(url ? { action: '', actionValue: '' } : {}),
       style: ['primary', 'secondary', 'success', 'danger'].includes(String(existing.style || '').toLowerCase()) ? String(existing.style).toLowerCase() : 'primary',
     };
     let selectedButtonIndex;
     if (editingIndex == null) {
       if (buttons.length >= panel.MAX_EMBED_BUTTONS) { await i.reply({ content: `Maximum of ${panel.MAX_EMBED_BUTTONS} buttons reached.`, flags: 64 }); return true; }
-      buttons.push(entry); selectedButtonIndex = buttons.length - 1;
+      buttons.push({ ...entry, action: '', actionValue: '' }); selectedButtonIndex = buttons.length - 1;
     } else { buttons[editingIndex] = entry; selectedButtonIndex = editingIndex; }
     saveButtons(i, state, buttons, selectedButtonIndex);
     return replyButtons(i);
+  }
+
+  if (i.isModalSubmit?.() && customId === 'embed:button-reply-save') {
+    if (index == null || String(buttons[index]?.action || '').toLowerCase() !== 'reply') {
+      await i.reply({ content: 'Select a Reply action button first.', flags: 64 });
+      return true;
+    }
+    const replyText = String(i.fields.getTextInputValue('replyText') || '').trim().slice(0, 1000);
+    if (!replyText) { await i.reply({ content: 'Reply text is required.', flags: 64 }); return true; }
+    buttons[index] = { ...buttons[index], actionValue: replyText };
+    saveButtons(i, state, buttons, index);
+    return replyButtonOptions(i);
   }
 
   return original.handleInteraction(i);
