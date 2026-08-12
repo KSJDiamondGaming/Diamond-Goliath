@@ -216,3 +216,32 @@ test('Roles section renders structured live and stored role intelligence', () =>
   assert.match(embeds, /Unique Current Roles/);
   assert.match(embeds, /Recent Role History/);
 });
+
+test('User Intelligence builds structured voice intelligence', () => {
+  assert.match(userIntelligence, /function buildVoiceSummary\(stored, liveGuilds\)/);
+  assert.match(userIntelligence, /voice: buildVoiceSummary\(stored, liveGuilds\)/);
+  assert.match(userIntelligence, /joins:/);
+  assert.match(userIntelligence, /leaves:/);
+  assert.match(userIntelligence, /moves:/);
+  assert.match(userIntelligence, /stateChanges:/);
+  assert.match(userIntelligence, /topTypes:/);
+  assert.match(userIntelligence, /topGuilds:/);
+  assert.match(userIntelligence, /topChannels:/);
+  assert.match(userIntelligence, /currentGuilds:/);
+  assert.match(userIntelligence, /recent:/);
+});
+
+test('Voice section renders structured live and stored voice intelligence', () => {
+  assert.match(embeds, /const voice = report\?\.voice \|\| \{\}/);
+  assert.match(embeds, /Voice Activity Overview/);
+  assert.match(embeds, /Current Voice State/);
+  assert.match(embeds, /First Recorded Voice Event/);
+  assert.match(embeds, /Latest Voice Event/);
+  assert.match(embeds, /Top Voice Event Types/);
+  assert.match(embeds, /Top Guilds/);
+  assert.match(embeds, /Most Seen Voice Channels/);
+  assert.match(embeds, /Current Live Voice State/);
+  assert.match(embeds, /Recent Voice History/);
+  assert.match(embeds, /Server mute\/deaf/);
+  assert.match(embeds, /Self mute\/deaf/);
+});
