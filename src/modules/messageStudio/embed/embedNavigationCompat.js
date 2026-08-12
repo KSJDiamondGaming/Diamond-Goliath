@@ -4,7 +4,6 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  EmbedBuilder,
   StringSelectMenuBuilder,
 } = require('discord.js');
 const panel = require('./embedReadinessCompat');
@@ -56,49 +55,11 @@ function mainNavigationRow() {
 }
 function builderNavigationRow(rows) {
   return rowFromComponents(
-    findComponent(rows, 'embed:helpers'),
     new ButtonBuilder().setCustomId('embed:back').setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary),
+    findComponent(rows, 'embed:helpers'),
+    findComponent(rows, 'embed:reset'),
   );
 }
-function actionsNavigationRow() {
-  return rowFromComponents(
-    new ButtonBuilder().setCustomId('embed:builder').setLabel('⬅️ Builder').setStyle(ButtonStyle.Secondary),
-  );
-}
-
-panel.buildActionsPanel = (interaction) => {
-  const state = panel.getSession(interaction);
-  const report = typeof panel.getReadinessReport === 'function'
-    ? panel.getReadinessReport(interaction, state)
-    : { ready: true, warnings: [], errors: [] };
-  const status = report.ready
-    ? (report.warnings?.length ? '🟡 Ready with warnings' : '🟢 Ready')
-    : '🔴 Needs review';
-
-  const base = panel.buildBuilderPanel(interaction, panel.memberName(interaction));
-  const rows = Array.isArray(base?.components) ? base.components : [];
-
-  return {
-    embeds: [
-      new EmbedBuilder()
-        .setColor(report.ready ? (report.warnings?.length ? 0xFEE75C : 0x57F287) : 0xED4245)
-        .setTitle('🚀 Embed Actions')
-        .setDescription([
-          `**Status:** ${status}`,
-          `**Panel:** ${(Number(state.selectedPanelIndex) || 0) + 1}/${state.panels?.length || 1}`,
-          '',
-          'Configure delivery behaviour for this embed.',
-        ].join('\n')),
-    ],
-    components: [
-      rowFromComponents(
-        findComponent(rows, 'embed:toggle-ping'),
-        findComponent(rows, 'embed:toggle-timestamp'),
-      ),
-      actionsNavigationRow(),
-    ].filter(Boolean),
-  };
-};
 
 if (!panel.__embedNavigationPatched) {
   const originalEditor = panel.buildEditorPanel.bind(panel);
@@ -122,27 +83,31 @@ if (!panel.__embedNavigationPatched) {
 
     const contextRow = panelSelector(state);
 
-    const editRow = rowFromComponents(
+    const buildRow = rowFromComponents(
       findComponent(rows, 'embed:edit-content'),
-      findComponent(rows, 'embed:edit-appearance'),
-      findComponent(rows, 'embed:fields'),
-      findComponent(rows, 'embed:edit-media'),
-      findComponent(rows, 'embed:buttons'),
-    ) || findRow(rows, 'embed:edit-content');
-
-    const configureRow = rowFromComponents(
       findComponent(rows, 'embed:panels') || new ButtonBuilder().setCustomId('embed:panels').setLabel(`🧩 Panels (${state.panels?.length || 1})`).setStyle(ButtonStyle.Primary),
-      new ButtonBuilder().setCustomId('embed:actions').setLabel('🚀 Actions').setStyle(ButtonStyle.Success),
-      findComponent(rows, 'embed:readiness'),
-      findComponent(rows, 'embed:test-send'),
+      findComponent(rows, 'embed:edit-appearance'),
+      findComponent(rows, 'embed:edit-media'),
+    );
+
+    const detailRow = rowFromComponents(
+      findComponent(rows, 'embed:fields'),
+      findComponent(rows, 'embed:buttons'),
       findComponent(rows, 'embed:update-existing'),
     );
 
-    const utilityRow = rowFromComponents(
-      findComponent(rows, 'embed:reset'),
+    const finishRow = rowFromComponents(
+      findComponent(rows, 'embed:readiness'),
+      findComponent(rows, 'embed:test-send'),
     );
 
-    payload.components = [contextRow, editRow, configureRow, utilityRow, builderNavigationRow(rows)].filter(Boolean).slice(0, 5);
+    payload.components = [
+      contextRow,
+      buildRow,
+      detailRow,
+      finishRow,
+      builderNavigationRow(rows),
+    ].filter(Boolean).slice(0, 5);
     return payload;
   };
 
