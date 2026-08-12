@@ -484,7 +484,28 @@ function buildUserIntelligenceSectionEmbed(report, section, sourceGuild) {
   }
 
   if (section === 'moderation') {
-    embed.setDescription(listLines(history.moderation, (item) => `**${item.type || 'moderation'}** — ${discordTime(item.timestamp, 'F')} — ${item.reason || 'No reason recorded'}${item.actorId ? ` — actor <@${item.actorId}>` : ''}`, 20));
+    const moderation = report?.moderation || {};
+    const environments = (moderation.environments || []).map((mode) => `\`${mode}\``).join(' • ') || 'None recorded';
+    const topTypes = (moderation.topTypes || []).map((item) => `• \`${item.key}\` — **${item.count}**`).join('\n') || 'None recorded.';
+    const topGuilds = (moderation.topGuilds || []).map((item) => `• **${item.key}** — ${item.count}`).join('\n') || 'None recorded.';
+    const topActors = (moderation.topActors || []).map((item) => `• <@${item.key}> — **${item.count}**`).join('\n') || 'None attributed.';
+    const recent = (moderation.recent || []).map((item) => {
+      const actor = item.actorId ? `<@${item.actorId}>` : 'Unknown actor';
+      const reason = item.reason ? ` — ${String(item.reason).slice(0, 120)}` : ' — No reason recorded';
+      return `• ${discordTime(item.timestamp, 'R')} — \`${item.type || 'moderation'}\` — **${item.guildName || item.guildId || 'Unknown guild'}** — ${actor}${reason}`;
+    }).join('\n') || 'No moderation events recorded.';
+    const first = moderation.first ? `\`${moderation.first.type || 'moderation'}\` in **${moderation.first.guildName || moderation.first.guildId || 'Unknown guild'}** • ${discordTime(moderation.first.timestamp, 'F')}` : 'None recorded.';
+    const latest = moderation.latest ? `\`${moderation.latest.type || 'moderation'}\` in **${moderation.latest.guildName || moderation.latest.guildId || 'Unknown guild'}** • ${discordTime(moderation.latest.timestamp, 'R')}${moderation.latest.actorId ? `\nActor: <@${moderation.latest.actorId}>` : '\nActor: unresolved'}${moderation.latest.reason ? `\nReason: ${String(moderation.latest.reason).slice(0, 180)}` : '\nReason: not recorded'}` : 'None recorded.';
+    embed.setDescription(`Cross-environment moderation intelligence for <@${report.userId}> based only on moderation events Goliath has actually observed.`).addFields(
+      { name: 'Moderation Overview', value: `Total events: **${moderation.total || 0}**\nWith reason: **${moderation.reasoned || 0}** • Without reason: **${moderation.withoutReason || 0}**\nDistinct attributed actors: **${moderation.attributedActorCount || 0}**\nUnresolved actor events: **${moderation.unresolvedActor || 0}**`, inline: false },
+      { name: 'Environment Coverage', value: environments, inline: false },
+      { name: 'First Recorded Moderation', value: compact(first, 1024), inline: false },
+      { name: 'Latest Moderation', value: compact(latest, 1024), inline: false },
+      { name: 'Top Moderation Types', value: compact(topTypes, 1024), inline: true },
+      { name: 'Top Guilds', value: compact(topGuilds, 1024), inline: true },
+      { name: 'Top Attributed Actors', value: compact(topActors, 1024), inline: false },
+      { name: 'Recent Moderation History', value: compact(recent, 1024), inline: false },
+    );
     return embed;
   }
 
