@@ -60,7 +60,7 @@ async function buildPayload(state, interaction, ephemeral = false) {
     allowUserPing: Boolean(state.allowUserPing),
     userId: interaction.user?.id || null,
     ephemeral,
-    mediaV2: state.mediaV2,
+    media: state.media || state.mediaV2,
     interaction,
   });
 }
@@ -177,10 +177,8 @@ async function handleInteraction(i) {
       selectedMediaIndex: addedGallery ? gallery.length - 1 : s.selectedMediaIndex,
       selectedFileIndex: addedFiles ? files.length - 1 : s.selectedFileIndex,
     });
-    await i.reply({
-      content: `✅ Added ${addedGallery} gallery media item(s) and ${addedFiles} attached file(s).${skipped ? ` ${skipped} item(s) could not be added because the panel limits were reached.` : ''}`,
-      flags: 64,
-    });
+    const summary = `✅ Added ${addedGallery} gallery media item(s) and ${addedFiles} attached file(s).${skipped ? ` ${skipped} item(s) could not be added because the panel limits were reached.` : ''}`;
+    await i.reply({ content: summary, ...buildMediaManagerPanel(i, who(i)), flags: 64 });
     return true;
   }
 
