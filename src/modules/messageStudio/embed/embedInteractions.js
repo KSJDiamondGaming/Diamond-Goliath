@@ -1,3 +1,3 @@
 'use strict';
 
-module.exports = require('./embedInteractionsReadinessCompat');
+module.exports = require('./embedInteractionsNavigationCompat');
