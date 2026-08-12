@@ -510,7 +510,35 @@ function buildUserIntelligenceSectionEmbed(report, section, sourceGuild) {
   }
 
   if (section === 'roles') {
-    embed.setDescription(listLines(history.roles, (item) => `**${discordTime(item.timestamp, 'F')}** — +${(item.added || []).map((role) => role.name || role.id).join(', ') || 'none'} / -${(item.removed || []).map((role) => role.name || role.id).join(', ') || 'none'} — ${item.guildName || item.guildId || 'Unknown guild'}`, 20));
+    const roles = report?.roles || {};
+    const topTypes = (roles.topTypes || []).map((item) => `• \`${item.key}\` — **${item.count}**`).join('\n') || 'None recorded.';
+    const topGuilds = (roles.topGuilds || []).map((item) => `• **${item.key}** — ${item.count}`).join('\n') || 'None recorded.';
+    const topActors = (roles.topActors || []).map((item) => `• <@${item.key}> — **${item.count}**`).join('\n') || 'None attributed.';
+    const live = (roles.liveGuilds || []).map((item) => {
+      const member = item.member || {};
+      const roleNames = (member.roles || []).slice(0, 12).map((role) => role.name || role.id).join(', ') || 'No roles';
+      const highest = member.highestRole?.name || member.highestRole?.id || 'None';
+      return `• **${item.guildName || item.guildId || 'Unknown guild'}** — ${roleNames}\n  Highest: **${highest}**`;
+    }).join('\n') || 'No live guild role state visible.';
+    const recent = (roles.recent || []).map((item) => {
+      const actor = item.actorId ? `<@${item.actorId}>` : 'Unknown actor';
+      const added = (item.added || []).map((role) => role.name || role.id).join(', ') || 'none';
+      const removed = (item.removed || []).map((role) => role.name || role.id).join(', ') || 'none';
+      return `• ${discordTime(item.timestamp, 'R')} — \`${item.type || 'member.roles'}\` — **${item.guildName || item.guildId || 'Unknown guild'}** — ${actor}\n  + ${added} / - ${removed}`;
+    }).join('\n') || 'No role changes recorded.';
+    const first = roles.first ? `\`${roles.first.type || 'member.roles'}\` in **${roles.first.guildName || roles.first.guildId || 'Unknown guild'}** • ${discordTime(roles.first.timestamp, 'F')}` : 'None recorded.';
+    const latest = roles.latest ? `\`${roles.latest.type || 'member.roles'}\` in **${roles.latest.guildName || roles.latest.guildId || 'Unknown guild'}** • ${discordTime(roles.latest.timestamp, 'R')}${roles.latest.actorId ? `\nActor: <@${roles.latest.actorId}>` : '\nActor: unresolved'}` : 'None recorded.';
+    embed.setDescription(`Cross-environment role intelligence for <@${report.userId}> based on role changes and live guild state Goliath can actually observe.`).addFields(
+      { name: 'Role Change Overview', value: `Total changes: **${roles.total || 0}**\nAdd events: **${roles.additions || 0}** • Remove events: **${roles.removals || 0}** • Replacement/mixed: **${roles.replacements || 0}**\nDistinct attributed actors: **${roles.attributedActorCount || 0}**\nUnresolved actor events: **${roles.unresolvedActor || 0}**`, inline: false },
+      { name: 'Current Role State', value: `Live guilds: **${roles.liveGuildCount || 0}**\nUnique current roles: **${roles.uniqueCurrentRoleCount || 0}**`, inline: false },
+      { name: 'First Recorded Role Change', value: compact(first, 1024), inline: false },
+      { name: 'Latest Role Change', value: compact(latest, 1024), inline: false },
+      { name: 'Top Role Event Types', value: compact(topTypes, 1024), inline: true },
+      { name: 'Top Guilds', value: compact(topGuilds, 1024), inline: true },
+      { name: 'Top Attributed Actors', value: compact(topActors, 1024), inline: false },
+      { name: 'Live Roles by Guild', value: compact(live, 1024), inline: false },
+      { name: 'Recent Role History', value: compact(recent, 1024), inline: false },
+    );
     return embed;
   }
 
