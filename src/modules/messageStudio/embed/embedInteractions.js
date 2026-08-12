@@ -28,6 +28,7 @@ const {
   buildBuilderPanel,
   buildMediaManagerPanel,
   buildMediaOptionsPanel,
+  buildFileOptionsPanel,
   buttonRows,
   thumbnailModal,
   galleryItemModal,
@@ -43,7 +44,6 @@ function isTextBasedChannel(channel) {
   return Boolean(channel.send && channel.messages);
 }
 function who(i) { return panel.memberName(i); }
-function parseYes(value) { return /^(y|yes|true|1|on)$/i.test(String(value || '').trim()); }
 function saveMediaState(i, state, media, extra = {}) {
   const index = state.selectedPanelIndex || 0;
   let next = panel.setPanelMedia(state, index, media);
@@ -54,6 +54,7 @@ function saveMediaState(i, state, media, extra = {}) {
 }
 async function updateMediaPanel(i) { await i.update(buildMediaManagerPanel(i, who(i))); return true; }
 async function updateMediaOptions(i) { await i.update(buildMediaOptionsPanel(i)); return true; }
+async function updateFileOptions(i) { await i.update(buildFileOptionsPanel(i)); return true; }
 async function replyMediaPanel(i) { await i.reply({ ...buildMediaManagerPanel(i, who(i)), flags: 64 }); return true; }
 async function buildPayload(state, interaction, ephemeral = false) {
   return buildEmbedPayload({
@@ -123,6 +124,19 @@ async function handleInteraction(i) {
       gallery[galleryIndex] = mediaModel.normalizeGalleryItem({ ...gallery[galleryIndex], spoiler });
       saveMediaState(i, s, { ...media, gallery }, { selectedMediaIndex: galleryIndex });
       return updateMediaOptions(i);
+    }
+    if (customId === 'embed:file-options') {
+      if (fileIndex == null || !media.files[fileIndex]) { await i.reply({ content: 'Select an attached file first.', flags: 64 }); return true; }
+      return updateFileOptions(i);
+    }
+    if (customId === 'embed:file-options-back') return updateMediaPanel(i);
+    if (customId.startsWith('embed:file-spoiler:')) {
+      if (fileIndex == null || !media.files[fileIndex]) return updateMediaPanel(i);
+      const spoiler = customId.endsWith(':on');
+      const files = [...media.files];
+      files[fileIndex] = mediaModel.normalizeFile({ ...files[fileIndex], spoiler });
+      saveMediaState(i, s, { ...media, files }, { selectedFileIndex: fileIndex });
+      return updateFileOptions(i);
     }
     if (customId === 'embed:media-gallery-add') {
       if (media.gallery.length >= mediaModel.MAX_GALLERY_ITEMS) { await i.reply({ content: `Maximum of ${mediaModel.MAX_GALLERY_ITEMS} gallery items reached.`, flags: 64 }); return true; }
@@ -242,15 +256,20 @@ async function handleInteraction(i) {
   }
   if (i.isModalSubmit?.() && (customId === 'embed:media-file-save-new' || customId.startsWith('embed:media-file-save:'))) {
     const media = panel.getPanelMedia(s);
+    const editingIndex = customId === 'embed:media-file-save-new' ? null : Number(customId.split(':').pop());
+    const existing = Number.isInteger(editingIndex) ? (media.files[editingIndex] || {}) : {};
     const entry = mediaModel.normalizeFile({
-      source: i.fields.getTextInputValue('source'), name: i.fields.getTextInputValue('name'), description: i.fields.getTextInputValue('description'), spoiler: parseYes(i.fields.getTextInputValue('spoiler')),
+      source: i.fields.getTextInputValue('source'),
+      name: i.fields.getTextInputValue('name'),
+      description: i.fields.getTextInputValue('description'),
+      spoiler: existing.spoiler === true,
     });
     if (!entry.source) { await i.reply({ content: 'A file URL or variable is required.', flags: 64 }); return true; }
     const files = [...media.files]; let selectedFileIndex;
     if (customId === 'embed:media-file-save-new') {
       if (files.length >= mediaModel.MAX_FILES) { await i.reply({ content: `Maximum of ${mediaModel.MAX_FILES} files reached.`, flags: 64 }); return true; }
       files.push(entry); selectedFileIndex = files.length - 1;
-    } else { selectedFileIndex = Number(customId.split(':').pop()); files[selectedFileIndex] = entry; }
+    } else { selectedFileIndex = editingIndex; files[selectedFileIndex] = entry; }
     saveMediaState(i, s, { ...media, files }, { selectedFileIndex }); return replyMediaPanel(i);
   }
 
