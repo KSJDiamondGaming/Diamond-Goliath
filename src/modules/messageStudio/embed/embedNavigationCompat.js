@@ -83,24 +83,29 @@ if (!panel.__embedNavigationPatched) {
 
     const contextRow = panelSelector(state);
 
+    // Exact requested Row 2: Content -> Panels -> Appearance -> Media.
+    // Appearance is internally embed:edit-media; Media is embed:edit-images.
     const buildRow = rowFromComponents(
       findComponent(rows, 'embed:edit-content'),
       findComponent(rows, 'embed:panels') || new ButtonBuilder().setCustomId('embed:panels').setLabel(`🧩 Panels (${state.panels?.length || 1})`).setStyle(ButtonStyle.Primary),
-      findComponent(rows, 'embed:edit-appearance'),
-      findComponent(rows, 'embed:edit-images') || findComponent(rows, 'embed:edit-media'),
+      findComponent(rows, 'embed:edit-media'),
+      findComponent(rows, 'embed:edit-images'),
     );
 
+    // Exact requested Row 3: Fields -> Buttons -> Update.
     const detailRow = rowFromComponents(
       findComponent(rows, 'embed:fields'),
       findComponent(rows, 'embed:buttons'),
       findComponent(rows, 'embed:update-existing'),
     );
 
+    // Exact requested Row 4 after removing the redundant Actions submenu: Review -> Test.
     const finishRow = rowFromComponents(
       findComponent(rows, 'embed:readiness'),
       findComponent(rows, 'embed:test-send'),
     );
 
+    // Exact requested Row 5: Back -> Variables -> Reset.
     payload.components = [
       contextRow,
       buildRow,
