@@ -543,7 +543,42 @@ function buildUserIntelligenceSectionEmbed(report, section, sourceGuild) {
   }
 
   if (section === 'voice') {
-    embed.setDescription(listLines(history.voice, (item) => `**${discordTime(item.timestamp, 'F')}** — ${item.guildName || item.guildId || 'Unknown guild'} — ${item.before?.channelId || 'none'} → ${item.after?.channelId || 'none'}`, 20));
+    const voice = report?.voice || {};
+    const current = voice.current || {};
+    const topTypes = (voice.topTypes || []).map((item) => `• \`${item.key}\` — **${item.count}**`).join('\n') || 'None recorded.';
+    const topGuilds = (voice.topGuilds || []).map((item) => `• **${item.key}** — ${item.count}`).join('\n') || 'None recorded.';
+    const topChannels = (voice.topChannels || []).map((item) => `• <#${item.key}> — **${item.count}** observations`).join('\n') || 'None recorded.';
+    const live = (current.guilds || []).map((item) => {
+      const state = item.voice || {};
+      const location = state.channelId ? `<#${state.channelId}>` : 'Not connected';
+      const flags = [
+        state.streaming ? 'streaming' : null,
+        state.selfVideo ? 'video' : null,
+        state.serverMute ? 'server-muted' : null,
+        state.serverDeaf ? 'server-deafened' : null,
+        state.selfMute ? 'self-muted' : null,
+        state.selfDeaf ? 'self-deafened' : null,
+      ].filter(Boolean).join(', ');
+      return `• **${item.guildName || item.guildId || 'Unknown guild'}** — ${location}${flags ? ` — ${flags}` : ''}`;
+    }).join('\n') || 'No live voice state visible.';
+    const recent = (voice.recent || []).map((item) => {
+      const before = item.before?.channelId ? `<#${item.before.channelId}>` : 'none';
+      const after = item.after?.channelId ? `<#${item.after.channelId}>` : 'none';
+      return `• ${discordTime(item.timestamp, 'R')} — \`${item.type || 'voice.update'}\` — **${item.guildName || item.guildId || 'Unknown guild'}** — ${before} → ${after}`;
+    }).join('\n') || 'No voice events recorded.';
+    const first = voice.first ? `\`${voice.first.type || 'voice.update'}\` in **${voice.first.guildName || voice.first.guildId || 'Unknown guild'}** • ${discordTime(voice.first.timestamp, 'F')}` : 'None recorded.';
+    const latest = voice.latest ? `\`${voice.latest.type || 'voice.update'}\` in **${voice.latest.guildName || voice.latest.guildId || 'Unknown guild'}** • ${discordTime(voice.latest.timestamp, 'R')}\n${voice.latest.before?.channelId ? `<#${voice.latest.before.channelId}>` : 'none'} → ${voice.latest.after?.channelId ? `<#${voice.latest.after.channelId}>` : 'none'}` : 'None recorded.';
+    embed.setDescription(`Cross-environment voice intelligence for <@${report.userId}> based only on voice state Goliath has actually observed and can currently see.`).addFields(
+      { name: 'Voice Activity Overview', value: `Total events: **${voice.total || 0}**\nJoins: **${voice.joins || 0}** • Leaves: **${voice.leaves || 0}** • Moves: **${voice.moves || 0}**\nOther state changes: **${voice.stateChanges || 0}**`, inline: false },
+      { name: 'Current Live Voice State', value: `Visible guilds: **${current.visibleGuilds || 0}** • Connected: **${current.connectedGuilds || 0}**\nStreaming: **${current.streamingGuilds || 0}** • Video: **${current.videoGuilds || 0}**\nServer muted: **${current.serverMutedGuilds || 0}** • Server deafened: **${current.serverDeafenedGuilds || 0}**\nSelf muted: **${current.selfMutedGuilds || 0}** • Self deafened: **${current.selfDeafenedGuilds || 0}**`, inline: false },
+      { name: 'First Recorded Voice Event', value: compact(first, 1024), inline: false },
+      { name: 'Latest Voice Event', value: compact(latest, 1024), inline: false },
+      { name: 'Top Voice Event Types', value: compact(topTypes, 1024), inline: true },
+      { name: 'Top Guilds', value: compact(topGuilds, 1024), inline: true },
+      { name: 'Most Seen Voice Channels', value: compact(topChannels, 1024), inline: false },
+      { name: 'Live Voice State by Guild', value: compact(live, 1024), inline: false },
+      { name: 'Recent Voice History', value: compact(recent, 1024), inline: false },
+    );
     return embed;
   }
 
