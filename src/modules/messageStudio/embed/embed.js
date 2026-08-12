@@ -2,8 +2,8 @@
 
 const templates = require('./embedTemplates');
 const deployments = require('./embedDeployments');
-const panel = require('./embedFieldsCompat');
-const interactions = require('./embedInteractionsFieldsCompat');
+const panel = require('./embedButtonsCompat');
+const interactions = require('./embedInteractionsButtonsCompat');
 const tracking = require('./embedTracking');
 const validation = require('./embedValidation');
 const health = require('./embedHealth');
