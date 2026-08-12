@@ -3,10 +3,6 @@ const { normalizeBotMode } = require('../../config/botModes');
 
 const STATUS_INTERVAL_MS = 180_000;
 
-function getMode(client) {
-  return normalizeBotMode(client.botMode || process.env.BOT_MODE);
-}
-
 function getTotalMembers(client) {
   return client.guilds.cache.reduce(
     (total, guild) => total + (guild.memberCount || 0),
@@ -65,7 +61,7 @@ function buildProductionActivities(client) {
 }
 
 function buildActivities(client) {
-  const mode = getMode(client);
+  const mode = normalizeBotMode(client.botMode || process.env.BOT_MODE);
 
   if (mode === 'PRODUCTION') {
     return buildProductionActivities(client);
