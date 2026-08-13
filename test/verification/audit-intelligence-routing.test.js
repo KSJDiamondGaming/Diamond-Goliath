@@ -353,3 +353,13 @@ test('cross-mode discovery returns deterministic environment order and match evi
   assert.match(store, /current\.environments\.add\(item\.mode\)/);
   assert.match(store, /if \(best\.score > current\.score\)/);
 });
+
+test('cross-mode discovery makes match evidence visible in Discord result labels', () => {
+  assert.match(store, /function identityMatchKindLabel\(kind\)/);
+  assert.match(store, /id: 'ID'/);
+  assert.match(store, /username: 'username'/);
+  assert.match(store, /globalName: 'global name'/);
+  assert.match(store, /displayName: 'display name'/);
+  assert.match(store, /nickname: 'nickname'/);
+  assert.match(store, /matched \$\{identityMatchKindLabel\(entry\.matchedOn\)\}: \$\{String\(entry\.matchedValue\)/);
+});
