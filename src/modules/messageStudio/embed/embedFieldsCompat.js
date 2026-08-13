@@ -115,6 +115,8 @@ panel.buildFieldsManagerPanel = (interaction) => {
     new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId('embed:field-manager-up').setLabel('⬆️ Up').setStyle(ButtonStyle.Secondary).setDisabled(index == null || index <= 0),
       new ButtonBuilder().setCustomId('embed:field-manager-down').setLabel('⬇️ Down').setStyle(ButtonStyle.Secondary).setDisabled(index == null || index >= fields.length - 1),
+    ),
+    new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId('embed:builder').setLabel('⬅️ Builder').setStyle(ButtonStyle.Secondary),
     ),
   );
