@@ -8,6 +8,17 @@ const {
 } = require('discord.js');
 const panel = require('./embedReadinessCompat');
 
+const NAVIGATION_IDS = new Set([
+  'admin:modules',
+  'embed:back',
+  'embed:builder',
+  'embed:appearance-back',
+  'embed:thumbnail-back',
+  'embed:media-options-back',
+  'embed:file-options-back',
+  'embed:button-options-back',
+]);
+
 function componentId(component) {
   return component?.data?.custom_id || component?.customId || null;
 }
@@ -31,6 +42,23 @@ function cloneRowWithout(row, ids = []) {
   if (!row || !Array.isArray(row.components)) return null;
   const kept = row.components.filter((component) => !ids.includes(componentId(component)));
   return rowFromComponents(...kept);
+}
+function normalizeNavigationLabels(payload) {
+  const rows = Array.isArray(payload?.components) ? payload.components : [];
+  for (const row of rows) {
+    if (!Array.isArray(row?.components)) continue;
+    for (const component of row.components) {
+      if (!NAVIGATION_IDS.has(componentId(component))) continue;
+      if (typeof component?.setLabel === 'function') component.setLabel('⬅️ Back');
+      else if (component?.data) component.data.label = '⬅️ Back';
+    }
+  }
+  return payload;
+}
+function wrapNavigationLabels(methodName) {
+  if (typeof panel[methodName] !== 'function') return;
+  const original = panel[methodName].bind(panel);
+  panel[methodName] = (...args) => normalizeNavigationLabels(original(...args));
 }
 function panelSelector(state) {
   const panels = Array.isArray(state?.panels) && state.panels.length ? state.panels : [{}];
@@ -72,7 +100,7 @@ if (!panel.__embedNavigationPatched) {
     const actionSource = findRow(rows, 'embed:builder');
     const actions = cloneRowWithout(actionSource, ['embed:panels']);
     payload.components = [templateRow, channelRow, colorRow, actions, mainNavigationRow()].filter(Boolean).slice(0, 5);
-    return payload;
+    return normalizeNavigationLabels(payload);
   };
 
   const originalBuilder = panel.buildBuilderPanel.bind(panel);
@@ -97,7 +125,7 @@ if (!panel.__embedNavigationPatched) {
       findComponent(rows, 'embed:test-send'),
     );
     payload.components = [contextRow, buildRow, detailRow, finishRow, builderNavigationRow(rows)].filter(Boolean).slice(0, 5);
-    return payload;
+    return normalizeNavigationLabels(payload);
   };
 
   const originalPanels = panel.buildPanelsPanel.bind(panel);
@@ -117,8 +145,22 @@ if (!panel.__embedNavigationPatched) {
       ),
       rowFromComponents(findComponent(rows, 'embed:builder')),
     ].filter(Boolean);
-    return payload;
+    return normalizeNavigationLabels(payload);
   };
+
+  [
+    'buildAppearancePanel',
+    'buildAppearanceIconPanel',
+    'buildThumbnailOptionsPanel',
+    'buildMediaManagerPanel',
+    'buildMediaManager',
+    'buildMediaOptionsPanel',
+    'buildFileOptionsPanel',
+    'buildFieldsManagerPanel',
+    'buildButtonsManagerPanel',
+    'buildButtonOptionsPanel',
+    'buildReadinessPanel',
+  ].forEach(wrapNavigationLabels);
 
   panel.__embedNavigationPatched = true;
 }
