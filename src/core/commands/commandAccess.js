@@ -29,10 +29,8 @@ async function enforceCommandAccess(interaction, command) {
 
   // OWNER ONLY
   if (access.ownerOnly) {
-    if (!security.isBotOwner(interaction.user.id)) {
-      await reply(interaction, '❌ This command is bot-owner only.');
-      return true;
-    }
+    await reply(interaction, '❌ This command is bot-owner only.');
+    return true;
   }
 
   // LEVEL SYSTEM
