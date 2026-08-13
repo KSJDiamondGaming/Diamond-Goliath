@@ -395,6 +395,7 @@ function buildUserIntelligenceControls() {
       new ButtonBuilder().setCustomId('owner:audit:moderation').setLabel('Moderation').setEmoji('🛡️').setStyle(ButtonStyle.Secondary),
     ),
     new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('owner:audit:account').setLabel('Account & Membership').setEmoji('👥').setStyle(ButtonStyle.Primary),
       new ButtonBuilder().setCustomId('owner:audit:roles').setLabel('Roles').setEmoji('🎭').setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId('owner:audit:voice').setLabel('Voice').setEmoji('🔊').setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId('owner:audit:timeline').setLabel('Timeline').setEmoji('🕒').setStyle(ButtonStyle.Secondary),
@@ -415,6 +416,7 @@ function buildUserIntelligenceSectionEmbed(report, section, sourceGuild) {
   const titleMap = {
     deep: '🔎 Deep Scan',
     identity: '🏷️ Identity History',
+    account: '👥 Account & Membership',
     guilds: '🏰 Guild History',
     moderation: '🛡️ Moderation History',
     roles: '🎭 Role History',
@@ -478,6 +480,28 @@ function buildUserIntelligenceSectionEmbed(report, section, sourceGuild) {
       { name: 'Display Name History', value: compact(displayNames, 1024), inline: true },
       { name: 'Nickname History by Guild', value: compact(nicknames, 1024), inline: false },
       { name: 'Current Live Nicknames', value: compact(liveNicknames, 1024), inline: false },
+    );
+    return embed;
+  }
+
+  if (section === 'account') {
+    const accountMembership = report?.accountMembership || {};
+    const account = accountMembership.account || {};
+    const membership = accountMembership.membership || {};
+    const currentMemberships = (accountMembership.currentMemberships || []).map((item) => {
+      const highest = item.highestRole?.name || item.highestRole?.id || 'None';
+      const restrictions = [item.pending ? 'pending screening' : null, item.timedOutUntil ? `timeout until ${discordTime(item.timedOutUntil, 'F')}` : null].filter(Boolean).join(' • ');
+      return `• **${item.guildName || item.guildId || 'Unknown guild'}** — joined ${discordTime(item.joinedAt, 'F')}\n  Roles: **${item.roleCount || 0}** • Highest: **${highest}**${restrictions ? `\n  ${restrictions}` : ''}`;
+    }).join('\n') || 'No current live memberships visible.';
+    const formerMemberships = (accountMembership.formerMemberships || []).map((item) => `• **${item.guildName || item.guildId || 'Unknown guild'}** — last seen ${discordTime(item.lastObservedAt, 'R')} • left ${discordTime(item.lastLeftAt || item.lastObservedAt, 'R')}`).join('\n') || 'None recorded.';
+    const unknownMemberships = (accountMembership.unknownMemberships || []).map((item) => `• **${item.guildName || item.guildId || 'Unknown guild'}** — historical-only state • last seen ${discordTime(item.lastObservedAt, 'R')}`).join('\n') || 'None recorded.';
+    embed.setDescription(`Account and membership state for <@${report.userId}> using live Discord visibility plus reconciled Goliath history.`).addFields(
+      { name: 'Discord Account', value: `Visible to Discord now: **${account.knownToDiscord ? 'Yes' : 'No / stored only'}**\nBot account: **${account.bot === true ? 'Yes' : account.bot === false ? 'No' : 'Unknown'}**\nCreated: ${discordTime(account.accountCreatedAt, 'F')}`, inline: false },
+      { name: 'Membership Overview', value: `Known guilds: **${membership.knownGuilds || 0}**\nCurrent: **${membership.currentGuilds || 0}** • Former: **${membership.formerGuilds || 0}** • Unknown: **${membership.unknownGuilds || 0}**\nLive visible: **${membership.liveVisibleGuilds || 0}**\nPending screening: **${membership.pendingGuilds || 0}** • Active timeouts: **${membership.timedOutGuilds || 0}**`, inline: false },
+      { name: 'Live Join Range', value: `Earliest visible join: ${discordTime(membership.earliestLiveJoinAt, 'F')}\nLatest visible join: ${discordTime(membership.latestLiveJoinAt, 'F')}`, inline: false },
+      { name: 'Current Memberships', value: compact(currentMemberships, 1024), inline: false },
+      { name: 'Former Memberships', value: compact(formerMemberships, 1024), inline: false },
+      { name: 'Unknown / Historical-only Memberships', value: compact(unknownMemberships, 1024), inline: false },
     );
     return embed;
   }
