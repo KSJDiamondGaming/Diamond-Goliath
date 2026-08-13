@@ -363,3 +363,16 @@ test('cross-mode discovery makes match evidence visible in Discord result labels
   assert.match(store, /nickname: 'nickname'/);
   assert.match(store, /matched \$\{identityMatchKindLabel\(entry\.matchedOn\)\}: \$\{String\(entry\.matchedValue\)/);
 });
+
+test('single-result auto-select preserves and displays match evidence', () => {
+  assert.match(events, /function intelligenceMatchKindLabel\(kind\)/);
+  assert.match(events, /function intelligenceMatchEvidence\(match\)/);
+  assert.match(events, /const selectedMatch = session\.userId \? session\.matches\?\.find/);
+  assert.match(events, /const selectedEvidence = intelligenceMatchEvidence\(selectedMatch\)/);
+  assert.match(events, /selectedEvidence \? `\\n\$\{selectedEvidence\}` : ''/);
+  assert.match(events, /const userId = matches\.length === 1 \? matches\[0\]\.id : null/);
+  assert.match(events, /matchedOn: entry\.matchedOn \|\| null/);
+  assert.match(events, /matchedValue: entry\.matchedValue \?\? null/);
+  assert.match(events, /matchedOn: 'id', matchedValue: value/);
+  assert.match(events, /matchedOn: 'liveSearch', matchedValue: value/);
+});
