@@ -592,12 +592,30 @@ function getUserAcrossModes(userId) {
   merged.environments = environments;
   return merged;
 }
+function searchIdentityValues(userId, record) {
+  const values = [{ value: userId, kind: 'id', weight: 100 }];
+  for (const value of record.names || []) values.push({ value, kind: 'username', weight: 50 });
+  for (const value of record.globalNames || []) values.push({ value, kind: 'globalName', weight: 60 });
+  for (const value of record.displayNames || []) values.push({ value, kind: 'displayName', weight: 70 });
+  for (const entry of record.nicknames || []) if (entry?.nickname) values.push({ value: entry.nickname, kind: 'nickname', weight: 40 });
+  return values.filter((entry) => entry.value !== undefined && entry.value !== null && String(entry.value).trim());
+}
+function identityMatchScore(value, candidate) {
+  const normalized = String(candidate?.value || '').trim().toLowerCase();
+  if (!normalized) return 0;
+  const weight = Number(candidate?.weight || 0);
+  if (normalized === value) return 1000 + weight;
+  if (normalized.startsWith(value)) return 700 + weight;
+  if (normalized.includes(value)) return 400 + weight;
+  return 0;
+}
 function searchUsersAcrossModes(query, options = {}) {
   const value = String(query || '').trim().toLowerCase();
   if (!value) return [];
   const limit = Math.min(25, Math.max(1, Number(options.limit || 25)));
   const guildId = options.guildId ? String(options.guildId) : null;
   const found = new Map();
+
   for (const item of availableAuditRoots()) {
     const dir = path.join(item.root, 'users');
     if (!fs.existsSync(dir)) continue;
@@ -606,16 +624,52 @@ function searchUsersAcrossModes(query, options = {}) {
       const record = readJson(path.join(dir, name), null);
       if (!record) continue;
       if (guildId && !record.guilds?.[guildId]) continue;
-      const labels = [userId, ...(record.names || []), ...(record.globalNames || []), ...(record.displayNames || []), ...(record.nicknames || []).map((entry) => entry.nickname)].filter(Boolean);
-      if (!labels.some((label) => String(label).toLowerCase().includes(value))) continue;
-      const current = found.get(userId) || { id: userId, label: record.displayNames?.at?.(-1) || record.globalNames?.at?.(-1) || record.names?.at?.(-1) || userId, environments: new Set() };
+
+      const matches = searchIdentityValues(userId, record)
+        .map((candidate) => ({ ...candidate, score: identityMatchScore(value, candidate) }))
+        .filter((candidate) => candidate.score > 0)
+        .sort((a, b) => b.score - a.score);
+      if (!matches.length) continue;
+
+      const best = matches[0];
+      const latestLabel = record.displayNames?.at?.(-1) || record.globalNames?.at?.(-1) || record.names?.at?.(-1) || userId;
+      const current = found.get(userId) || {
+        id: userId,
+        label: latestLabel,
+        environments: new Set(),
+        score: 0,
+        matchedOn: null,
+        matchedValue: null,
+        lastObservedAt: null,
+      };
       current.environments.add(item.mode);
+      if (best.score > current.score) {
+        current.score = best.score;
+        current.matchedOn = best.kind;
+        current.matchedValue = String(best.value);
+      }
+      if (record.lastObservedAt && (!current.lastObservedAt || record.lastObservedAt > current.lastObservedAt)) {
+        current.lastObservedAt = record.lastObservedAt;
+        current.label = latestLabel;
+      }
       found.set(userId, current);
-      if (found.size >= limit) break;
     }
-    if (found.size >= limit) break;
   }
-  return [...found.values()].map((entry) => ({ id: entry.id, label: entry.label, environments: [...entry.environments] })).slice(0, limit);
+
+  return [...found.values()]
+    .sort((a, b) => b.score - a.score
+      || b.environments.size - a.environments.size
+      || String(b.lastObservedAt || '').localeCompare(String(a.lastObservedAt || ''))
+      || String(a.label || '').localeCompare(String(b.label || ''))
+      || String(a.id).localeCompare(String(b.id)))
+    .slice(0, limit)
+    .map((entry) => ({
+      id: entry.id,
+      label: entry.label,
+      environments: REGISTRY_MODES.filter((mode) => entry.environments.has(mode)),
+      matchedOn: entry.matchedOn,
+      matchedValue: entry.matchedValue,
+    }));
 }
 function getGuild(guildId) { return readJson(path.join(root, 'guilds', `${String(guildId)}.json`), null); }
 function getGuildEvents(guildId, options = {}) {
