@@ -40,10 +40,6 @@ function normaliseEnvironment(environment) {
   return resolveBotMode(environment).toUpperCase();
 }
 
-function getModeKey(environment) {
-  return resolveBotMode(environment);
-}
-
 function getBackupRoot(environment) {
   return resolveRuntimePath(environment, 'backups');
 }
@@ -194,7 +190,6 @@ function validateBackupIntegrity(backupPath) {
 module.exports = {
   VALID_BACKUP_TYPES,
   normaliseEnvironment,
-  getModeKey,
   getBackupRoot,
   getGuildBackupRoot,
   getBackupDir,
