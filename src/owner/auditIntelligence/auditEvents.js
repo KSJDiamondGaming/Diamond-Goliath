@@ -634,7 +634,7 @@ async function handleCommandCenterInteraction(client, interaction) {
   if (customId === 'owner:commandcenter:monitoring:all-on' && interaction.isButton?.()) {
     const session = getMonitoringSession(interaction); if (!session.sourceGuildId) return true;
     const current = auditStore.getConfig(); const existing = current.guilds?.[session.sourceGuildId] || {}; const monitoring = Object.fromEntries(Object.keys(MONITOR_LABELS).map((key) => [key, true]));
-    auditStore.updateConfig({ guilds: { [session.sourceGuildId]: { ...existing, enabled: true, monitoring } } }); await interaction.update(buildMonitoringPanel(client, interaction)).catch(() => null); return true;
+    auditStore.updateConfig({ guilds: { [sourceGuildId]: { ...existing, enabled: true, monitoring } } }); await interaction.update(buildMonitoringPanel(client, interaction)).catch(() => null); return true;
   }
   if (customId === 'owner:commandcenter:structure' && interaction.isButton?.()) {
     structureSessions.set(sessionKey(interaction), { sourceGuildId: null, repairResult: null });
@@ -779,7 +779,7 @@ async function handleOwnerAuditInteraction(client, interaction) {
     return true;
   }
   const section = customId.slice('owner:audit:'.length);
-  if (!['deep', 'identity', 'account', 'guilds', 'moderation', 'roles', 'voice', 'timeline', 'actions'].includes(section)) return false;
+  if (!['deep', 'identity', 'account', 'evidence', 'guilds', 'moderation', 'roles', 'voice', 'timeline', 'actions'].includes(section)) return false;
   await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch(() => null);
   const report = await buildReport(client, context.userId);
   const embed = buildUserIntelligenceSectionEmbed(report, section, sourceGuild);
