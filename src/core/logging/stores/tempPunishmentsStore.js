@@ -45,35 +45,6 @@ function getPunishments(guildId = null) {
   });
 }
 
-function addPunishment(punishment = {}) {
-  const safeGuildId = normalizeGuildId(punishment.guildId);
-
-  if (!safeGuildId) {
-    throw new Error('Cannot add temp punishment without a valid guild ID.');
-  }
-
-  const entry = {
-    id: `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
-    userId: punishment.userId || null,
-    guildId: safeGuildId,
-    type: punishment.type || 'unknown',
-    expiresAt: punishment.expiresAt || null,
-    reason: punishment.reason || 'No reason provided',
-    moderatorId: punishment.moderatorId || null,
-    createdAt: Date.now(),
-  };
-
-  guildManager.updateSecurityConfig(safeGuildId, (security) => ({
-    ...security,
-    tempPunishments: [
-      ...ensureTempPunishments(security),
-      entry,
-    ],
-  }));
-
-  return entry;
-}
-
 function removePunishment(id) {
   const targetId = String(id || '').trim();
   if (!targetId) return false;
@@ -100,6 +71,5 @@ function removePunishment(id) {
 
 module.exports = {
   getPunishments,
-  addPunishment,
   removePunishment,
 };
