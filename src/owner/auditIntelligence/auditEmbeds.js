@@ -396,9 +396,12 @@ function buildUserIntelligenceControls() {
     ),
     new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId('owner:audit:account').setLabel('Account & Membership').setEmoji('👥').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId('owner:audit:evidence').setLabel('Evidence Summary').setEmoji('📌').setStyle(ButtonStyle.Primary),
       new ButtonBuilder().setCustomId('owner:audit:roles').setLabel('Roles').setEmoji('🎭').setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId('owner:audit:voice').setLabel('Voice').setEmoji('🔊').setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId('owner:audit:timeline').setLabel('Timeline').setEmoji('🕒').setStyle(ButtonStyle.Secondary),
+    ),
+    new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId('owner:audit:actions').setLabel('Actions Performed').setEmoji('👤').setStyle(ButtonStyle.Primary),
     ),
   ];
@@ -417,6 +420,7 @@ function buildUserIntelligenceSectionEmbed(report, section, sourceGuild) {
     deep: '🔎 Deep Scan',
     identity: '🏷️ Identity History',
     account: '👥 Account & Membership',
+    evidence: '📌 Evidence Summary',
     guilds: '🏰 Guild History',
     moderation: '🛡️ Moderation History',
     roles: '🎭 Role History',
@@ -502,6 +506,22 @@ function buildUserIntelligenceSectionEmbed(report, section, sourceGuild) {
       { name: 'Current Memberships', value: compact(currentMemberships, 1024), inline: false },
       { name: 'Former Memberships', value: compact(formerMemberships, 1024), inline: false },
       { name: 'Unknown / Historical-only Memberships', value: compact(unknownMemberships, 1024), inline: false },
+    );
+    return embed;
+  }
+
+  if (section === 'evidence') {
+    const evidence = report?.evidenceSummary || {};
+    const timeouts = (evidence.activeTimeouts || []).map((item) => `• **${item.guildName || item.guildId || 'Unknown guild'}** — until ${discordTime(item.timedOutUntil, 'F')}`).join('\n') || 'None active.';
+    const pending = (evidence.pendingScreening || []).map((item) => `• **${item.guildName || item.guildId || 'Unknown guild'}**`).join('\n') || 'None pending.';
+    embed.setDescription(`Factual, evidence-backed observations for <@${report.userId}>. **No behavioural or risk score is calculated.**`).addFields(
+      { name: 'Evidence Policy', value: evidence.note || 'Factual evidence summary only. Goliath does not calculate a behavioural or risk score.', inline: false },
+      { name: 'Moderation Evidence', value: `Recorded moderation events: **${evidence.moderationEvents || 0}**\nLatest moderation: ${discordTime(evidence.latestModerationAt, 'R')}\nWithout attributed actor: **${evidence.moderationWithoutAttributedActor || 0}**`, inline: false },
+      { name: 'Live Restrictions', value: `Active timeout guilds: **${(evidence.activeTimeouts || []).length}**\nPending screening guilds: **${(evidence.pendingScreening || []).length}**`, inline: false },
+      { name: 'Active Timeouts', value: compact(timeouts, 1024), inline: false },
+      { name: 'Pending Membership Screening', value: compact(pending, 1024), inline: false },
+      { name: 'Membership Evidence', value: `Observed joins: **${evidence.observedJoins || 0}** • Observed leaves: **${evidence.observedLeaves || 0}**\nKnown guilds: **${evidence.knownGuilds || 0}** • Current: **${evidence.currentGuilds || 0}** • Former: **${evidence.formerGuilds || 0}**`, inline: false },
+      { name: 'Identity Evidence', value: `Distinct observed username/global/display-name values: **${evidence.observedIdentityValues || 0}**`, inline: false },
     );
     return embed;
   }
