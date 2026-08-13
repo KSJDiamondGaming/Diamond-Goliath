@@ -385,3 +385,20 @@ test('multi-result selector descriptions include match evidence and user identit
   assert.match(events, /User ID: \$\{match\.id\}/);
   assert.match(events, /description: .*\.slice\(0, 100\)/);
 });
+
+test('account and membership intelligence consolidates live and reconciled member state', () => {
+  assert.match(userIntelligence, /function buildAccountMembershipSummary\(stored, liveUser, liveGuilds, reconciledGuilds\)/);
+  assert.match(userIntelligence, /knownToDiscord: Boolean\(liveUser\)/);
+  assert.match(userIntelligence, /accountCreatedAt: liveUser\?\.accountCreatedAt \|\| stored\.accountCreatedAt \|\| null/);
+  assert.match(userIntelligence, /currentGuilds: current\.length/);
+  assert.match(userIntelligence, /formerGuilds: former\.length/);
+  assert.match(userIntelligence, /unknownGuilds: unknown\.length/);
+  assert.match(userIntelligence, /pendingGuilds: pendingGuilds\.length/);
+  assert.match(userIntelligence, /timedOutGuilds: timedOutGuilds\.length/);
+  assert.match(userIntelligence, /earliestLiveJoinAt: joined\[0\] \|\| null/);
+  assert.match(userIntelligence, /latestLiveJoinAt: joined\.at\?\.\(-1\) \|\| null/);
+  assert.match(userIntelligence, /currentMemberships: memberships/);
+  assert.match(userIntelligence, /pendingMemberships: pendingGuilds/);
+  assert.match(userIntelligence, /timedOutMemberships: timedOutGuilds/);
+  assert.match(userIntelligence, /accountMembership: buildAccountMembershipSummary\(stored, liveUser, liveGuilds, reconciledGuilds\)/);
+});
