@@ -103,6 +103,8 @@ panel.buildAppearancePanel = (interaction) => {
         new ButtonBuilder().setCustomId('embed:appearance-details').setLabel('✏️ Edit Details').setStyle(ButtonStyle.Primary),
         new ButtonBuilder().setCustomId('embed:appearance-author-icon').setLabel('👤 Author Icon').setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId('embed:appearance-footer-icon').setLabel('🏷️ Footer Icon').setStyle(ButtonStyle.Secondary),
+      ),
+      new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('embed:builder').setLabel('⬅️ Builder').setStyle(ButtonStyle.Secondary),
       ),
     ]),
@@ -130,6 +132,8 @@ panel.buildAppearanceIconPanel = (interaction, kind) => {
         new ButtonBuilder().setCustomId(`embed:appearance-icon-url:${kind}`).setLabel('✏️ Edit URL').setStyle(ButtonStyle.Primary),
         new ButtonBuilder().setCustomId(`embed:appearance-icon-upload:${kind}`).setLabel('📤 Upload').setStyle(ButtonStyle.Success),
         new ButtonBuilder().setCustomId(`embed:appearance-icon-clear:${kind}`).setLabel('🗑️ Clear').setStyle(ButtonStyle.Danger).setDisabled(!raw),
+      ),
+      new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('embed:appearance-back').setLabel('⬅️ Appearance').setStyle(ButtonStyle.Secondary),
       ),
     ]),
