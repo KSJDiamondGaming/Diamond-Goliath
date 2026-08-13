@@ -3,15 +3,6 @@
 const path = require('node:path');
 const guildManager = require('../../guild/guildManager');
 
-function clone(value) {
-  return JSON.parse(JSON.stringify(value || []));
-}
-
-function normalizeGuildId(guildId) {
-  const id = String(guildId || '').trim();
-  return /^\d{16,20}$/.test(id) ? id : null;
-}
-
 function ensureTempPunishments(security = {}) {
   const punishments = Array.isArray(security.tempPunishments)
     ? security.tempPunishments
@@ -31,14 +22,7 @@ function getGuildIdsFromRuntime() {
   }
 }
 
-function getPunishments(guildId = null) {
-  const safeGuildId = normalizeGuildId(guildId);
-
-  if (safeGuildId) {
-    const security = guildManager.getSecurityConfig(safeGuildId);
-    return clone(ensureTempPunishments(security));
-  }
-
+function getPunishments() {
   return getGuildIdsFromRuntime().flatMap((runtimeGuildId) => {
     const security = guildManager.getSecurityConfig(runtimeGuildId);
     return ensureTempPunishments(security);
