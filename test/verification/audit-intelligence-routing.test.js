@@ -274,3 +274,29 @@ test('former users remain discoverable by exact Discord ID after leaving a selec
   assert.match(events, /stored\.displayNames\?\.at\?\.\(-1\)/);
   assert.match(events, /Object\.keys\(stored\.environments \|\| \{\}\)/);
 });
+
+test('former user presence is reconciled against live guild visibility', () => {
+  assert.match(userIntelligence, /function reconcileGuildPresence\(stored, liveGuilds\)/);
+  assert.match(userIntelligence, /storedCurrentMember: guild\.currentMember/);
+  assert.match(userIntelligence, /currentMember: Boolean\(live\) \? true : guild\.currentMember === false \? false : null/);
+  assert.match(userIntelligence, /presenceSource: live \? 'live' : guild\.currentMember === false \? 'stored-leave' : 'stored-history'/);
+  assert.match(userIntelligence, /presenceSource: 'live'/);
+  assert.match(userIntelligence, /const reconciledGuilds = reconcileGuildPresence\(stored, liveGuilds\)/);
+  assert.match(userIntelligence, /formerGuilds: reconciledGuilds\.filter/);
+  assert.match(userIntelligence, /unknownGuilds: reconciledGuilds\.filter/);
+});
+
+test('Guild History and Deep Scan consume reconciled former-user presence', () => {
+  assert.match(userIntelligence, /guildPresence: \{/);
+  assert.match(userIntelligence, /all: reconciledGuilds/);
+  assert.match(userIntelligence, /current: reconciledGuilds\.filter/);
+  assert.match(userIntelligence, /former: reconciledGuilds\.filter/);
+  assert.match(userIntelligence, /unknown: reconciledGuilds\.filter/);
+  assert.match(userIntelligence, /stored: \{ \.\.\.stored, guilds: reconciledGuildMap \}/);
+  assert.match(userIntelligence, /function buildDeepSummary\(stored, liveGuilds\)/);
+  assert.match(userIntelligence, /const guilds = reconcileGuildPresence\(stored, liveGuilds\)/);
+  assert.match(embeds, /section === 'guilds'/);
+  assert.match(embeds, /current member/);
+  assert.match(embeds, /former member/);
+  assert.match(embeds, /membership unknown/);
+});
