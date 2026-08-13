@@ -361,7 +361,7 @@ async function buildIntelligencePanel(client, interaction) {
       .addOptions(session.matches.slice(0, 25).map((match) => ({
         label: String(match.label || match.id).slice(0, 100),
         value: match.id,
-        description: `${match.environments?.length ? `${match.environments.join(' • ')} • ` : ''}User ID: ${match.id}`.slice(0, 100),
+        description: `${match.environments?.length ? `${match.environments.join(' • ')} • ` : ''}${match.matchedOn && match.matchedValue != null ? `Matched ${intelligenceMatchKindLabel(match.matchedOn)}: ${String(match.matchedValue)} • ` : ''}User ID: ${match.id}`.slice(0, 100),
         default: match.id === session.userId,
       })));
     rows.push(new ActionRowBuilder().addComponents(resultSelect));
