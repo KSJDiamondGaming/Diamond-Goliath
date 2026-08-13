@@ -1,6 +1,6 @@
 'use strict';
 
-const crypto = require('crypto');
+const crypto = require('node:crypto');
 const { getGuildSection, updateGuildSection } = require('../guild/guildManager');
 const activity = require('../../features/activity/activityStore');
 
