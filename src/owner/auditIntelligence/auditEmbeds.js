@@ -343,6 +343,9 @@ function buildUserIntelligenceEmbed(report, sourceGuild) {
   const profile = report?.profile || {};
   const summary = report?.summary || {};
   const history = report?.history || {};
+  const accountMembership = report?.accountMembership || {};
+  const account = accountMembership.account || {};
+  const membership = accountMembership.membership || {};
   const guildState = (report?.currentState?.guilds || []).find((item) => String(item.guildId) === String(sourceGuild?.id));
   const member = guildState?.member || null;
   const latestNames = [...new Set([
@@ -369,6 +372,8 @@ function buildUserIntelligenceEmbed(report, sourceGuild) {
       { name: 'Joined This Guild', value: discordTime(member?.joinedAt, 'F'), inline: true },
       { name: 'Known Guilds', value: `\`${summary.knownGuildCount || 0}\``, inline: true },
       { name: 'Recorded Events', value: `\`${summary.eventCount || 0}\``, inline: true },
+      { name: 'Account & Membership', value: `Discord visible: **${account.knownToDiscord ? 'Yes' : 'No / stored only'}**\nKnown guilds: **${membership.knownGuilds || 0}** • Current: **${membership.currentGuilds || 0}** • Former: **${membership.formerGuilds || 0}** • Unknown: **${membership.unknownGuilds || 0}**\nLive visible: **${membership.liveVisibleGuilds || 0}**\nEarliest live join: ${discordTime(membership.earliestLiveJoinAt, 'F')}\nLatest live join: ${discordTime(membership.latestLiveJoinAt, 'F')}`, inline: false },
+      { name: 'Live Membership Restrictions', value: `Pending screening: **${membership.pendingGuilds || 0}** guild(s)\nActive timeout: **${membership.timedOutGuilds || 0}** guild(s)`, inline: false },
       { name: 'Moderation History', value: `\`${summary.moderationCount || 0}\` events`, inline: true },
       { name: 'Role Changes', value: `\`${summary.roleChangeCount || 0}\``, inline: true },
       { name: 'Voice Events', value: `\`${summary.voiceEventCount || 0}\``, inline: true },
