@@ -14,7 +14,8 @@
     "promote:production": "node scripts/goliath.js promote production",
     "sync:commands": "cross-env COMMAND_SYNC_DELETE_STALE=true COMMAND_SYNC_UPDATE_EXISTING=true node scripts/goliath.js sync-commands",
     "syntax": "node -e \"const fs=require('fs'),path=require('path'),{spawnSync}=require('child_process');const files=[];function walk(p){if(!fs.existsSync(p))return;const stat=fs.statSync(p);if(stat.isDirectory()){for(const entry of fs.readdirSync(p)){if(p==='src'&&entry==='dashboard')continue;if(['node_modules','dist','.git'].includes(entry))continue;walk(path.join(p,entry));}}else if(/\\.(js|cjs|mjs)$/.test(p))files.push(p);}walk('server.js');walk('scripts');walk('src');let failed=false;for(const file of files.sort()){const result=spawnSync(process.execPath,['--check',file],{encoding:'utf8'});if(result.status!==0){failed=true;console.error('❌ '+file);console.error(String(result.stderr||result.stdout||'Syntax check failed').trim());}}if(failed)process.exit(1);console.log('✅ Syntax audit: '+files.length+' backend files');\"",
-    "doctor": "npm run syntax && node -e \"require('./scripts/goliath.js'); process.exit(process.exitCode || 0)\" doctor",
+    "verify": "node --test test/verification/*.test.js",
+    "doctor": "npm run syntax && node -e \"require('./scripts/goliath.js'); process.exit(process.exitCode || 0)\" doctor && npm run verify",
     "audit": "node scripts/goliath.js audit"
   },
   "dependencies": {
