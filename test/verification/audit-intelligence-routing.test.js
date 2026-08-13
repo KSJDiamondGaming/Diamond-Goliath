@@ -300,3 +300,31 @@ test('Guild History and Deep Scan consume reconciled former-user presence', () =
   assert.match(embeds, /former member/);
   assert.match(embeds, /membership unknown/);
 });
+
+test('cross-mode user intelligence merges environment coverage and historical evidence', () => {
+  assert.match(store, /function getUserAcrossModes\(userId\)/);
+  assert.match(store, /for \(const item of availableAuditRoots\(\)\)/);
+  assert.match(store, /environments\[item\.mode\] = \{/);
+  assert.match(store, /merged\.names = mergeUniqueArray/);
+  assert.match(store, /merged\.globalNames = mergeUniqueArray/);
+  assert.match(store, /merged\.displayNames = mergeUniqueArray/);
+  assert.match(store, /merged\.nicknames = mergeUniqueArray/);
+  assert.match(store, /merged\.guilds = mergeGuildMembership/);
+  assert.match(store, /mergeCountMap\(merged\.eventTypes, record\.eventTypes\)/);
+  assert.match(store, /mergeCountMap\(merged\.categories, record\.categories\)/);
+  assert.match(store, /mergeCountMap\(merged\.relations, record\.relations\)/);
+  assert.match(store, /merged\.environments = environments/);
+});
+
+test('cross-mode history merge preserves bounded deduplicated timelines', () => {
+  assert.match(store, /function mergeUniqueArray\(target, source, keyFn, limit = HISTORY_LIMIT\)/);
+  assert.match(store, /map\.set\(key, item\)/);
+  assert.match(store, /\.slice\(-limit\)/);
+  assert.match(store, /merged\.joinHistory = mergeUniqueArray/);
+  assert.match(store, /merged\.leaveHistory = mergeUniqueArray/);
+  assert.match(store, /merged\.roleHistory = mergeUniqueArray/);
+  assert.match(store, /merged\.moderationHistory = mergeUniqueArray/);
+  assert.match(store, /merged\.voiceHistory = mergeUniqueArray/);
+  assert.match(store, /merged\.actorHistory = mergeUniqueArray/);
+  assert.match(store, /merged\.recentEvents = mergeUniqueArray/);
+});
