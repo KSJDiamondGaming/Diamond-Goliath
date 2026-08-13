@@ -1,6 +1,6 @@
 'use strict';
 
-const path = require('path');
+const path = require('node:path');
 
 const ROOT_DIR = process.cwd();
 const MEDIA_ROOT = process.env.GOLIATH_MEDIA_ROOT || path.join(ROOT_DIR, 'data', 'guilds');
