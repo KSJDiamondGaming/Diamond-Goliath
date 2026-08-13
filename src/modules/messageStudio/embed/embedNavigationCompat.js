@@ -11,7 +11,6 @@ const panel = require('./embedReadinessCompat');
 const NAVIGATION_IDS = new Set([
   'admin:modules',
   'embed:back',
-  'embed:builder',
   'embed:appearance-back',
   'embed:thumbnail-back',
   'embed:media-options-back',
@@ -45,14 +44,18 @@ function cloneRowWithout(row, ids = []) {
 }
 function normalizeNavigationLabels(payload) {
   const rows = Array.isArray(payload?.components) ? payload.components : [];
-  for (const row of rows) {
-    if (!Array.isArray(row?.components)) continue;
+  const lastRowIndex = rows.length - 1;
+  rows.forEach((row, rowIndex) => {
+    if (!Array.isArray(row?.components)) return;
     for (const component of row.components) {
-      if (!NAVIGATION_IDS.has(componentId(component))) continue;
+      const id = componentId(component);
+      const isExplicitNavigation = NAVIGATION_IDS.has(id);
+      const isLastRowBuilderNavigation = id === 'embed:builder' && rowIndex === lastRowIndex;
+      if (!isExplicitNavigation && !isLastRowBuilderNavigation) continue;
       if (typeof component?.setLabel === 'function') component.setLabel('⬅️ Back');
       else if (component?.data) component.data.label = '⬅️ Back';
     }
-  }
+  });
   return payload;
 }
 function wrapNavigationLabels(methodName) {
