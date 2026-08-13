@@ -1,8 +1,8 @@
 'use strict';
 
-const crypto = require('crypto');
-const fs = require('fs');
-const path = require('path');
+const crypto = require('node:crypto');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const { resolveBotMode, resolveRuntimePath } = require('../../../config/runtimePaths');
 
