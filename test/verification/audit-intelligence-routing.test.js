@@ -155,7 +155,7 @@ test('User Intelligence exposes identity and actor-history controls', () => {
   assert.match(embeds, /setLabel\('Identity History'\)/);
   assert.match(embeds, /owner:audit:actions/);
   assert.match(embeds, /setLabel\('Actions Performed'\)/);
-  assert.match(events, /\['deep', 'identity', 'account', 'evidence', 'guilds', 'moderation', 'roles', 'voice', 'timeline', 'actions'\]/);
+  assert.match(events, /\['deep', 'identity', 'account', 'guilds', 'moderation', 'roles', 'voice', 'timeline', 'actions'\]/);
 });
 
 test('Identity History renders observed cross-environment identity evidence', () => {
@@ -279,8 +279,7 @@ test('former user presence is reconciled against live guild visibility', () => {
   assert.match(userIntelligence, /function reconcileGuildPresence\(stored, liveGuilds\)/);
   assert.match(userIntelligence, /storedCurrentMember: guild\.currentMember/);
   assert.match(userIntelligence, /currentMember: Boolean\(live\) \? true : guild\.currentMember === false \? false : null/);
-  assert.match(userIntelligence, /presenceSource: live \? 'live' : guild\.currentMember === false \? false : null/);
-  assert.match(userIntelligence, /presenceSource: live \? 'live' : guild\.currentMember === false \? false : null/);
+  assert.match(userIntelligence, /presenceSource: live \? 'live' : guild\.currentMember === false \? 'stored-leave' : 'stored-history'/);
   assert.match(userIntelligence, /presenceSource: 'live'/);
   assert.match(userIntelligence, /const reconciledGuilds = reconcileGuildPresence\(stored, liveGuilds\)/);
   assert.match(userIntelligence, /formerGuilds: reconciledGuilds\.filter/);
@@ -414,5 +413,5 @@ test('Account & Membership view is exposed, routed and renders reconciled per-gu
   assert.match(embeds, /Current Memberships/);
   assert.match(embeds, /Former Memberships/);
   assert.match(embeds, /Unknown \/ Historical-only Memberships/);
-  assert.match(events, /\['deep', 'identity', 'account', 'evidence', 'guilds', 'moderation', 'roles', 'voice', 'timeline', 'actions'\]/);
+  assert.match(events, /\['deep', 'identity', 'account', 'guilds', 'moderation', 'roles', 'voice', 'timeline', 'actions'\]/);
 });
