@@ -634,7 +634,7 @@ async function handleCommandCenterInteraction(client, interaction) {
   if (customId === 'owner:commandcenter:monitoring:all-on' && interaction.isButton?.()) {
     const session = getMonitoringSession(interaction); if (!session.sourceGuildId) return true;
     const current = auditStore.getConfig(); const existing = current.guilds?.[session.sourceGuildId] || {}; const monitoring = Object.fromEntries(Object.keys(MONITOR_LABELS).map((key) => [key, true]));
-    auditStore.updateConfig({ guilds: { [sourceGuildId]: { ...existing, enabled: true, monitoring } } }); await interaction.update(buildMonitoringPanel(client, interaction)).catch(() => null); return true;
+    auditStore.updateConfig({ guilds: { [session.sourceGuildId]: { ...existing, enabled: true, monitoring } } }); await interaction.update(buildMonitoringPanel(client, interaction)).catch(() => null); return true;
   }
   if (customId === 'owner:commandcenter:structure' && interaction.isButton?.()) {
     structureSessions.set(sessionKey(interaction), { sourceGuildId: null, repairResult: null });
