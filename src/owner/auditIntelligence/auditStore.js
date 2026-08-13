@@ -609,6 +609,9 @@ function identityMatchScore(value, candidate) {
   if (normalized.includes(value)) return 400 + weight;
   return 0;
 }
+function identityMatchKindLabel(kind) {
+  return ({ id: 'ID', username: 'username', globalName: 'global name', displayName: 'display name', nickname: 'nickname' })[kind] || String(kind || 'identity');
+}
 function searchUsersAcrossModes(query, options = {}) {
   const value = String(query || '').trim().toLowerCase();
   if (!value) return [];
@@ -665,7 +668,9 @@ function searchUsersAcrossModes(query, options = {}) {
     .slice(0, limit)
     .map((entry) => ({
       id: entry.id,
-      label: entry.label,
+      label: entry.matchedOn && entry.matchedValue
+        ? `${String(entry.label || entry.id).slice(0, 45)} • matched ${identityMatchKindLabel(entry.matchedOn)}: ${String(entry.matchedValue).slice(0, 35)}`
+        : entry.label,
       environments: REGISTRY_MODES.filter((mode) => entry.environments.has(mode)),
       matchedOn: entry.matchedOn,
       matchedValue: entry.matchedValue,
