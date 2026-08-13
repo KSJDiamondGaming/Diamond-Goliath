@@ -779,7 +779,7 @@ async function handleOwnerAuditInteraction(client, interaction) {
     return true;
   }
   const section = customId.slice('owner:audit:'.length);
-  if (!['deep', 'identity', 'guilds', 'moderation', 'roles', 'voice', 'timeline', 'actions'].includes(section)) return false;
+  if (!['deep', 'identity', 'account', 'guilds', 'moderation', 'roles', 'voice', 'timeline', 'actions'].includes(section)) return false;
   await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch(() => null);
   const report = await buildReport(client, context.userId);
   const embed = buildUserIntelligenceSectionEmbed(report, section, sourceGuild);
