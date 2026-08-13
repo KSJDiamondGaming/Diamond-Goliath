@@ -328,3 +328,28 @@ test('cross-mode history merge preserves bounded deduplicated timelines', () => 
   assert.match(store, /merged\.actorHistory = mergeUniqueArray/);
   assert.match(store, /merged\.recentEvents = mergeUniqueArray/);
 });
+
+test('cross-mode user discovery ranks merged candidates after scanning every environment', () => {
+  assert.match(store, /function searchIdentityValues\(userId, record\)/);
+  assert.match(store, /kind: 'id', weight: 100/);
+  assert.match(store, /kind: 'username', weight: 50/);
+  assert.match(store, /kind: 'globalName', weight: 60/);
+  assert.match(store, /kind: 'displayName', weight: 70/);
+  assert.match(store, /kind: 'nickname', weight: 40/);
+  assert.match(store, /function identityMatchScore\(value, candidate\)/);
+  assert.match(store, /normalized === value/);
+  assert.match(store, /normalized\.startsWith\(value\)/);
+  assert.match(store, /normalized\.includes\(value\)/);
+  assert.doesNotMatch(store, /if \(found\.size >= limit\) break;/);
+  assert.match(store, /b\.score - a\.score/);
+  assert.match(store, /b\.environments\.size - a\.environments\.size/);
+  assert.match(store, /String\(b\.lastObservedAt \|\| ''\)\.localeCompare/);
+});
+
+test('cross-mode discovery returns deterministic environment order and match evidence', () => {
+  assert.match(store, /REGISTRY_MODES\.filter\(\(mode\) => entry\.environments\.has\(mode\)\)/);
+  assert.match(store, /matchedOn: entry\.matchedOn/);
+  assert.match(store, /matchedValue: entry\.matchedValue/);
+  assert.match(store, /current\.environments\.add\(item\.mode\)/);
+  assert.match(store, /if \(best\.score > current\.score\)/);
+});
