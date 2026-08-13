@@ -376,3 +376,12 @@ test('single-result auto-select preserves and displays match evidence', () => {
   assert.match(events, /matchedOn: 'id', matchedValue: value/);
   assert.match(events, /matchedOn: 'liveSearch', matchedValue: value/);
 });
+
+test('multi-result selector descriptions include match evidence and user identity context', () => {
+  assert.match(events, /setCustomId\('owner:commandcenter:intelligence:result'\)/);
+  assert.match(events, /match\.environments\.join\(' • '\)/);
+  assert.match(events, /match\.matchedOn && match\.matchedValue != null/);
+  assert.match(events, /Matched \$\{intelligenceMatchKindLabel\(match\.matchedOn\)\}: \$\{String\(match\.matchedValue\)\}/);
+  assert.match(events, /User ID: \$\{match\.id\}/);
+  assert.match(events, /description: .*\.slice\(0, 100\)/);
+});
