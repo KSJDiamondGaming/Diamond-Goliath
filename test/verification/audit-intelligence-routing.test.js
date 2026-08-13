@@ -155,7 +155,7 @@ test('User Intelligence exposes identity and actor-history controls', () => {
   assert.match(embeds, /setLabel\('Identity History'\)/);
   assert.match(embeds, /owner:audit:actions/);
   assert.match(embeds, /setLabel\('Actions Performed'\)/);
-  assert.match(events, /\['deep', 'identity', 'guilds', 'moderation', 'roles', 'voice', 'timeline', 'actions'\]/);
+  assert.match(events, /\['deep', 'identity', 'account', 'guilds', 'moderation', 'roles', 'voice', 'timeline', 'actions'\]/);
 });
 
 test('Identity History renders observed cross-environment identity evidence', () => {
@@ -401,4 +401,17 @@ test('account and membership intelligence consolidates live and reconciled membe
   assert.match(userIntelligence, /pendingMemberships: pendingGuilds/);
   assert.match(userIntelligence, /timedOutMemberships: timedOutGuilds/);
   assert.match(userIntelligence, /accountMembership: buildAccountMembershipSummary\(stored, liveUser, liveGuilds, reconciledGuilds\)/);
+});
+
+test('Account & Membership view is exposed, routed and renders reconciled per-guild state', () => {
+  assert.match(embeds, /owner:audit:account/);
+  assert.match(embeds, /setLabel\('Account & Membership'\)/);
+  assert.match(embeds, /section === 'account'/);
+  assert.match(embeds, /Discord Account/);
+  assert.match(embeds, /Membership Overview/);
+  assert.match(embeds, /Live Join Range/);
+  assert.match(embeds, /Current Memberships/);
+  assert.match(embeds, /Former Memberships/);
+  assert.match(embeds, /Unknown \/ Historical-only Memberships/);
+  assert.match(events, /\['deep', 'identity', 'account', 'guilds', 'moderation', 'roles', 'voice', 'timeline', 'actions'\]/);
 });
