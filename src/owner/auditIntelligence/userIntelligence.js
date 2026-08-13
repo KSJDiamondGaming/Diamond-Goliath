@@ -163,6 +163,48 @@ function buildIdentitySummary(stored, liveUser, liveGuilds) {
   };
 }
 
+function buildAccountMembershipSummary(stored, liveUser, liveGuilds, reconciledGuilds) {
+  const current = (reconciledGuilds || []).filter((guild) => guild.currentMember === true);
+  const former = (reconciledGuilds || []).filter((guild) => guild.currentMember === false);
+  const unknown = (reconciledGuilds || []).filter((guild) => guild.currentMember !== true && guild.currentMember !== false);
+  const memberships = (liveGuilds || []).map((entry) => ({
+    guildId: entry.guildId,
+    guildName: entry.guildName,
+    joinedAt: entry.member?.joinedAt || null,
+    pending: Boolean(entry.member?.pending),
+    timedOutUntil: entry.member?.timedOutUntil || null,
+    roleCount: Array.isArray(entry.member?.roles) ? entry.member.roles.length : 0,
+    highestRole: entry.member?.highestRole || null,
+    permissions: entry.member?.permissions || null,
+  }));
+  const joined = memberships.map((entry) => entry.joinedAt).filter(Boolean).sort();
+  const pendingGuilds = memberships.filter((entry) => entry.pending);
+  const timedOutGuilds = memberships.filter((entry) => entry.timedOutUntil && new Date(entry.timedOutUntil).getTime() > Date.now());
+  return {
+    account: {
+      knownToDiscord: Boolean(liveUser),
+      bot: liveUser?.bot ?? stored.bot ?? null,
+      accountCreatedAt: liveUser?.accountCreatedAt || stored.accountCreatedAt || null,
+    },
+    membership: {
+      knownGuilds: (reconciledGuilds || []).length,
+      currentGuilds: current.length,
+      formerGuilds: former.length,
+      unknownGuilds: unknown.length,
+      liveVisibleGuilds: memberships.length,
+      pendingGuilds: pendingGuilds.length,
+      timedOutGuilds: timedOutGuilds.length,
+      earliestLiveJoinAt: joined[0] || null,
+      latestLiveJoinAt: joined.at?.(-1) || null,
+    },
+    currentMemberships: memberships,
+    pendingMemberships: pendingGuilds,
+    timedOutMemberships: timedOutGuilds,
+    formerMemberships: former,
+    unknownMemberships: unknown,
+  };
+}
+
 function buildModerationSummary(stored) {
   const events = [...(stored.moderationHistory || [])].filter(Boolean).sort((a, b) => String(a?.timestamp || '').localeCompare(String(b?.timestamp || '')));
   const byType = {}; const byGuild = {}; const byActor = {};
@@ -322,6 +364,7 @@ async function buildReport(client, userId) {
     },
     summary: summariseStored(stored, liveGuilds),
     identity: buildIdentitySummary(stored, liveUser, liveGuilds),
+    accountMembership: buildAccountMembershipSummary(stored, liveUser, liveGuilds, reconciledGuilds),
     moderation: buildModerationSummary(stored),
     roles: buildRoleSummary(stored, liveGuilds),
     voice: buildVoiceSummary(stored, liveGuilds),
