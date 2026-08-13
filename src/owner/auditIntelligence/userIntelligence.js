@@ -324,6 +324,27 @@ function buildDeepSummary(stored, liveGuilds) {
   };
 }
 
+function buildEvidenceSummary(stored, liveGuilds, reconciledGuilds) {
+  const moderation = [...(stored.moderationHistory || [])].filter(Boolean).sort((a, b) => String(a?.timestamp || '').localeCompare(String(b?.timestamp || '')));
+  const currentTimeouts = (liveGuilds || []).filter((entry) => entry.member?.timedOutUntil && new Date(entry.member.timedOutUntil).getTime() > Date.now());
+  const pendingScreening = (liveGuilds || []).filter((entry) => entry.member?.pending);
+  const identityValues = new Set([...(stored.names || []), ...(stored.globalNames || []), ...(stored.displayNames || [])].filter(Boolean));
+  return {
+    note: 'Factual evidence summary only. Goliath does not calculate a behavioural or risk score.',
+    moderationEvents: moderation.length,
+    latestModerationAt: moderation.at?.(-1)?.timestamp || null,
+    moderationWithoutAttributedActor: moderation.filter((event) => !event.actorId).length,
+    activeTimeouts: currentTimeouts.map((entry) => ({ guildId: entry.guildId, guildName: entry.guildName, timedOutUntil: entry.member?.timedOutUntil || null })),
+    pendingScreening: pendingScreening.map((entry) => ({ guildId: entry.guildId, guildName: entry.guildName })),
+    observedJoins: (stored.joinHistory || []).length,
+    observedLeaves: (stored.leaveHistory || []).length,
+    knownGuilds: (reconciledGuilds || []).length,
+    currentGuilds: (reconciledGuilds || []).filter((guild) => guild.currentMember === true).length,
+    formerGuilds: (reconciledGuilds || []).filter((guild) => guild.currentMember === false).length,
+    observedIdentityValues: identityValues.size,
+  };
+}
+
 async function buildReport(client, userId) {
   const id = String(userId);
   const stored = auditStore.getUserAcrossModes?.(id) || auditStore.getUser(id) || {
@@ -365,6 +386,7 @@ async function buildReport(client, userId) {
     summary: summariseStored(stored, liveGuilds),
     identity: buildIdentitySummary(stored, liveUser, liveGuilds),
     accountMembership: buildAccountMembershipSummary(stored, liveUser, liveGuilds, reconciledGuilds),
+    evidenceSummary: buildEvidenceSummary(stored, liveGuilds, reconciledGuilds),
     moderation: buildModerationSummary(stored),
     roles: buildRoleSummary(stored, liveGuilds),
     voice: buildVoiceSummary(stored, liveGuilds),
