@@ -1,5 +1,5 @@
-const fs = require('fs');
-const path = require('path');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const EXPECTED_WINDOWS_SYNC_ERRORS = new Set(['EPERM', 'EBUSY']);
 const warnedSyncPaths = new Set();
