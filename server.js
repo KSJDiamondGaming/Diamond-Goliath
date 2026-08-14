@@ -1,9 +1,9 @@
 'use strict';
 
-const fs = require('fs');
-const path = require('path');
+const fs = require('node:fs');
+const path = require('node:path');
 const express = require('express');
-const http = require('http');
+const http = require('node:http');
 const cors = require('cors');
 const session = require('express-session');
 const { Client, Collection, GatewayIntentBits, Partials } = require('discord.js');
