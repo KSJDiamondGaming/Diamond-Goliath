@@ -26,7 +26,7 @@ function configuredGuildIds() {
     return ids([process.env.PRODUCTION_GUILD_IDS, process.env.PRODUCTION_GUILD_ID, process.env.MAIN_GUILD_ID, process.env.GUILD_ID]
       .flatMap((value) => String(value || '').split(',')));
   }
-  return ids([process.env.DEV_GUILD_ID, process.env.MAIN_GUILD_ID, process.env.GUILD_ID]
+  return ids([process.env.DEV_GUILD_IDS, process.env.DEV_GUILD_ID, process.env.MAIN_GUILD_ID, process.env.GUILD_ID]
     .flatMap((value) => String(value || '').split(',')));
 }
 
