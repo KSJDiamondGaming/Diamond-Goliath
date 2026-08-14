@@ -1,6 +1,11 @@
 'use strict';
 
 const guildManager = require('../../../core/guild/guildManager');
+const {
+  getModuleSection,
+  saveModuleSection,
+  updateModuleSection,
+} = require('../../../core/guild/moduleSectionManager');
 
 const MODULE_KEY = 'stats';
 const MAX_ITEMS = 10;
@@ -59,25 +64,30 @@ function addToMap(map, key, amount = 1) {
 }
 
 function getStats(guildId) {
-  const modules = guildManager.getGuildSection(guildId, 'modules', {});
-  return normalizeStats(modules[MODULE_KEY] || {});
+  return normalizeStats(getModuleSection(guildId, MODULE_KEY, DEFAULT_STATS));
 }
 
 function saveStats(guildId, stats, guildOrMeta = {}) {
-  const updatedModules = guildManager.updateGuildSection(
+  return normalizeStats(saveModuleSection(
     guildId,
-    'modules',
-    (modules) => ({ ...modules, [MODULE_KEY]: normalizeStats(stats) }),
-    {},
+    MODULE_KEY,
+    normalizeStats(stats),
     guildOrMeta
-  );
-  return normalizeStats(updatedModules[MODULE_KEY]);
+  ));
 }
 
 function updateStats(guildId, updater, guildOrMeta = {}) {
-  const current = getStats(guildId);
-  const next = typeof updater === 'function' ? updater(copy(current)) : updater;
-  return saveStats(guildId, next, guildOrMeta);
+  return normalizeStats(updateModuleSection(
+    guildId,
+    MODULE_KEY,
+    (current) => {
+      const normalized = normalizeStats(current);
+      const next = typeof updater === 'function' ? updater(copy(normalized)) : updater;
+      return normalizeStats(next);
+    },
+    DEFAULT_STATS,
+    guildOrMeta
+  ));
 }
 
 function setEnabled(guildId, enabled, guildOrMeta = {}) {
