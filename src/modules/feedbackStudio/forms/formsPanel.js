@@ -6,8 +6,11 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  ChannelSelectMenuBuilder,
+  ChannelType,
   EmbedBuilder,
   ModalBuilder,
+  RoleSelectMenuBuilder,
   TextInputBuilder,
   TextInputStyle,
 } = require('discord.js');
@@ -43,8 +46,8 @@ function parseFormCustomId(customId = '') {
 function buildFormsOverviewEmbed(guildId) {
   const section = forms.getFormsSection(guildId);
   const moduleEnabled = isModuleEnabled(guildId, 'forms');
-  const forms = Object.values(section.forms || {});
-  const enabledForms = forms.filter((form) => form.enabled !== false);
+  const formItems = Object.values(section.forms || {});
+  const enabledForms = formItems.filter((form) => form.enabled !== false);
 
   return new EmbedBuilder()
     .setColor(moduleEnabled ? 0x5865f2 : 0xed4245)
@@ -53,12 +56,12 @@ function buildFormsOverviewEmbed(guildId) {
       '**One clean form engine for applications, appeals, reports and support.**',
       '',
       `> **Status:** ${moduleEnabled ? 'Enabled' : 'Disabled'}`,
-      `> **Forms:** ${enabledForms.length}/${forms.length} active`,
+      `> **Forms:** ${enabledForms.length}/${formItems.length} active`,
       `> **Submissions:** ${section.analytics?.submitted || 0}`,
       `> **Tickets Created:** ${section.analytics?.ticketsCreated || 0}`,
       '',
-      forms.length
-        ? forms.slice(0, 10).map((form, index) => `**${index + 1}. ${form.name}** - ${form.enabled === false ? 'Disabled' : form.action}`).join('\n')
+      formItems.length
+        ? formItems.slice(0, 10).map((form, index) => `**${index + 1}. ${form.name}** - ${form.enabled === false ? 'Disabled' : form.action}`).join('\n')
         : 'No forms created yet. Dashboard builder can wire into this store next.',
     ].join('\n'))
     .setFooter({ text: 'Goliath Forms - Universal forms + tickets foundation' })
@@ -155,7 +158,7 @@ async function deployFormPanel(channel, panel, guildOrMeta = {}) {
     }
   );
 
-  const forms = panel.formIds
+  const panelForms = panel.formIds
     .map((formId) => forms.getForm(channel.guild.id, formId))
     .filter(Boolean);
 
@@ -165,8 +168,8 @@ async function deployFormPanel(channel, panel, guildOrMeta = {}) {
   }, guildOrMeta);
 
   const message = await channel.send({
-    embeds: [buildFormPanelEmbed(savedPanel, forms)],
-    components: buildFormPanelRows(savedPanel, forms),
+    embeds: [buildFormPanelEmbed(savedPanel, panelForms)],
+    components: buildFormPanelRows(savedPanel, panelForms),
   });
 
   return forms.savePanel(channel.guild.id, {
@@ -324,7 +327,7 @@ function formatRoles(ids = []) {
 function buildFormsAdminPanel(guild, memberDisplayName = 'Unknown User') {
   const section = forms.getSection(guild.id);
   const moduleEnabled = isModuleEnabled(guild.id, 'forms');
-  const forms = Object.values(section.forms || {});
+  const formItems = Object.values(section.forms || {});
   const submissions = Object.values(section.submissions || {});
   const pending = submissions.filter((submission) => submission.status === 'pending').length;
 
@@ -342,7 +345,7 @@ function buildFormsAdminPanel(guild, memberDisplayName = 'Unknown User') {
       `**Anonymous:** ${section.anonymousSubmissions ? 'Yes ✅' : 'No ❌'}`,
       `**Store Responses:** ${section.storeResponses !== false ? 'Yes ✅' : 'No ❌'}`,
       '',
-      `Forms: \`${forms.length}\` | Submissions: \`${submissions.length}\` | Pending: \`${pending}\``,
+      `Forms: \`${formItems.length}\` | Submissions: \`${submissions.length}\` | Pending: \`${pending}\``,
       `Submitted: \`${section.analytics.submitted}\` | Approved: \`${section.analytics.approved}\` | Denied: \`${section.analytics.denied}\``,
     ].join('\n'))
     .setFooter({ text: `Requested by ${memberDisplayName}` })
@@ -443,7 +446,7 @@ async function deployDefaultForm(guild, actorId = null) {
   const channel = guild.channels.cache.get(channelId) || await guild.channels.fetch(channelId).catch(() => null);
   if (!channel?.send) throw new Error('Submit channel is not sendable.');
 
-  let form = forms.saveForm(guild.id, {
+  const form = forms.saveForm(guild.id, {
     name: 'Server Form',
     description: 'Submit your response using the button below.',
     buttonLabel: 'Submit Form',
