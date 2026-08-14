@@ -31,6 +31,13 @@ function getAllowedGuildIds(botMode = process.env.BOT_MODE) {
     return getEnvList('BETA_GUILD_IDS');
   }
 
+  if (safeBotMode === 'PRODUCTION') {
+    return [...new Set([
+      ...getEnvList('PRODUCTION_GUILD_IDS'),
+      ...getEnvList('PRODUCTION_GUILD_ID'),
+    ])];
+  }
+
   return [];
 }
 
