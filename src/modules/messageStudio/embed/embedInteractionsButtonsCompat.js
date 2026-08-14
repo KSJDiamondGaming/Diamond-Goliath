@@ -4,7 +4,11 @@ const original = require('./embedInteractionsFieldsCompat');
 const panel = require('./embedButtonsCompat');
 
 function selectedIndex(state) { const buttons = Array.isArray(state.buttons) ? state.buttons : []; return Number.isInteger(state.selectedButtonIndex) && buttons[state.selectedButtonIndex] ? state.selectedButtonIndex : null; }
-function saveButtons(i, state, buttons, selectedButtonIndex = state.selectedButtonIndex) { return panel.saveSession(i, { ...state, buttons, selectedButtonIndex, hasUnsavedChanges: true }); }
+function saveButtons(i, state, buttons, selectedButtonIndex = state.selectedButtonIndex) {
+  let next = panel.saveSelected(state, { buttons });
+  next = { ...next, selectedButtonIndex, hasUnsavedChanges: true };
+  return panel.saveSession(i, next);
+}
 async function updateButtons(i) { await i.update(panel.buildButtonsManagerPanel(i)); return true; }
 async function updateButtonOptions(i) { await i.update(panel.buildButtonOptionsPanel(i)); return true; }
 async function replyButtons(i) { await i.reply({ ...panel.buildButtonsManagerPanel(i), flags: 64 }); return true; }
