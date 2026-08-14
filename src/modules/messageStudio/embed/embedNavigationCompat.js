@@ -151,6 +151,23 @@ if (!panel.__embedNavigationPatched) {
     return normalizeNavigationLabels(payload);
   };
 
+  if (typeof panel.buildButtonsManagerPanel === 'function') {
+    const originalButtonsManager = panel.buildButtonsManagerPanel.bind(panel);
+    panel.buildButtonsManagerPanel = (interaction, ...args) => {
+      const payload = originalButtonsManager(interaction, ...args);
+      const rows = Array.isArray(payload?.components) ? payload.components : [];
+      const selector = findRow(rows, 'embed:button-manager-select');
+      const controls = findRow(rows, 'embed:button-manager-add');
+      const reorder = rowFromComponents(
+        findComponent(rows, 'embed:button-manager-up'),
+        findComponent(rows, 'embed:button-manager-down'),
+      );
+      const back = rowFromComponents(findComponent(rows, 'embed:builder'));
+      payload.components = [selector, controls, reorder, back].filter(Boolean).slice(0, 5);
+      return normalizeNavigationLabels(payload);
+    };
+  }
+
   [
     'buildAppearancePanel',
     'buildAppearanceIconPanel',
@@ -160,7 +177,6 @@ if (!panel.__embedNavigationPatched) {
     'buildMediaOptionsPanel',
     'buildFileOptionsPanel',
     'buildFieldsManagerPanel',
-    'buildButtonsManagerPanel',
     'buildButtonOptionsPanel',
     'buildReadinessPanel',
   ].forEach(wrapNavigationLabels);
