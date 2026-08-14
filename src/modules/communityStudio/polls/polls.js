@@ -7,10 +7,14 @@ const {
   EmbedBuilder,
 } = require('discord.js');
 const guildManager = require('../../../core/guild/guildManager');
+const {
+  getModuleSection,
+  saveModuleSection,
+  updateModuleSection,
+} = require('../../../core/guild/moduleSectionManager');
 
 const MODULE_KEY = 'polls';
 const DEFAULT_POLLS = {
-  enabled: true,
   defaultChannelId: null,
   resultsChannelId: null,
   managerRoleIds: [],
@@ -88,10 +92,9 @@ function normalizeSection(section = {}) {
     };
   }
 
-  return {
+  const normalized = {
     ...DEFAULT_POLLS,
     ...source,
-    enabled: source.enabled !== false,
     defaultChannelId,
     resultsChannelId: cleanSnowflake(source.resultsChannelId),
     managerRoleIds: cleanSnowflakeArray(source.managerRoleIds),
@@ -118,23 +121,33 @@ function normalizeSection(section = {}) {
       switched: Math.max(0, Number(analytics.switched || 0)),
     },
   };
-}
-function getSection(guildId) {
-  const modules = guildManager.getGuildSection(guildId, 'modules', {});
-  return normalizeSection(modules?.[MODULE_KEY] || DEFAULT_POLLS);
-}
-function saveSection(guildId, section, meta = {}) {
-  const normalized = normalizeSection(section);
-  guildManager.updateGuildSection(guildId, 'modules', (modules = {}) => ({
-    ...(modules && typeof modules === 'object' ? modules : {}),
-    [MODULE_KEY]: normalized,
-  }), {}, meta);
+
+  delete normalized.enabled;
   return normalized;
 }
+function getSection(guildId) {
+  return normalizeSection(getModuleSection(guildId, MODULE_KEY, DEFAULT_POLLS));
+}
+function saveSection(guildId, section, meta = {}) {
+  return normalizeSection(saveModuleSection(
+    guildId,
+    MODULE_KEY,
+    normalizeSection(section),
+    meta,
+  ));
+}
 function updateSection(guildId, updater, meta = {}) {
-  const current = getSection(guildId);
-  const next = typeof updater === 'function' ? updater(current) : { ...current, ...(updater || {}) };
-  return saveSection(guildId, next, meta);
+  return normalizeSection(updateModuleSection(
+    guildId,
+    MODULE_KEY,
+    (current) => {
+      const normalized = normalizeSection(current);
+      const next = typeof updater === 'function' ? updater(normalized) : updater;
+      return normalizeSection(next);
+    },
+    DEFAULT_POLLS,
+    meta,
+  ));
 }
 function getPoll(guildId, pollId) {
   return getSection(guildId).polls[String(pollId)] || null;
