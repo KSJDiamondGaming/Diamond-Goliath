@@ -34,6 +34,21 @@ function presetForDeployment(guildId, deployment) {
     : {};
   return presets[deployment.preset] || presets[deployment.key] || null;
 }
+function buttonsForPreset(preset) {
+  if (!preset || typeof preset !== 'object') return [];
+  if (Array.isArray(preset.buttons) && preset.buttons.length) return preset.buttons;
+
+  const panels = Array.isArray(preset.panels) ? preset.panels : [];
+  const selectedPanelIndex = Number.isInteger(preset.selectedPanelIndex) ? preset.selectedPanelIndex : null;
+  if (selectedPanelIndex != null && Array.isArray(panels[selectedPanelIndex]?.buttons)) {
+    return panels[selectedPanelIndex].buttons;
+  }
+
+  const panelsWithButtons = panels.filter((entry) => Array.isArray(entry?.buttons) && entry.buttons.length);
+  if (panelsWithButtons.length === 1) return panelsWithButtons[0].buttons;
+  if (Array.isArray(panels[0]?.buttons)) return panels[0].buttons;
+  return [];
+}
 function parseButtonIndex(customId) {
   const id = String(customId || '');
   let match = id.match(/^embed:action:(\d+)$/);
@@ -50,7 +65,7 @@ function resolveButton(interaction) {
   if (!Number.isInteger(index) || index < 0 || index >= 20) return { index, button: null, deployment: null };
   const deployment = deploymentForMessage(interaction.guildId, interaction.message?.id);
   const preset = presetForDeployment(interaction.guildId, deployment);
-  const buttons = Array.isArray(preset?.buttons) ? preset.buttons : [];
+  const buttons = buttonsForPreset(preset);
   const button = buttons[index] || null;
   return { index, button, deployment };
 }
