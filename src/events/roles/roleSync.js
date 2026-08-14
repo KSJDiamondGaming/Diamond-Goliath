@@ -1,5 +1,5 @@
 const guildManager = require('../../core/guild/guildManager');
-const securitySystem = require('../../core/security/securitySystem');
+const antiNukeManager = require('../../core/security/antiNukeManager');
 const {
   emitSyncEvent,
 } = require('../../server/sockets/socketHub');
@@ -85,7 +85,10 @@ async function refreshGuildRoles(guild, context = {}) {
 
 async function runAntiNuke(handlerName, ...args) {
   try {
-    const handler = securitySystem?.[handlerName];
+    const guild = args.find((arg) => arg?.guild)?.guild || args.find((arg) => arg?.id && arg?.client?.guilds);
+    if (guild?.id && !guildManager.isModuleEnabled(guild.id, 'security')) return null;
+
+    const handler = antiNukeManager?.[handlerName];
 
     if (typeof handler !== 'function') {
       return null;
