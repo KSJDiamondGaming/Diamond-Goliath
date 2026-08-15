@@ -9,10 +9,11 @@ const {
   LabelBuilder,
   ModalBuilder,
 } = require('discord.js');
-const panel = require('./embedPreviewCompat');
+const panel = require('./embedPanel');
+const mediaModel = require('./embedMediaModel');
 
-const MAX_COMPONENTS_PER_ROW = panel.EMBED_COMPONENT_LIMITS?.maxComponentsPerRow || 5;
-const MAX_ACTION_ROWS = panel.EMBED_COMPONENT_LIMITS?.maxActionRows || 5;
+const MAX_COMPONENTS_PER_ROW = 5;
+const MAX_ACTION_ROWS = 5;
 
 function enforceLimits(rows = []) {
   return rows.filter(Boolean).slice(0, MAX_ACTION_ROWS).map((row) => {
@@ -46,7 +47,7 @@ panel.thumbnailUploadModal = () => new ModalBuilder()
 
 panel.buildThumbnailOptionsPanel = (interaction) => {
   const state = panel.getSession(interaction);
-  const media = panel.getPanelMedia(state);
+  const media = mediaModel.mediaForPanel(state);
   const thumbnail = media.thumbnail || { source: '', alt: '' };
   const source = resolveSource(thumbnail.source, interaction);
   const lines = [
@@ -71,7 +72,7 @@ panel.buildThumbnailOptionsPanel = (interaction) => {
         new ButtonBuilder().setCustomId('embed:thumbnail-clear').setLabel('🗑️ Clear').setStyle(ButtonStyle.Danger).setDisabled(!thumbnail.source),
       ),
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('embed:thumbnail-back').setLabel('⬅️ Media Manager').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('embed:thumbnail-back').setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary),
       ),
     ]),
   };
