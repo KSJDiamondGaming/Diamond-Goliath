@@ -17,7 +17,7 @@ function compare(left, operator, right) {
   if (operator === 'exists') return left !== undefined && left !== null && left !== '';
   if (operator === 'missing') return left === undefined || left === null || left === '';
   if (operator === 'contains') return String(left ?? '').includes(String(right ?? ''));
-  return true;
+  return false;
 }
 
 function evaluateCondition(condition = {}, context = {}) {
