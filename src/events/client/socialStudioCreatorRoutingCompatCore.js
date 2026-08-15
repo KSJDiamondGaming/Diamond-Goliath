@@ -290,8 +290,6 @@ async function handleAccountCreateFlow(interaction) {
       alertTypes: Array.isArray(primary?.alertTypes) ? primary.alertTypes : supportedAlerts(platform),
       alertChannelId: primary?.alertChannelId || null,
       alertChannels: primary?.alertChannels && typeof primary.alertChannels === 'object' ? { ...primary.alertChannels } : {},
-      mentionMode: primary?.mentionMode || latest.notificationMentionMode || 'none',
-      mentionRoleId: primary?.mentionRoleId || (latest.notificationMentionMode === 'role' ? latest.notificationRoleId || null : null),
       createdAt: primary?.createdAt || timestamp,
       updatedAt: timestamp,
     };
