@@ -446,7 +446,6 @@ module.exports = {
   updateCreator,
   markCreatorActive,
   markCreatorDeparted,
-  getExpiredCreators,
   deleteExpiredCreators,
   deleteCreator,
   deleteCreatorByOwner,
