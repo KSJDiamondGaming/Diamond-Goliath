@@ -10,7 +10,6 @@ const creatorRouting = require('../../modules/socialStudio/socialAlerts/socialSt
 const userRouting = require('../../modules/socialStudio/socialAlerts/socialStudioUserChannelRouting');
 const roleHierarchyCompat = require('../../modules/socialStudio/socialAlerts/socialStudioRoleHierarchyCompat');
 const testCompat = require('../../modules/socialStudio/socialAlerts/socialStudioTestCompat');
-const creatorCompat = require('../../modules/socialStudio/socialAlerts/socialStudioCreatorActionCompat');
 
 const dispatchedInteractions = new WeakSet();
 
@@ -67,6 +66,8 @@ installPersistenceGuard();
 
 const core = require('./socialStudioCreatorRoutingCompatCore');
 
+// Explicit Social Studio compatibility chain. The stable creator-actions
+// handler calls this directly; no module-load handler rewrites are required.
 async function handle(interaction) {
   if (!interaction || dispatchedInteractions.has(interaction)) return false;
   dispatchedInteractions.add(interaction);
@@ -74,23 +75,6 @@ async function handle(interaction) {
   if (await roleHierarchyCompat.handle(interaction)) return true;
   if (await core.handle(interaction)) return true;
   return false;
-}
-
-// Preserve established Social Studio precedence while interactionCreate is
-// migrated to call the explicit compatibility chain above.
-if (!creatorCompat.__socialCompatibilityPrecedenceComposed) {
-  const baseHandle = typeof creatorCompat.handle === 'function'
-    ? creatorCompat.handle.bind(creatorCompat)
-    : async () => false;
-
-  creatorCompat.handle = async function handleWithSocialCompatibilityPrecedence(interaction) {
-    if (await handle(interaction)) return true;
-    return baseHandle(interaction);
-  };
-
-  creatorCompat.__roleHierarchyCompatPatched = true;
-  creatorCompat.__testCompatPatched = true;
-  creatorCompat.__socialCompatibilityPrecedenceComposed = true;
 }
 
 module.exports = core;
