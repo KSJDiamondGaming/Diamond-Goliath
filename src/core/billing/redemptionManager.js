@@ -96,7 +96,10 @@ function generateCodes({ plan = PLAN_IDS.PLUS, duration = '1m', quantity = 1, cr
     throw new Error('Redeem codes can only grant Plus, Pro or Lifetime.');
   }
 
-  const safeQuantity = Math.min(Math.max(Number(quantity || 1), 1), 100);
+  const numericQuantity = Number(quantity);
+  const safeQuantity = Number.isFinite(numericQuantity)
+    ? Math.min(Math.max(Math.trunc(numericQuantity), 1), 100)
+    : 1;
   const durationDays = normalizeDuration(duration, normalizedPlan);
   const data = readCodes();
   const existing = new Set(data.codes.map((item) => cleanCode(item.code)));
