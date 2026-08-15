@@ -10,6 +10,7 @@ const creatorRouting = require('../../modules/socialStudio/socialAlerts/socialSt
 const userRouting = require('../../modules/socialStudio/socialAlerts/socialStudioUserChannelRouting');
 const roleHierarchyCompat = require('../../modules/socialStudio/socialAlerts/socialStudioRoleHierarchyCompat');
 const testCompat = require('../../modules/socialStudio/socialAlerts/socialStudioTestCompat');
+const creatorCompat = require('../../modules/socialStudio/socialAlerts/socialStudioCreatorActionCompat');
 
 function object(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
@@ -62,24 +63,20 @@ creatorRouting.installStoreCompatibility = () => {};
 userRouting.installStoreCompatibility = () => {};
 installPersistenceGuard();
 
-// Requiring the core file installs the existing creator/account interaction
-// adapters after the persistence guard/no-op installers above are established.
 const core = require('./socialStudioCreatorRoutingCompatCore');
-const creatorCompat = require('../../modules/socialStudio/socialAlerts/socialStudioCreatorActionCompat');
 
-// Preserve the established Social Studio precedence in one composed wrapper:
-// Test -> Role Hierarchy -> Creator Routing -> Account Management -> base actions.
-// Creator/account ownership remains inside the core for now; this removes the
-// remaining nested Test/Role monkey-patch chain without changing behavior.
+// Preserve established Social Studio precedence explicitly:
+// Test -> Role Hierarchy -> Creator Routing Core -> base creator actions.
 if (!creatorCompat.__socialCompatibilityPrecedenceComposed) {
-  const originalHandle = typeof creatorCompat.handle === 'function'
+  const baseHandle = typeof creatorCompat.handle === 'function'
     ? creatorCompat.handle.bind(creatorCompat)
     : async () => false;
 
   creatorCompat.handle = async function handleWithSocialCompatibilityPrecedence(interaction) {
     if (await testCompat.handle(interaction)) return true;
     if (await roleHierarchyCompat.handle(interaction)) return true;
-    return originalHandle(interaction);
+    if (await core.handle(interaction)) return true;
+    return baseHandle(interaction);
   };
 
   creatorCompat.__roleHierarchyCompatPatched = true;
