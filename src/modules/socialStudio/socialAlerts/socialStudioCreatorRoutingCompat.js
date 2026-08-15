@@ -71,15 +71,7 @@ function creatorRouteForAccount(creator, account) {
   const platform = String(account?.platform || '').toLowerCase();
   return cloneObject(creator?.platformChannels)[platform] || creator?.alertChannelId || null;
 }
-function syncCreatorOverride(config, creator) {
-  if (!creator) return config;
-  for (const accountId of creator.accountIds || []) {
-    const account = config.accounts?.[accountId];
-    if (!account) continue;
-    const channelId = creatorRouteForAccount(creator, account);
-    if (channelId) applyCreatorOverrideToAccount(account, channelId);
-    else clearCreatorOverrideFromAccount(account);
-  }
+function syncCreatorOverride(config) {
   return config;
 }
 function syncAllCreatorOverrides(config) { for (const creator of Object.values(config.creators || {})) syncCreatorOverride(config, creator); return config; }
