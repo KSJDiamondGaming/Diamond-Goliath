@@ -5,87 +5,16 @@ const {
   ButtonBuilder,
   ButtonStyle,
   EmbedBuilder,
-  FileUploadBuilder,
-  LabelBuilder,
-  ModalBuilder,
-  TextInputBuilder,
-  TextInputStyle,
 } = require('discord.js');
 const panel = require('./embedPreviewCompat');
 const media = require('./embedMedia');
 const { validatePanelMedia, statusIcon } = require('./embedMediaValidation');
 
 media.installStorageNormalization(panel);
+media.installUploadModals(panel);
 
 const MAX_COMPONENTS_PER_ROW = 5;
 const MAX_ACTION_ROWS = 5;
-
-function textInput(id, label, style, value = '', maxLength = 4000) {
-  return new TextInputBuilder()
-    .setCustomId(id)
-    .setLabel(label)
-    .setStyle(style)
-    .setRequired(false)
-    .setMaxLength(maxLength)
-    .setValue(String(value || '').slice(0, maxLength));
-}
-
-panel.mediaUploadModal = () => new ModalBuilder()
-  .setCustomId('embed:media-upload-save')
-  .setTitle('Upload Media')
-  .addLabelComponents(
-    new LabelBuilder()
-      .setLabel('Upload media or files')
-      .setDescription('Add up to 10 files. Images and videos go to the gallery; other files are attached.')
-      .setFileUploadComponent(
-        new FileUploadBuilder()
-          .setCustomId('media_files')
-          .setMinValues(1)
-          .setMaxValues(10)
-          .setRequired(true),
-      ),
-  );
-
-panel.galleryItemModal = (state, index = null) => {
-  const mediaState = panel.getPanelMedia(state);
-  const item = Number.isInteger(index) ? (mediaState.gallery[index] || {}) : {};
-  const customId = Number.isInteger(index)
-    ? `embed:media-gallery-save:${index}`
-    : 'embed:media-gallery-save-new';
-  return new ModalBuilder()
-    .setCustomId(customId)
-    .setTitle(Number.isInteger(index) ? 'Edit Gallery Media' : 'Add Gallery Media')
-    .addComponents(
-      new ActionRowBuilder().addComponents(
-        textInput('source', 'Media URL / variable', TextInputStyle.Short, item.source || ''),
-      ),
-      new ActionRowBuilder().addComponents(
-        textInput('alt', 'Alt text / description', TextInputStyle.Paragraph, item.alt || '', 1024),
-      ),
-    );
-};
-
-panel.fileItemModal = (state, index = null) => {
-  const mediaState = panel.getPanelMedia(state);
-  const item = Number.isInteger(index) ? (mediaState.files[index] || {}) : {};
-  const customId = Number.isInteger(index)
-    ? `embed:media-file-save:${index}`
-    : 'embed:media-file-save-new';
-  return new ModalBuilder()
-    .setCustomId(customId)
-    .setTitle(Number.isInteger(index) ? 'Edit Attached File' : 'Add Attached File')
-    .addComponents(
-      new ActionRowBuilder().addComponents(
-        textInput('source', 'File URL / variable', TextInputStyle.Short, item.source || ''),
-      ),
-      new ActionRowBuilder().addComponents(
-        textInput('name', 'Display filename', TextInputStyle.Short, item.name || '', 256),
-      ),
-      new ActionRowBuilder().addComponents(
-        textInput('description', 'File description', TextInputStyle.Paragraph, item.description || '', 1024),
-      ),
-    );
-};
 
 function componentId(component) {
   return component?.data?.custom_id || component?.customId || null;
