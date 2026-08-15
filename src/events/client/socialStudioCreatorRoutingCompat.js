@@ -6,8 +6,6 @@
 // account-route inheritance is stripped before configuration is persisted.
 
 const store = require('../../modules/socialStudio/socialAlerts/socialStudioStore');
-const creatorRouting = require('../../modules/socialStudio/socialAlerts/socialStudioCreatorRoutingCompat');
-const userRouting = require('../../modules/socialStudio/socialAlerts/socialStudioUserChannelRouting');
 const roleHierarchyCompat = require('../../modules/socialStudio/socialAlerts/socialStudioRoleHierarchyCompat');
 
 const dispatchedInteractions = new WeakSet();
@@ -56,11 +54,6 @@ function installPersistenceGuard() {
   store.__dynamicSocialRoutingPersistenceGuard = true;
 }
 
-// The older compatibility modules used these installers to rewrite account
-// alertChannelId/alertChannels during account creation. Dynamic routing makes
-// those inherited writes unnecessary, so keep the methods callable but inert.
-creatorRouting.installStoreCompatibility = () => {};
-userRouting.installStoreCompatibility = () => {};
 installPersistenceGuard();
 
 const core = require('./socialStudioCreatorRoutingCompatCore');
