@@ -3,7 +3,9 @@
 const translationThreadManager = require('./translationThreadManager');
 const { isModuleEnabled } = require('../../../core/guild/guildManager');
 
-async function startupTranslation(client) {
+const startupRuns = new WeakMap();
+
+async function recoverTranslationPanels(client) {
   const guilds = [...(client.guilds?.cache?.values?.() || [])];
   const results = [];
 
@@ -27,7 +29,20 @@ async function startupTranslation(client) {
   return summary;
 }
 
+function startupTranslation(client) {
+  const existingRun = startupRuns.get(client);
+  if (existingRun) return existingRun;
+
+  const startupRun = recoverTranslationPanels(client).catch((error) => {
+    startupRuns.delete(client);
+    throw error;
+  });
+
+  startupRuns.set(client, startupRun);
+  return startupRun;
+}
+
 module.exports = {
   startupTranslation,
-  recoverTranslationPanels: startupTranslation,
+  recoverTranslationPanels,
 };
