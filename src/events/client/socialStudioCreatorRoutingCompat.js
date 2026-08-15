@@ -65,17 +65,22 @@ installPersistenceGuard();
 
 const core = require('./socialStudioCreatorRoutingCompatCore');
 
-// Preserve established Social Studio precedence explicitly:
-// Test -> Role Hierarchy -> Creator Routing Core -> base creator actions.
+async function handle(interaction) {
+  if (await testCompat.handle(interaction)) return true;
+  if (await roleHierarchyCompat.handle(interaction)) return true;
+  if (await core.handle(interaction)) return true;
+  return false;
+}
+
+// Preserve established Social Studio precedence while interactionCreate is
+// migrated to call the explicit compatibility chain above.
 if (!creatorCompat.__socialCompatibilityPrecedenceComposed) {
   const baseHandle = typeof creatorCompat.handle === 'function'
     ? creatorCompat.handle.bind(creatorCompat)
     : async () => false;
 
   creatorCompat.handle = async function handleWithSocialCompatibilityPrecedence(interaction) {
-    if (await testCompat.handle(interaction)) return true;
-    if (await roleHierarchyCompat.handle(interaction)) return true;
-    if (await core.handle(interaction)) return true;
+    if (await handle(interaction)) return true;
     return baseHandle(interaction);
   };
 
@@ -85,4 +90,5 @@ if (!creatorCompat.__socialCompatibilityPrecedenceComposed) {
 }
 
 module.exports = core;
+module.exports.handle = handle;
 module.exports.cleanInheritedRouting = cleanInheritedRouting;
