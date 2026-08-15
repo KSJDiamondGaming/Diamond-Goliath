@@ -18,10 +18,12 @@ const HELPERS = [
 const sessions = new Map();
 let defaultStateFactory = null;
 let stateSync = (state) => state;
+let basePanelFactory = null;
 
-function configure({ defaultState, sync } = {}) {
+function configure({ defaultState, sync, basePanel } = {}) {
   if (typeof defaultState === 'function') defaultStateFactory = defaultState;
   if (typeof sync === 'function') stateSync = sync;
+  if (typeof basePanel === 'function') basePanelFactory = basePanel;
 }
 
 function clone(value) {
@@ -223,9 +225,45 @@ function clearSession(interaction) {
   return sessions.delete(sessionKey(interaction));
 }
 
-function bindPanel(panel, { defaultState, sync } = {}) {
+function applyTemplate(interaction, name) {
+  if (typeof basePanelFactory !== 'function') throw new Error('Embed state is not configured with a basePanel factory.');
+  const current = getSession(interaction);
+  const nextPanel = basePanelFactory(name);
+  return markUnsaved(interaction, stateSync({
+    ...current,
+    template: name,
+    selectedPanelIndex: 0,
+    panels: [nextPanel],
+    selectedPreset: null,
+  }));
+}
+
+function applyPreset(interaction, name, preset = {}) {
+  if (typeof basePanelFactory !== 'function') throw new Error('Embed state is not configured with a basePanel factory.');
+  const current = getSession(interaction);
+  const panels = Array.isArray(preset?.panels) && preset.panels.length
+    ? clone(preset.panels)
+    : [basePanelFactory('custom')];
+  return markUnsaved(interaction, stateSync({
+    ...current,
+    template: preset?.template || 'custom',
+    selectedPreset: name || null,
+    panels,
+    selectedPanelIndex: 0,
+    allowUserPing: !!preset?.allowUserPing,
+    showTimestamp: preset?.showTimestamp !== false,
+    fieldLayout: preset?.fieldLayout || 'auto',
+  }));
+}
+
+function setDefault(interaction, name) {
+  const current = getSession(interaction);
+  return saveSession(interaction, { ...current, selectedPreset: name || null });
+}
+
+function bindPanel(panel, { defaultState, sync, basePanel } = {}) {
   if (!panel || typeof panel !== 'object') return panel;
-  configure({ defaultState, sync });
+  configure({ defaultState, sync, basePanel });
   Object.assign(panel, {
     HELPERS,
     clone,
@@ -248,6 +286,9 @@ function bindPanel(panel, { defaultState, sync } = {}) {
     clearUnsaved,
     resetSession,
     clearSession,
+    applyTemplate,
+    applyPreset,
+    setDefault,
   });
   return panel;
 }
@@ -277,4 +318,7 @@ module.exports = {
   clearUnsaved,
   resetSession,
   clearSession,
+  applyTemplate,
+  applyPreset,
+  setDefault,
 };
