@@ -4,7 +4,6 @@ const templates = require('./embedTemplates');
 const deployments = require('./embedDeployments');
 const panel = require('./embedNavigationCompat');
 const interactions = require('./embedInteractions');
-const tracking = require('./embedTracking');
 const validation = require('./embedValidation');
 
 function getOverview(guildId) {
@@ -30,7 +29,7 @@ module.exports = {
   deployments,
   panel,
   interactions,
-  tracking,
+  tracking: deployments,
   validation,
   health: validation,
 };
