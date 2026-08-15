@@ -2,6 +2,7 @@
 
 const { getWarningsForUser, getWarningCountForUser } = require('../../../core/logging/warnings/warningStore');
 const { createCase } = require('../../../core/logging/cases/caseStore');
+const { sendModLog } = require('../../../core/logging/modlogs/moderationActionLog');
 const ESCALATION_CONFIG = {
   2: { action: 'timeout', duration: '10m' },
   3: { action: 'timeout', duration: '1h' },
