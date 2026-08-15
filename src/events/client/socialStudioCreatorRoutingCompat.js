@@ -67,28 +67,24 @@ installPersistenceGuard();
 const core = require('./socialStudioCreatorRoutingCompatCore');
 const creatorCompat = require('../../modules/socialStudio/socialAlerts/socialStudioCreatorActionCompat');
 
-// Preserve the established Social Studio precedence explicitly here instead of
-// depending on separate clientReady bootstrap files loading alphabetically.
-if (!creatorCompat.__roleHierarchyCompatPatched) {
+// Preserve the established Social Studio precedence in one composed wrapper:
+// Test -> Role Hierarchy -> Creator Routing -> Account Management -> base actions.
+// Creator/account ownership remains inside the core for now; this removes the
+// remaining nested Test/Role monkey-patch chain without changing behavior.
+if (!creatorCompat.__socialCompatibilityPrecedenceComposed) {
   const originalHandle = typeof creatorCompat.handle === 'function'
     ? creatorCompat.handle.bind(creatorCompat)
     : async () => false;
-  creatorCompat.handle = async function handleWithRoleHierarchy(interaction) {
+
+  creatorCompat.handle = async function handleWithSocialCompatibilityPrecedence(interaction) {
+    if (await testCompat.handle(interaction)) return true;
     if (await roleHierarchyCompat.handle(interaction)) return true;
     return originalHandle(interaction);
   };
-  creatorCompat.__roleHierarchyCompatPatched = true;
-}
 
-if (!creatorCompat.__testCompatPatched) {
-  const originalHandle = typeof creatorCompat.handle === 'function'
-    ? creatorCompat.handle.bind(creatorCompat)
-    : async () => false;
-  creatorCompat.handle = async function handleWithSocialTest(interaction) {
-    if (await testCompat.handle(interaction)) return true;
-    return originalHandle(interaction);
-  };
+  creatorCompat.__roleHierarchyCompatPatched = true;
   creatorCompat.__testCompatPatched = true;
+  creatorCompat.__socialCompatibilityPrecedenceComposed = true;
 }
 
 module.exports = core;
