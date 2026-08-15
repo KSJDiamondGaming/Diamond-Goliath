@@ -47,7 +47,9 @@ function getTimeline(guildId, filters = {}) {
     const needle = String(filters.search).toLowerCase();
     entries = entries.filter((entry) => `${entry.module} ${entry.event} ${entry.title} ${entry.message}`.toLowerCase().includes(needle));
   }
-  return entries.slice(0, Math.max(1, Math.min(1000, Number(filters.limit || 100))));
+  const requestedLimit = Number(filters.limit ?? 100);
+  const limit = Number.isFinite(requestedLimit) ? Math.max(1, Math.min(1000, requestedLimit)) : 100;
+  return entries.slice(0, limit);
 }
 
 function clearTimeline(guildId) {
