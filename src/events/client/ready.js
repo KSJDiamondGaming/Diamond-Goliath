@@ -1,6 +1,7 @@
 const { Events } = require('discord.js');
 const terminal = require('../../core/logging/terminalLogger').createLogger('bot');
 const levelingTracking = require('../../modules/communityStudio/leveling/levelingTracking');
+const { startupTranslation } = require('../../modules/utilityStudio/translation/translationStartup');
 const auditStore = require('../../owner/auditIntelligence/auditStore');
 const auditRouter = require('../../owner/auditIntelligence/auditRouter');
 
@@ -261,6 +262,12 @@ module.exports = {
     restoreLockdownReminders(client);
     startBackupWorker();
     startStatusRotation(client);
+
+    try {
+      await startupTranslation(client);
+    } catch (error) {
+      terminal.error(`Failed to recover Translation threads: ${error?.message || error}`);
+    }
 
     try {
       const voiceSessions = levelingTracking.bootstrapVoiceSessions(client);
