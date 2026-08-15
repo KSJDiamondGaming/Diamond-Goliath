@@ -8,41 +8,6 @@ const roleHierarchyCompat = require('../../modules/socialStudio/socialAlerts/soc
 
 const dispatchedInteractions = new WeakSet();
 
-function object(value) {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
-}
-
-function cleanInheritedAccount(accountValue) {
-  const account = { ...object(accountValue), alertChannels: { ...object(accountValue?.alertChannels) } };
-
-  if (account.userRouteBaseCaptured) {
-    account.alertChannelId = account.userRouteBaseChannelId || null;
-    account.alertChannels = { ...object(account.userRouteBaseChannels) };
-    delete account.userRouteBaseCaptured;
-    delete account.userRouteBaseChannelId;
-    delete account.userRouteBaseChannels;
-  }
-
-  if (account.creatorRouteInherited) {
-    account.alertChannelId = account.creatorRoutePreviousChannelId || null;
-    account.alertChannels = { ...object(account.creatorRoutePreviousChannels) };
-    delete account.creatorRouteInherited;
-    delete account.creatorRouteChannelId;
-    delete account.creatorRoutePreviousChannelId;
-    delete account.creatorRoutePreviousChannels;
-  }
-
-  return account;
-}
-
-function cleanInheritedRouting(configValue) {
-  const config = { ...object(configValue), accounts: { ...object(configValue?.accounts) } };
-  for (const [accountId, account] of Object.entries(config.accounts)) {
-    config.accounts[accountId] = cleanInheritedAccount(account);
-  }
-  return config;
-}
-
 const core = require('./socialStudioCreatorRoutingCompatCore');
 
 // Explicit Social Studio compatibility chain. The stable creator-actions
@@ -57,4 +22,3 @@ async function handle(interaction) {
 
 module.exports = core;
 module.exports.handle = handle;
-module.exports.cleanInheritedRouting = cleanInheritedRouting;
