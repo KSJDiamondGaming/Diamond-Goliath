@@ -92,6 +92,53 @@ function installStorageNormalization(panel) {
   return panel;
 }
 
+function installStateCompatibility(panel) {
+  if (!panel || panel.__mediaV2Patched) return panel;
+
+  if (typeof panel.getSession === 'function') {
+    const originalGetSession = panel.getSession.bind(panel);
+    panel.getSession = (interaction) => mediaModel.ensureStateMedia(originalGetSession(interaction));
+  }
+  if (typeof panel.saveSession === 'function') {
+    const originalSaveSession = panel.saveSession.bind(panel);
+    panel.saveSession = (interaction, stateValue) => originalSaveSession(interaction, mediaModel.ensureStateMedia(stateValue));
+  }
+  if (typeof panel.markUnsaved === 'function') {
+    const originalMarkUnsaved = panel.markUnsaved.bind(panel);
+    panel.markUnsaved = (interaction, stateValue) => {
+      const previous = panel.getSession(interaction);
+      return originalMarkUnsaved(interaction, mediaModel.reconcileMediaByPanels(previous, stateValue));
+    };
+  }
+  if (typeof panel.resetSession === 'function') {
+    const originalResetSession = panel.resetSession.bind(panel);
+    panel.resetSession = (interaction) => {
+      const result = originalResetSession(interaction);
+      return panel.saveSession(interaction, mediaModel.ensureStateMedia(result));
+    };
+  }
+  if (typeof panel.applyTemplate === 'function') {
+    const originalApplyTemplate = panel.applyTemplate.bind(panel);
+    panel.applyTemplate = (interaction, name) => {
+      const result = originalApplyTemplate(interaction, name);
+      return panel.saveSession(interaction, mediaModel.ensureStateMedia({ ...result, mediaV2: undefined }));
+    };
+  }
+  if (typeof panel.applyPreset === 'function') {
+    const originalApplyPreset = panel.applyPreset.bind(panel);
+    panel.applyPreset = (interaction, name, preset) => {
+      const result = originalApplyPreset(interaction, name, preset);
+      const restored = mediaModel.ensureStateMedia({ ...result, mediaV2: preset?.mediaV2 || result?.mediaV2 });
+      return panel.saveSession(interaction, restored);
+    };
+  }
+  panel.getPanelMedia = (stateValue, index = null) => mediaModel.mediaForPanel(stateValue, index);
+  panel.setPanelMedia = (stateValue, index, media) => mediaModel.setPanelMedia(stateValue, index, media);
+  panel.mediaModel = mediaModel;
+  panel.__mediaV2Patched = true;
+  return panel;
+}
+
 function enforceLimits(rows = []) {
   return rows.filter(Boolean).slice(0, MAX_ACTION_ROWS).map((row) => {
     if (!Array.isArray(row?.components) || row.components.length <= MAX_COMPONENTS_PER_ROW) return row;
@@ -456,6 +503,7 @@ module.exports = {
   syncLegacyPatch,
   normalizeStoredMediaState,
   installStorageNormalization,
+  installStateCompatibility,
   installUploadModals,
   installMediaOptionsUi,
   installMediaManagerUi,
