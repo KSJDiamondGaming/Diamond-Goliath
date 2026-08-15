@@ -223,10 +223,40 @@ function clearSession(interaction) {
   return sessions.delete(sessionKey(interaction));
 }
 
+function bindPanel(panel, { defaultState, sync } = {}) {
+  if (!panel || typeof panel !== 'object') return panel;
+  configure({ defaultState, sync });
+  Object.assign(panel, {
+    HELPERS,
+    clone,
+    trim,
+    fmtDate,
+    fmtTs,
+    durationFrom,
+    avatar,
+    guildIcon,
+    guildBanner,
+    memberName,
+    displayName,
+    refreshGuild,
+    sessionKey,
+    replaceVars,
+    getSession,
+    saveSession,
+    saveSelected,
+    markUnsaved,
+    clearUnsaved,
+    resetSession,
+    clearSession,
+  });
+  return panel;
+}
+
 module.exports = {
   HELPERS,
   sessions,
   configure,
+  bindPanel,
   clone,
   trim,
   fmtDate,
