@@ -25,6 +25,7 @@ if (!panel.__embedStatePatched) {
 
 mediaCore.installStateCompatibility(panel);
 mediaCore.installPersistentMediaCompatibility(panel);
+mediaCore.installUploadModals(panel);
 
 function textInput(id, label, style, value = '', maxLength = 4000) {
   return new TextInputBuilder().setCustomId(id).setLabel(label).setStyle(style).setRequired(false).setMaxLength(maxLength).setValue(String(value || '').slice(0, maxLength));
@@ -59,34 +60,6 @@ panel.thumbnailModal = (stateValue) => {
     new ActionRowBuilder().addComponents(textInput('source', 'Image URL / variable', TextInputStyle.Short, media.thumbnail?.source || stateValue.thumbnail)),
     new ActionRowBuilder().addComponents(textInput('alt', 'Alt text / description', TextInputStyle.Paragraph, media.thumbnail?.alt || '', 1024)),
   );
-};
-
-panel.galleryItemModal = (stateValue, index = null) => {
-  const media = mediaModel.mediaForPanel(stateValue);
-  const item = Number.isInteger(index) ? media.gallery[index] || {} : {};
-  return new ModalBuilder()
-    .setCustomId(Number.isInteger(index) ? `embed:media-gallery-save:${index}` : 'embed:media-gallery-save-new')
-    .setTitle(Number.isInteger(index) ? 'Edit Media Item' : 'Add Media Item')
-    .addComponents(
-      new ActionRowBuilder().addComponents(textInput('source', 'Media URL / variable', TextInputStyle.Short, item.source || '')),
-      new ActionRowBuilder().addComponents(textInput('alt', 'Alt text / description', TextInputStyle.Paragraph, item.alt || '', 1024)),
-      new ActionRowBuilder().addComponents(textInput('type', 'Type: auto / image / video', TextInputStyle.Short, item.type || 'auto', 10)),
-      new ActionRowBuilder().addComponents(textInput('spoiler', 'Spoiler? yes / no', TextInputStyle.Short, item.spoiler ? 'yes' : 'no', 10)),
-    );
-};
-
-panel.fileItemModal = (stateValue, index = null) => {
-  const media = mediaModel.mediaForPanel(stateValue);
-  const item = Number.isInteger(index) ? media.files[index] || {} : {};
-  return new ModalBuilder()
-    .setCustomId(Number.isInteger(index) ? `embed:media-file-save:${index}` : 'embed:media-file-save-new')
-    .setTitle(Number.isInteger(index) ? 'Edit Attached File' : 'Add Attached File')
-    .addComponents(
-      new ActionRowBuilder().addComponents(textInput('source', 'File URL / variable', TextInputStyle.Short, item.source || '')),
-      new ActionRowBuilder().addComponents(textInput('name', 'Display filename', TextInputStyle.Short, item.name || '', 256)),
-      new ActionRowBuilder().addComponents(textInput('description', 'Description', TextInputStyle.Paragraph, item.description || '', 1024)),
-      new ActionRowBuilder().addComponents(textInput('spoiler', 'Spoiler? yes / no', TextInputStyle.Short, item.spoiler ? 'yes' : 'no', 10)),
-    );
 };
 
 panel.buildMediaManagerPanel = (interaction, who = 'Unknown User') => {
