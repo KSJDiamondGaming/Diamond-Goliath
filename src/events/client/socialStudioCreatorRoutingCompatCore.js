@@ -340,9 +340,4 @@ async function handle(interaction) {
   return false;
 }
 
-module.exports = {
-  name: 'clientReady',
-  once: true,
-  handle,
-  async execute() {},
-};
+module.exports = { handle };
