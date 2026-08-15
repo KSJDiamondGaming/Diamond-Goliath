@@ -1,12 +1,11 @@
 'use strict';
 
-// Legacy compatibility entrypoint retained for callers that still reference it.
-// Creator-channel routing is canonically owned by socialStudioCreatorRoutingCompat.
+// Legacy compatibility entrypoint retained until the core import is removed.
+// Creator-channel routing is owned by socialStudioCreatorRoutingCompat, which
+// the core calls immediately after this compatibility hook.
 
-const creatorRouting = require('./socialStudioCreatorRoutingCompat');
-
-async function handle(interaction) {
-  return creatorRouting.handle(interaction);
+async function handle() {
+  return false;
 }
 
 module.exports = { handle };
