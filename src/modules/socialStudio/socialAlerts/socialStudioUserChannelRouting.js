@@ -104,16 +104,7 @@ function clearRoutesFromAccount(account) {
   account.updatedAt = new Date().toISOString();
 }
 
-function syncUser(config, userId) {
-  const routes = routesFor(config, userId);
-  const hasRoutes = Object.values(routes).some(Boolean);
-  for (const accountId of creatorAccountsForUser(config, userId)) {
-    const account = config.accounts?.[accountId];
-    if (!account) continue;
-    if (hasRoutes) applyRoutesToAccount(account, routes);
-    else clearRoutesFromAccount(account);
-  }
-}
+function syncUser() {}
 
 function routeSummary(routes) {
   const lines = [];
