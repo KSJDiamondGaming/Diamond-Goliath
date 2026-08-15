@@ -14,7 +14,7 @@ const {
 
 const {
   startStatusRotation,
-} = require('../../features/status/statusRotation');
+} = require('../../runtime/statusRotation');
 
 const AUDIT_REGISTRY_REFRESH_MS = 5 * 60 * 1000;
 const AUDIT_LIVE_PROBE_POLL_MS = 1000;
