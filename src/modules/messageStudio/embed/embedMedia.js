@@ -12,7 +12,7 @@ const {
   TextInputStyle,
 } = require('discord.js');
 const mediaModel = require('./embedMediaModel');
-const { validatePanelMedia, statusIcon } = require('./embedMediaValidation');
+const { validatePanelMedia, statusIcon } = require('./embedValidation');
 const { persistPresetMedia } = require('./embedAssetStore');
 
 const MAX_COMPONENTS_PER_ROW = 5;
