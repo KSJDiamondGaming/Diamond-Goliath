@@ -1,7 +1,7 @@
 'use strict';
 
 const { PermissionFlagsBits } = require('discord.js');
-const crypto = require('crypto');
+const crypto = require('node:crypto');
 const security = require('../../../core/security/securityCore');
 const { normalizeAccountInput, migrateAccount } = require('./accountNormalizer');
 const { providerInfo } = require('./socialStudioProviders');
