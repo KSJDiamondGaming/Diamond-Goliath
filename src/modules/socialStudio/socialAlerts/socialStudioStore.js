@@ -430,7 +430,6 @@ function setEnabled(guildId, enabled, meta = {}) {
 
 module.exports = {
   SECTION,
-  CREATOR_DELETE_GRACE_MS,
   normalizeSection,
   getSection,
   getConfig,
