@@ -26,7 +26,7 @@ const {
 const {
   handleEscalation,
   getRepeatReasonInfo,
-} = require('../../../features/moderation/functions/escalationSystem');
+} = require('./escalationSystem');
 
 const NO_EXPIRY_VALUES = new Set(['', 'never', 'none']);
 
