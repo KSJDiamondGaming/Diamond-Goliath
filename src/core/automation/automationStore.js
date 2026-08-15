@@ -23,7 +23,7 @@ function normalizeRule(input = {}) {
     conditions: Array.isArray(input.conditions) ? input.conditions.slice(0, 20) : [],
     actions: Array.isArray(input.actions) && input.actions.length ? input.actions.slice(0, 20) : [{ action: 'log.event', config: {} }],
     createdAt: input.createdAt || now(),
-    updatedAt: now(),
+    updatedAt: input.updatedAt || now(),
   };
 }
 
