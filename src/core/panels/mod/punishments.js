@@ -9,7 +9,7 @@ const {
   ButtonBuilder,
   ButtonStyle,
 } = require('discord.js');
-const db = require('../../../features/moderation/functions/moderationStore');
+const db = require('../../../core/logging/stores/moderationStore');
 const {
   createCase,
   getCaseById,
