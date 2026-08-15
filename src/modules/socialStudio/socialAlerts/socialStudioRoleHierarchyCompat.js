@@ -90,7 +90,7 @@ function roleSelect(interaction, customId, placeholder, selectedIds, page) {
     }).setMinValues(1).setMaxValues(1).setDisabled(true);
   }
 
-  return { row: row(menu), page: safePage, pageCount, pageRoleIds: new Set(pageRoles.map((role) => role.id)) };
+  return { row: row(menu), page: safePage };
 }
 
 function notificationSelect(interaction, config) {
