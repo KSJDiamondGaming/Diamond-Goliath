@@ -71,7 +71,7 @@ let presetStoreApi;
 // embedTemplateManager
 // ============================================================================
 {
-  const crypto = require('crypto');
+  const crypto = require('node:crypto');
   const {
     getGuildSection,
     updateGuildSection,
