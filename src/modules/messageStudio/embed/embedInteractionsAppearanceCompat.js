@@ -1,7 +1,7 @@
 'use strict';
 
 const original = require('./embedInteractionsThumbnailCompat');
-const panel = require('./embedAppearanceCompat');
+const panel = require('./embedPanel');
 const { ensureAssetCached } = require('./embedAssetStore');
 
 function who(i) { return panel.memberName(i); }
