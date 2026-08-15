@@ -17,17 +17,42 @@ const {
   getEmbedDeployment,
   getDeploymentKeyFromState,
 } = require("./embedDeployments");
+const embedState = require("./embedState");
 
 const guildManager = require("../../../core/guild/guildManager");
 const {
   validateChannelAccess,
 } = require("../../../core/security/goliathPermissionGuard");
 
+const {
+  HELPERS,
+  clone,
+  trim,
+  fmtDate,
+  fmtTs,
+  avatar,
+  guildIcon,
+  guildBanner,
+  memberName,
+  displayName,
+  refreshGuild,
+  sessionKey,
+  replaceVars,
+  getSession,
+  saveSession,
+  saveSelected,
+  markUnsaved,
+  clearUnsaved,
+  resetSession,
+  applyTemplate,
+  applyPreset,
+  setDefault,
+} = embedState;
+
 const PANEL_COLOR = "#5865F2";
 const CUSTOM_HEX_VALUE = "__custom_hex__";
 const MAX_PANELS = 10;
 const MAX_BUTTONS = 20;
-const sessions = new Map();
 
 const COLORS = [
   ["Deep Blue", "#2F80ED", "🔷"],
@@ -172,60 +197,6 @@ const TEMPLATES = {
   },
 };
 
-const HELPERS = [
-  "{userId}",
-  "{userTag}",
-  "{userName}",
-  "{userGlobalName}",
-  "{userMention}",
-  "{userNoPing}",
-  "{userAvatar}",
-  "{userServerAvatar}",
-  "{userNickname}",
-  "{userDisplay}",
-  "{userCreatedAt}",
-  "{userCreatedTimestamp}",
-  "{userJoinedAt}",
-  "{userJoinedTimestamp}",
-  "{createdAt}",
-  "{joinedAt}",
-  "{leftAt}",
-  "{timestamp}",
-  "{accountAge}",
-  "{membershipDuration}",
-  "{departureIcon}",
-  "{departureType}",
-  "{departureLabel}",
-  "{departureReason}",
-  "{departureModerator}",
-  "{departureModeratorId}",
-  "{nowTimestamp}",
-  "{successEmoji}",
-  "{warningEmoji}",
-  "{errorEmoji}",
-  "{proofVerifiedEmoji}",
-  "{successColor}",
-  "{warningColor}",
-  "{errorColor}",
-  "{proofVerifiedColor}",
-  "{guildId}",
-  "{guildName}",
-  "{server}",
-  "{guildIcon}",
-  "{serverIcon}",
-  "{guildBanner}",
-  "{guildMemberCount}",
-  "{memberCount}",
-  "{guildVanityCode}",
-];
-
-function clone(v) {
-  return JSON.parse(JSON.stringify(v || {}));
-}
-function trim(v, max = 4096) {
-  v = String(v || "");
-  return v.length > max ? `${v.slice(0, max - 3)}...` : v;
-}
 function discordErrorCode(error) {
   return Number(error?.code || error?.rawError?.code || error?.data?.code || 0);
 }
@@ -269,94 +240,6 @@ function normHex(v, fallback = PANEL_COLOR) {
   const text = String(v || "").trim();
   return validHex(text) ? text.toUpperCase() : fallback;
 }
-function fmtDate(v) {
-  if (!v) return "Unknown";
-  const date = v instanceof Date ? v : new Date(v);
-  return Number.isNaN(date.getTime()) ? "Unknown" : date.toISOString();
-}
-function fmtTs(v) {
-  if (!v) return "Unknown";
-  const date = v instanceof Date ? v : new Date(v);
-  if (Number.isNaN(date.getTime())) return "Unknown";
-  return `<t:${Math.floor(date.getTime() / 1000)}:F>`;
-}
-function avatar(member) {
-  return member?.displayAvatarURL?.({ size: 1024 }) || member?.user?.displayAvatarURL?.({ size: 1024 }) || undefined;
-}
-function guildIcon(guild) {
-  return guild?.iconURL?.({ size: 1024 }) || undefined;
-}
-function guildBanner(guild) {
-  return guild?.bannerURL?.({ size: 2048 }) || undefined;
-}
-function memberName(i) {
-  return i?.member?.displayName || i?.user?.globalName || i?.user?.username || "Unknown User";
-}
-function displayName(member) {
-  return member?.displayName || member?.user?.globalName || member?.user?.username || "Unknown User";
-}
-function refreshGuild(i) {
-  return i?.guild || null;
-}
-function sessionKey(i) {
-  return `${i?.guildId || i?.guild?.id || "global"}:${i?.user?.id || "system"}`;
-}
-function replaceVars(text, i, allowUserPing = false) {
-  let out = String(text ?? "");
-  const guild = i?.guild;
-  const user = i?.user || i?.member?.user;
-  const member = i?.member;
-  const memberCount = guild?.memberCount ?? 0;
-  const vars = {
-    "{userId}": user?.id || "",
-    "{userTag}": user?.tag || user?.username || "",
-    "{userName}": user?.username || "",
-    "{userGlobalName}": user?.globalName || "",
-    "{userMention}": user?.id ? (allowUserPing ? `<@${user.id}>` : `@${displayName(member)}`) : "",
-    "{userNoPing}": user?.id ? `@${displayName(member)}` : "",
-    "{userAvatar}": avatar(member) || user?.displayAvatarURL?.({ size: 1024 }) || "",
-    "{userServerAvatar}": avatar(member) || "",
-    "{userNickname}": member?.nickname || "",
-    "{userDisplay}": displayName(member),
-    "{userCreatedAt}": fmtDate(user?.createdAt),
-    "{userCreatedTimestamp}": fmtTs(user?.createdAt),
-    "{userJoinedAt}": fmtDate(member?.joinedAt),
-    "{userJoinedTimestamp}": fmtTs(member?.joinedAt),
-    "{createdAt}": fmtDate(user?.createdAt),
-    "{joinedAt}": fmtDate(member?.joinedAt),
-    "{leftAt}": fmtDate(new Date()),
-    "{timestamp}": fmtTs(new Date()),
-    "{accountAge}": "",
-    "{membershipDuration}": "",
-    "{departureIcon}": "",
-    "{departureType}": "",
-    "{departureLabel}": "",
-    "{departureReason}": "",
-    "{departureModerator}": "",
-    "{departureModeratorId}": "",
-    "{nowTimestamp}": fmtTs(new Date()),
-    "{successEmoji}": "✅",
-    "{warningEmoji}": "⚠️",
-    "{errorEmoji}": "❌",
-    "{proofVerifiedEmoji}": "✅",
-    "{successColor}": "#57F287",
-    "{warningColor}": "#FEE75C",
-    "{errorColor}": "#ED4245",
-    "{proofVerifiedColor}": "#57F287",
-    "{guildId}": guild?.id || "",
-    "{guildName}": guild?.name || "",
-    "{server}": guild?.name || "",
-    "{guildIcon}": guildIcon(guild) || "",
-    "{serverIcon}": guildIcon(guild) || "",
-    "{guildBanner}": guildBanner(guild) || "",
-    "{guildMemberCount}": String(memberCount),
-    "{memberCount}": String(memberCount),
-    "{guildVanityCode}": guild?.vanityURLCode || "",
-  };
-  for (const [key, value] of Object.entries(vars)) out = out.split(key).join(String(value ?? ""));
-  return out;
-}
-
 function isIconUrl(v) {
   return safeUrl(v);
 }
@@ -401,11 +284,6 @@ function sync(s) {
     buttons: p.buttons || [],
   };
 }
-function saveSelected(s, patch = {}) {
-  const panels = clone(s.panels);
-  panels[s.selectedPanelIndex] = { ...panels[s.selectedPanelIndex], ...clone(patch) };
-  return sync({ ...s, panels });
-}
 function defaultState() {
   const p = basePanel("custom");
   return sync({
@@ -423,27 +301,9 @@ function defaultState() {
     deploymentKey: null,
   });
 }
-function getSession(i) {
-  const key = sessionKey(i);
-  if (!sessions.has(key)) sessions.set(key, defaultState());
-  return sessions.get(key);
-}
-function saveSession(i, state) {
-  const synced = sync(state);
-  sessions.set(sessionKey(i), synced);
-  return synced;
-}
-function markUnsaved(i, state) {
-  return saveSession(i, { ...state, hasUnsavedChanges: true });
-}
-function clearUnsaved(i, state) {
-  return saveSession(i, { ...state, hasUnsavedChanges: false });
-}
-function resetSession(i) {
-  const next = defaultState();
-  sessions.set(sessionKey(i), next);
-  return next;
-}
+
+embedState.configure({ defaultState, sync, basePanel });
+
 function allowedMentions(s) {
   return s.allowUserPing ? { parse: ["users", "roles"] } : { parse: [] };
 }
@@ -455,29 +315,6 @@ function presetData(s) {
     showTimestamp: !!s.showTimestamp,
     fieldLayout: s.fieldLayout || "auto",
   };
-}
-function applyTemplate(i, name) {
-  const s = getSession(i);
-  const p = basePanel(name);
-  return markUnsaved(i, sync({ ...s, template: name, selectedPanelIndex: 0, panels: [p], selectedPreset: null }));
-}
-function applyPreset(i, name, preset) {
-  const s = getSession(i);
-  const panels = Array.isArray(preset?.panels) && preset.panels.length ? clone(preset.panels) : [basePanel("custom")];
-  return markUnsaved(i, sync({
-    ...s,
-    template: preset?.template || "custom",
-    selectedPreset: name || null,
-    panels,
-    selectedPanelIndex: 0,
-    allowUserPing: !!preset?.allowUserPing,
-    showTimestamp: preset?.showTimestamp !== false,
-    fieldLayout: preset?.fieldLayout || "auto",
-  }));
-}
-function setDefault(i, name) {
-  const s = getSession(i);
-  return saveSession(i, { ...s, selectedPreset: name || null });
 }
 function normalizeInlineFields(fields = []) {
   return fields.map((field) => ({ ...field, inline: !!field.inline }));
