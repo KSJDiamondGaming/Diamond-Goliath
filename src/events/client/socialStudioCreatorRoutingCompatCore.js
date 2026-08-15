@@ -1,7 +1,6 @@
 'use strict';
 
-// Install Social Studio automatic-post routing ahead of the main interaction
-// handler without adding another competing interactionCreate listener.
+// Canonical Social Studio creator/account routing core.
 
 const crypto = require('node:crypto');
 const {
@@ -14,7 +13,6 @@ const {
   TextInputBuilder,
   TextInputStyle,
 } = require('discord.js');
-const creatorCompat = require('../../modules/socialStudio/socialAlerts/socialStudioCreatorActionCompat');
 const accountManagement = require('./socialStudioAccountManagementCompat');
 const creatorRoutingCompat = require('../../modules/socialStudio/socialAlerts/socialStudioCreatorRoutingCompat');
 const userChannelRouting = require('../../modules/socialStudio/socialAlerts/socialStudioUserChannelRouting');
@@ -315,7 +313,6 @@ async function handleAccountCreateFlow(interaction) {
   }
 
   setSession(interaction, { platforms: [] });
-  const payload = socialPanel.buildSectionPanel(interaction, 'creators');
   const message = [
     `✅ Added ${created} new social account${created === 1 ? '' : 's'}.`,
     updated ? `Updated ${updated} existing account${updated === 1 ? '' : 's'}.` : null,
@@ -331,30 +328,21 @@ async function handleAccountCreateFlow(interaction) {
   return true;
 }
 
-if (!creatorCompat.__creatorRoutingCompatPatched) {
-  const originalHandle = typeof creatorCompat.handle === 'function'
-    ? creatorCompat.handle.bind(creatorCompat)
-    : async () => false;
+async function handle(interaction) {
+  if (await handleCreatorCreate(interaction)) return true;
+  if (await handleAccountCreateFlow(interaction)) return true;
 
-  creatorCompat.handle = async function handleWithCreatorRouting(interaction) {
-    if (await handleCreatorCreate(interaction)) return true;
-    if (await handleAccountCreateFlow(interaction)) return true;
-
-    // The user/content/channel router owns the new usable multi-user flow and
-    // must run before the older creator-wide compatibility screens.
-    if (await userChannelRouting.handle(interaction)) return true;
-    if (await creatorRoutingCompat.handle(interaction)) return true;
-    if (await accountManagement.handle(interaction)) return true;
-    return originalHandle(interaction);
-  };
-
-  creatorCompat.__creatorRoutingCompatPatched = true;
+  // The user/content/channel router owns the new usable multi-user flow and
+  // must run before the older creator-wide compatibility screens.
+  if (await userChannelRouting.handle(interaction)) return true;
+  if (await creatorRoutingCompat.handle(interaction)) return true;
+  if (await accountManagement.handle(interaction)) return true;
+  return false;
 }
 
 module.exports = {
   name: 'clientReady',
   once: true,
-  async execute() {
-    // Loading this file installs the compatibility wrappers above.
-  },
+  handle,
+  async execute() {},
 };
