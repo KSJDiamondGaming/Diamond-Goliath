@@ -8,6 +8,8 @@
 const store = require('../../modules/socialStudio/socialAlerts/socialStudioStore');
 const creatorRouting = require('../../modules/socialStudio/socialAlerts/socialStudioCreatorRoutingCompat');
 const userRouting = require('../../modules/socialStudio/socialAlerts/socialStudioUserChannelRouting');
+const roleHierarchyCompat = require('../../modules/socialStudio/socialAlerts/socialStudioRoleHierarchyCompat');
+const testCompat = require('../../modules/socialStudio/socialAlerts/socialStudioTestCompat');
 
 function object(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
@@ -60,7 +62,34 @@ creatorRouting.installStoreCompatibility = () => {};
 userRouting.installStoreCompatibility = () => {};
 installPersistenceGuard();
 
-// Requiring the core file installs the existing interaction adapters after the
-// persistence guard/no-op installers above have been established.
-module.exports = require('./socialStudioCreatorRoutingCompatCore');
+// Requiring the core file installs the existing creator/account interaction
+// adapters after the persistence guard/no-op installers above are established.
+const core = require('./socialStudioCreatorRoutingCompatCore');
+const creatorCompat = require('../../modules/socialStudio/socialAlerts/socialStudioCreatorActionCompat');
+
+// Preserve the established Social Studio precedence explicitly here instead of
+// depending on separate clientReady bootstrap files loading alphabetically.
+if (!creatorCompat.__roleHierarchyCompatPatched) {
+  const originalHandle = typeof creatorCompat.handle === 'function'
+    ? creatorCompat.handle.bind(creatorCompat)
+    : async () => false;
+  creatorCompat.handle = async function handleWithRoleHierarchy(interaction) {
+    if (await roleHierarchyCompat.handle(interaction)) return true;
+    return originalHandle(interaction);
+  };
+  creatorCompat.__roleHierarchyCompatPatched = true;
+}
+
+if (!creatorCompat.__testCompatPatched) {
+  const originalHandle = typeof creatorCompat.handle === 'function'
+    ? creatorCompat.handle.bind(creatorCompat)
+    : async () => false;
+  creatorCompat.handle = async function handleWithSocialTest(interaction) {
+    if (await testCompat.handle(interaction)) return true;
+    return originalHandle(interaction);
+  };
+  creatorCompat.__testCompatPatched = true;
+}
+
+module.exports = core;
 module.exports.cleanInheritedRouting = cleanInheritedRouting;
