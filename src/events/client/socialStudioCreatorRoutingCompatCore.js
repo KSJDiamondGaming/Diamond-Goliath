@@ -27,9 +27,6 @@ const LABEL = { twitch: 'Twitch', youtube: 'YouTube', tiktok: 'TikTok', kick: 'K
 const ALERT_TYPES = ['live', 'ended', 'vod', 'clip', 'upload', 'short', 'post'];
 const sessions = new Map();
 
-creatorRoutingCompat.installStoreCompatibility();
-userChannelRouting.installStoreCompatibility();
-
 function sessionKey(interaction) {
   return `${interaction.guildId}:${interaction.user?.id || 'unknown'}`;
 }
