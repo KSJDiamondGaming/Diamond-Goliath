@@ -9,7 +9,6 @@ const store = require('../../modules/socialStudio/socialAlerts/socialStudioStore
 const creatorRouting = require('../../modules/socialStudio/socialAlerts/socialStudioCreatorRoutingCompat');
 const userRouting = require('../../modules/socialStudio/socialAlerts/socialStudioUserChannelRouting');
 const roleHierarchyCompat = require('../../modules/socialStudio/socialAlerts/socialStudioRoleHierarchyCompat');
-const testCompat = require('../../modules/socialStudio/socialAlerts/socialStudioTestCompat');
 
 const dispatchedInteractions = new WeakSet();
 
@@ -71,7 +70,6 @@ const core = require('./socialStudioCreatorRoutingCompatCore');
 async function handle(interaction) {
   if (!interaction || dispatchedInteractions.has(interaction)) return false;
   dispatchedInteractions.add(interaction);
-  if (await testCompat.handle(interaction)) return true;
   if (await roleHierarchyCompat.handle(interaction)) return true;
   if (await core.handle(interaction)) return true;
   return false;
