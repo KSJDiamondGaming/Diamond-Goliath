@@ -1,8 +1,14 @@
 'use strict';
 
 const original = require('./embedInteractionsCore');
-const panel = require('./embedThumbnailCompat');
+const panel = require('./embedPanel');
+const media = require('./embedMedia');
 const { ensureAssetCached } = require('./embedAssetStore');
+
+media.installThumbnailUi(panel);
+panel.getPanelMedia = media.getPanelMedia;
+panel.setPanelMedia = media.setPanelMedia;
+panel.mediaModel = media.mediaModel;
 
 function who(i) { return panel.memberName(i); }
 
