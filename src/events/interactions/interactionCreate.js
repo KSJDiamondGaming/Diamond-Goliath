@@ -23,6 +23,7 @@ const testSecurityCommand = optionalRequire('test security', '../../commands/adm
 const embedPanel = optionalRequire('embed interactions', '../../modules/messageStudio/embed/embedInteractions');
 const duplicator = optionalRequire('duplicator', '../../owner/dev/duplicator');
 const adminPanel = optionalRequire('admin panel', '../../core/admin/functions/adminPanel');
+const restoreRequestManager = optionalRequire('restore requests', '../../core/security/restoreRequestManager');
 const statsAdminPanel = optionalRequire('stats admin', '../../modules/utilityStudio/stats/statsPanel');
 const reactionRolesAdminPanel = optionalRequire('reaction roles admin', '../../modules/roleStudio/reactionRoles/reactionRolesPanel');
 const giveawaysAdminPanel = optionalRequire('giveaways admin', '../../modules/communityStudio/giveaways/giveawaysAdminPanel');
@@ -337,6 +338,10 @@ module.exports = {
       const isTicketRuntimeInteraction = customId.startsWith('ticket_') || customId.startsWith('goliath_ticket_');
       if (isTicketRuntimeInteraction && interaction.guildId && guildManager.isModuleEnabled?.(interaction.guildId, 'tickets') === false) {
         await interaction.reply({ content: '❌ Tickets is currently disabled for this server.', flags: MessageFlags.Ephemeral });
+        return;
+      }
+      if (customId.startsWith('restore_request_')) {
+        if (!await callHandler(restoreRequestManager, 'handleRestoreButton', interaction)) throw new Error(`Restore request handler did not handle ${customId}.`);
         return;
       }
       if (customId.startsWith('admin:automod')) {
