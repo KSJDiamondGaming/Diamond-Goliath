@@ -15,7 +15,7 @@ const panel = require('./embedPreviewCompat');
 const media = require('./embedMedia');
 const { validatePanelMedia, statusIcon } = require('./embedMediaValidation');
 
-media.installStorageCompatibility(panel);
+media.installStorageNormalization(panel);
 
 const MAX_COMPONENTS_PER_ROW = 5;
 const MAX_ACTION_ROWS = 5;
@@ -47,8 +47,8 @@ panel.mediaUploadModal = () => new ModalBuilder()
   );
 
 panel.galleryItemModal = (state, index = null) => {
-  const media = panel.getPanelMedia(state);
-  const item = Number.isInteger(index) ? (media.gallery[index] || {}) : {};
+  const mediaState = panel.getPanelMedia(state);
+  const item = Number.isInteger(index) ? (mediaState.gallery[index] || {}) : {};
   const customId = Number.isInteger(index)
     ? `embed:media-gallery-save:${index}`
     : 'embed:media-gallery-save-new';
@@ -66,8 +66,8 @@ panel.galleryItemModal = (state, index = null) => {
 };
 
 panel.fileItemModal = (state, index = null) => {
-  const media = panel.getPanelMedia(state);
-  const item = Number.isInteger(index) ? (media.files[index] || {}) : {};
+  const mediaState = panel.getPanelMedia(state);
+  const item = Number.isInteger(index) ? (mediaState.files[index] || {}) : {};
   const customId = Number.isInteger(index)
     ? `embed:media-file-save:${index}`
     : 'embed:media-file-save-new';
@@ -123,26 +123,26 @@ function resolvePreviewSource(source, interaction) {
 }
 function validationSummary(interaction) {
   const state = panel.getSession(interaction);
-  const media = panel.getPanelMedia(state);
-  const report = validatePanelMedia(media);
+  const mediaState = panel.getPanelMedia(state);
+  const report = validatePanelMedia(mediaState);
   const lines = ['**Media status**'];
-  if (media.thumbnail?.source) lines.push(`${statusIcon(report.thumbnail.status)} Thumbnail — ${report.thumbnail.message}`);
+  if (mediaState.thumbnail?.source) lines.push(`${statusIcon(report.thumbnail.status)} Thumbnail — ${report.thumbnail.message}`);
   for (const entry of report.gallery) {
     lines.push(`${statusIcon(entry.status)} Gallery ${entry.index + 1} — ${entry.kind === 'auto' ? 'media' : entry.kind} — ${entry.message}`);
   }
   for (const entry of report.files) {
     lines.push(`${statusIcon(entry.status)} File ${entry.index + 1} — ${entry.kind === 'auto' ? 'file' : entry.kind} — ${entry.message}`);
   }
-  if (!media.thumbnail?.source && !report.gallery.length && !report.files.length) lines.push('➖ No media configured yet.');
+  if (!mediaState.thumbnail?.source && !report.gallery.length && !report.files.length) lines.push('➖ No media configured yet.');
   lines.push(`Ready: **${report.ready}** • Warnings: **${report.warnings}** • Invalid: **${report.invalid}**`);
   return lines.join('\n').slice(0, 1500);
 }
 function visualPreview(interaction) {
   const state = panel.getSession(interaction);
-  const media = panel.getPanelMedia(state);
-  const selected = Number.isInteger(state.selectedMediaIndex) ? media.gallery?.[state.selectedMediaIndex] : null;
+  const mediaState = panel.getPanelMedia(state);
+  const selected = Number.isInteger(state.selectedMediaIndex) ? mediaState.gallery?.[state.selectedMediaIndex] : null;
   const selectedSource = resolvePreviewSource(selected?.source, interaction);
-  const thumbnailSource = resolvePreviewSource(media.thumbnail?.source, interaction);
+  const thumbnailSource = resolvePreviewSource(mediaState.thumbnail?.source, interaction);
   const selectedType = String(selected?.type || 'auto').toLowerCase();
 
   if (selected && selectedType === 'video') {
@@ -166,15 +166,15 @@ function visualPreview(interaction) {
 }
 function filePreview(interaction) {
   const state = panel.getSession(interaction);
-  const media = panel.getPanelMedia(state);
-  const index = Number.isInteger(state.selectedFileIndex) && media.files[state.selectedFileIndex]
+  const mediaState = panel.getPanelMedia(state);
+  const index = Number.isInteger(state.selectedFileIndex) && mediaState.files[state.selectedFileIndex]
     ? state.selectedFileIndex
     : null;
   if (index == null) return null;
-  const file = media.files[index];
+  const file = mediaState.files[index];
   const source = resolvePreviewSource(file.source, interaction);
   const lines = [
-    `**File ${index + 1} of ${media.files.length}**`,
+    `**File ${index + 1} of ${mediaState.files.length}**`,
     `**Name:** ${file.name || 'Automatic filename'}`,
     `**Spoiler:** ${file.spoiler ? 'On' : 'Off'}`,
   ];
@@ -186,16 +186,16 @@ function filePreview(interaction) {
 
 panel.buildMediaOptionsPanel = (interaction) => {
   const state = panel.getSession(interaction);
-  const media = panel.getPanelMedia(state);
-  const index = Number.isInteger(state.selectedMediaIndex) && media.gallery[state.selectedMediaIndex]
+  const mediaState = panel.getPanelMedia(state);
+  const index = Number.isInteger(state.selectedMediaIndex) && mediaState.gallery[state.selectedMediaIndex]
     ? state.selectedMediaIndex
     : null;
-  const item = index == null ? null : media.gallery[index];
+  const item = index == null ? null : mediaState.gallery[index];
   if (!item) return panel.buildMediaManagerPanel(interaction, panel.memberName(interaction));
   const type = ['auto', 'image', 'video'].includes(item.type) ? item.type : 'auto';
   return {
     embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('⚙️ Media Options').setDescription([
-      `**Gallery item:** ${index + 1} / ${media.gallery.length}`,
+      `**Gallery item:** ${index + 1} / ${mediaState.gallery.length}`,
       `**Type handling:** ${type === 'auto' ? 'Auto detect' : type === 'image' ? 'Image' : 'Video'}`,
       `**Spoiler:** ${item.spoiler ? 'On' : 'Off'}`,
       '',
@@ -220,15 +220,15 @@ panel.buildMediaOptionsPanel = (interaction) => {
 
 panel.buildFileOptionsPanel = (interaction) => {
   const state = panel.getSession(interaction);
-  const media = panel.getPanelMedia(state);
-  const index = Number.isInteger(state.selectedFileIndex) && media.files[state.selectedFileIndex]
+  const mediaState = panel.getPanelMedia(state);
+  const index = Number.isInteger(state.selectedFileIndex) && mediaState.files[state.selectedFileIndex]
     ? state.selectedFileIndex
     : null;
-  const item = index == null ? null : media.files[index];
+  const item = index == null ? null : mediaState.files[index];
   if (!item) return panel.buildMediaManagerPanel(interaction, panel.memberName(interaction));
   const source = resolvePreviewSource(item.source, interaction);
   const description = [
-    `**File:** ${index + 1} / ${media.files.length}`,
+    `**File:** ${index + 1} / ${mediaState.files.length}`,
     `**Name:** ${item.name || 'Automatic filename'}`,
     `**Spoiler:** ${item.spoiler ? 'On' : 'Off'}`,
     item.description ? `**Description:** ${String(item.description).slice(0, 900)}` : '**Description:** Not set',
@@ -257,9 +257,9 @@ if (!panel.__mediaUploadButtonPatched && typeof panel.buildMediaManagerPanel ===
     const payload = original(interaction, requestedBy);
     const originalRows = Array.isArray(payload?.components) ? payload.components : [];
     const state = panel.getSession(interaction);
-    const media = panel.getPanelMedia(state);
-    const hasSelectedMedia = Number.isInteger(state.selectedMediaIndex) && Boolean(media.gallery[state.selectedMediaIndex]);
-    const hasSelectedFile = Number.isInteger(state.selectedFileIndex) && Boolean(media.files[state.selectedFileIndex]);
+    const mediaState = panel.getPanelMedia(state);
+    const hasSelectedMedia = Number.isInteger(state.selectedMediaIndex) && Boolean(mediaState.gallery[state.selectedMediaIndex]);
+    const hasSelectedFile = Number.isInteger(state.selectedFileIndex) && Boolean(mediaState.files[state.selectedFileIndex]);
 
     const gallerySelect = componentById(originalRows, 'embed:media-gallery-select');
     const fileSelect = componentById(originalRows, 'embed:media-file-select');
