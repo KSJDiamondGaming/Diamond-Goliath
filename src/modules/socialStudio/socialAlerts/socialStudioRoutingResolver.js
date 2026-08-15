@@ -84,9 +84,5 @@ function projectEffectiveAccounts(config) {
 }
 
 module.exports = {
-  creatorFor,
-  linkedUserId,
-  explicitAccountRoutes,
-  resolveSocialRoute,
   projectEffectiveAccounts,
 };
