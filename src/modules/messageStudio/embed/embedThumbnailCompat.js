@@ -9,7 +9,7 @@ const {
   LabelBuilder,
   ModalBuilder,
 } = require('discord.js');
-const panel = require('./embedMediaUploadCompat');
+const panel = require('./embedPreviewCompat');
 
 const MAX_COMPONENTS_PER_ROW = panel.EMBED_COMPONENT_LIMITS?.maxComponentsPerRow || 5;
 const MAX_ACTION_ROWS = panel.EMBED_COMPONENT_LIMITS?.maxActionRows || 5;
