@@ -124,7 +124,6 @@ function getEntitlementSummary(guildId) {
 module.exports = {
   getPlan,
   getSubscription,
-  getCurrentPlanDefinition,
   getFeatures,
   getLimits,
   getLimit,

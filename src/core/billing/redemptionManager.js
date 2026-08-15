@@ -1,7 +1,7 @@
 'use strict';
 
-const crypto = require('crypto');
-const fs = require('fs');
+const crypto = require('node:crypto');
+const fs = require('node:fs');
 
 const { resolveBillingPath } = require('./billingPaths');
 const subscriptionManager = require('./subscriptionManager');
@@ -190,11 +190,8 @@ function revokeCode(code, revokedBy = 'system') {
 }
 
 module.exports = {
-  VALID_DURATIONS,
-  cleanCode,
   generateCodes,
   listCodes,
-  findCode,
   redeemCode,
   revokeCode,
 };

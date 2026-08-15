@@ -2,7 +2,7 @@
 
 // src/modules/utilityStudio/tempVoice/tempVoiceStore.js
 
-const crypto = require('crypto');
+const crypto = require('node:crypto');
 
 const {
   getModuleSection,

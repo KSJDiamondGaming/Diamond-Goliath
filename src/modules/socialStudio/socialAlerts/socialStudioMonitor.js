@@ -51,7 +51,7 @@ function forcePostCreatorLive(...args) {
 async function sweep(client) {
   for (const guild of client?.guilds?.cache?.values?.() || []) {
     try {
-      await checkGuildAccounts(client, guild.id, { force: true });
+      await checkGuildAccounts(client, guild.id);
     } catch (error) {
       console.error(`[Social Studio] automatic check failed for guild ${guild.id}:`, error?.message || error);
     }

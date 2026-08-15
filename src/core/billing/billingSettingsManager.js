@@ -1,6 +1,6 @@
 'use strict';
 
-const fs = require('fs');
+const fs = require('node:fs');
 
 const { resolveBillingPath } = require('./billingPaths');
 
@@ -93,8 +93,6 @@ function updateBillingSettings(updates = {}, actor = 'owner') {
 }
 
 module.exports = {
-  DEFAULT_PRICING,
-  DEFAULT_SETTINGS,
   getBillingSettings,
   updateBillingSettings,
 };

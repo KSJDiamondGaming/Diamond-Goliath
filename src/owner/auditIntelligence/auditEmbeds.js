@@ -343,6 +343,9 @@ function buildUserIntelligenceEmbed(report, sourceGuild) {
   const profile = report?.profile || {};
   const summary = report?.summary || {};
   const history = report?.history || {};
+  const accountMembership = report?.accountMembership || {};
+  const account = accountMembership.account || {};
+  const membership = accountMembership.membership || {};
   const guildState = (report?.currentState?.guilds || []).find((item) => String(item.guildId) === String(sourceGuild?.id));
   const member = guildState?.member || null;
   const latestNames = [...new Set([
@@ -369,6 +372,8 @@ function buildUserIntelligenceEmbed(report, sourceGuild) {
       { name: 'Joined This Guild', value: discordTime(member?.joinedAt, 'F'), inline: true },
       { name: 'Known Guilds', value: `\`${summary.knownGuildCount || 0}\``, inline: true },
       { name: 'Recorded Events', value: `\`${summary.eventCount || 0}\``, inline: true },
+      { name: 'Account & Membership', value: `Discord visible: **${account.knownToDiscord ? 'Yes' : 'No / stored only'}**\nKnown guilds: **${membership.knownGuilds || 0}** • Current: **${membership.currentGuilds || 0}** • Former: **${membership.formerGuilds || 0}** • Unknown: **${membership.unknownGuilds || 0}**\nLive visible: **${membership.liveVisibleGuilds || 0}**\nEarliest live join: ${discordTime(membership.earliestLiveJoinAt, 'F')}\nLatest live join: ${discordTime(membership.latestLiveJoinAt, 'F')}`, inline: false },
+      { name: 'Live Membership Restrictions', value: `Pending screening: **${membership.pendingGuilds || 0}** guild(s)\nActive timeout: **${membership.timedOutGuilds || 0}** guild(s)`, inline: false },
       { name: 'Moderation History', value: `\`${summary.moderationCount || 0}\` events`, inline: true },
       { name: 'Role Changes', value: `\`${summary.roleChangeCount || 0}\``, inline: true },
       { name: 'Voice Events', value: `\`${summary.voiceEventCount || 0}\``, inline: true },
@@ -390,9 +395,13 @@ function buildUserIntelligenceControls() {
       new ButtonBuilder().setCustomId('owner:audit:moderation').setLabel('Moderation').setEmoji('🛡️').setStyle(ButtonStyle.Secondary),
     ),
     new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('owner:audit:account').setLabel('Account & Membership').setEmoji('👥').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId('owner:audit:evidence').setLabel('Evidence Summary').setEmoji('📌').setStyle(ButtonStyle.Primary),
       new ButtonBuilder().setCustomId('owner:audit:roles').setLabel('Roles').setEmoji('🎭').setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId('owner:audit:voice').setLabel('Voice').setEmoji('🔊').setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId('owner:audit:timeline').setLabel('Timeline').setEmoji('🕒').setStyle(ButtonStyle.Secondary),
+    ),
+    new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId('owner:audit:actions').setLabel('Actions Performed').setEmoji('👤').setStyle(ButtonStyle.Primary),
     ),
   ];
@@ -410,6 +419,8 @@ function buildUserIntelligenceSectionEmbed(report, section, sourceGuild) {
   const titleMap = {
     deep: '🔎 Deep Scan',
     identity: '🏷️ Identity History',
+    account: '👥 Account & Membership',
+    evidence: '📌 Evidence Summary',
     guilds: '🏰 Guild History',
     moderation: '🛡️ Moderation History',
     roles: '🎭 Role History',
@@ -477,6 +488,44 @@ function buildUserIntelligenceSectionEmbed(report, section, sourceGuild) {
     return embed;
   }
 
+  if (section === 'account') {
+    const accountMembership = report?.accountMembership || {};
+    const account = accountMembership.account || {};
+    const membership = accountMembership.membership || {};
+    const currentMemberships = (accountMembership.currentMemberships || []).map((item) => {
+      const highest = item.highestRole?.name || item.highestRole?.id || 'None';
+      const restrictions = [item.pending ? 'pending screening' : null, item.timedOutUntil ? `timeout until ${discordTime(item.timedOutUntil, 'F')}` : null].filter(Boolean).join(' • ');
+      return `• **${item.guildName || item.guildId || 'Unknown guild'}** — joined ${discordTime(item.joinedAt, 'F')}\n  Roles: **${item.roleCount || 0}** • Highest: **${highest}**${restrictions ? `\n  ${restrictions}` : ''}`;
+    }).join('\n') || 'No current live memberships visible.';
+    const formerMemberships = (accountMembership.formerMemberships || []).map((item) => `• **${item.guildName || item.guildId || 'Unknown guild'}** — last seen ${discordTime(item.lastObservedAt, 'R')} • left ${discordTime(item.lastLeftAt || item.lastObservedAt, 'R')}`).join('\n') || 'None recorded.';
+    const unknownMemberships = (accountMembership.unknownMemberships || []).map((item) => `• **${item.guildName || item.guildId || 'Unknown guild'}** — historical-only state • last seen ${discordTime(item.lastObservedAt, 'R')}`).join('\n') || 'None recorded.';
+    embed.setDescription(`Account and membership state for <@${report.userId}> using live Discord visibility plus reconciled Goliath history.`).addFields(
+      { name: 'Discord Account', value: `Visible to Discord now: **${account.knownToDiscord ? 'Yes' : 'No / stored only'}**\nBot account: **${account.bot === true ? 'Yes' : account.bot === false ? 'No' : 'Unknown'}**\nCreated: ${discordTime(account.accountCreatedAt, 'F')}`, inline: false },
+      { name: 'Membership Overview', value: `Known guilds: **${membership.knownGuilds || 0}**\nCurrent: **${membership.currentGuilds || 0}** • Former: **${membership.formerGuilds || 0}** • Unknown: **${membership.unknownGuilds || 0}**\nLive visible: **${membership.liveVisibleGuilds || 0}**\nPending screening: **${membership.pendingGuilds || 0}** • Active timeouts: **${membership.timedOutGuilds || 0}**`, inline: false },
+      { name: 'Live Join Range', value: `Earliest visible join: ${discordTime(membership.earliestLiveJoinAt, 'F')}\nLatest visible join: ${discordTime(membership.latestLiveJoinAt, 'F')}`, inline: false },
+      { name: 'Current Memberships', value: compact(currentMemberships, 1024), inline: false },
+      { name: 'Former Memberships', value: compact(formerMemberships, 1024), inline: false },
+      { name: 'Unknown / Historical-only Memberships', value: compact(unknownMemberships, 1024), inline: false },
+    );
+    return embed;
+  }
+
+  if (section === 'evidence') {
+    const evidence = report?.evidenceSummary || {};
+    const timeouts = (evidence.activeTimeouts || []).map((item) => `• **${item.guildName || item.guildId || 'Unknown guild'}** — until ${discordTime(item.timedOutUntil, 'F')}`).join('\n') || 'None active.';
+    const pending = (evidence.pendingScreening || []).map((item) => `• **${item.guildName || item.guildId || 'Unknown guild'}**`).join('\n') || 'None pending.';
+    embed.setDescription(`Factual, evidence-backed observations for <@${report.userId}>. **No behavioural or risk score is calculated.**`).addFields(
+      { name: 'Evidence Policy', value: evidence.note || 'Factual evidence summary only. Goliath does not calculate a behavioural or risk score.', inline: false },
+      { name: 'Moderation Evidence', value: `Recorded moderation events: **${evidence.moderationEvents || 0}**\nLatest moderation: ${discordTime(evidence.latestModerationAt, 'R')}\nWithout attributed actor: **${evidence.moderationWithoutAttributedActor || 0}**`, inline: false },
+      { name: 'Live Restrictions', value: `Active timeout guilds: **${(evidence.activeTimeouts || []).length}**\nPending screening guilds: **${(evidence.pendingScreening || []).length}**`, inline: false },
+      { name: 'Active Timeouts', value: compact(timeouts, 1024), inline: false },
+      { name: 'Pending Membership Screening', value: compact(pending, 1024), inline: false },
+      { name: 'Membership Evidence', value: `Observed joins: **${evidence.observedJoins || 0}** • Observed leaves: **${evidence.observedLeaves || 0}**\nKnown guilds: **${evidence.knownGuilds || 0}** • Current: **${evidence.currentGuilds || 0}** • Former: **${evidence.formerGuilds || 0}**`, inline: false },
+      { name: 'Identity Evidence', value: `Distinct observed username/global/display-name values: **${evidence.observedIdentityValues || 0}**`, inline: false },
+    );
+    return embed;
+  }
+
   if (section === 'guilds') {
     const guilds = Object.values(stored.guilds || {});
     embed.setDescription(listLines(guilds, (guild) => `**${guild.guildName || guild.guildId}** — first seen ${discordTime(guild.firstObservedAt, 'F')} — last seen ${discordTime(guild.lastObservedAt, 'R')} — ${guild.currentMember === true ? 'current member' : guild.currentMember === false ? 'former member' : 'membership unknown'} — ${guild.eventCount || 0} events`, 20));
@@ -484,17 +533,101 @@ function buildUserIntelligenceSectionEmbed(report, section, sourceGuild) {
   }
 
   if (section === 'moderation') {
-    embed.setDescription(listLines(history.moderation, (item) => `**${item.type || 'moderation'}** — ${discordTime(item.timestamp, 'F')} — ${item.reason || 'No reason recorded'}${item.actorId ? ` — actor <@${item.actorId}>` : ''}`, 20));
+    const moderation = report?.moderation || {};
+    const environments = (moderation.environments || []).map((mode) => `\`${mode}\``).join(' • ') || 'None recorded';
+    const topTypes = (moderation.topTypes || []).map((item) => `• \`${item.key}\` — **${item.count}**`).join('\n') || 'None recorded.';
+    const topGuilds = (moderation.topGuilds || []).map((item) => `• **${item.key}** — ${item.count}`).join('\n') || 'None recorded.';
+    const topActors = (moderation.topActors || []).map((item) => `• <@${item.key}> — **${item.count}**`).join('\n') || 'None attributed.';
+    const recent = (moderation.recent || []).map((item) => {
+      const actor = item.actorId ? `<@${item.actorId}>` : 'Unknown actor';
+      const reason = item.reason ? ` — ${String(item.reason).slice(0, 120)}` : ' — No reason recorded';
+      return `• ${discordTime(item.timestamp, 'R')} — \`${item.type || 'moderation'}\` — **${item.guildName || item.guildId || 'Unknown guild'}** — ${actor}${reason}`;
+    }).join('\n') || 'No moderation events recorded.';
+    const first = moderation.first ? `\`${moderation.first.type || 'moderation'}\` in **${moderation.first.guildName || moderation.first.guildId || 'Unknown guild'}** • ${discordTime(moderation.first.timestamp, 'F')}` : 'None recorded.';
+    const latest = moderation.latest ? `\`${moderation.latest.type || 'moderation'}\` in **${moderation.latest.guildName || moderation.latest.guildId || 'Unknown guild'}** • ${discordTime(moderation.latest.timestamp, 'R')}${moderation.latest.actorId ? `\nActor: <@${moderation.latest.actorId}>` : '\nActor: unresolved'}${moderation.latest.reason ? `\nReason: ${String(moderation.latest.reason).slice(0, 180)}` : '\nReason: not recorded'}` : 'None recorded.';
+    embed.setDescription(`Cross-environment moderation intelligence for <@${report.userId}> based only on moderation events Goliath has actually observed.`).addFields(
+      { name: 'Moderation Overview', value: `Total events: **${moderation.total || 0}**\nWith reason: **${moderation.reasoned || 0}** • Without reason: **${moderation.withoutReason || 0}**\nDistinct attributed actors: **${moderation.attributedActorCount || 0}**\nUnresolved actor events: **${moderation.unresolvedActor || 0}**`, inline: false },
+      { name: 'Environment Coverage', value: environments, inline: false },
+      { name: 'First Recorded Moderation', value: compact(first, 1024), inline: false },
+      { name: 'Latest Moderation', value: compact(latest, 1024), inline: false },
+      { name: 'Top Moderation Types', value: compact(topTypes, 1024), inline: true },
+      { name: 'Top Guilds', value: compact(topGuilds, 1024), inline: true },
+      { name: 'Top Attributed Actors', value: compact(topActors, 1024), inline: false },
+      { name: 'Recent Moderation History', value: compact(recent, 1024), inline: false },
+    );
     return embed;
   }
 
   if (section === 'roles') {
-    embed.setDescription(listLines(history.roles, (item) => `**${discordTime(item.timestamp, 'F')}** — +${(item.added || []).map((role) => role.name || role.id).join(', ') || 'none'} / -${(item.removed || []).map((role) => role.name || role.id).join(', ') || 'none'} — ${item.guildName || item.guildId || 'Unknown guild'}`, 20));
+    const roles = report?.roles || {};
+    const topTypes = (roles.topTypes || []).map((item) => `• \`${item.key}\` — **${item.count}**`).join('\n') || 'None recorded.';
+    const topGuilds = (roles.topGuilds || []).map((item) => `• **${item.key}** — ${item.count}`).join('\n') || 'None recorded.';
+    const topActors = (roles.topActors || []).map((item) => `• <@${item.key}> — **${item.count}**`).join('\n') || 'None attributed.';
+    const live = (roles.liveGuilds || []).map((item) => {
+      const member = item.member || {};
+      const roleNames = (member.roles || []).slice(0, 12).map((role) => role.name || role.id).join(', ') || 'No roles';
+      const highest = member.highestRole?.name || member.highestRole?.id || 'None';
+      return `• **${item.guildName || item.guildId || 'Unknown guild'}** — ${roleNames}\n  Highest: **${highest}**`;
+    }).join('\n') || 'No live guild role state visible.';
+    const recent = (roles.recent || []).map((item) => {
+      const actor = item.actorId ? `<@${item.actorId}>` : 'Unknown actor';
+      const added = (item.added || []).map((role) => role.name || role.id).join(', ') || 'none';
+      const removed = (item.removed || []).map((role) => role.name || role.id).join(', ') || 'none';
+      return `• ${discordTime(item.timestamp, 'R')} — \`${item.type || 'member.roles'}\` — **${item.guildName || item.guildId || 'Unknown guild'}** — ${actor}\n  + ${added} / - ${removed}`;
+    }).join('\n') || 'No role changes recorded.';
+    const first = roles.first ? `\`${roles.first.type || 'member.roles'}\` in **${roles.first.guildName || roles.first.guildId || 'Unknown guild'}** • ${discordTime(roles.first.timestamp, 'F')}` : 'None recorded.';
+    const latest = roles.latest ? `\`${roles.latest.type || 'member.roles'}\` in **${roles.latest.guildName || roles.latest.guildId || 'Unknown guild'}** • ${discordTime(roles.latest.timestamp, 'R')}${roles.latest.actorId ? `\nActor: <@${roles.latest.actorId}>` : '\nActor: unresolved'}` : 'None recorded.';
+    embed.setDescription(`Cross-environment role intelligence for <@${report.userId}> based on role changes and live guild state Goliath can actually observe.`).addFields(
+      { name: 'Role Change Overview', value: `Total changes: **${roles.total || 0}**\nAdd events: **${roles.additions || 0}** • Remove events: **${roles.removals || 0}** • Replacement/mixed: **${roles.replacements || 0}**\nDistinct attributed actors: **${roles.attributedActorCount || 0}**\nUnresolved actor events: **${roles.unresolvedActor || 0}**`, inline: false },
+      { name: 'Current Role State', value: `Live guilds: **${roles.liveGuildCount || 0}**\nUnique current roles: **${roles.uniqueCurrentRoleCount || 0}**`, inline: false },
+      { name: 'First Recorded Role Change', value: compact(first, 1024), inline: false },
+      { name: 'Latest Role Change', value: compact(latest, 1024), inline: false },
+      { name: 'Top Role Event Types', value: compact(topTypes, 1024), inline: true },
+      { name: 'Top Guilds', value: compact(topGuilds, 1024), inline: true },
+      { name: 'Top Attributed Actors', value: compact(topActors, 1024), inline: false },
+      { name: 'Live Roles by Guild', value: compact(live, 1024), inline: false },
+      { name: 'Recent Role History', value: compact(recent, 1024), inline: false },
+    );
     return embed;
   }
 
   if (section === 'voice') {
-    embed.setDescription(listLines(history.voice, (item) => `**${discordTime(item.timestamp, 'F')}** — ${item.guildName || item.guildId || 'Unknown guild'} — ${item.before?.channelId || 'none'} → ${item.after?.channelId || 'none'}`, 20));
+    const voice = report?.voice || {};
+    const current = voice.current || {};
+    const topTypes = (voice.topTypes || []).map((item) => `• \`${item.key}\` — **${item.count}**`).join('\n') || 'None recorded.';
+    const topGuilds = (voice.topGuilds || []).map((item) => `• **${item.key}** — ${item.count}`).join('\n') || 'None recorded.';
+    const topChannels = (voice.topChannels || []).map((item) => `• <#${item.key}> — **${item.count}** observations`).join('\n') || 'None recorded.';
+    const live = (current.guilds || []).map((item) => {
+      const state = item.voice || {};
+      const location = state.channelId ? `<#${state.channelId}>` : 'Not connected';
+      const flags = [
+        state.streaming ? 'streaming' : null,
+        state.selfVideo ? 'video' : null,
+        state.serverMute ? 'server-muted' : null,
+        state.serverDeaf ? 'server-deafened' : null,
+        state.selfMute ? 'self-muted' : null,
+        state.selfDeaf ? 'self-deafened' : null,
+      ].filter(Boolean).join(', ');
+      return `• **${item.guildName || item.guildId || 'Unknown guild'}** — ${location}${flags ? ` — ${flags}` : ''}`;
+    }).join('\n') || 'No live voice state visible.';
+    const recent = (voice.recent || []).map((item) => {
+      const before = item.before?.channelId ? `<#${item.before.channelId}>` : 'none';
+      const after = item.after?.channelId ? `<#${item.after.channelId}>` : 'none';
+      return `• ${discordTime(item.timestamp, 'R')} — \`${item.type || 'voice.update'}\` — **${item.guildName || item.guildId || 'Unknown guild'}** — ${before} → ${after}`;
+    }).join('\n') || 'No voice events recorded.';
+    const first = voice.first ? `\`${voice.first.type || 'voice.update'}\` in **${voice.first.guildName || voice.first.guildId || 'Unknown guild'}** • ${discordTime(voice.first.timestamp, 'F')}` : 'None recorded.';
+    const latest = voice.latest ? `\`${voice.latest.type || 'voice.update'}\` in **${voice.latest.guildName || voice.latest.guildId || 'Unknown guild'}** • ${discordTime(voice.latest.timestamp, 'R')}\n${voice.latest.before?.channelId ? `<#${voice.latest.before.channelId}>` : 'none'} → ${voice.latest.after?.channelId ? `<#${voice.latest.after.channelId}>` : 'none'}` : 'None recorded.';
+    embed.setDescription(`Cross-environment voice intelligence for <@${report.userId}> based only on voice state Goliath has actually observed and can currently see.`).addFields(
+      { name: 'Voice Activity Overview', value: `Total events: **${voice.total || 0}**\nJoins: **${voice.joins || 0}** • Leaves: **${voice.leaves || 0}** • Moves: **${voice.moves || 0}**\nOther state changes: **${voice.stateChanges || 0}**`, inline: false },
+      { name: 'Current Live Voice State', value: `Visible guilds: **${current.visibleGuilds || 0}** • Connected: **${current.connectedGuilds || 0}**\nStreaming: **${current.streamingGuilds || 0}** • Video: **${current.videoGuilds || 0}**\nServer muted: **${current.serverMutedGuilds || 0}** • Server deafened: **${current.serverDeafenedGuilds || 0}**\nSelf muted: **${current.selfMutedGuilds || 0}** • Self deafened: **${current.selfDeafenedGuilds || 0}**`, inline: false },
+      { name: 'First Recorded Voice Event', value: compact(first, 1024), inline: false },
+      { name: 'Latest Voice Event', value: compact(latest, 1024), inline: false },
+      { name: 'Top Voice Event Types', value: compact(topTypes, 1024), inline: true },
+      { name: 'Top Guilds', value: compact(topGuilds, 1024), inline: true },
+      { name: 'Most Seen Voice Channels', value: compact(topChannels, 1024), inline: false },
+      { name: 'Live Voice State by Guild', value: compact(live, 1024), inline: false },
+      { name: 'Recent Voice History', value: compact(recent, 1024), inline: false },
+    );
     return embed;
   }
 

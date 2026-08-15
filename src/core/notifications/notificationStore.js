@@ -1,6 +1,6 @@
 'use strict';
 
-const crypto = require('crypto');
+const crypto = require('node:crypto');
 const { getGuildSection, updateGuildSection } = require('../guild/guildManager');
 const activity = require('../../features/activity/activityStore');
 
@@ -34,7 +34,9 @@ function listNotifications(guildId, options = {}) {
   if (options.unreadOnly) items = items.filter((item) => !item.read);
   if (options.source) items = items.filter((item) => item.source === options.source);
   if (options.level) items = items.filter((item) => item.level === options.level);
-  return items.slice(0, Math.max(1, Math.min(200, Number(options.limit || 100))));
+  const requestedLimit = Number(options.limit ?? 100);
+  const limit = Number.isFinite(requestedLimit) ? Math.max(1, Math.min(300, requestedLimit)) : 100;
+  return items.slice(0, limit);
 }
 
 function mirrorActivity(guildId, notification) {
@@ -73,7 +75,8 @@ function addNotification(guildId, input = {}) {
 
 function addNotificationOnce(guildId, input = {}, options = {}) {
   const fingerprint = text(options.fingerprint || input.metadata?.fingerprint || `${input.source || 'system'}:${input.title || 'Notification'}`, 200);
-  const windowMs = Math.max(60_000, Number(options.windowMs || 10 * 60_000));
+  const requestedWindowMs = Number(options.windowMs ?? 10 * 60_000);
+  const windowMs = Number.isFinite(requestedWindowMs) ? Math.max(60_000, requestedWindowMs) : 10 * 60_000;
   const cutoff = Date.now() - windowMs;
   const existing = listNotifications(guildId, { limit: 300 }).find((item) => {
     const itemFingerprint = item.metadata?.fingerprint || `${item.source}:${item.title}`;

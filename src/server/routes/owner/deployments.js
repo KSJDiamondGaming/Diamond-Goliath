@@ -1,9 +1,9 @@
 'use strict';
 
 const express = require('express');
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const { resolveBotMode, resolveRuntimePath } = require('../../../config/runtimePaths');
 const notifications = require('../../../core/notifications/notificationStore');
 const security = require('../../../core/security/securityCore');

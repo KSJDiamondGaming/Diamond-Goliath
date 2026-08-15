@@ -105,11 +105,5 @@ async function loginWithRetry(client, token, options = {}) {
 }
 
 module.exports = {
-  DEFAULT_MAX_ATTEMPTS,
-  DEFAULT_BASE_DELAY_MS,
-  DEFAULT_MAX_DELAY_MS,
-  isPermanentLoginError,
-  isTransientLoginError,
-  retryDelay,
   loginWithRetry,
 };

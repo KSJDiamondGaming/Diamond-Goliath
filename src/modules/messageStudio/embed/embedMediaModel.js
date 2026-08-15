@@ -81,14 +81,10 @@ function reconcileMediaByPanels(previous = {}, next = {}) {
   const oldMedia = oldState.mediaV2.panels;
   const oldSignatures = oldPanels.map(panelSignature);
   const nextSignatures = nextPanels.map(panelSignature);
-
-  // Normal edits keep panel identity by index. Only remap when the set/order of
-  // panels clearly changed (add/remove/duplicate/reorder).
   if (oldPanels.length === nextPanels.length) {
     const sameMultiset = [...oldSignatures].sort().join('\n') === [...nextSignatures].sort().join('\n');
     if (!sameMultiset) return { ...next, mediaV2: normalizeMediaV2(oldState.mediaV2, nextPanels) };
   }
-
   const used = new Set();
   const mapped = nextPanels.map((panel, nextIndex) => {
     const signature = nextSignatures[nextIndex];

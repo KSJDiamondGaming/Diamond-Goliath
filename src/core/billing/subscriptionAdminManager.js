@@ -1,7 +1,7 @@
 'use strict';
 
-const fs = require('fs');
-const path = require('path');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const guildManager = require('../guild/guildManager');
 const { resolveBillingPath } = require('./billingPaths');
@@ -211,7 +211,6 @@ function processExpiredSubscriptions({ actor = 'subscription_worker' } = {}) {
 module.exports = {
   listSubscriptions,
   listHistory,
-  addHistory,
   grantSubscription,
   extendSubscription,
   removeSubscription,

@@ -29,7 +29,11 @@ function canManagePrefix(message) {
 
 function getGuildSettings(message) {
   try {
-    return guildManager.getGuildData(message.guild.id)?.generalSettings || {};
+    return guildManager.getGuildSection(
+      message.guild.id,
+      'generalSettings',
+      guildManager.DEFAULT_GENERAL_SETTINGS
+    );
   } catch {
     return {};
   }

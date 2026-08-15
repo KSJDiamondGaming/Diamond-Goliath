@@ -88,9 +88,6 @@ function assertCanCreateResource(guildId, limitKey, currentCount = 0, options = 
 
 module.exports = {
   LIMIT_LABELS,
-  getPlanLimit,
-  getPlanLimitSummary,
-  hasUnlimitedLimit,
   canCreateResource,
   assertCanCreateResource,
   createLimitError,

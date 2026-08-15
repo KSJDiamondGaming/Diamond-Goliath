@@ -3,56 +3,37 @@ const { normalizeBotMode } = require('../../config/botModes');
 
 const STATUS_INTERVAL_MS = 180_000;
 
-function getMode(client) {
-  return normalizeBotMode(client.botMode || process.env.BOT_MODE);
-}
+const DEV_ACTIVITIES = [
+  { name: '🔵 DEV | Building Goliath', type: ActivityType.Watching },
+  { name: '🧪 Testing New Modules', type: ActivityType.Playing },
+  { name: '🛠️ KSJ Development Server', type: ActivityType.Watching },
+  { name: '⚙️ Dashboard Changes', type: ActivityType.Watching },
+  { name: '📊 Dashboard Online', type: ActivityType.Watching },
+  { name: '🎟️ Ticket System Tests', type: ActivityType.Playing },
+  { name: '📋 Forms Engine Tests', type: ActivityType.Watching },
+  { name: '🌐 Translation Hub Tests', type: ActivityType.Competing },
+  { name: '🔒 Security Center Checks', type: ActivityType.Watching },
+  { name: '💾 Backup System Tests', type: ActivityType.Watching },
+];
 
-function getTotalMembers(client) {
-  return client.guilds.cache.reduce(
-    (total, guild) => total + (guild.memberCount || 0),
-    0
-  );
-}
-
-function getDynamicStats(client) {
-  return {
-    guildCount: client.guilds.cache.size,
-    memberCount: getTotalMembers(client).toLocaleString(),
-  };
-}
-
-function buildDevActivities() {
-  return [
-    { name: '🔵 DEV | Building Goliath', type: ActivityType.Watching },
-    { name: '🧪 Testing New Modules', type: ActivityType.Playing },
-    { name: '🛠️ KSJ Development Server', type: ActivityType.Watching },
-    { name: '⚙️ Dashboard Changes', type: ActivityType.Watching },
-    { name: '📊 Dashboard Online', type: ActivityType.Watching },
-    { name: '🎟️ Ticket System Tests', type: ActivityType.Playing },
-    { name: '📋 Forms Engine Tests', type: ActivityType.Watching },
-    { name: '🌐 Translation Hub Tests', type: ActivityType.Competing },
-    { name: '🔒 Security Center Checks', type: ActivityType.Watching },
-    { name: '💾 Backup System Tests', type: ActivityType.Watching },
-  ];
-}
-
-function buildBetaActivities() {
-  return [
-    { name: '🟡 BETA | Staging Goliath', type: ActivityType.Watching },
-    { name: '🚧 Testing Upcoming Features', type: ActivityType.Playing },
-    { name: '🔍 Watching Beta Feedback', type: ActivityType.Watching },
-    { name: '⚡ Stability Testing', type: ActivityType.Competing },
-    { name: '📊 Dashboard Online', type: ActivityType.Watching },
-    { name: '🎟️ Validating Ticket Tools', type: ActivityType.Watching },
-    { name: '📋 Reviewing Forms Flow', type: ActivityType.Watching },
-    { name: '🌐 Testing Translation Hub', type: ActivityType.Competing },
-    { name: '🛡️ Security Systems Online', type: ActivityType.Watching },
-    { name: '💾 Backup Systems Ready', type: ActivityType.Watching },
-  ];
-}
+const BETA_ACTIVITIES = [
+  { name: '🟡 BETA | Staging Goliath', type: ActivityType.Watching },
+  { name: '🚧 Testing Upcoming Features', type: ActivityType.Playing },
+  { name: '🔍 Watching Beta Feedback', type: ActivityType.Watching },
+  { name: '⚡ Stability Testing', type: ActivityType.Competing },
+  { name: '📊 Dashboard Online', type: ActivityType.Watching },
+  { name: '🎟️ Validating Ticket Tools', type: ActivityType.Watching },
+  { name: '📋 Reviewing Forms Flow', type: ActivityType.Watching },
+  { name: '🌐 Testing Translation Hub', type: ActivityType.Competing },
+  { name: '🛡️ Security Systems Online', type: ActivityType.Watching },
+  { name: '💾 Backup Systems Ready', type: ActivityType.Watching },
+];
 
 function buildProductionActivities(client) {
-  const { guildCount, memberCount } = getDynamicStats(client);
+  const guildCount = client.guilds.cache.size;
+  const memberCount = client.guilds.cache
+    .reduce((total, guild) => total + (guild.memberCount || 0), 0)
+    .toLocaleString();
 
   return [
     { name: '🟢 Goliath | Protecting Servers', type: ActivityType.Watching },
@@ -71,17 +52,17 @@ function buildProductionActivities(client) {
 }
 
 function buildActivities(client) {
-  const mode = getMode(client);
+  const mode = normalizeBotMode(client.botMode || process.env.BOT_MODE);
 
   if (mode === 'PRODUCTION') {
     return buildProductionActivities(client);
   }
 
   if (mode === 'BETA') {
-    return buildBetaActivities();
+    return BETA_ACTIVITIES;
   }
 
-  return buildDevActivities();
+  return DEV_ACTIVITIES;
 }
 
 function startStatusRotation(client) {
@@ -89,7 +70,6 @@ function startStatusRotation(client) {
 
   if (client.statusRotationInterval) {
     clearInterval(client.statusRotationInterval);
-    client.statusRotationInterval = null;
   }
 
   const initialActivities = buildActivities(client);

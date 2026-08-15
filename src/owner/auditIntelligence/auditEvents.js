@@ -301,6 +301,13 @@ async function buildStructurePanel(client, interaction) {
 function intelligenceMemberLabel(member) {
   return member?.displayName || member?.user?.globalName || member?.user?.username || member?.id || 'Unknown user';
 }
+function intelligenceMatchKindLabel(kind) {
+  return ({ id: 'ID', username: 'username', globalName: 'global name', displayName: 'display name', nickname: 'nickname', liveSearch: 'live Discord search' })[kind] || String(kind || 'identity');
+}
+function intelligenceMatchEvidence(match) {
+  if (!match?.matchedOn || match.matchedValue == null) return null;
+  return `Matched ${intelligenceMatchKindLabel(match.matchedOn)}: \`${String(match.matchedValue).slice(0, 80)}\``;
+}
 function intelligenceSearchModal() {
   const input = new TextInputBuilder()
     .setCustomId('query')
@@ -322,6 +329,8 @@ async function buildIntelligencePanel(client, interaction) {
   const sourceGuild = registryGuild(client, session.sourceGuildId);
   const report = sourceGuild && session.userId ? await buildReport(client, session.userId) : null;
   const liveGuild = sourceGuild ? configuredGuild(client, sourceGuild.id) : null;
+  const selectedMatch = session.userId ? session.matches?.find((match) => String(match.id) === String(session.userId)) : null;
+  const selectedEvidence = intelligenceMatchEvidence(selectedMatch);
   const embed = new EmbedBuilder()
     .setColor(0x5865F2)
     .setTitle('🔎 User Intelligence Lookup')
@@ -331,7 +340,7 @@ async function buildIntelligencePanel(client, interaction) {
     .addFields(
       { name: 'Source Guild', value: sourceGuild ? `**${sourceGuild.name}**\n\`${sourceGuild.id}\`\n${guildEnvironmentLabel(sourceGuild)}` : 'Not selected', inline: true },
       { name: 'Live Access', value: sourceGuild ? (liveGuild ? '🟢 DEV has live access' : '🟡 Registry / stored intelligence') : '—', inline: true },
-      { name: 'Selected User', value: session.userId ? `<@${session.userId}>\n\`${session.userId}\`` : 'Not selected', inline: true },
+      { name: 'Selected User', value: session.userId ? `<@${session.userId}>\n\`${session.userId}\`${selectedEvidence ? `\n${selectedEvidence}` : ''}` : 'Not selected', inline: true },
       { name: 'Search Results', value: session.matches?.length ? `${session.matches.length} matching user(s)` : 'None / not searched', inline: true },
     )
     .setFooter({ text: 'Goliath Command Center • User Intelligence • Cross-mode stored search • Owner only' });
@@ -352,7 +361,7 @@ async function buildIntelligencePanel(client, interaction) {
       .addOptions(session.matches.slice(0, 25).map((match) => ({
         label: String(match.label || match.id).slice(0, 100),
         value: match.id,
-        description: `${match.environments?.length ? `${match.environments.join(' • ')} • ` : ''}User ID: ${match.id}`.slice(0, 100),
+        description: `${match.environments?.length ? `${match.environments.join(' • ')} • ` : ''}${match.matchedOn && match.matchedValue != null ? `Matched ${intelligenceMatchKindLabel(match.matchedOn)}: ${String(match.matchedValue)} • ` : ''}User ID: ${match.id}`.slice(0, 100),
         default: match.id === session.userId,
       })));
     rows.push(new ActionRowBuilder().addComponents(resultSelect));
@@ -369,8 +378,9 @@ async function searchIntelligenceUser(client, sourceGuild, query) {
   const merged = new Map();
   const add = (entry) => {
     if (!entry?.id) return;
-    const current = merged.get(String(entry.id)) || { id: String(entry.id), label: entry.label || String(entry.id), environments: [] };
+    const current = merged.get(String(entry.id)) || { id: String(entry.id), label: entry.label || String(entry.id), environments: [], matchedOn: entry.matchedOn || null, matchedValue: entry.matchedValue ?? null };
     if (entry.label && (!current.label || current.label === current.id)) current.label = entry.label;
+    if (entry.matchedOn && entry.matchedValue != null) { current.matchedOn = entry.matchedOn; current.matchedValue = entry.matchedValue; }
     current.environments = [...new Set([...(current.environments || []), ...(entry.environments || [])])];
     merged.set(current.id, current);
   };
@@ -379,15 +389,15 @@ async function searchIntelligenceUser(client, sourceGuild, query) {
   if (liveGuild) {
     if (/^\d{16,22}$/.test(value)) {
       const member = await liveGuild.members.fetch(value).catch(() => null);
-      if (member) add({ id: member.id, label: intelligenceMemberLabel(member), environments: ['DEV'] });
+      if (member) add({ id: member.id, label: intelligenceMemberLabel(member), environments: ['DEV'], matchedOn: 'id', matchedValue: value });
     } else {
       const members = await liveGuild.members.search({ query: value, limit: 25 }).catch(() => null);
-      for (const member of members?.values?.() || []) add({ id: member.id, label: intelligenceMemberLabel(member), environments: ['DEV'] });
+      for (const member of members?.values?.() || []) add({ id: member.id, label: intelligenceMemberLabel(member), environments: ['DEV'], matchedOn: 'liveSearch', matchedValue: value });
     }
   }
   if (/^\d{16,22}$/.test(value) && !merged.has(value)) {
     const stored = auditStore.getUserAcrossModes?.(value);
-    if (stored?.guilds?.[sourceGuild.id]) add({ id: value, label: stored.displayNames?.at?.(-1) || stored.globalNames?.at?.(-1) || stored.names?.at?.(-1) || `Stored user ${value}`, environments: Object.keys(stored.environments || {}) });
+    if (stored?.guilds?.[sourceGuild.id]) add({ id: value, label: stored.displayNames?.at?.(-1) || stored.globalNames?.at?.(-1) || stored.names?.at?.(-1) || `Stored user ${value}`, environments: Object.keys(stored.environments || {}), matchedOn: 'id', matchedValue: value });
   }
   return [...merged.values()].slice(0, 25);
 }
@@ -769,7 +779,7 @@ async function handleOwnerAuditInteraction(client, interaction) {
     return true;
   }
   const section = customId.slice('owner:audit:'.length);
-  if (!['deep', 'identity', 'guilds', 'moderation', 'roles', 'voice', 'timeline', 'actions'].includes(section)) return false;
+  if (!['deep', 'identity', 'account', 'evidence', 'guilds', 'moderation', 'roles', 'voice', 'timeline', 'actions'].includes(section)) return false;
   await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch(() => null);
   const report = await buildReport(client, context.userId);
   const embed = buildUserIntelligenceSectionEmbed(report, section, sourceGuild);

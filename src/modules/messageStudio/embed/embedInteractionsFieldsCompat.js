@@ -3,7 +3,6 @@
 const original = require('./embedInteractionsAppearanceCompat');
 const panel = require('./embedFieldsCompat');
 
-function who(i) { return panel.memberName(i); }
 function selectedIndex(state) {
   const fields = Array.isArray(state.fields) ? state.fields : [];
   return Number.isInteger(state.selectedFieldIndex) && fields[state.selectedFieldIndex] ? state.selectedFieldIndex : null;

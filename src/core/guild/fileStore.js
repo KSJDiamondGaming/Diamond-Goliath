@@ -1,5 +1,5 @@
-const fs = require('fs');
-const path = require('path');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const EXPECTED_WINDOWS_SYNC_ERRORS = new Set(['EPERM', 'EBUSY']);
 const warnedSyncPaths = new Set();
@@ -32,10 +32,10 @@ function ensureDir(dirPath) {
 }
 
 function read(filePath, fallback = {}) {
-  try {
-    if (!filePath || typeof filePath !== 'string') return clone(fallback);
-    if (!fs.existsSync(filePath)) return clone(fallback);
+  if (!filePath || typeof filePath !== 'string') return clone(fallback);
+  if (!fs.existsSync(filePath)) return clone(fallback);
 
+  try {
     const raw = fs.readFileSync(filePath, 'utf8');
     if (!raw || !raw.trim()) return clone(fallback);
 
@@ -43,7 +43,7 @@ function read(filePath, fallback = {}) {
     return parsed && typeof parsed === 'object' ? parsed : clone(fallback);
   } catch (error) {
     console.error(`[fileStore] Failed to read file: ${filePath}`, error);
-    return clone(fallback);
+    throw error;
   }
 }
 
@@ -174,7 +174,7 @@ function write(filePath, data = {}) {
       console.error(`[fileStore] Failed to restore backup: ${filePath}`, restoreError);
     }
 
-    return false;
+    throw error;
   }
 }
 

@@ -1,8 +1,8 @@
 'use strict';
 
-const crypto = require('crypto');
-const fs = require('fs');
-const path = require('path');
+const crypto = require('node:crypto');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const { resolveBotMode, resolveRuntimePath } = require('../../../config/runtimePaths');
 
@@ -38,10 +38,6 @@ function readJsonFileSafe(filePath, corruptedReason) {
 
 function normaliseEnvironment(environment) {
   return resolveBotMode(environment).toUpperCase();
-}
-
-function getModeKey(environment) {
-  return resolveBotMode(environment);
 }
 
 function getBackupRoot(environment) {
@@ -194,7 +190,6 @@ function validateBackupIntegrity(backupPath) {
 module.exports = {
   VALID_BACKUP_TYPES,
   normaliseEnvironment,
-  getModeKey,
   getBackupRoot,
   getGuildBackupRoot,
   getBackupDir,

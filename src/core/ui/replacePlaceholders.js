@@ -1,3 +1,5 @@
+'use strict';
+
 module.exports = function replacePlaceholders(text, placeholders = {}) {
   if (!text || typeof text !== 'string') return text;
 
