@@ -393,11 +393,4 @@ async function handle(interaction) {
   return false;
 }
 
-module.exports = {
-  name: 'clientReady',
-  once: true,
-  handle,
-  async execute() {
-    // Account management is routed explicitly by Social Studio creator routing.
-  },
-};
+module.exports = { handle };
