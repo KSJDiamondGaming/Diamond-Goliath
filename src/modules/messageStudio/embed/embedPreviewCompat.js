@@ -13,6 +13,7 @@ const panel = require('./embedPanel');
 const state = require('./embedState');
 const { persistPresetMedia } = require('./embedAssetStore');
 const mediaModel = require('./embedMediaModel');
+const mediaCore = require('./embedMedia');
 
 if (!panel.__embedStatePatched) {
   state.bindPanel(panel, {
@@ -22,6 +23,8 @@ if (!panel.__embedStatePatched) {
   });
   panel.__embedStatePatched = true;
 }
+
+mediaCore.installStateCompatibility(panel);
 
 function queuePersistentMediaImport(presetLike) {
   persistPresetMedia('global', presetLike).then((results) => {
@@ -165,50 +168,6 @@ panel.buildMediaManagerPanel = (interaction, who = 'Unknown User') => {
     components: rows.slice(0, 5),
   };
 };
-
-if (!panel.__mediaV2Patched) {
-  if (typeof panel.getSession === 'function') {
-    const originalGetSession = panel.getSession.bind(panel);
-    panel.getSession = (interaction) => mediaModel.ensureStateMedia(originalGetSession(interaction));
-  }
-  if (typeof panel.saveSession === 'function') {
-    const originalSaveSession = panel.saveSession.bind(panel);
-    panel.saveSession = (interaction, stateValue) => originalSaveSession(interaction, mediaModel.ensureStateMedia(stateValue));
-  }
-  if (typeof panel.markUnsaved === 'function') {
-    const originalMarkUnsaved = panel.markUnsaved.bind(panel);
-    panel.markUnsaved = (interaction, stateValue) => {
-      const previous = panel.getSession(interaction);
-      return originalMarkUnsaved(interaction, mediaModel.reconcileMediaByPanels(previous, stateValue));
-    };
-  }
-  if (typeof panel.resetSession === 'function') {
-    const originalResetSession = panel.resetSession.bind(panel);
-    panel.resetSession = (interaction) => {
-      const result = originalResetSession(interaction);
-      return panel.saveSession(interaction, mediaModel.ensureStateMedia(result));
-    };
-  }
-  if (typeof panel.applyTemplate === 'function') {
-    const originalApplyTemplate = panel.applyTemplate.bind(panel);
-    panel.applyTemplate = (interaction, name) => {
-      const result = originalApplyTemplate(interaction, name);
-      return panel.saveSession(interaction, mediaModel.ensureStateMedia({ ...result, mediaV2: undefined }));
-    };
-  }
-  if (typeof panel.applyPreset === 'function') {
-    const originalApplyPreset = panel.applyPreset.bind(panel);
-    panel.applyPreset = (interaction, name, preset) => {
-      const result = originalApplyPreset(interaction, name, preset);
-      const restored = mediaModel.ensureStateMedia({ ...result, mediaV2: preset?.mediaV2 || result?.mediaV2 });
-      return panel.saveSession(interaction, restored);
-    };
-  }
-  panel.getPanelMedia = (stateValue, index = null) => mediaModel.mediaForPanel(stateValue, index);
-  panel.setPanelMedia = (stateValue, index, media) => mediaModel.setPanelMedia(stateValue, index, media);
-  panel.mediaModel = mediaModel;
-  panel.__mediaV2Patched = true;
-}
 
 if (!panel.__persistentMediaPatched && typeof panel.saveSelected === 'function') {
   const originalSaveSelected = panel.saveSelected.bind(panel);
