@@ -1,5 +1,7 @@
 'use strict';
 
+const https = require('node:https');
+const nodeFetch = require('node-fetch');
 const {
   clean,
   handle,
@@ -8,6 +10,60 @@ const {
   result,
   isoFromProviderEpoch,
 } = require('./shared');
+
+const TIKTOK_IPV4_AGENT = new https.Agent({ keepAlive: true, family: 4 });
+const TIKTOK_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/150 Safari/537.36 GoliathSocialStudio/1.0';
+const RETRYABLE_CONNECT_CODES = new Set(['UND_ERR_CONNECT_TIMEOUT', 'ENETUNREACH', 'EHOSTUNREACH', 'ETIMEDOUT']);
+
+function networkErrorCode(error) {
+  let current = error;
+  for (let depth = 0; current && depth < 5; depth += 1) {
+    if (current.code) return String(current.code);
+    current = current.cause;
+  }
+  return '';
+}
+
+async function ipv4Request(url, options = {}, timeoutMs = 10000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await nodeFetch(url, {
+      redirect: 'follow',
+      ...options,
+      signal: controller.signal,
+      agent: TIKTOK_IPV4_AGENT,
+      headers: {
+        'User-Agent': TIKTOK_UA,
+        Accept: 'application/json,text/html;q=0.9,*/*;q=0.8',
+        ...(options.headers || {}),
+      },
+    });
+    const text = await response.text();
+    let json = null;
+    try { json = text ? JSON.parse(text) : null; } catch { }
+    if (!response.ok) {
+      const message = json?.message || json?.error?.message || json?.error_description || text.slice(0, 250) || `${response.status} ${response.statusText}`;
+      const error = new Error(message);
+      error.status = response.status;
+      throw error;
+    }
+    return { response, text, json };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function tiktokRequest(url, options = {}, timeoutMs = 10000) {
+  try {
+    return await request(url, options, timeoutMs);
+  } catch (error) {
+    const code = networkErrorCode(error);
+    if (!RETRYABLE_CONNECT_CODES.has(code)) throw error;
+    console.warn(`[TikTok] ${code} reaching TikTok; retrying over IPv4.`);
+    return ipv4Request(url, options, timeoutMs);
+  }
+}
 
 function tiktokUsername(account) {
   const direct = handle(account);
@@ -65,7 +121,7 @@ function tiktokApiResult(json, fallbackUsername, fallbackId, source) {
 async function tiktokApiLookup({ username = '', userId = '' }) {
   const lookup = username ? `uniqueId=${encodeURIComponent(username)}` : `userId=${encodeURIComponent(userId)}`;
   const referer = username ? `https://www.tiktok.com/@${encodeURIComponent(username)}/live` : '';
-  const { json } = await request(`https://www.tiktok.com/api-live/user/room/?aid=1988&sourceType=54&${lookup}`, {
+  const { json } = await tiktokRequest(`https://www.tiktok.com/api-live/user/room/?aid=1988&sourceType=54&${lookup}`, {
     headers: { Accept: 'application/json,text/plain,*/*', ...(referer ? { Referer: referer } : {}) },
   }, 10000);
   return json;
@@ -101,7 +157,7 @@ async function checkTikTok(account) {
   const profile = `https://www.tiktok.com/@${encodeURIComponent(username)}`;
   const liveUrl = `${profile}/live`;
   try {
-    const { response, text } = await request(liveUrl, { headers: { Accept: 'text/html,application/xhtml+xml' } }, 12000);
+    const { response, text } = await tiktokRequest(liveUrl, { headers: { Accept: 'text/html,application/xhtml+xml' } }, 12000);
     const finalUrl = response.url || liveUrl;
     const body = text.slice(0, 2000000);
     const sigiMatch = body.match(/<script[^>]+id=["']SIGI_STATE["'][^>]*>([\s\S]*?)<\/script>/i);
