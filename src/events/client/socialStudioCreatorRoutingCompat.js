@@ -12,6 +12,8 @@ const roleHierarchyCompat = require('../../modules/socialStudio/socialAlerts/soc
 const testCompat = require('../../modules/socialStudio/socialAlerts/socialStudioTestCompat');
 const creatorCompat = require('../../modules/socialStudio/socialAlerts/socialStudioCreatorActionCompat');
 
+const dispatchedInteractions = new WeakSet();
+
 function object(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
 }
@@ -66,6 +68,8 @@ installPersistenceGuard();
 const core = require('./socialStudioCreatorRoutingCompatCore');
 
 async function handle(interaction) {
+  if (!interaction || dispatchedInteractions.has(interaction)) return false;
+  dispatchedInteractions.add(interaction);
   if (await testCompat.handle(interaction)) return true;
   if (await roleHierarchyCompat.handle(interaction)) return true;
   if (await core.handle(interaction)) return true;
