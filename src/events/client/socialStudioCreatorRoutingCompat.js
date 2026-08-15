@@ -6,15 +6,12 @@
 
 const roleHierarchyCompat = require('../../modules/socialStudio/socialAlerts/socialStudioRoleHierarchyCompat');
 
-const dispatchedInteractions = new WeakSet();
-
 const core = require('./socialStudioCreatorRoutingCompatCore');
 
 // Explicit Social Studio compatibility chain. The stable creator-actions
 // handler calls this directly; no module-load handler rewrites are required.
 async function handle(interaction) {
-  if (!interaction || dispatchedInteractions.has(interaction)) return false;
-  dispatchedInteractions.add(interaction);
+  if (!interaction) return false;
   if (await roleHierarchyCompat.handle(interaction)) return true;
   if (await core.handle(interaction)) return true;
   return false;
