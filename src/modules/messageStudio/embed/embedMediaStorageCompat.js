@@ -14,34 +14,6 @@ function normalizeState(stateValue) {
   return { ...stateValue, media: clone(source), mediaV2: clone(source) };
 }
 
-function durationFrom(timestamp) {
-  const started = Number(timestamp || 0);
-  if (!started || started > Date.now()) return 'Unknown';
-  let months = Math.max(0, Math.floor((Date.now() - started) / (1000 * 60 * 60 * 24 * 30.4375)));
-  const years = Math.floor(months / 12);
-  months %= 12;
-  const parts = [];
-  if (years) parts.push(`${years} year${years === 1 ? '' : 's'}`);
-  if (months || !parts.length) parts.push(`${months} month${months === 1 ? '' : 's'}`);
-  return parts.join(', ');
-}
-
-function ts(timestamp, style = 'F') {
-  const seconds = Math.floor(Number(timestamp || 0) / 1000);
-  return Number.isFinite(seconds) && seconds > 0 ? `<t:${seconds}:${style}>` : 'Unknown';
-}
-
-function safeAsset(fn, fallback = '') {
-  try { return fn?.() || fallback; } catch { return fallback; }
-}
-
-const EXTRA_HELPERS = [
-  '{channelId}', '{channelName}', '{channelMention}',
-  '{guildOwnerId}', '{guildOwnerMention}', '{guildCreatedAt}', '{guildCreatedTimestamp}',
-  '{guildBoostCount}', '{guildBoostTier}', '{guildSplash}', '{guildDiscoverySplash}',
-  '{userBot}', '{userTopRoleId}', '{userTopRoleMention}',
-];
-
 if (!panel.__embedStatePatched) {
   state.configure({ defaultState: panel.defaultState, sync: panel.sync });
 
@@ -138,63 +110,6 @@ if (!panel.__neutralMediaStoragePatched) {
   }
 
   panel.__neutralMediaStoragePatched = true;
-}
-
-if (!panel.__expandedVariablesPatched && typeof panel.replaceVars === 'function') {
-  const originalReplaceVars = panel.replaceVars.bind(panel);
-  panel.replaceVars = (text, interaction) => {
-    const sentinels = {
-      accountAge: '__GOLIATH_ACCOUNT_AGE__',
-      membershipDuration: '__GOLIATH_MEMBERSHIP_DURATION__',
-    };
-    let prepared = String(text || '')
-      .replaceAll('{accountAge}', sentinels.accountAge)
-      .replaceAll('{accountage}', sentinels.accountAge)
-      .replaceAll('{membershipDuration}', sentinels.membershipDuration)
-      .replaceAll('{membershipduration}', sentinels.membershipDuration);
-    let output = originalReplaceVars(prepared, interaction);
-
-    const user = interaction?.user || {};
-    const member = interaction?.member || {};
-    const guild = interaction?.guild || {};
-    const channel = interaction?.channel || {};
-    const channelId = interaction?.channelId || channel?.id || '';
-    const ownerId = guild?.ownerId || '';
-    const topRole = member?.roles?.highest || null;
-    const guildCreatedTimestamp = guild?.createdTimestamp || 0;
-    const extras = {
-      accountAge: durationFrom(user?.createdTimestamp),
-      membershipDuration: durationFrom(member?.joinedTimestamp),
-      channelId,
-      channelName: channel?.name || 'Unknown Channel',
-      channelMention: channelId ? `<#${channelId}>` : '',
-      guildOwnerId: ownerId,
-      guildOwnerMention: ownerId ? `<@${ownerId}>` : '',
-      guildCreatedAt: ts(guildCreatedTimestamp, 'F'),
-      guildCreatedTimestamp: ts(guildCreatedTimestamp, 'R'),
-      guildBoostCount: String(guild?.premiumSubscriptionCount || 0),
-      guildBoostTier: String(guild?.premiumTier ?? 0),
-      guildSplash: safeAsset(() => guild?.splashURL?.({ extension: 'png', size: 2048 })),
-      guildDiscoverySplash: safeAsset(() => guild?.discoverySplashURL?.({ extension: 'png', size: 2048 })),
-      userBot: user?.bot ? 'Yes' : 'No',
-      userTopRoleId: topRole?.id || '',
-      userTopRoleMention: topRole?.id ? `<@&${topRole.id}>` : '',
-    };
-
-    output = output
-      .replaceAll(sentinels.accountAge, extras.accountAge)
-      .replaceAll(sentinels.membershipDuration, extras.membershipDuration);
-    for (const [key, value] of Object.entries(extras)) {
-      output = output.replaceAll(`{${key}}`, String(value ?? ''));
-      output = output.replaceAll(`{${key.toLowerCase()}}`, String(value ?? ''));
-    }
-    return output;
-  };
-
-  if (Array.isArray(panel.HELPERS)) {
-    for (const helper of EXTRA_HELPERS) if (!panel.HELPERS.includes(helper)) panel.HELPERS.push(helper);
-  }
-  panel.__expandedVariablesPatched = true;
 }
 
 module.exports = panel;
