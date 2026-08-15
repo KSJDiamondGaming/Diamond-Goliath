@@ -75,7 +75,8 @@ function addNotification(guildId, input = {}) {
 
 function addNotificationOnce(guildId, input = {}, options = {}) {
   const fingerprint = text(options.fingerprint || input.metadata?.fingerprint || `${input.source || 'system'}:${input.title || 'Notification'}`, 200);
-  const windowMs = Math.max(60_000, Number(options.windowMs || 10 * 60_000));
+  const requestedWindowMs = Number(options.windowMs ?? 10 * 60_000);
+  const windowMs = Number.isFinite(requestedWindowMs) ? Math.max(60_000, requestedWindowMs) : 10 * 60_000;
   const cutoff = Date.now() - windowMs;
   const existing = listNotifications(guildId, { limit: 300 }).find((item) => {
     const itemFingerprint = item.metadata?.fingerprint || `${item.source}:${item.title}`;
