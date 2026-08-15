@@ -14,6 +14,10 @@ const mediaModel = require('./embedMediaModel');
 const MAX_COMPONENTS_PER_ROW = 5;
 const MAX_ACTION_ROWS = 5;
 
+function clone(value, fallback = null) {
+  try { return JSON.parse(JSON.stringify(value ?? fallback)); } catch { return fallback; }
+}
+
 function getPanelMedia(stateValue, index = null) {
   return mediaModel.mediaForPanel(stateValue, index);
 }
@@ -36,6 +40,53 @@ function reconcileMediaByPanels(previousState, nextState) {
 
 function syncLegacyPatch(stateValue, patch = {}) {
   return mediaModel.syncLegacyPatch(stateValue, patch);
+}
+
+function normalizeStoredMediaState(stateValue) {
+  if (!stateValue || typeof stateValue !== 'object') return stateValue;
+  const source = stateValue.media || stateValue.mediaV2 || null;
+  if (!source) return stateValue;
+  return { ...stateValue, media: clone(source), mediaV2: clone(source) };
+}
+
+function installStorageNormalization(panel) {
+  if (!panel || panel.__mediaStorageNormalized) return panel;
+
+  if (typeof panel.getSession === 'function') {
+    const originalGetSession = panel.getSession.bind(panel);
+    panel.getSession = (interaction) => normalizeStoredMediaState(originalGetSession(interaction));
+  }
+
+  if (typeof panel.saveSession === 'function') {
+    const originalSaveSession = panel.saveSession.bind(panel);
+    panel.saveSession = (interaction, stateValue) => originalSaveSession(interaction, normalizeStoredMediaState(stateValue));
+  }
+
+  if (typeof panel.presetData === 'function') {
+    const originalPresetData = panel.presetData.bind(panel);
+    panel.presetData = (stateValue) => {
+      const normalized = normalizeStoredMediaState(stateValue);
+      const preset = originalPresetData(normalized) || {};
+      const storedMedia = clone(preset.media || preset.mediaV2 || normalized?.media || normalized?.mediaV2, null);
+      const output = { ...preset };
+      delete output.mediaV2;
+      if (storedMedia) output.media = storedMedia;
+      return output;
+    };
+  }
+
+  if (typeof panel.applyPreset === 'function') {
+    const originalApplyPreset = panel.applyPreset.bind(panel);
+    panel.applyPreset = (interaction, name, preset = {}) => {
+      const source = preset?.media || preset?.mediaV2 || null;
+      const compatiblePreset = source ? { ...preset, mediaV2: clone(source) } : preset;
+      const result = originalApplyPreset(interaction, name, compatiblePreset);
+      return normalizeStoredMediaState(source ? { ...result, media: clone(source) } : result);
+    };
+  }
+
+  panel.__mediaStorageNormalized = true;
+  return panel;
 }
 
 function enforceLimits(rows = []) {
@@ -113,11 +164,14 @@ function installThumbnailUi(panel) {
 module.exports = {
   ...mediaModel,
   mediaModel,
+  clone,
   getPanelMedia,
   setPanelMedia,
   normalizeThumbnail,
   ensureStateMedia,
   reconcileMediaByPanels,
   syncLegacyPatch,
+  normalizeStoredMediaState,
+  installStorageNormalization,
   installThumbnailUi,
 };
