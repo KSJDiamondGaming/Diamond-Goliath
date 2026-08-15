@@ -34,7 +34,9 @@ function listNotifications(guildId, options = {}) {
   if (options.unreadOnly) items = items.filter((item) => !item.read);
   if (options.source) items = items.filter((item) => item.source === options.source);
   if (options.level) items = items.filter((item) => item.level === options.level);
-  return items.slice(0, Math.max(1, Math.min(300, Number(options.limit || 100))));
+  const requestedLimit = Number(options.limit ?? 100);
+  const limit = Number.isFinite(requestedLimit) ? Math.max(1, Math.min(300, requestedLimit)) : 100;
+  return items.slice(0, limit);
 }
 
 function mirrorActivity(guildId, notification) {
