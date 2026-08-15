@@ -11,8 +11,11 @@ const {
   TextInputBuilder,
   TextInputStyle,
 } = require('discord.js');
-const panel = require('./embedMediaStorageCompat');
+const panel = require('./embedPreviewCompat');
+const media = require('./embedMedia');
 const { validatePanelMedia, statusIcon } = require('./embedMediaValidation');
+
+media.installStorageCompatibility(panel);
 
 const MAX_COMPONENTS_PER_ROW = 5;
 const MAX_ACTION_ROWS = 5;
