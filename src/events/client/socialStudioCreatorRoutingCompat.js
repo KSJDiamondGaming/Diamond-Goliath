@@ -5,7 +5,6 @@
 // precedence is resolved dynamically by socialStudioRoutingResolver.
 
 const roleHierarchyCompat = require('../../modules/socialStudio/socialAlerts/socialStudioRoleHierarchyCompat');
-
 const core = require('./socialStudioCreatorRoutingCompatCore');
 
 // Explicit Social Studio compatibility chain. The stable creator-actions
@@ -17,5 +16,4 @@ async function handle(interaction) {
   return false;
 }
 
-module.exports = core;
-module.exports.handle = handle;
+module.exports = { handle };
