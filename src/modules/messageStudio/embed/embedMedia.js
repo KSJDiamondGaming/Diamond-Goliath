@@ -185,6 +185,80 @@ function installUploadModals(panel) {
   return panel;
 }
 
+function installMediaOptionsUi(panel) {
+  if (!panel || panel.__mediaOptionsUiBound) return panel;
+
+  panel.buildMediaOptionsPanel = (interaction) => {
+    const state = panel.getSession(interaction);
+    const media = getPanelMedia(state);
+    const index = Number.isInteger(state.selectedMediaIndex) && media.gallery[state.selectedMediaIndex]
+      ? state.selectedMediaIndex
+      : null;
+    const item = index == null ? null : media.gallery[index];
+    if (!item) return panel.buildMediaManagerPanel(interaction, panel.memberName(interaction));
+    const type = ['auto', 'image', 'video'].includes(item.type) ? item.type : 'auto';
+    return {
+      embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('⚙️ Media Options').setDescription([
+        `**Gallery item:** ${index + 1} / ${media.gallery.length}`,
+        `**Type handling:** ${type === 'auto' ? 'Auto detect' : type === 'image' ? 'Image' : 'Video'}`,
+        `**Spoiler:** ${item.spoiler ? 'On' : 'Off'}`,
+        '',
+        'Use the buttons below instead of typing media settings manually. Auto Detect is recommended unless you need to force image or video validation.',
+      ].join('\n'))],
+      components: enforceLimits([
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId('embed:media-type:auto').setLabel('✨ Auto Detect').setStyle(type === 'auto' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+          new ButtonBuilder().setCustomId('embed:media-type:image').setLabel('🖼️ Image').setStyle(type === 'image' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+          new ButtonBuilder().setCustomId('embed:media-type:video').setLabel('🎬 Video').setStyle(type === 'video' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+        ),
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId('embed:media-spoiler:off').setLabel('👁️ Normal').setStyle(item.spoiler ? ButtonStyle.Secondary : ButtonStyle.Primary),
+          new ButtonBuilder().setCustomId('embed:media-spoiler:on').setLabel('🙈 Spoiler').setStyle(item.spoiler ? ButtonStyle.Primary : ButtonStyle.Secondary),
+        ),
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId('embed:media-options-back').setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary),
+        ),
+      ]),
+    };
+  };
+
+  panel.buildFileOptionsPanel = (interaction) => {
+    const state = panel.getSession(interaction);
+    const media = getPanelMedia(state);
+    const index = Number.isInteger(state.selectedFileIndex) && media.files[state.selectedFileIndex]
+      ? state.selectedFileIndex
+      : null;
+    const item = index == null ? null : media.files[index];
+    if (!item) return panel.buildMediaManagerPanel(interaction, panel.memberName(interaction));
+    const source = resolveSource(panel, item.source, interaction);
+    const description = [
+      `**File:** ${index + 1} / ${media.files.length}`,
+      `**Name:** ${item.name || 'Automatic filename'}`,
+      `**Spoiler:** ${item.spoiler ? 'On' : 'Off'}`,
+      item.description ? `**Description:** ${String(item.description).slice(0, 900)}` : '**Description:** Not set',
+      '',
+      source ? `[Open selected file](${source})` : 'The source will be resolved when the message is sent.',
+      '',
+      'Use the buttons below to control whether Discord hides the attachment behind a spoiler warning.',
+    ].join('\n');
+    return {
+      embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('⚙️ File Options').setDescription(description.slice(0, 4096))],
+      components: enforceLimits([
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId('embed:file-spoiler:off').setLabel('👁️ Normal').setStyle(item.spoiler ? ButtonStyle.Secondary : ButtonStyle.Primary),
+          new ButtonBuilder().setCustomId('embed:file-spoiler:on').setLabel('🙈 Spoiler').setStyle(item.spoiler ? ButtonStyle.Primary : ButtonStyle.Secondary),
+        ),
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId('embed:file-options-back').setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary),
+        ),
+      ]),
+    };
+  };
+
+  panel.__mediaOptionsUiBound = true;
+  return panel;
+}
+
 function installThumbnailUi(panel) {
   if (!panel || panel.__thumbnailMediaUiBound) return panel;
 
@@ -250,5 +324,6 @@ module.exports = {
   normalizeStoredMediaState,
   installStorageNormalization,
   installUploadModals,
+  installMediaOptionsUi,
   installThumbnailUi,
 };
