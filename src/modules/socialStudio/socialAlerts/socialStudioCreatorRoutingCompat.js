@@ -57,24 +57,6 @@ function creatorSelect(config, state) {
 }
 function save(interaction, config) { return store.saveConfig(interaction.guildId, config, { actorId: interaction.user?.id || null, guild: interaction.guild }); }
 function cloneObject(value) { return value && typeof value === 'object' && !Array.isArray(value) ? { ...value } : {}; }
-function applyCreatorOverrideToAccount(account, channelId) {
-  if (!account || typeof account !== 'object') return account;
-  if (!account.creatorRouteInherited) { account.creatorRoutePreviousChannelId = account.alertChannelId || null; account.creatorRoutePreviousChannels = cloneObject(account.alertChannels); }
-  account.creatorRouteInherited = true; account.creatorRouteChannelId = channelId; account.alertChannelId = channelId; account.alertChannels = Object.fromEntries(ALERT_TYPES.map((type) => [type, channelId])); account.updatedAt = new Date().toISOString(); return account;
-}
-function clearCreatorOverrideFromAccount(account) {
-  if (!account || typeof account !== 'object' || !account.creatorRouteInherited) return account;
-  account.alertChannelId = account.creatorRoutePreviousChannelId || null; account.alertChannels = cloneObject(account.creatorRoutePreviousChannels);
-  delete account.creatorRouteInherited; delete account.creatorRouteChannelId; delete account.creatorRoutePreviousChannelId; delete account.creatorRoutePreviousChannels; account.updatedAt = new Date().toISOString(); return account;
-}
-function creatorRouteForAccount(creator, account) {
-  const platform = String(account?.platform || '').toLowerCase();
-  return cloneObject(creator?.platformChannels)[platform] || creator?.alertChannelId || null;
-}
-function syncCreatorOverride(config) {
-  return config;
-}
-function syncAllCreatorOverrides(config) { for (const creator of Object.values(config.creators || {})) syncCreatorOverride(config, creator); return config; }
 
 function channelsHubPayload(interaction) {
   const config = store.getConfig(interaction.guildId);
@@ -160,12 +142,12 @@ async function handle(interaction) {
   if (id === `${P}channel:creator:open`) { setSession(interaction, { view: 'creator', creatorId: null, creatorPage: 0, creatorPlatform: 'youtube' }); return update(interaction, creatorChannelsPayload(interaction)); }
   if (id === `${P}channel:creator:select`) { setSession(interaction, { view: 'creator', creatorId: interaction.values?.[0] || null, creatorPlatform: 'youtube' }); return update(interaction, creatorChannelsPayload(interaction)); }
   if (id === `${P}channel:creator:prev` || id === `${P}channel:creator:next`) { const state = getSession(interaction); setSession(interaction, { creatorPage: Math.max(0, state.creatorPage + (id.endsWith('next') ? 1 : -1)), creatorId: null, creatorPlatform: 'youtube', view: 'creator' }); return update(interaction, creatorChannelsPayload(interaction)); }
-  if (id === `${P}channel:creator:route`) { const config = store.getConfig(interaction.guildId); const creatorId = getSession(interaction).creatorId; const creator = config.creators?.[creatorId]; if (!creator) throw new Error('Choose a creator profile first.'); creator.alertChannelId = interaction.values?.[0] || null; creator.updatedAt = new Date().toISOString(); syncCreatorOverride(config, creator); save(interaction, config); return update(interaction, creatorChannelsPayload(interaction)); }
-  if (id === `${P}channel:creator:clear`) { const config = store.getConfig(interaction.guildId); const creatorId = getSession(interaction).creatorId; const creator = config.creators?.[creatorId]; if (!creator) throw new Error('Choose a creator profile first.'); creator.alertChannelId = null; creator.updatedAt = new Date().toISOString(); syncCreatorOverride(config, creator); save(interaction, config); return update(interaction, creatorChannelsPayload(interaction)); }
+  if (id === `${P}channel:creator:route`) { const config = store.getConfig(interaction.guildId); const creatorId = getSession(interaction).creatorId; const creator = config.creators?.[creatorId]; if (!creator) throw new Error('Choose a creator profile first.'); creator.alertChannelId = interaction.values?.[0] || null; creator.updatedAt = new Date().toISOString(); save(interaction, config); return update(interaction, creatorChannelsPayload(interaction)); }
+  if (id === `${P}channel:creator:clear`) { const config = store.getConfig(interaction.guildId); const creatorId = getSession(interaction).creatorId; const creator = config.creators?.[creatorId]; if (!creator) throw new Error('Choose a creator profile first.'); creator.alertChannelId = null; creator.updatedAt = new Date().toISOString(); save(interaction, config); return update(interaction, creatorChannelsPayload(interaction)); }
   if (id === `${P}channel:creator:platform:open`) { const state = getSession(interaction); if (!state.creatorId) throw new Error('Choose a creator profile first.'); setSession(interaction, { view: 'creatorPlatform', creatorPlatform: 'youtube' }); return update(interaction, creatorPlatformChannelsPayload(interaction)); }
   if (id === `${P}channel:creator:platform:select`) { setSession(interaction, { view: 'creatorPlatform', creatorPlatform: interaction.values?.[0] || 'youtube' }); return update(interaction, creatorPlatformChannelsPayload(interaction)); }
-  if (id === `${P}channel:creator:platform:route`) { const config = store.getConfig(interaction.guildId); const state = getSession(interaction); const creator = config.creators?.[state.creatorId]; if (!creator) throw new Error('Choose a creator profile first.'); const platform = PLATFORMS.includes(state.creatorPlatform) ? state.creatorPlatform : 'youtube'; const channelId = interaction.values?.[0] || null; creator.platformChannels = cloneObject(creator.platformChannels); if (channelId) creator.platformChannels[platform] = channelId; else delete creator.platformChannels[platform]; creator.updatedAt = new Date().toISOString(); syncCreatorOverride(config, creator); save(interaction, config); return update(interaction, creatorPlatformChannelsPayload(interaction)); }
-  if (id === `${P}channel:creator:platform:clear`) { const config = store.getConfig(interaction.guildId); const state = getSession(interaction); const creator = config.creators?.[state.creatorId]; if (!creator) throw new Error('Choose a creator profile first.'); const platform = PLATFORMS.includes(state.creatorPlatform) ? state.creatorPlatform : 'youtube'; creator.platformChannels = cloneObject(creator.platformChannels); delete creator.platformChannels[platform]; creator.updatedAt = new Date().toISOString(); syncCreatorOverride(config, creator); save(interaction, config); return update(interaction, creatorPlatformChannelsPayload(interaction)); }
+  if (id === `${P}channel:creator:platform:route`) { const config = store.getConfig(interaction.guildId); const state = getSession(interaction); const creator = config.creators?.[state.creatorId]; if (!creator) throw new Error('Choose a creator profile first.'); const platform = PLATFORMS.includes(state.creatorPlatform) ? state.creatorPlatform : 'youtube'; const channelId = interaction.values?.[0] || null; creator.platformChannels = cloneObject(creator.platformChannels); if (channelId) creator.platformChannels[platform] = channelId; else delete creator.platformChannels[platform]; creator.updatedAt = new Date().toISOString(); save(interaction, config); return update(interaction, creatorPlatformChannelsPayload(interaction)); }
+  if (id === `${P}channel:creator:platform:clear`) { const config = store.getConfig(interaction.guildId); const state = getSession(interaction); const creator = config.creators?.[state.creatorId]; if (!creator) throw new Error('Choose a creator profile first.'); const platform = PLATFORMS.includes(state.creatorPlatform) ? state.creatorPlatform : 'youtube'; creator.platformChannels = cloneObject(creator.platformChannels); delete creator.platformChannels[platform]; creator.updatedAt = new Date().toISOString(); save(interaction, config); return update(interaction, creatorPlatformChannelsPayload(interaction)); }
   if (id === `${P}channel:creator:back`) { setSession(interaction, { view: 'creator' }); return update(interaction, creatorChannelsPayload(interaction)); }
   if (id === `${P}channel:platform:open`) { setSession(interaction, { view: 'platform', platform: 'youtube' }); return update(interaction, platformChannelsPayload(interaction)); }
   if (id === `${P}channel:platform:select`) { setSession(interaction, { view: 'platform', platform: interaction.values?.[0] || 'youtube' }); return update(interaction, platformChannelsPayload(interaction)); }
@@ -173,18 +155,4 @@ async function handle(interaction) {
   if (id === `${P}channel:platform:clear`) { const config = store.getConfig(interaction.guildId); const platform = getSession(interaction).platform || 'youtube'; config.platformChannels = cloneObject(config.platformChannels); delete config.platformChannels[platform]; save(interaction, config); return update(interaction, platformChannelsPayload(interaction)); }
   return false;
 }
-function installStoreCompatibility() {
-  if (store.__creatorRoutingCompatPatched) return;
-  const originalSaveConfig = store.saveConfig.bind(store);
-  store.saveConfig = function saveConfigWithCreatorRoutes(guildId, config, meta = {}) { return originalSaveConfig(guildId, syncAllCreatorOverrides(config), meta); };
-  const originalUpsertCreatorAccount = store.upsertCreatorAccount.bind(store);
-  store.upsertCreatorAccount = function upsertCreatorAccountWithRoute(guildId, creatorId, account, duplicateIds = [], meta = {}) {
-    const creator = store.getCreator(guildId, creatorId);
-    let nextAccount = account;
-    const channelId = creatorRouteForAccount(creator, account);
-    if (channelId) nextAccount = applyCreatorOverrideToAccount({ ...account, alertChannels: cloneObject(account?.alertChannels) }, channelId);
-    return originalUpsertCreatorAccount(guildId, creatorId, nextAccount, duplicateIds, meta);
-  };
-  store.__creatorRoutingCompatPatched = true;
-}
-module.exports = { handle, installStoreCompatibility, syncAllCreatorOverrides };
+module.exports = { handle };
