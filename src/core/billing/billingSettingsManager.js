@@ -79,6 +79,7 @@ function saveBillingSettings(nextSettings = {}) {
 
 function updateBillingSettings(updates = {}, actor = 'owner') {
   const current = getBillingSettings();
+  const hasLifetimeUpdate = Object.prototype.hasOwnProperty.call(updates, 'publicLifetimeEnabled');
   return saveBillingSettings({
     ...current,
     ...updates,
@@ -86,7 +87,9 @@ function updateBillingSettings(updates = {}, actor = 'owner') {
       ...(current.pricing || {}),
       ...(updates.pricing || {}),
     }),
-    publicLifetimeEnabled: updates.publicLifetimeEnabled === true,
+    publicLifetimeEnabled: hasLifetimeUpdate
+      ? updates.publicLifetimeEnabled === true
+      : current.publicLifetimeEnabled,
     updatedAt: now(),
     updatedBy: actor,
   });
