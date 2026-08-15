@@ -214,12 +214,6 @@ async function handle(interaction) {
     const roleId = value.startsWith('role:') ? value.slice(5) : null;
     config.notificationMentionMode = roleId ? 'role' : ['none', 'everyone', 'here'].includes(value) ? value : 'none';
     config.notificationRoleId = roleId || null;
-    for (const account of Object.values(config.accounts || {})) {
-      if (!account || typeof account !== 'object') continue;
-      account.mentionMode = config.notificationMentionMode;
-      account.mentionRoleId = config.notificationMentionMode === 'role' ? config.notificationRoleId : null;
-      account.updatedAt = new Date().toISOString();
-    }
     save(interaction, config);
     return update(interaction);
   }
