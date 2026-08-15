@@ -6,7 +6,6 @@ const panel = require('./embedNavigationCompat');
 const interactions = require('./embedInteractions');
 const tracking = require('./embedTracking');
 const validation = require('./embedValidation');
-const health = require('./embedHealth');
 
 function getOverview(guildId) {
   const allTemplates = templates.listTemplates(guildId) || {};
@@ -24,8 +23,8 @@ function getOverview(guildId) {
 
 module.exports = {
   getOverview,
-  buildHealthReport: health.buildHealthReport,
-  repairAll: health.repairAll,
+  buildHealthReport: validation.buildHealthReport,
+  repairAll: validation.repairAll,
   handleInteraction: interactions.handleInteraction,
   templates,
   deployments,
@@ -33,5 +32,5 @@ module.exports = {
   interactions,
   tracking,
   validation,
-  health,
+  health: validation,
 };
