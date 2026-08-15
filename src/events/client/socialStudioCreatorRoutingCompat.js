@@ -1,11 +1,9 @@
 'use strict';
 
 // Canonical Social Studio compatibility entry point.
-// Legacy UI adapters are retained for interaction compatibility, but routing
-// precedence is resolved dynamically by socialStudioRoutingResolver and old
-// account-route inheritance is stripped before configuration is persisted.
+// Legacy UI adapters are retained for interaction compatibility, while routing
+// precedence is resolved dynamically by socialStudioRoutingResolver.
 
-const store = require('../../modules/socialStudio/socialAlerts/socialStudioStore');
 const roleHierarchyCompat = require('../../modules/socialStudio/socialAlerts/socialStudioRoleHierarchyCompat');
 
 const dispatchedInteractions = new WeakSet();
@@ -44,17 +42,6 @@ function cleanInheritedRouting(configValue) {
   }
   return config;
 }
-
-function installPersistenceGuard() {
-  if (store.__dynamicSocialRoutingPersistenceGuard) return;
-  const originalSaveConfig = store.saveConfig.bind(store);
-  store.saveConfig = function saveWithoutInheritedRouting(guildId, config, meta = {}) {
-    return originalSaveConfig(guildId, cleanInheritedRouting(config), meta);
-  };
-  store.__dynamicSocialRoutingPersistenceGuard = true;
-}
-
-installPersistenceGuard();
 
 const core = require('./socialStudioCreatorRoutingCompatCore');
 
