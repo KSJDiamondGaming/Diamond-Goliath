@@ -10,7 +10,7 @@ const {
   TextInputBuilder,
   TextInputStyle,
 } = require('discord.js');
-const crypto = require('crypto');
+const crypto = require('node:crypto');
 const creatorCompat = require('../../modules/socialStudio/socialAlerts/socialStudioCreatorActionCompat');
 const store = require('../../modules/socialStudio/socialAlerts/socialStudioStore');
 const socialPanel = require('../../modules/socialStudio/socialAlerts/socialStudioPanel');
