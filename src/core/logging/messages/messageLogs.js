@@ -1,18 +1,5 @@
 const { EmbedBuilder } = require('discord.js');
-const guildManager = require('../../core/guild/guildManager');
-const messageLog = require('../message/messageLog');
-
-module.exports = [
-  {
-    name: 'messageDelete',
-    execute: messageLog.handleMessageDelete,
-  },
-
-  {
-    name: 'messageUpdate',
-    execute: messageLog.handleMessageUpdate,
-  },
-];
+const guildManager = require('../../guild/guildManager');
 
 function trim(text, max = 1024) {
   const value = String(text || '');

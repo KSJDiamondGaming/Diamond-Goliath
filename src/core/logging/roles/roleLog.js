@@ -1,5 +1,5 @@
 const { EmbedBuilder } = require('discord.js');
-const guildManager = require('../../core/guild/guildManager');
+const guildManager = require('../../guild/guildManager');
 
 function getLogChannel(guild) {
   const id = guildManager.getLogChannelId(guild.id, 'moderation') 
