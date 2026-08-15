@@ -1,6 +1,7 @@
 'use strict';
 
-const original = require('./embedInteractionsActionsCompat');
+const original = require('./embedInteractionsButtonsCompat');
+const { handleButtonAction } = require('./embedButtonActions');
 const panel = require('./embedReadinessCompat');
 
 const DELIVERY_ACTIONS = new Set(['embed:test-send', 'embed:use', 'embed:update-existing']);
@@ -85,6 +86,7 @@ async function handleInteraction(interaction) {
     }
   }
 
+  if (await handleButtonAction(interaction)) return true;
   return original.handleInteraction(interaction);
 }
 
