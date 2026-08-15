@@ -62,10 +62,6 @@ async function refreshGuildRoles(guild, context = {}) {
       guildManager.syncGuildMeta(liveGuild);
     }
 
-    if (typeof guildManager.reloadGuild === 'function') {
-      guildManager.reloadGuild(liveGuild.id);
-    }
-
     if (context.event && context.role) {
       emitRoleSyncEvent(liveGuild, context.event, context.role, {
         syncedAt: new Date().toISOString(),
