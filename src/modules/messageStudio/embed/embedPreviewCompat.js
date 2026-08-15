@@ -11,7 +11,6 @@ const {
 } = require('discord.js');
 const panel = require('./embedPanel');
 const state = require('./embedState');
-const { persistPresetMedia } = require('./embedAssetStore');
 const mediaModel = require('./embedMediaModel');
 const mediaCore = require('./embedMedia');
 
@@ -25,13 +24,7 @@ if (!panel.__embedStatePatched) {
 }
 
 mediaCore.installStateCompatibility(panel);
-
-function queuePersistentMediaImport(presetLike) {
-  persistPresetMedia('global', presetLike).then((results) => {
-    const failed = results.filter((result) => !result.ok);
-    if (failed.length) console.warn('[EmbedAssets] persistence import failed:', failed.map((result) => ({ url: String(result.url).slice(0, 120), error: result.error })));
-  }).catch((error) => console.warn('[EmbedAssets] persistence import failed:', error?.message || error));
-}
+mediaCore.installPersistentMediaCompatibility(panel);
 
 function textInput(id, label, style, value = '', maxLength = 4000) {
   return new TextInputBuilder().setCustomId(id).setLabel(label).setStyle(style).setRequired(false).setMaxLength(maxLength).setValue(String(value || '').slice(0, maxLength));
@@ -168,26 +161,6 @@ panel.buildMediaManagerPanel = (interaction, who = 'Unknown User') => {
     components: rows.slice(0, 5),
   };
 };
-
-if (!panel.__persistentMediaPatched && typeof panel.saveSelected === 'function') {
-  const originalSaveSelected = panel.saveSelected.bind(panel);
-  panel.saveSelected = (stateValue, patch = {}) => {
-    let result = originalSaveSelected(stateValue, patch);
-    result = mediaModel.syncLegacyPatch({ ...result, mediaV2: stateValue?.mediaV2 }, patch);
-    if (['image', 'thumbnail', 'authorIcon', 'footerIcon'].some((key) => patch && patch[key])) queuePersistentMediaImport({ panels: [patch], mediaV2: result.mediaV2 });
-    return result;
-  };
-  if (typeof panel.presetData === 'function') {
-    const originalPresetData = panel.presetData.bind(panel);
-    panel.presetData = (stateValue) => {
-      const safeState = mediaModel.ensureStateMedia(stateValue);
-      const preset = { ...originalPresetData(safeState), mediaV2: safeState.mediaV2 };
-      queuePersistentMediaImport(preset);
-      return preset;
-    };
-  }
-  panel.__persistentMediaPatched = true;
-}
 
 if (!panel.__compactPreviewPatched) {
   function compactPreviewPayload(builder) {
