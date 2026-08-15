@@ -47,6 +47,8 @@ const {
   applyTemplate,
   applyPreset,
   setDefault,
+  allowedMentions,
+  presetData,
 } = embedState;
 
 const PANEL_COLOR = "#5865F2";
@@ -304,18 +306,6 @@ function defaultState() {
 
 embedState.configure({ defaultState, sync, basePanel });
 
-function allowedMentions(s) {
-  return s.allowUserPing ? { parse: ["users", "roles"] } : { parse: [] };
-}
-function presetData(s) {
-  return {
-    template: s.template,
-    panels: clone(s.panels),
-    allowUserPing: !!s.allowUserPing,
-    showTimestamp: !!s.showTimestamp,
-    fieldLayout: s.fieldLayout || "auto",
-  };
-}
 function normalizeInlineFields(fields = []) {
   return fields.map((field) => ({ ...field, inline: !!field.inline }));
 }
