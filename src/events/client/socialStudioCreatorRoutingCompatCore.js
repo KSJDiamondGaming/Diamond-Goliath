@@ -15,6 +15,7 @@ const {
   TextInputStyle,
 } = require('discord.js');
 const creatorCompat = require('../../modules/socialStudio/socialAlerts/socialStudioCreatorActionCompat');
+const accountManagement = require('./socialStudioAccountManagementCompat');
 const creatorRoutingCompat = require('../../modules/socialStudio/socialAlerts/socialStudioCreatorRoutingCompat');
 const userChannelRouting = require('../../modules/socialStudio/socialAlerts/socialStudioUserChannelRouting');
 const store = require('../../modules/socialStudio/socialAlerts/socialStudioStore');
@@ -343,6 +344,7 @@ if (!creatorCompat.__creatorRoutingCompatPatched) {
     // must run before the older creator-wide compatibility screens.
     if (await userChannelRouting.handle(interaction)) return true;
     if (await creatorRoutingCompat.handle(interaction)) return true;
+    if (await accountManagement.handle(interaction)) return true;
     return originalHandle(interaction);
   };
 
