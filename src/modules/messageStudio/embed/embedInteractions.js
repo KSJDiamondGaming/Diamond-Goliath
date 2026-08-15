@@ -1,7 +1,7 @@
 'use strict';
 
 const original = require('./embedInteractionsButtonsCompat');
-const { handleButtonAction } = require('./embedButtonActions');
+const { handleButtonAction } = require('./embedButtonsCompat');
 const panel = require('./embedNavigationCompat');
 
 const DELIVERY_ACTIONS = new Set(['embed:test-send', 'embed:use', 'embed:update-existing']);
