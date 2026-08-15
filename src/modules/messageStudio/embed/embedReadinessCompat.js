@@ -2,7 +2,7 @@
 
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
 const panel = require('./embedButtonsCompat');
-const mediaModel = require('./embedMediaModel');
+const { mediaModel } = require('./embedMedia');
 
 const ROLE_ACTIONS = new Set(['toggle-role', 'add-role', 'remove-role']);
 const KNOWN_ACTIONS = new Set(['reply', 'toggle-role', 'add-role', 'remove-role', 'user-info', 'server-info']);
