@@ -406,6 +406,7 @@ if (!creatorCompat.__accountManagementCompatPatched) {
 module.exports = {
   name: 'clientReady',
   once: true,
+  handle,
   async execute() {
     // Loading this file installs the account-management compatibility wrapper.
   },
