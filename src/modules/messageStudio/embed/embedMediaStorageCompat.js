@@ -1,16 +1,17 @@
 'use strict';
 
 const panel = require('./embedPreviewCompat');
+const state = require('./embedState');
 
 function clone(value, fallback = null) {
   try { return JSON.parse(JSON.stringify(value ?? fallback)); } catch { return fallback; }
 }
 
-function normalizeState(state) {
-  if (!state || typeof state !== 'object') return state;
-  const source = state.media || state.mediaV2 || null;
-  if (!source) return state;
-  return { ...state, media: clone(source), mediaV2: clone(source) };
+function normalizeState(stateValue) {
+  if (!stateValue || typeof stateValue !== 'object') return stateValue;
+  const source = stateValue.media || stateValue.mediaV2 || null;
+  if (!source) return stateValue;
+  return { ...stateValue, media: clone(source), mediaV2: clone(source) };
 }
 
 function durationFrom(timestamp) {
@@ -41,6 +42,67 @@ const EXTRA_HELPERS = [
   '{userBot}', '{userTopRoleId}', '{userTopRoleMention}',
 ];
 
+if (!panel.__embedStatePatched) {
+  state.configure({ defaultState: panel.defaultState, sync: panel.sync });
+
+  Object.assign(panel, {
+    HELPERS: state.HELPERS,
+    clone: state.clone,
+    trim: state.trim,
+    fmtDate: state.fmtDate,
+    fmtTs: state.fmtTs,
+    avatar: state.avatar,
+    guildIcon: state.guildIcon,
+    guildBanner: state.guildBanner,
+    memberName: state.memberName,
+    displayName: state.displayName,
+    refreshGuild: state.refreshGuild,
+    sessionKey: state.sessionKey,
+    replaceVars: state.replaceVars,
+    getSession: state.getSession,
+    saveSession: state.saveSession,
+    markUnsaved: state.markUnsaved,
+    clearUnsaved: state.clearUnsaved,
+    resetSession: state.resetSession,
+  });
+
+  panel.applyTemplate = (interaction, name) => {
+    const current = state.getSession(interaction);
+    const nextPanel = panel.basePanel(name);
+    return state.markUnsaved(interaction, panel.sync({
+      ...current,
+      template: name,
+      selectedPanelIndex: 0,
+      panels: [nextPanel],
+      selectedPreset: null,
+    }));
+  };
+
+  panel.applyPreset = (interaction, name, preset = {}) => {
+    const current = state.getSession(interaction);
+    const panels = Array.isArray(preset?.panels) && preset.panels.length
+      ? state.clone(preset.panels)
+      : [panel.basePanel('custom')];
+    return state.markUnsaved(interaction, panel.sync({
+      ...current,
+      template: preset?.template || 'custom',
+      selectedPreset: name || null,
+      panels,
+      selectedPanelIndex: 0,
+      allowUserPing: !!preset?.allowUserPing,
+      showTimestamp: preset?.showTimestamp !== false,
+      fieldLayout: preset?.fieldLayout || 'auto',
+    }));
+  };
+
+  panel.setDefault = (interaction, name) => {
+    const current = state.getSession(interaction);
+    return state.saveSession(interaction, { ...current, selectedPreset: name || null });
+  };
+
+  panel.__embedStatePatched = true;
+}
+
 if (!panel.__neutralMediaStoragePatched) {
   if (typeof panel.getSession === 'function') {
     const originalGetSession = panel.getSession.bind(panel);
@@ -49,13 +111,13 @@ if (!panel.__neutralMediaStoragePatched) {
 
   if (typeof panel.saveSession === 'function') {
     const originalSaveSession = panel.saveSession.bind(panel);
-    panel.saveSession = (interaction, state) => originalSaveSession(interaction, normalizeState(state));
+    panel.saveSession = (interaction, stateValue) => originalSaveSession(interaction, normalizeState(stateValue));
   }
 
   if (typeof panel.presetData === 'function') {
     const originalPresetData = panel.presetData.bind(panel);
-    panel.presetData = (state) => {
-      const normalized = normalizeState(state);
+    panel.presetData = (stateValue) => {
+      const normalized = normalizeState(stateValue);
       const preset = originalPresetData(normalized) || {};
       const media = clone(preset.media || preset.mediaV2 || normalized?.media || normalized?.mediaV2, null);
       const output = { ...preset };
