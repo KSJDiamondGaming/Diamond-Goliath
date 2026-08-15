@@ -13,6 +13,7 @@ const {
 } = require('discord.js');
 const mediaModel = require('./embedMediaModel');
 const { validatePanelMedia, statusIcon } = require('./embedMediaValidation');
+const { persistPresetMedia } = require('./embedAssetStore');
 
 const MAX_COMPONENTS_PER_ROW = 5;
 const MAX_ACTION_ROWS = 5;
@@ -136,6 +137,40 @@ function installStateCompatibility(panel) {
   panel.setPanelMedia = (stateValue, index, media) => mediaModel.setPanelMedia(stateValue, index, media);
   panel.mediaModel = mediaModel;
   panel.__mediaV2Patched = true;
+  return panel;
+}
+
+function queuePersistentMediaImport(presetLike) {
+  persistPresetMedia('global', presetLike).then((results) => {
+    const failed = results.filter((result) => !result.ok);
+    if (failed.length) console.warn('[EmbedAssets] persistence import failed:', failed.map((result) => ({ url: String(result.url).slice(0, 120), error: result.error })));
+  }).catch((error) => console.warn('[EmbedAssets] persistence import failed:', error?.message || error));
+}
+
+function installPersistentMediaCompatibility(panel) {
+  if (!panel || panel.__persistentMediaPatched || typeof panel.saveSelected !== 'function') return panel;
+
+  const originalSaveSelected = panel.saveSelected.bind(panel);
+  panel.saveSelected = (stateValue, patch = {}) => {
+    let result = originalSaveSelected(stateValue, patch);
+    result = mediaModel.syncLegacyPatch({ ...result, mediaV2: stateValue?.mediaV2 }, patch);
+    if (['image', 'thumbnail', 'authorIcon', 'footerIcon'].some((key) => patch && patch[key])) {
+      queuePersistentMediaImport({ panels: [patch], mediaV2: result.mediaV2 });
+    }
+    return result;
+  };
+
+  if (typeof panel.presetData === 'function') {
+    const originalPresetData = panel.presetData.bind(panel);
+    panel.presetData = (stateValue) => {
+      const safeState = mediaModel.ensureStateMedia(stateValue);
+      const preset = { ...originalPresetData(safeState), mediaV2: safeState.mediaV2 };
+      queuePersistentMediaImport(preset);
+      return preset;
+    };
+  }
+
+  panel.__persistentMediaPatched = true;
   return panel;
 }
 
@@ -504,6 +539,7 @@ module.exports = {
   normalizeStoredMediaState,
   installStorageNormalization,
   installStateCompatibility,
+  installPersistentMediaCompatibility,
   installUploadModals,
   installMediaOptionsUi,
   installMediaManagerUi,
