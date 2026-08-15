@@ -16,7 +16,6 @@ const {
 } = require('discord.js');
 const creatorCompat = require('../../modules/socialStudio/socialAlerts/socialStudioCreatorActionCompat');
 const creatorRoutingCompat = require('../../modules/socialStudio/socialAlerts/socialStudioCreatorRoutingCompat');
-const creatorRoutingLegacyFix = require('../../modules/socialStudio/socialAlerts/socialStudioCreatorRoutingLegacyFix');
 const userChannelRouting = require('../../modules/socialStudio/socialAlerts/socialStudioUserChannelRouting');
 const store = require('../../modules/socialStudio/socialAlerts/socialStudioStore');
 const socialPanel = require('../../modules/socialStudio/socialAlerts/socialStudioPanel');
@@ -343,7 +342,6 @@ if (!creatorCompat.__creatorRoutingCompatPatched) {
     // The user/content/channel router owns the new usable multi-user flow and
     // must run before the older creator-wide compatibility screens.
     if (await userChannelRouting.handle(interaction)) return true;
-    if (await creatorRoutingLegacyFix.handle(interaction)) return true;
     if (await creatorRoutingCompat.handle(interaction)) return true;
     return originalHandle(interaction);
   };
