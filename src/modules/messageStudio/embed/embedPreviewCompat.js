@@ -15,27 +15,7 @@ const { persistPresetMedia } = require('./embedAssetStore');
 const mediaModel = require('./embedMediaModel');
 
 if (!panel.__embedStatePatched) {
-  state.configure({ defaultState: panel.defaultState, sync: panel.sync });
-  Object.assign(panel, {
-    HELPERS: state.HELPERS,
-    clone: state.clone,
-    trim: state.trim,
-    fmtDate: state.fmtDate,
-    fmtTs: state.fmtTs,
-    avatar: state.avatar,
-    guildIcon: state.guildIcon,
-    guildBanner: state.guildBanner,
-    memberName: state.memberName,
-    displayName: state.displayName,
-    refreshGuild: state.refreshGuild,
-    sessionKey: state.sessionKey,
-    replaceVars: state.replaceVars,
-    getSession: state.getSession,
-    saveSession: state.saveSession,
-    markUnsaved: state.markUnsaved,
-    clearUnsaved: state.clearUnsaved,
-    resetSession: state.resetSession,
-  });
+  state.bindPanel(panel, { defaultState: panel.defaultState, sync: panel.sync });
   panel.applyTemplate = (interaction, name) => {
     const current = state.getSession(interaction);
     const nextPanel = panel.basePanel(name);
