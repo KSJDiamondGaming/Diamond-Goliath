@@ -252,7 +252,12 @@ jobs:
 
             BACKUP_DIR="/home/goliath/.goliath-${ENVIRONMENT}-runtime-deploy-backup"
             rm -rf "$BACKUP_DIR"; mkdir -p "$BACKUP_DIR"
-            [ ! -d "$RUNTIME_DIR" ] || cp -a "$RUNTIME_DIR/." "$BACKUP_DIR/"
+            if [ -d "$RUNTIME_DIR" ]; then
+              # Runtime stores use atomic *.tmp -> final-file renames. Exclude those
+              # transient files so a writer cannot make the deployment snapshot fail
+              # between directory enumeration and file copy.
+              tar --exclude='*.tmp' -C "$RUNTIME_DIR" -cf - . | tar -C "$BACKUP_DIR" -xf -
+            fi
 
             restore_runtime() {
               mkdir -p "$RUNTIME_DIR"
