@@ -76,36 +76,6 @@ function platformsForUser(config, userId) {
     .filter(Boolean))];
 }
 
-function applyRoutesToAccount(account, routes) {
-  if (!account || typeof account !== 'object') return;
-  if (!account.userRouteBaseCaptured) {
-    account.userRouteBaseCaptured = true;
-    account.userRouteBaseChannelId = account.alertChannelId || null;
-    account.userRouteBaseChannels = { ...object(account.alertChannels) };
-  }
-  const baseChannels = object(account.userRouteBaseChannels);
-  account.alertChannelId = routes.all || account.userRouteBaseChannelId || null;
-  account.alertChannels = { ...baseChannels };
-  for (const type of ALERT_TYPES) {
-    if (routes[type]) account.alertChannels[type] = routes[type];
-    else if (routes.all) account.alertChannels[type] = routes.all;
-    else if (!(type in baseChannels)) delete account.alertChannels[type];
-  }
-  account.updatedAt = new Date().toISOString();
-}
-
-function clearRoutesFromAccount(account) {
-  if (!account?.userRouteBaseCaptured) return;
-  account.alertChannelId = account.userRouteBaseChannelId || null;
-  account.alertChannels = { ...object(account.userRouteBaseChannels) };
-  delete account.userRouteBaseCaptured;
-  delete account.userRouteBaseChannelId;
-  delete account.userRouteBaseChannels;
-  account.updatedAt = new Date().toISOString();
-}
-
-function syncUser() {}
-
 function routeSummary(routes) {
   const lines = [];
   for (const type of ['all', ...ALERT_TYPES]) {
@@ -254,7 +224,6 @@ async function handle(i) {
     config.userChannelOverrides = { ...overrides(config) };
     const routes = { ...routesFor(config, s.targetUserId), [s.type]: s.pendingChannelId };
     config.userChannelOverrides[s.targetUserId] = routes;
-    syncUser(config, s.targetUserId);
     save(i, config);
     setState(i, { pendingChannelId: null });
     return update(i);
@@ -271,7 +240,6 @@ async function handle(i) {
       if (Object.values(routes).some(Boolean)) config.userChannelOverrides[s.targetUserId] = routes;
       else delete config.userChannelOverrides[s.targetUserId];
     }
-    syncUser(config, s.targetUserId);
     save(i, config);
     setState(i, { pendingChannelId: null });
     return update(i);
@@ -279,22 +247,4 @@ async function handle(i) {
   return false;
 }
 
-function installStoreCompatibility() {
-  if (store.__userChannelRoutingPatched) return;
-  const originalUpsert = store.upsertCreatorAccount.bind(store);
-  store.upsertCreatorAccount = function upsertWithUserRouting(guildId, creatorId, account, duplicateIds = [], meta = {}) {
-    const result = originalUpsert(guildId, creatorId, account, duplicateIds, meta);
-    const config = store.getConfig(guildId);
-    const creator = config.creators?.[creatorId];
-    const userId = creator?.ownerDiscordId || creator?.discordUserId || creator?.userId || account?.discordUserId || account?.ownerDiscordId;
-    if (userId && Object.values(routesFor(config, userId)).some(Boolean)) {
-      syncUser(config, userId);
-      store.saveConfig(guildId, config, meta);
-      return { ...result, account: store.getAccount(guildId, account.accountId) };
-    }
-    return result;
-  };
-  store.__userChannelRoutingPatched = true;
-}
-
-module.exports = { handle, installStoreCompatibility, syncUser };
+module.exports = { handle };
