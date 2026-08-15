@@ -126,6 +126,7 @@ if (!panel.__embedNavigationPatched) {
     const finishRow = rowFromComponents(
       findComponent(rows, 'embed:readiness'),
       findComponent(rows, 'embed:test-send'),
+      findComponent(rows, 'embed:toggle-timestamp'),
     );
     payload.components = [contextRow, buildRow, detailRow, finishRow, builderNavigationRow(rows)].filter(Boolean).slice(0, 5);
     return normalizeNavigationLabels(payload);
