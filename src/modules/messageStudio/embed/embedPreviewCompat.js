@@ -11,7 +11,6 @@ const {
 } = require('discord.js');
 const panel = require('./embedPanel');
 const state = require('./embedState');
-const mediaModel = require('./embedMediaModel');
 const mediaCore = require('./embedMedia');
 
 if (!panel.__embedStatePatched) {
@@ -55,7 +54,7 @@ panel.mediaModal = (stateValue) => new ModalBuilder()
   );
 
 panel.thumbnailModal = (stateValue) => {
-  const media = mediaModel.mediaForPanel(stateValue);
+  const media = mediaCore.mediaForPanel(stateValue);
   return new ModalBuilder().setCustomId(`embed:media-thumbnail-save:${Date.now()}`).setTitle('Thumbnail').addComponents(
     new ActionRowBuilder().addComponents(textInput('source', 'Image URL / variable', TextInputStyle.Short, media.thumbnail?.source || stateValue.thumbnail)),
     new ActionRowBuilder().addComponents(textInput('alt', 'Alt text / description', TextInputStyle.Paragraph, media.thumbnail?.alt || '', 1024)),
@@ -64,7 +63,7 @@ panel.thumbnailModal = (stateValue) => {
 
 panel.buildMediaManagerPanel = (interaction, who = 'Unknown User') => {
   const currentState = panel.getSession(interaction);
-  const media = mediaModel.mediaForPanel(currentState);
+  const media = mediaCore.mediaForPanel(currentState);
   const galleryIndex = Number.isInteger(currentState.selectedMediaIndex) && currentState.selectedMediaIndex < media.gallery.length ? currentState.selectedMediaIndex : null;
   const fileIndex = Number.isInteger(currentState.selectedFileIndex) && currentState.selectedFileIndex < media.files.length ? currentState.selectedFileIndex : null;
   const rows = [];
@@ -83,7 +82,7 @@ panel.buildMediaManagerPanel = (interaction, who = 'Unknown User') => {
   }
 
   rows.push(new ActionRowBuilder().addComponents(
-    mediaButton('embed:media-gallery-add', `➕ Add Media (${media.gallery.length}/${mediaModel.MAX_GALLERY_ITEMS})`, ButtonStyle.Success, media.gallery.length >= mediaModel.MAX_GALLERY_ITEMS),
+    mediaButton('embed:media-gallery-add', `➕ Add Media (${media.gallery.length}/${mediaCore.MAX_GALLERY_ITEMS})`, ButtonStyle.Success, media.gallery.length >= mediaCore.MAX_GALLERY_ITEMS),
     mediaButton('embed:media-gallery-edit', '✏️ Edit', ButtonStyle.Primary, galleryIndex == null),
     mediaButton('embed:media-gallery-remove', '🗑️ Remove', ButtonStyle.Danger, galleryIndex == null),
     mediaButton('embed:media-gallery-up', '⬆️', ButtonStyle.Secondary, galleryIndex == null || galleryIndex <= 0),
@@ -105,7 +104,7 @@ panel.buildMediaManagerPanel = (interaction, who = 'Unknown User') => {
 
   rows.push(new ActionRowBuilder().addComponents(
     mediaButton('embed:media-thumbnail', media.thumbnail?.source ? '🖼️ Edit Thumbnail' : '🖼️ Add Thumbnail', ButtonStyle.Primary),
-    mediaButton('embed:media-file-add', `📎 Add File (${media.files.length}/${mediaModel.MAX_FILES})`, ButtonStyle.Success, media.files.length >= mediaModel.MAX_FILES),
+    mediaButton('embed:media-file-add', `📎 Add File (${media.files.length}/${mediaCore.MAX_FILES})`, ButtonStyle.Success, media.files.length >= mediaCore.MAX_FILES),
     mediaButton('embed:media-file-edit', '✏️ Edit File', ButtonStyle.Secondary, fileIndex == null),
     mediaButton('embed:media-file-remove', '🗑️ Remove File', ButtonStyle.Danger, fileIndex == null),
   ));
@@ -122,8 +121,8 @@ panel.buildMediaManagerPanel = (interaction, who = 'Unknown User') => {
         `Editing panel **${currentState.selectedPanelIndex + 1}/${currentState.panels.length}**.`,
         '',
         `**Thumbnail:** ${media.thumbnail?.source ? '✅ Configured' : '— None'}`,
-        `**Gallery:** ${media.gallery.length}/${mediaModel.MAX_GALLERY_ITEMS} item(s)`,
-        `**Files:** ${media.files.length}/${mediaModel.MAX_FILES} attachment(s)`,
+        `**Gallery:** ${media.gallery.length}/${mediaCore.MAX_GALLERY_ITEMS} item(s)`,
+        `**Files:** ${media.files.length}/${mediaCore.MAX_FILES} attachment(s)`,
         '',
         'Media URLs and supported variables are preserved in presets. Gallery items support images/videos, alt text and spoilers.',
         'The first gallery item remains mirrored to the legacy image field until the new renderer is enabled.',
