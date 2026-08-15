@@ -225,6 +225,20 @@ function clearSession(interaction) {
   return sessions.delete(sessionKey(interaction));
 }
 
+function allowedMentions(state) {
+  return state?.allowUserPing ? { parse: ['users', 'roles'] } : { parse: [] };
+}
+
+function presetData(state) {
+  return {
+    template: state?.template || 'custom',
+    panels: clone(state?.panels || []),
+    allowUserPing: !!state?.allowUserPing,
+    showTimestamp: state?.showTimestamp !== false,
+    fieldLayout: state?.fieldLayout || 'auto',
+  };
+}
+
 function applyTemplate(interaction, name) {
   if (typeof basePanelFactory !== 'function') throw new Error('Embed state is not configured with a basePanel factory.');
   const current = getSession(interaction);
@@ -286,6 +300,8 @@ function bindPanel(panel, { defaultState, sync, basePanel } = {}) {
     clearUnsaved,
     resetSession,
     clearSession,
+    allowedMentions,
+    presetData,
     applyTemplate,
     applyPreset,
     setDefault,
@@ -318,6 +334,8 @@ module.exports = {
   clearUnsaved,
   resetSession,
   clearSession,
+  allowedMentions,
+  presetData,
   applyTemplate,
   applyPreset,
   setDefault,
