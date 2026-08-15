@@ -1,50 +1,18 @@
 'use strict';
 
 const HELPERS = [
-  '{userId}',
-  '{userTag}',
-  '{userName}',
-  '{userGlobalName}',
-  '{userMention}',
-  '{userNoPing}',
-  '{userAvatar}',
-  '{userServerAvatar}',
-  '{userNickname}',
-  '{userDisplay}',
-  '{userCreatedAt}',
-  '{userCreatedTimestamp}',
-  '{userJoinedAt}',
-  '{userJoinedTimestamp}',
-  '{createdAt}',
-  '{joinedAt}',
-  '{leftAt}',
-  '{timestamp}',
-  '{accountAge}',
-  '{membershipDuration}',
-  '{departureIcon}',
-  '{departureType}',
-  '{departureLabel}',
-  '{departureReason}',
-  '{departureModerator}',
-  '{departureModeratorId}',
-  '{nowTimestamp}',
-  '{successEmoji}',
-  '{warningEmoji}',
-  '{errorEmoji}',
-  '{proofVerifiedEmoji}',
-  '{successColor}',
-  '{warningColor}',
-  '{errorColor}',
-  '{proofVerifiedColor}',
-  '{guildId}',
-  '{guildName}',
-  '{server}',
-  '{guildIcon}',
-  '{serverIcon}',
-  '{guildBanner}',
-  '{guildMemberCount}',
-  '{memberCount}',
-  '{guildVanityCode}',
+  '{userId}', '{userTag}', '{userName}', '{userGlobalName}', '{userMention}', '{userNoPing}',
+  '{userAvatar}', '{userServerAvatar}', '{userNickname}', '{userDisplay}', '{userCreatedAt}',
+  '{userCreatedTimestamp}', '{userJoinedAt}', '{userJoinedTimestamp}', '{createdAt}', '{joinedAt}',
+  '{leftAt}', '{timestamp}', '{accountAge}', '{membershipDuration}', '{departureIcon}',
+  '{departureType}', '{departureLabel}', '{departureReason}', '{departureModerator}',
+  '{departureModeratorId}', '{nowTimestamp}', '{successEmoji}', '{warningEmoji}', '{errorEmoji}',
+  '{proofVerifiedEmoji}', '{successColor}', '{warningColor}', '{errorColor}', '{proofVerifiedColor}',
+  '{guildId}', '{guildName}', '{server}', '{guildIcon}', '{serverIcon}', '{guildBanner}',
+  '{guildMemberCount}', '{memberCount}', '{guildVanityCode}', '{channelId}', '{channelName}',
+  '{channelMention}', '{guildOwnerId}', '{guildOwnerMention}', '{guildCreatedAt}',
+  '{guildCreatedTimestamp}', '{guildBoostCount}', '{guildBoostTier}', '{guildSplash}',
+  '{guildDiscoverySplash}', '{userBot}', '{userTopRoleId}', '{userTopRoleMention}',
 ];
 
 const sessions = new Map();
@@ -71,11 +39,23 @@ function fmtDate(value) {
   return Number.isNaN(date.getTime()) ? 'Unknown' : date.toISOString();
 }
 
-function fmtTs(value) {
+function fmtTs(value, style = 'F') {
   if (!value) return 'Unknown';
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return 'Unknown';
-  return `<t:${Math.floor(date.getTime() / 1000)}:F>`;
+  return `<t:${Math.floor(date.getTime() / 1000)}:${style}>`;
+}
+
+function durationFrom(timestamp) {
+  const started = Number(timestamp || 0);
+  if (!started || started > Date.now()) return 'Unknown';
+  let months = Math.max(0, Math.floor((Date.now() - started) / (1000 * 60 * 60 * 24 * 30.4375)));
+  const years = Math.floor(months / 12);
+  months %= 12;
+  const parts = [];
+  if (years) parts.push(`${years} year${years === 1 ? '' : 's'}`);
+  if (months || !parts.length) parts.push(`${months} month${months === 1 ? '' : 's'}`);
+  return parts.join(', ');
 }
 
 function avatar(member) {
@@ -90,6 +70,10 @@ function guildIcon(guild) {
 
 function guildBanner(guild) {
   return guild?.bannerURL?.({ size: 2048 }) || undefined;
+}
+
+function safeAsset(fn, fallback = '') {
+  try { return fn?.() || fallback; } catch { return fallback; }
 }
 
 function memberName(interaction) {
@@ -119,7 +103,12 @@ function replaceVars(value, interaction, allowUserPing = false) {
   const guild = interaction?.guild;
   const user = interaction?.user || interaction?.member?.user;
   const member = interaction?.member;
+  const channel = interaction?.channel || {};
+  const channelId = interaction?.channelId || channel?.id || '';
   const memberCount = guild?.memberCount ?? 0;
+  const ownerId = guild?.ownerId || '';
+  const topRole = member?.roles?.highest || null;
+  const guildCreatedTimestamp = guild?.createdTimestamp || 0;
   const vars = {
     '{userId}': user?.id || '',
     '{userTag}': user?.tag || user?.username || '',
@@ -139,8 +128,8 @@ function replaceVars(value, interaction, allowUserPing = false) {
     '{joinedAt}': fmtDate(member?.joinedAt),
     '{leftAt}': fmtDate(new Date()),
     '{timestamp}': fmtTs(new Date()),
-    '{accountAge}': '',
-    '{membershipDuration}': '',
+    '{accountAge}': durationFrom(user?.createdTimestamp),
+    '{membershipDuration}': durationFrom(member?.joinedTimestamp),
     '{departureIcon}': '',
     '{departureType}': '',
     '{departureLabel}': '',
@@ -165,10 +154,25 @@ function replaceVars(value, interaction, allowUserPing = false) {
     '{guildMemberCount}': String(memberCount),
     '{memberCount}': String(memberCount),
     '{guildVanityCode}': guild?.vanityURLCode || '',
+    '{channelId}': channelId,
+    '{channelName}': channel?.name || 'Unknown Channel',
+    '{channelMention}': channelId ? `<#${channelId}>` : '',
+    '{guildOwnerId}': ownerId,
+    '{guildOwnerMention}': ownerId ? `<@${ownerId}>` : '',
+    '{guildCreatedAt}': fmtTs(guildCreatedTimestamp, 'F'),
+    '{guildCreatedTimestamp}': fmtTs(guildCreatedTimestamp, 'R'),
+    '{guildBoostCount}': String(guild?.premiumSubscriptionCount || 0),
+    '{guildBoostTier}': String(guild?.premiumTier ?? 0),
+    '{guildSplash}': safeAsset(() => guild?.splashURL?.({ extension: 'png', size: 2048 })),
+    '{guildDiscoverySplash}': safeAsset(() => guild?.discoverySplashURL?.({ extension: 'png', size: 2048 })),
+    '{userBot}': user?.bot ? 'Yes' : 'No',
+    '{userTopRoleId}': topRole?.id || '',
+    '{userTopRoleMention}': topRole?.id ? `<@&${topRole.id}>` : '',
   };
 
   for (const [key, replacement] of Object.entries(vars)) {
     output = output.split(key).join(String(replacement ?? ''));
+    output = output.split(key.toLowerCase()).join(String(replacement ?? ''));
   }
   return output;
 }
@@ -219,6 +223,7 @@ module.exports = {
   trim,
   fmtDate,
   fmtTs,
+  durationFrom,
   avatar,
   guildIcon,
   guildBanner,
