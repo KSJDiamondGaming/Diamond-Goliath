@@ -194,6 +194,14 @@ function saveSession(interaction, state) {
   return synced;
 }
 
+function saveSelected(state, patch = {}) {
+  const panels = clone(state?.panels || []);
+  const selectedPanelIndex = Math.max(0, Number(state?.selectedPanelIndex) || 0);
+  if (!panels[selectedPanelIndex]) return stateSync(state);
+  panels[selectedPanelIndex] = { ...panels[selectedPanelIndex], ...clone(patch) };
+  return stateSync({ ...state, panels });
+}
+
 function markUnsaved(interaction, state) {
   return saveSession(interaction, { ...state, hasUnsavedChanges: true });
 }
@@ -234,6 +242,7 @@ module.exports = {
   replaceVars,
   getSession,
   saveSession,
+  saveSelected,
   markUnsaved,
   clearUnsaved,
   resetSession,
