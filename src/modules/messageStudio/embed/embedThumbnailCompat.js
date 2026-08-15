@@ -10,7 +10,7 @@ const {
   ModalBuilder,
 } = require('discord.js');
 const panel = require('./embedPanel');
-const mediaModel = require('./embedMediaModel');
+const media = require('./embedMedia');
 
 const MAX_COMPONENTS_PER_ROW = 5;
 const MAX_ACTION_ROWS = 5;
@@ -47,8 +47,8 @@ panel.thumbnailUploadModal = () => new ModalBuilder()
 
 panel.buildThumbnailOptionsPanel = (interaction) => {
   const state = panel.getSession(interaction);
-  const media = mediaModel.mediaForPanel(state);
-  const thumbnail = media.thumbnail || { source: '', alt: '' };
+  const panelMedia = media.getPanelMedia(state);
+  const thumbnail = panelMedia.thumbnail || { source: '', alt: '' };
   const source = resolveSource(thumbnail.source, interaction);
   const lines = [
     '**Thumbnail settings**',
