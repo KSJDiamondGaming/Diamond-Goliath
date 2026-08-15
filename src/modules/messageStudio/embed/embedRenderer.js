@@ -12,7 +12,7 @@ const {
   ThumbnailBuilder,
 } = require('discord.js');
 const fetch = require('node-fetch');
-const path = require('path');
+const path = require('node:path');
 const sharp = require('sharp');
 const { getCachedAsset, saveCachedAsset, ensureAssetCached } = require('./embedAssetStore');
 const { replaceVars } = require('./embedPanel');
