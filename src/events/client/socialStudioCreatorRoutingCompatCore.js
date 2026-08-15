@@ -3,7 +3,7 @@
 // Install Social Studio automatic-post routing ahead of the main interaction
 // handler without adding another competing interactionCreate listener.
 
-const crypto = require('crypto');
+const crypto = require('node:crypto');
 const {
   ActionRowBuilder,
   ButtonBuilder,
