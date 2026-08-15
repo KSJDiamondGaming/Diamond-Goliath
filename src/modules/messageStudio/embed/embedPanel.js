@@ -10,6 +10,8 @@ const {
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
+  FileUploadBuilder,
+  LabelBuilder,
 } = require("discord.js");
 
 const {
@@ -596,6 +598,108 @@ function colorModal(s) {
 function presetModal(s) {
   return modal("embed:preset-save-modal", "Save Embed Preset", [input("name", "Preset name", TextInputStyle.Short, s.selectedPreset || "", true, 50)]);
 }
+function resolveAppearanceSource(source, interaction) {
+  const raw = String(source || "").trim();
+  if (!raw) return "";
+  try {
+    const resolved = replaceVars(raw, interaction);
+    const url = new URL(String(resolved || "").trim());
+    return url.protocol === "https:" ? url.toString() : "";
+  } catch {
+    return "";
+  }
+}
+function appearanceDetailsModal(state) {
+  return new ModalBuilder()
+    .setCustomId(`embed:appearance-details-save:${Date.now()}`)
+    .setTitle("Edit Appearance Details")
+    .addComponents(
+      new ActionRowBuilder().addComponents(input("authorName", "Author name", TextInputStyle.Short, state.authorName, false, 256)),
+      new ActionRowBuilder().addComponents(input("authorUrl", "Author clickable URL", TextInputStyle.Short, state.authorUrl, false, 4000)),
+      new ActionRowBuilder().addComponents(input("footer", "Footer text", TextInputStyle.Short, state.footer, false, 2048)),
+    );
+}
+function appearanceIconUrlModal(kind, state) {
+  const isAuthor = kind === "author";
+  const value = isAuthor ? state.authorIcon : state.footerIcon;
+  return new ModalBuilder()
+    .setCustomId(`embed:appearance-icon-url-save:${kind}:${Date.now()}`)
+    .setTitle(isAuthor ? "Author Icon URL" : "Footer Icon URL")
+    .addComponents(new ActionRowBuilder().addComponents(
+      input("source", `${isAuthor ? "Author" : "Footer"} icon URL / variable`, TextInputStyle.Short, value, false, 4000),
+    ));
+}
+function appearanceIconUploadModal(kind) {
+  const isAuthor = kind === "author";
+  return new ModalBuilder()
+    .setCustomId(`embed:appearance-icon-upload-save:${kind}`)
+    .setTitle(isAuthor ? "Upload Author Icon" : "Upload Footer Icon")
+    .addLabelComponents(
+      new LabelBuilder()
+        .setLabel(isAuthor ? "Author icon image" : "Footer icon image")
+        .setDescription("Upload one image. Discord-supported image formats are preserved.")
+        .setFileUploadComponent(new FileUploadBuilder().setCustomId("icon_file").setMinValues(1).setMaxValues(1).setRequired(true)),
+    );
+}
+function buildAppearancePanel(interaction) {
+  const state = getSession(interaction);
+  const authorIcon = resolveAppearanceSource(state.authorIcon, interaction);
+  const footerIcon = resolveAppearanceSource(state.footerIcon, interaction);
+  const lines = [
+    `**Author name:** ${state.authorName ? trim(state.authorName, 300) : "Not set"}`,
+    `**Author link:** ${state.authorUrl ? trim(state.authorUrl, 500) : "Not set"}`,
+    `**Author icon:** ${state.authorIcon ? trim(state.authorIcon, 500) : "Not set"}`,
+    "",
+    `**Footer text:** ${state.footer ? trim(state.footer, 700) : "Not set"}`,
+    `**Footer icon:** ${state.footerIcon ? trim(state.footerIcon, 500) : "Not set"}`,
+    "",
+    "Icon sources can use direct HTTPS image links, Embed Studio variables, or direct uploads.",
+  ];
+  const embeds = [new EmbedBuilder().setColor(0x5865F2).setTitle("🎨 Appearance").setDescription(lines.join("\n").slice(0, 4096))];
+  if (authorIcon) embeds.push(new EmbedBuilder().setColor(0x5865F2).setTitle("👤 Author Icon Preview").setThumbnail(authorIcon));
+  if (footerIcon) embeds.push(new EmbedBuilder().setColor(0x5865F2).setTitle("🏷️ Footer Icon Preview").setThumbnail(footerIcon));
+  return {
+    embeds,
+    components: [
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId("embed:appearance-details").setLabel("✏️ Edit Details").setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId("embed:appearance-author-icon").setLabel("👤 Author Icon").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId("embed:appearance-footer-icon").setLabel("🏷️ Footer Icon").setStyle(ButtonStyle.Secondary),
+      ),
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId("embed:builder").setLabel("⬅️ Back").setStyle(ButtonStyle.Secondary),
+      ),
+    ],
+  };
+}
+function buildAppearanceIconPanel(interaction, kind) {
+  const state = getSession(interaction);
+  const isAuthor = kind === "author";
+  const raw = isAuthor ? state.authorIcon : state.footerIcon;
+  const resolved = resolveAppearanceSource(raw, interaction);
+  const embed = new EmbedBuilder()
+    .setColor(0x5865F2)
+    .setTitle(isAuthor ? "👤 Author Icon" : "🏷️ Footer Icon")
+    .setDescription([
+      `**Source:** ${raw ? trim(raw, 1000) : "Not set"}`,
+      "",
+      "Use a direct HTTPS image URL, an Embed Studio variable, or upload an image directly.",
+    ].join("\n"));
+  if (resolved) embed.setThumbnail(resolved);
+  return {
+    embeds: [embed],
+    components: [
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`embed:appearance-icon-url:${kind}`).setLabel("✏️ Edit URL").setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId(`embed:appearance-icon-upload:${kind}`).setLabel("📤 Upload").setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId(`embed:appearance-icon-clear:${kind}`).setLabel("🗑️ Clear").setStyle(ButtonStyle.Danger).setDisabled(!raw),
+      ),
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId("embed:appearance-back").setLabel("⬅️ Back").setStyle(ButtonStyle.Secondary),
+      ),
+    ],
+  };
+}
 
 module.exports = {
   clone,
@@ -657,6 +761,11 @@ module.exports = {
   buttonModal,
   colorModal,
   presetModal,
+  appearanceDetailsModal,
+  appearanceIconUrlModal,
+  appearanceIconUploadModal,
+  buildAppearancePanel,
+  buildAppearanceIconPanel,
   PANEL_COLOR,
   CUSTOM_HEX_VALUE,
   MAX_PANELS,
