@@ -2,7 +2,7 @@
 
 const { MessageFlags, PermissionFlagsBits } = require('discord.js');
 const { handleButtonAction } = require('./embedButtonsCompat');
-const panel = require('./embedNavigationCompat');
+const panel = require('./embedButtonsCompat');
 const media = require('./embedMedia');
 const guildManager = require('../../../core/guild/guildManager');
 const { validateChannelAccess } = require('../../../core/security/goliathPermissionGuard');
