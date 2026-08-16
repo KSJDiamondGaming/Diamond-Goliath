@@ -19,9 +19,59 @@ src/modules/utilityStudio/schedule/
 └── scheduleTracking.js
 ```
 
-`guild.modules.schedule` is the only configuration/data source of truth. The normal runtime environment selects the correct guild JSON for dev, beta or production.
+`guild.modules.schedule` is the only Schedule configuration/data source of truth. The normal runtime environment selects the correct guild JSON for dev, beta or production.
 
 `schedule.js` is canonical for event state, recurrence, RSVP state, reminders and processing. `scheduleTracking.js` delegates to it rather than maintaining a second processor. `scheduleInteractions.js` is a compatibility surface that delegates to `scheduleDeployment.js`.
+
+## Poll-powered event planning
+
+Schedule integrates with the existing Community Studio Polls module rather than implementing a second voting engine.
+
+Poll vote data remains canonical under:
+
+```text
+guild.modules.polls
+```
+
+Schedule stores only planning-session metadata and poll references under its own section, for example:
+
+```text
+guild.modules.schedule.planningGroups.<groupId>
+├── dayPollId
+├── timePollId
+├── activityPollId
+└── eventId
+```
+
+Planning polls carry `sourceModule: schedule`, a planning purpose (`schedule_day`, `schedule_time`, or `schedule_activity`) and the Schedule planning group ID.
+
+From `/admin -> Utility Studio -> Schedule -> Plan Event`, admins can:
+
+- Create a day-availability poll from `YYYY-MM-DD | label` options.
+- Create a time-availability poll from `HH:mm | label` options.
+- Create an optional game/activity poll.
+- Deploy those polls to a selected channel.
+- Refresh ranked results.
+- View the strongest **same-member** day/time/activity combinations.
+- Create a real Schedule event from the strongest combination.
+
+The planner does not simply compare independent totals. Because Polls stores the Discord user IDs behind each option, Schedule calculates set intersections to show how many of the **same members** selected a particular day, time and activity.
+
+Example:
+
+```text
+Saturday · 20:00 · Call of Duty — 12 shared members
+Friday   · 21:00 · Call of Duty — 9 shared members
+Saturday · 21:00 · Fortnite     — 8 shared members
+```
+
+### Multi-select polls
+
+Polls now supports a `multi_select` render mode using a Discord select menu. A member can choose every option that applies in one interaction, such as Monday + Wednesday + Friday or several acceptable games.
+
+Submitting the selector replaces that member's previous selection set atomically. The canonical Polls engine remains responsible for concurrency, persistence, live result rendering, close/repair behaviour and analytics.
+
+Standard Polls button voting remains supported and unchanged for normal polls.
 
 ## Sesh-style event model
 
@@ -83,13 +133,7 @@ Supported repeat types:
 
 Recurrence stores the event timezone and advances the event using local-time parts, preserving the intended wall-clock time across daylight-saving changes where the IANA timezone applies.
 
-Repeating events may define:
-
-- Interval
-- Occurrence count
-- End date
-- Weekly day selection
-- Auto Join Next permission
+Repeating events may define interval, occurrence count, end date, weekly day selection and Auto Join Next permission.
 
 Members who enabled Auto Join Next carry their RSVP and personal reminder configuration to the next occurrence. Other RSVP state is reset.
 
@@ -105,29 +149,13 @@ Schedule supports three notification layers:
 
 Sent reminder/notification state is persisted so restarts do not intentionally send the same reminder again.
 
-Notification placeholders include:
+Notification placeholders include `{event}`, `{relative}`, `{time}` and `{host}`.
 
-```text
-{event}
-{relative}
-{time}
-{host}
-```
+## Event threads and Discord native events
 
-## Event threads
-
-Events can create a Discord thread from the deployed event message. Configuration includes:
-
-- Custom thread title with `{event}` placeholder
-- Auto-add attendees when they RSVP
-- Auto-archive duration
-- Stored thread ID for recovery/health checks
-
-## Discord native event mirroring
+Events can create a Discord thread from the deployed event message. Configuration includes a custom thread title, optional attendee auto-add behaviour, auto-archive duration and stored thread ID.
 
 An event can optionally mirror to Discord's native Scheduled Events system. The module creates or updates the native event when the Goliath event is deployed/updated, provided Goliath has `Manage Events`.
-
-Voice/stage events bind to the selected voice channel. Events without a voice channel use an external event location.
 
 The Goliath RSVP post remains canonical for Goliath attendance state.
 
@@ -143,22 +171,11 @@ Open:
 /admin -> Utility Studio -> Schedule
 ```
 
-The Schedule Studio contains:
-
-- Home/event selector
-- Create/Edit event
-- Event Setup
-- RSVP & Roles
-- Repeat & Reminders
-- Templates
-- Deploy/update event post
-- Native event sync
-- Cancel/duplicate
-- Health
+The Schedule Studio contains Home/event selector, Plan Event, Create/Edit Event, Event Setup, RSVP & Roles, Repeat & Reminders, Templates, deployment/native sync, cancel/duplicate and Health.
 
 No standalone Schedule slash command is registered.
 
-## Dashboard
+## Dashboard and API
 
 Dashboard route:
 
@@ -166,44 +183,26 @@ Dashboard route:
 /schedule
 ```
 
-The dashboard provides server defaults plus a multi-section event editor for:
-
-- Basics
-- RSVP & Roles
-- Repeat & Reminders
-- Threads & Native Events
-- Templates
-- Deployment and operations
-
 API base:
 
 ```text
 /api/schedule/:guildId
 ```
 
-The API supports module settings, event CRUD, deployments, native sync, RSVP management, member reminders, templates, processing, health/repair, export and reset.
+The API supports module settings, event CRUD, deployments, native sync, RSVP management, member reminders, templates, processing, health/repair, export and reset. Planning-group data is part of the canonical Schedule config returned by the existing Schedule API; poll votes remain in the Polls API/source of truth.
 
 ## Health and repair
 
-Health validates:
-
-- Event and voice channels
-- Timezones
-- Send Messages / Embed Links
-- Referenced roles
-- Attendee role hierarchy/manageability
-- Manage Events when native mirroring is enabled
-- Create Public Threads when event threads are enabled
-- Stored native-event references
-- Stored thread references
-- Previous processing errors
+Health validates event and voice channels, timezones, Send Messages / Embed Links, referenced roles, attendee role hierarchy/manageability, Manage Events for native mirroring, Create Public Threads for threads, stored native-event/thread references and previous processing errors.
 
 Repair removes dead resource references, clears stale event errors and preserves valid event configuration.
 
 ## External Sesh features
 
-Goliath now matches the core Discord event/RSVP experience being used as the Sesh reference. Full OAuth-based Google Calendar bidirectional account synchronisation is not implemented by this module build; Goliath currently provides a member-facing Add to Calendar link instead. Polls/time-finder functionality belongs in Goliath's existing Polls/other modules rather than being duplicated inside Schedule.
+Goliath matches the core Discord event/RSVP experience being used as the Sesh reference. Full OAuth-based Google Calendar bidirectional account synchronisation is not implemented; Goliath currently provides a member-facing Add to Calendar link instead.
+
+Polls remain a separate Community Studio module, but Schedule now consumes them for Sesh-style availability/time/activity planning instead of duplicating the Polls engine.
 
 ## Acceptance state
 
-Repository-side Sesh parity is implemented. Do not mark Schedule as fully working/locked until live-guild tests cover event creation/editing, deployment, custom RSVP options, attendee roles, role restrictions, capacity/waitlist promotion, personal reminders, recurrence/Auto Join Next, event threads, native event mirroring, templates, dashboard editing, restart recovery and health/repair.
+Repository-side Schedule + Polls planning integration is implemented. Do not mark Schedule as fully working/locked until live-guild tests cover multi-select poll submission/editing, day/time/activity planning polls, same-member combination results, event creation from the winning combination, event creation/editing, deployment, custom RSVP options, attendee roles, role restrictions, capacity/waitlist promotion, personal reminders, recurrence/Auto Join Next, event threads, native event mirroring, templates, dashboard editing, restart recovery and health/repair.
