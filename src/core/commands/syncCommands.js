@@ -51,8 +51,12 @@ async function cleanupCommandCenterScope() {
     });
     for (const command of commands || []) {
       if (command?.name !== 'commandcenter') continue;
-      await rest.delete(Routes.applicationGuildCommand(clientId, guildId, command.id));
-      console.log(`[CommandSync] Removed stale private /commandcenter from non-Command-Center guild ${guildId}.`);
+      try {
+        await rest.delete(Routes.applicationGuildCommand(clientId, guildId, command.id));
+        console.log(`[CommandSync] Removed stale private /commandcenter from non-Command-Center guild ${guildId}.`);
+      } catch (error) {
+        console.warn(`[CommandSync] Could not remove stale private /commandcenter from ${guildId}:`, error.message);
+      }
     }
   }
 }
