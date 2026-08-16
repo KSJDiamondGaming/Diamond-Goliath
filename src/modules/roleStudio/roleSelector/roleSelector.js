@@ -184,6 +184,12 @@ function roleNameFor(section, label, group = null) {
     .replace(/\s{2,}/g, ' ').trim().slice(0, 100);
 }
 function canManageRole(guild, role) { const me = guild?.members?.me; return Boolean(me && me.permissions.has(PermissionFlagsBits.ManageRoles) && role && !role.managed && role.position < me.roles.highest.position); }
+function assertSafeSelectorRole(guild, role) {
+  if (!role) throw new Error('The selected existing role no longer exists.');
+  if (!canManageRole(guild, role)) throw new Error(`Goliath cannot safely manage @${role.name}; move it below Goliath first.`);
+  if (role.permissions.bitfield !== 0n) throw new Error(`@${role.name} has Discord permissions. Self-service selector roles must not grant permissions.`);
+  return role;
+}
 function suggestRoleStyle(guild) {
   const names = [...(guild?.roles?.cache?.values?.() || [])].filter((role) => role.id !== guild.id && !role.managed).map((role) => role.name).filter(Boolean).slice(0, 100);
   const candidates = [' | ', ' • ', '・', ' ┃ ', ' - ', ' » ']; let best = { separator: ' | ', count: 0 };
@@ -199,7 +205,7 @@ async function ensureStandardOptionRole(guild, groupId, optionId) {
   const section = getSection(guild.id); const group = section.groups[slug(groupId)]; if (!group || group.type !== 'standard') throw new Error('Selector group not found.');
   const option = group.options.find((item) => item.id === slug(optionId)); if (!option || !option.enabled) throw new Error('Selector option not found or disabled.');
   let role = option.roleId ? guild.roles.cache.get(option.roleId) || await guild.roles.fetch(option.roleId).catch(() => null) : null;
-  if (role) return { role, option };
+  if (role) return { role: assertSafeSelectorRole(guild, role), option };
   if (!guild.members.me?.permissions.has(PermissionFlagsBits.ManageRoles)) throw new Error('Goliath needs Manage Roles to create selector roles.');
   role = await guild.roles.create({ name: roleNameFor(section, option.label, group), permissions: [], hoist: false, mentionable: false, reason: `Goliath Role Selector · ${group.name}` });
   saveGroup(guild.id, { ...group, options: group.options.map((item) => item.id === option.id ? { ...item, roleId: role.id, managed: true, unusedSince: null } : item) }, { actorId: guild.members.me?.id, action: 'role_selector_create_option_role' });
@@ -224,6 +230,20 @@ function roleIdsForGroup(group) {
   if (!group) return [];
   if (group.type === 'colour') return Object.values(group.managedRoles || {}).map((record) => record.roleId).filter(Boolean);
   return (group.options || []).map((option) => option.roleId).filter(Boolean);
+}
+async function deleteManagedGroupRoles(guild, groupId) {
+  const group = getGroup(guild.id, groupId);
+  if (!group || group.builtIn) return { deleted: 0, skipped: 0 };
+  let deleted = 0; let skipped = 0;
+  for (const option of group.options || []) {
+    if (!option.roleId || option.managed === false) { skipped += option.roleId ? 1 : 0; continue; }
+    const role = guild.roles.cache.get(option.roleId) || await guild.roles.fetch(option.roleId).catch(() => null);
+    if (!role) continue;
+    if (!canManageRole(guild, role)) { skipped += 1; continue; }
+    if (await role.delete(`Goliath Role Selector group deleted · ${group.name}`).then(() => true).catch(() => false)) deleted += 1;
+  }
+  if (deleted) updateSection(guild.id, (current) => ({ ...current, analytics: { ...current.analytics, rolesDeleted: Number(current.analytics.rolesDeleted || 0) + deleted } }));
+  return { deleted, skipped };
 }
 function selectionFor(section, userId, groupId) {
   const value = section.memberSelections?.[userId]?.[groupId]; return Array.isArray(value) ? value : value ? [value] : [];
@@ -319,4 +339,4 @@ async function cleanupUnused(guild) {
   if (deleted) updateSection(guild.id, (current) => ({ ...current, analytics: { ...current.analytics, rolesDeleted: Number(current.analytics.rolesDeleted || 0) + deleted } })); return { deleted, marked };
 }
 
-module.exports = { MODULE, COLOUR_GROUP_ID, DEFAULT_PALETTE, defaultSection, normalizeHex, hexToInt, classifyHex, getSection, saveSection, updateSection, listGroups, getGroup, saveGroup, removeGroup, roleNameFor, suggestRoleStyle, canManageRole, ensureColourRole, ensureStandardOptionRole, applyColourSelection, applyStandardSelection, clearSelection, getUsage, syncManagedRoleHierarchy, syncManagedRoleAppearance, cleanupUnused, roleIdsForGroup };
+module.exports = { MODULE, COLOUR_GROUP_ID, DEFAULT_PALETTE, defaultSection, normalizeHex, hexToInt, classifyHex, getSection, saveSection, updateSection, listGroups, getGroup, saveGroup, removeGroup, roleNameFor, suggestRoleStyle, canManageRole, assertSafeSelectorRole, ensureColourRole, ensureStandardOptionRole, deleteManagedGroupRoles, applyColourSelection, applyStandardSelection, clearSelection, getUsage, syncManagedRoleHierarchy, syncManagedRoleAppearance, cleanupUnused, roleIdsForGroup };
