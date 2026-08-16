@@ -83,7 +83,7 @@ router.post('/:guildId/apply-style-suggestion', async (req, res) => {
     const id = guildId(req);
     const current = colourRoles.getSection(id);
     if (!current.style.detectedFormat) throw new Error('Run the guild style scan first.');
-    colourRoles.updateSection(id, {
+    const next = colourRoles.updateSection(id, {
       ...current,
       style: {
         ...current.style,
@@ -93,8 +93,36 @@ router.post('/:guildId/apply-style-suggestion', async (req, res) => {
       },
     }, { actorId: actorId(req), action: 'colour_roles_style_suggestion_applied' });
     const g = await guild(req, id);
-    if (g && current.style.anchorRoleId && current.style.keepGrouped) await colourRoles.reorderManagedRoles(g);
+    if (g && next.style.anchorRoleId && next.style.keepGrouped) await colourRoles.reorderManagedRoles(g);
     return success(res, await overview(req, id));
+  } catch (error) { return failure(res, error); }
+});
+
+router.post('/:guildId/create-divider', async (req, res) => {
+  try {
+    const id = guildId(req);
+    const g = await guild(req, id);
+    if (!g) throw new Error('Guild is unavailable.');
+    const name = String(req.body?.name || '🌈 | COLOUR ROLES').trim().slice(0, 100);
+    const divider = await g.roles.create({
+      name,
+      color: 0,
+      hoist: false,
+      mentionable: false,
+      permissions: [],
+      reason: 'Goliath Colour Roles divider',
+    });
+    if (!colourRoles.canManageRole(g, divider)) {
+      await divider.delete('Goliath Colour Roles divider could not be safely managed').catch(() => null);
+      throw new Error('Goliath could not manage the new divider because of role hierarchy.');
+    }
+    const current = colourRoles.getSection(id);
+    colourRoles.updateSection(id, {
+      ...current,
+      style: { ...current.style, anchorRoleId: divider.id },
+    }, { actorId: actorId(req), action: 'colour_roles_dashboard_divider_created' });
+    await colourRoles.reorderManagedRoles(g);
+    return success(res, { divider: { id: divider.id, name: divider.name }, ...(await overview(req, id)) });
   } catch (error) { return failure(res, error); }
 });
 
