@@ -38,6 +38,15 @@ function hasLegacyPayload(value) {
 
 function migrateColourRolesToRoleSelector(colourRoles = {}) {
   if (!isPlainObject(colourRoles)) return {};
+  const legacySelections = isPlainObject(colourRoles.memberSelections) ? clone(colourRoles.memberSelections) : {};
+  const memberSelections = Object.fromEntries(Object.entries(legacySelections).map(([userId, selection]) => {
+    const value = Array.isArray(selection)
+      ? selection
+      : selection && typeof selection === 'object'
+        ? [selection.hex || selection.value || selection.roleHex].filter(Boolean)
+        : selection ? [selection] : [];
+    return [userId, { colours: value }];
+  }));
   const colourGroup = {
     id: 'colours',
     key: 'colours',
@@ -52,13 +61,13 @@ function migrateColourRolesToRoleSelector(colourRoles = {}) {
     palette: clone(colourRoles.palette || []),
     customHexEnabled: colourRoles.customHexEnabled !== false,
     managedRoles: clone(colourRoles.managedRoles || {}),
-    memberSelections: clone(colourRoles.memberSelections || {}),
   };
 
   return {
     enabled: colourRoles.enabled !== false,
     groups: { colours: colourGroup },
     groupOrder: ['colours'],
+    memberSelections,
     style: clone(colourRoles.style || {}),
     deployment: clone(colourRoles.deployment || {}),
     cleanup: clone(colourRoles.cleanup || {}),
