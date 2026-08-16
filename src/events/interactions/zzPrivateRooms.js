@@ -9,11 +9,13 @@ function componentId(component) {
 }
 
 async function appendNavigationButton(interaction, customId, label, emoji = 'ðŸ”’') {
-  const messageId = interaction.message?.id;
-  const channel = interaction.channel;
-  if (!messageId || !channel?.messages?.fetch) return false;
-  const message = await channel.messages.fetch(messageId).catch(() => null);
-  if (!message?.editable) return false;
+  let message = null;
+  if (typeof interaction.fetchReply === 'function') message = await interaction.fetchReply().catch(() => null);
+  if (!message && interaction.message?.id && interaction.channel?.messages?.fetch) {
+    message = await interaction.channel.messages.fetch(interaction.message.id).catch(() => null);
+  }
+  if (!message) return false;
+
   const rows = (message.components || []).map((actionRow) => actionRow.toJSON());
   if (rows.some((actionRow) => (actionRow.components || []).some((component) => componentId(component) === customId))) return true;
   const component = { type: 2, style: 2, custom_id: customId, label, emoji: { name: emoji } };
@@ -24,8 +26,16 @@ async function appendNavigationButton(interaction, customId, label, emoji = 'ðŸ”
   }
   if (!target) return false;
   target.components.push(component);
-  await message.edit({ components: rows }).catch(() => null);
-  return true;
+
+  if ((interaction.deferred || interaction.replied) && typeof interaction.editReply === 'function') {
+    await interaction.editReply({ components: rows }).catch(() => null);
+    return true;
+  }
+  if (message.editable) {
+    await message.edit({ components: rows }).catch(() => null);
+    return true;
+  }
+  return false;
 }
 
 async function safeError(interaction, error) {
