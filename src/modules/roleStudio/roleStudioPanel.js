@@ -14,6 +14,8 @@ const timedRolesHealth = require('./timedRoles/timedRolesHealth');
 const reactionRoles = require('./reactionRoles/reactionRoles');
 const temporaryRoles = require('./temporaryRoles/temporaryRoles');
 const temporaryRolesHealth = require('./temporaryRoles/temporaryRolesHealth');
+const colourRoles = require('./colourRoles/colourRoles');
+const colourRolesHealth = require('./colourRoles/colourRolesHealth');
 
 const row = (...components) => new ActionRowBuilder().addComponents(...components.filter(Boolean));
 const button = (customId, label, style = ButtonStyle.Primary, disabled = false) => new ButtonBuilder()
@@ -31,12 +33,14 @@ async function getRoleStudioState(guild) {
   const reaction = reactionRoles.getSection(guild.id);
   const timed = timedRoles.getSection(guild.id);
   const temporary = temporaryRoles.getSection(guild.id);
+  const colour = colourRoles.getSection(guild.id);
 
-  const [autoHealth, reactionHealth, timedHealth, temporaryHealth] = await Promise.all([
+  const [autoHealth, reactionHealth, timedHealth, temporaryHealth, colourHealth] = await Promise.all([
     autoroles.buildHealthReport(guild),
     reactionRoles.buildHealth(guild),
     timedRolesHealth.buildTimedRolesHealth(guild),
     temporaryRolesHealth.buildHealth(guild),
+    colourRolesHealth.buildHealth(guild),
   ]);
 
   const reactionDeployments = reactionRoles.listPanels(guild.id);
@@ -48,10 +52,12 @@ async function getRoleStudioState(guild) {
     reaction,
     timed,
     temporary,
+    colour,
     autoHealth,
     reactionHealth,
     timedHealth,
     temporaryHealth,
+    colourHealth,
     reactionDeployments,
     timedRules,
     tempAssignments,
@@ -60,6 +66,7 @@ async function getRoleStudioState(guild) {
     reactionEnabled: guildManager.isModuleEnabled(guild.id, reactionRoles.SECTION),
     timedEnabled: guildManager.isModuleEnabled(guild.id, 'timedRoles'),
     temporaryEnabled: guildManager.isModuleEnabled(guild.id, 'temporaryRoles'),
+    colourEnabled: guildManager.isModuleEnabled(guild.id, 'colourRoles'),
     canManageRoles: Boolean(guild.members.me?.permissions.has('ManageRoles')),
   };
 }
@@ -76,12 +83,14 @@ async function buildRoleStudioPanel(guild, memberDisplayName = 'Unknown User') {
   const reactionConfigured = state.reactionDeployments.length > 0;
   const timedConfigured = state.timedRules.length > 0;
   const temporaryConfigured = state.tempAssignments.length > 0;
+  const colourConfigured = Boolean(state.colour.deployment?.messageId || Object.keys(state.colour.managedRoles || {}).length);
 
   const activeSystemsHealthy = [
     !state.autoEnabled || !autoConfigured || state.autoHealth.healthy,
     !state.reactionEnabled || !reactionConfigured || state.reactionHealth.healthy,
     !state.timedEnabled || !timedConfigured || state.timedHealth.healthy,
     !state.temporaryEnabled || !temporaryConfigured || state.temporaryHealth.healthy,
+    !state.colourEnabled || !colourConfigured || state.colourHealth.healthy,
   ].every(Boolean);
   const overallHealthy = state.canManageRoles && activeSystemsHealthy;
 
@@ -93,38 +102,23 @@ async function buildRoleStudioPanel(guild, memberDisplayName = 'Unknown User') {
       '',
       `**👥 Auto Roles** — ${statusIcon(state.autoEnabled)} ${statusLabel(state.autoEnabled)}`,
       `Configured: \`${state.autoRoleCount}\` • Assigned: \`${state.auto.analytics?.assigned || 0}\``,
-      `Health: ${moduleHealthLabel({
-        enabled: state.autoEnabled,
-        configured: autoConfigured,
-        healthy: state.autoHealth.healthy,
-      })}`,
+      `Health: ${moduleHealthLabel({ enabled: state.autoEnabled, configured: autoConfigured, healthy: state.autoHealth.healthy })}`,
       '',
       `**😊 Reaction Roles** — ${statusIcon(state.reactionEnabled)} ${statusLabel(state.reactionEnabled)}`,
       `Panels: \`${state.reactionDeployments.length}\` • Added: \`${state.reaction.analytics?.assigned || 0}\` • Removed: \`${state.reaction.analytics?.removed || 0}\``,
-      `Health: ${moduleHealthLabel({
-        enabled: state.reactionEnabled,
-        configured: reactionConfigured,
-        healthy: state.reactionHealth.healthy,
-        detail: `${state.reactionHealth.unhealthy || 0} panel(s)`,
-      })}`,
+      `Health: ${moduleHealthLabel({ enabled: state.reactionEnabled, configured: reactionConfigured, healthy: state.reactionHealth.healthy, detail: `${state.reactionHealth.unhealthy || 0} panel(s)` })}`,
       '',
       `**⏳ Timed Roles** — ${statusIcon(state.timedEnabled)} ${statusLabel(state.timedEnabled)}`,
       `Milestones: \`${state.timedRules.length}\` • Awarded: \`${state.timed.analytics?.awarded || 0}\``,
-      `Health: ${moduleHealthLabel({
-        enabled: state.timedEnabled,
-        configured: timedConfigured,
-        healthy: state.timedHealth.healthy,
-        detail: `${state.timedHealth.issues?.length || 0} issue(s)`,
-      })}`,
+      `Health: ${moduleHealthLabel({ enabled: state.timedEnabled, configured: timedConfigured, healthy: state.timedHealth.healthy, detail: `${state.timedHealth.issues?.length || 0} issue(s)` })}`,
       '',
       `**⚡ Temporary Roles** — ${statusIcon(state.temporaryEnabled)} ${statusLabel(state.temporaryEnabled)}`,
       `Active: \`${state.tempAssignments.length}\` • Assigned: \`${state.temporary.analytics?.assigned || 0}\` • Expired: \`${state.temporary.analytics?.expired || 0}\``,
-      `Health: ${moduleHealthLabel({
-        enabled: state.temporaryEnabled,
-        configured: temporaryConfigured,
-        healthy: state.temporaryHealth.healthy,
-        detail: `${state.temporaryHealth.issues?.length || 0} issue(s) • ${state.temporaryHealth.warnings?.length || 0} warning(s)`,
-      })}`,
+      `Health: ${moduleHealthLabel({ enabled: state.temporaryEnabled, configured: temporaryConfigured, healthy: state.temporaryHealth.healthy, detail: `${state.temporaryHealth.issues?.length || 0} issue(s) • ${state.temporaryHealth.warnings?.length || 0} warning(s)` })}`,
+      '',
+      `**🌈 Colour Roles** — ${statusIcon(state.colourEnabled)} ${statusLabel(state.colourEnabled)}`,
+      `Using colours: \`${state.colourHealth.totalUsing || 0}\` • Managed roles: \`${state.colourHealth.managedRoleCount || 0}\` • Selections: \`${state.colour.analytics?.selections || 0}\``,
+      `Health: ${moduleHealthLabel({ enabled: state.colourEnabled, configured: colourConfigured, healthy: state.colourHealth.healthy, detail: `${state.colourHealth.issues?.length || 0} issue(s)` })}`,
       '',
       state.canManageRoles
         ? `> Overall: ${activeSystemsHealthy ? '✅ All active role systems are healthy.' : '⚠️ One or more active role systems need attention.'}`
@@ -143,6 +137,7 @@ async function buildRoleStudioPanel(guild, memberDisplayName = 'Unknown User') {
       ),
       row(
         button('admin:timedRoles', '⏳ Timed Roles', ButtonStyle.Primary),
+        button('admin:colourRoles', '🌈 Colour Roles', ButtonStyle.Primary),
       ),
       row(
         button('admin:studio:roleStudio', '🔄 Refresh Status', ButtonStyle.Secondary),
@@ -166,6 +161,9 @@ async function buildRoleAnalyticsPanel(guild, memberDisplayName = 'Unknown User'
         `**Temporary Roles assigned:** \`${state.temporary.analytics?.assigned || 0}\``,
         `**Temporary Roles expired:** \`${state.temporary.analytics?.expired || 0}\``,
         `**Temporary Roles removed early:** \`${state.temporary.analytics?.removed || 0}\``,
+        `**Colour Roles selections:** \`${state.colour.analytics?.selections || 0}\``,
+        `**Colour Roles switches:** \`${state.colour.analytics?.switches || 0}\``,
+        `**Colour Roles removals:** \`${state.colour.analytics?.removals || 0}\``,
       ].join('\n'))
       .setFooter({ text: `Requested by ${memberDisplayName}` })
       .setTimestamp()],
@@ -179,7 +177,8 @@ async function buildRoleHealthPanel(guild, memberDisplayName = 'Unknown User') {
     && state.autoHealth.healthy
     && state.reactionHealth.healthy
     && state.timedHealth.healthy
-    && state.temporaryHealth.healthy;
+    && state.temporaryHealth.healthy
+    && state.colourHealth.healthy;
 
   return {
     embeds: [new EmbedBuilder()
@@ -192,11 +191,11 @@ async function buildRoleHealthPanel(guild, memberDisplayName = 'Unknown User') {
         `**Reaction Roles:** ${healthLabel(state.reactionHealth.healthy, state.reactionHealth.healthy ? '' : `${state.reactionHealth.unhealthy || 0} panel(s)`)}`,
         `**Timed Roles:** ${healthLabel(state.timedHealth.healthy, state.timedHealth.healthy ? '' : `${state.timedHealth.issues?.length || 0} issue(s)`)}`,
         `**Temporary Roles:** ${healthLabel(state.temporaryHealth.healthy, state.temporaryHealth.healthy ? '' : `${state.temporaryHealth.issues?.length || 0} issue(s)`)}`,
-        state.temporaryHealth.warnings?.length ? `**Temporary Roles warnings:** \`${state.temporaryHealth.warnings.length}\`` : null,
+        `**Colour Roles:** ${healthLabel(state.colourHealth.healthy, state.colourHealth.healthy ? '' : `${state.colourHealth.issues?.length || 0} issue(s)`)}`,
         '',
         `**Goliath highest role:** ${guild.members.me?.roles.highest ? `<@&${guild.members.me.roles.highest.id}>` : 'Unavailable'}`,
         `**Manage Roles permission:** ${state.canManageRoles ? '✅ Granted' : '❌ Missing'}`,
-      ].filter(Boolean).join('\n'))
+      ].join('\n'))
       .setFooter({ text: `Requested by ${memberDisplayName}` })
       .setTimestamp()],
     components: [row(button('admin:studio:roleStudio', '⬅️ Back to Role Studio', ButtonStyle.Secondary))],
