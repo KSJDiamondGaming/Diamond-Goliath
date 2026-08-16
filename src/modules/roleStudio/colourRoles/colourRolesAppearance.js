@@ -1,6 +1,7 @@
 'use strict';
 
 const colourRoles = require('./colourRoles');
+const colourRolesHierarchy = require('./colourRolesHierarchy');
 
 async function syncManagedRoleAppearance(guild) {
   const section = colourRoles.getSection(guild.id);
@@ -43,11 +44,8 @@ async function syncManagedRoleAppearance(guild) {
     }
   }
 
-  if (section.style.anchorRoleId && section.style.keepGrouped) {
-    await colourRoles.reorderManagedRoles(guild);
-  }
-
-  return { updated, skipped, errors };
+  const hierarchy = await colourRolesHierarchy.syncManagedRoleHierarchy(guild);
+  return { updated, skipped, errors, hierarchy };
 }
 
 module.exports = { syncManagedRoleAppearance };
