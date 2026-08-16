@@ -512,8 +512,6 @@ const user = {
 module.exports = {
   admin: adminPanel,
   user,
-  getConfiguredRoleIds,
-  getAccess,
   findByOwnerDiscordId,
   getAccountsForCreator,
   createForMember,
