@@ -23,6 +23,13 @@ function hasVariable(value) { return /\{[a-zA-Z0-9_]+\}/.test(String(value || ''
 function usableUrl(value) { const raw = text(value); if (!raw) return true; if (hasVariable(raw)) return true; try { const url = new URL(raw); return ['http:', 'https:'].includes(url.protocol); } catch { return false; } }
 function roleId(value) { const id = text(value).replace(/[<@&>]/g, ''); return /^\d{15,25}$/.test(id) ? id : null; }
 function requestedBy(interaction) { return panel.memberName?.(interaction) || interaction.member?.displayName || interaction.user?.username || 'Unknown User'; }
+function compactPreviewPayload(payload, interaction) {
+  if (!payload || !Array.isArray(payload.embeds) || payload.embeds.length <= 2) return payload;
+  const state = panel.getSession(interaction);
+  const selectedIndex = Math.max(0, Number(state?.selectedPanelIndex) || 0);
+  const selectedPreview = payload.embeds[selectedIndex + 1] || payload.embeds[1];
+  return { ...payload, embeds: selectedPreview ? [payload.embeds[0], selectedPreview] : [payload.embeds[0]] };
+}
 function push(list, message) { if (!list.includes(message)) list.push(message); }
 function fieldText(panelData = {}) { return [panelData.title, panelData.description, panelData.authorName, panelData.authorIcon, panelData.authorUrl, panelData.footer, panelData.footerIcon, panelData.image, panelData.thumbnail, ...(Array.isArray(panelData.fields) ? panelData.fields.flatMap((field) => [field?.name, field?.value]) : [])].filter(Boolean).join('\n'); }
 function unknownVariables(state) { const source = [...(Array.isArray(state.panels) ? state.panels.map(fieldText) : []), ...(Array.isArray(state.buttons) ? state.buttons.flatMap((button) => [button?.label, button?.url, button?.actionValue]) : [])].join('\n'); const found = [...source.matchAll(/\{([a-zA-Z0-9_]+)\}/g)].map((match) => match[1]); const known = new Set((Array.isArray(panel.HELPERS) ? panel.HELPERS : []).map((item) => String(item).replace(/[{}]/g, '').toLowerCase())); if (!known.size) return []; return [...new Set(found.filter((name) => !known.has(name.toLowerCase())))]; }
@@ -162,7 +169,7 @@ function builderNavigationRow(rows) { return rowFromComponents(new ButtonBuilder
 if (!panel.__embedNavigationPatched) {
   const originalEditor = panel.buildEditorPanel.bind(panel);
   panel.buildEditorPanel = (interaction, ...args) => {
-    const payload = originalEditor(interaction, ...args);
+    const payload = compactPreviewPayload(originalEditor(interaction, ...args), interaction);
     const rows = Array.isArray(payload?.components) ? payload.components : [];
     const templateRow = findRow(rows, 'embed:template');
     const channelRow = findRow(rows, 'embed:channel');
@@ -175,11 +182,14 @@ if (!panel.__embedNavigationPatched) {
 
   const originalBuilder = panel.buildBuilderPanel.bind(panel);
   panel.buildBuilderPanel = (interaction, ...args) => {
-    const payload = originalBuilder(interaction, ...args);
+    const payload = compactPreviewPayload(originalBuilder(interaction, ...args), interaction);
     const state = panel.getSession(interaction);
     const rows = Array.isArray(payload?.components) ? payload.components : [];
+    const appearance = findComponent(rows, 'embed:edit-media');
+    if (appearance?.setLabel) appearance.setLabel('🎨 Appearance');
+    const media = findComponent(rows, 'embed:edit-images') || new ButtonBuilder().setCustomId('embed:edit-images').setLabel('🖼️ Media').setStyle(ButtonStyle.Primary);
     const contextRow = panelSelector(state);
-    const buildRow = rowFromComponents(findComponent(rows, 'embed:edit-content'), findComponent(rows, 'embed:panels') || new ButtonBuilder().setCustomId('embed:panels').setLabel(`🧩 Panels (${state.panels?.length || 1})`).setStyle(ButtonStyle.Primary), findComponent(rows, 'embed:edit-media'), findComponent(rows, 'embed:edit-images'));
+    const buildRow = rowFromComponents(findComponent(rows, 'embed:edit-content'), findComponent(rows, 'embed:panels') || new ButtonBuilder().setCustomId('embed:panels').setLabel(`🧩 Panels (${state.panels?.length || 1})`).setStyle(ButtonStyle.Primary), appearance, media);
     const detailRow = rowFromComponents(findComponent(rows, 'embed:fields'), findComponent(rows, 'embed:buttons'), findComponent(rows, 'embed:update-existing'));
     const finishRow = rowFromComponents(findComponent(rows, 'embed:readiness'), findComponent(rows, 'embed:test-send'), findComponent(rows, 'embed:toggle-timestamp'));
     payload.components = [contextRow, buildRow, detailRow, finishRow, builderNavigationRow(rows)].filter(Boolean).slice(0, 5);
@@ -188,7 +198,7 @@ if (!panel.__embedNavigationPatched) {
 
   const originalPanels = panel.buildPanelsPanel.bind(panel);
   panel.buildPanelsPanel = (interaction, ...args) => {
-    const payload = originalPanels(interaction, ...args);
+    const payload = compactPreviewPayload(originalPanels(interaction, ...args), interaction);
     const rows = Array.isArray(payload?.components) ? payload.components : [];
     payload.components = [findRow(rows, 'embed:panel-select'), rowFromComponents(findComponent(rows, 'embed:panel-add'), findComponent(rows, 'embed:panel-duplicate'), findComponent(rows, 'embed:panel-remove')), rowFromComponents(findComponent(rows, 'embed:panel-up'), findComponent(rows, 'embed:panel-down')), rowFromComponents(findComponent(rows, 'embed:builder'))].filter(Boolean);
     return normalizeNavigationLabels(payload);
