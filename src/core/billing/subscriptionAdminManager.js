@@ -71,7 +71,11 @@ function addHistory(entry = {}) {
 }
 
 function listHistory(limit = 100) {
-  return readHistory().history.slice(0, Math.min(Math.max(Number(limit || 100), 1), 500));
+  const numericLimit = Number(limit);
+  const safeLimit = Number.isFinite(numericLimit)
+    ? Math.min(Math.max(Math.trunc(numericLimit), 1), 500)
+    : 100;
+  return readHistory().history.slice(0, safeLimit);
 }
 
 function listSubscriptions() {
