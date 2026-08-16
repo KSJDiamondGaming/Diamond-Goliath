@@ -30,6 +30,17 @@ async function overview(req, id) {
     health: g ? await healthService.buildHealth(g) : null,
   };
 }
+async function validateExistingRoles(g, options = []) {
+  if (!g) return options;
+  const output = [];
+  for (const option of Array.isArray(options) ? options : []) {
+    if (!option?.roleId) { output.push(option); continue; }
+    const role = g.roles.cache.get(String(option.roleId)) || await g.roles.fetch(String(option.roleId)).catch(() => null);
+    roleSelector.assertSafeSelectorRole(g, role);
+    output.push({ ...option, roleId: role.id, managed: false });
+  }
+  return output;
+}
 
 router.get('/:guildId/overview', async (req, res) => {
   try { return success(res, await overview(req, guildId(req))); } catch (error) { return failure(res, error); }
@@ -58,8 +69,11 @@ router.post('/:guildId/groups', async (req, res) => {
   try {
     const id = guildId(req); const body = req.body || {};
     if (body.id === roleSelector.COLOUR_GROUP_ID || body.type === 'colour') throw new Error('Use the Colours settings endpoint for the built-in Colours selector.');
+    const g = await guild(req, id);
+    const options = await validateExistingRoles(g, body.options || []);
     const group = roleSelector.saveGroup(id, {
       ...body,
+      options,
       selectionMode: body.selectionMode === 'multiple' ? 'multiple' : 'single',
       allowRemove: body.allowRemove !== false,
       builtIn: false,
@@ -71,7 +85,9 @@ router.post('/:guildId/groups', async (req, res) => {
 
 router.delete('/:guildId/groups/:groupId', async (req, res) => {
   try {
-    const id = guildId(req); roleSelector.removeGroup(id, req.params.groupId, { actorId: actorId(req), action: 'role_selector_dashboard_delete_group' });
+    const id = guildId(req); const g = await guild(req, id);
+    if (g) await roleSelector.deleteManagedGroupRoles(g, req.params.groupId);
+    roleSelector.removeGroup(id, req.params.groupId, { actorId: actorId(req), action: 'role_selector_dashboard_delete_group' });
     return success(res, await overview(req, id));
   } catch (error) { return failure(res, error); }
 });
@@ -104,6 +120,21 @@ router.post('/:guildId/apply-style', async (req, res) => {
     roleSelector.updateSection(id, (current) => ({ ...current, style: { ...current.style, format: current.style.detectedFormat || current.style.format, icon: current.style.detectedIcon || '', separator: current.style.detectedSeparator || current.style.separator } }), { actorId: actorId(req), action: 'role_selector_dashboard_style_apply' });
     await roleSelector.syncManagedRoleAppearance(g); await roleSelector.syncManagedRoleHierarchy(g);
     return success(res, await overview(req, id));
+  } catch (error) { return failure(res, error); }
+});
+
+router.post('/:guildId/create-divider', async (req, res) => {
+  try {
+    const id = guildId(req); const g = await guild(req, id); if (!g) throw new Error('Guild is unavailable.');
+    const name = String(req.body?.name || '🎭 | ROLE SELECTOR').trim().slice(0, 100);
+    const divider = await g.roles.create({ name, permissions: [], hoist: false, mentionable: false, reason: 'Goliath Role Selector divider' });
+    if (!roleSelector.canManageRole(g, divider)) {
+      await divider.delete('Unsafe Role Selector divider').catch(() => null);
+      throw new Error('Goliath cannot safely manage the new divider because of role hierarchy.');
+    }
+    roleSelector.updateSection(id, (current) => ({ ...current, style: { ...current.style, anchorRoleId: divider.id } }), { actorId: actorId(req), action: 'role_selector_dashboard_create_divider' });
+    await roleSelector.syncManagedRoleHierarchy(g);
+    return success(res, { divider: { id: divider.id, name: divider.name }, ...(await overview(req, id)) });
   } catch (error) { return failure(res, error); }
 });
 
