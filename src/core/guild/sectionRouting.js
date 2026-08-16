@@ -20,6 +20,8 @@ const SECTION_PATHS = Object.freeze({
   templates: 'modules.serverCopy.templates',
 });
 
+const UNSAFE_PATH_SEGMENTS = new Set(['__proto__', 'prototype', 'constructor']);
+
 function isPlainObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
@@ -31,7 +33,13 @@ function clone(value) {
 function getPathParts(sectionName) {
   const rawSection = String(sectionName || '').trim();
   const routedSection = SECTION_PATHS[rawSection] || rawSection;
-  return routedSection.split('.').map((part) => part.trim()).filter(Boolean);
+  const pathParts = routedSection.split('.').map((part) => part.trim()).filter(Boolean);
+
+  if (pathParts.some((part) => UNSAFE_PATH_SEGMENTS.has(part))) {
+    throw new Error('Invalid guild section path.');
+  }
+
+  return pathParts;
 }
 
 function getValueAtPath(source, pathParts) {
