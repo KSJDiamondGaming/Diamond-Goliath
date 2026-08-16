@@ -1,101 +1,209 @@
 # Schedule
 
-Schedule is Goliath's timezone-aware event planning and attendance module.
+Schedule is Goliath's timezone-aware event planning and attendance module. Its reference experience is the Sesh Discord bot, adapted to Goliath's three-command architecture.
 
-## Current foundation
+Schedule does **not** register `/schedule`, `/event`, `/create`, `/list` or other module-specific slash commands. Administration lives under `/admin -> Utility Studio -> Schedule`; members interact with deployed event messages. Future personal event views belong under `/user`.
 
-The canonical implementation lives in `src/modules/utilityStudio/schedule/`.
+## Canonical implementation
 
-- `schedule.js` — storage, events, recurrence, RSVPs, waitlists, reminders, health, repair and startup processing
-- `scheduleRoute.js` — module API
-- `src/events/schedule/scheduleReady.js` — restart-safe reminder and completion processing
+The module remains in the existing seven-file folder:
 
-## Event model
+```text
+src/modules/utilityStudio/schedule/
+├── schedule.js
+├── scheduleDeployment.js
+├── scheduleHealth.js
+├── scheduleInteractions.js
+├── schedulePanel.js
+├── scheduleStartup.js
+└── scheduleTracking.js
+```
+
+`guild.modules.schedule` is the only configuration/data source of truth. The normal runtime environment selects the correct guild JSON for dev, beta or production.
+
+`schedule.js` is canonical for event state, recurrence, RSVP state, reminders and processing. `scheduleTracking.js` delegates to it rather than maintaining a second processor. `scheduleInteractions.js` is a compatibility surface that delegates to `scheduleDeployment.js`.
+
+## Sesh-style event model
 
 An event supports:
 
-- Title and description
+- Title, description and configurable embed colour
 - IANA timezone
-- Start and end timestamps
-- Announcement channel
-- Optional voice channel
+- Start/end time and duration
+- Announcement/event channel
+- Optional voice or stage channel
+- Optional location
 - Host
-- Mention roles
-- Capacity
-- Going, maybe, declined and waitlist states
-- Reminder offsets
-- Daily, weekly and monthly recurrence
+- Roles mentioned on deployment
+- Roles allowed or blocked from RSVP
+- Capacity and waitlist
+- Custom RSVP options
+- Optional attendee role per RSVP option
+- RSVP close time
+- Member personal reminder offsets
+- Event/channel reminders
+- Custom event notifications
+- Hourly, daily, weekly, monthly and yearly recurrence
+- Repeat interval, occurrence limit and end date
+- Optional weekly day selection
+- Auto Join Next for recurring attendees
+- Optional event thread
+- Optional Discord native scheduled-event mirror
 - Cancellation, duplication and completion state
-- Optional future Discord Scheduled Event binding
+- Reusable event templates
 
-## Recurrence
+## RSVP behaviour
 
-Supported recurrence types:
+The default options are Going, Maybe and Decline, but admins can define custom options. Each option can be marked as an attendee option and can optionally grant a Discord role.
+
+Only attendee options consume capacity. When an attendee tries to join a full event and waitlisting is enabled, that member is placed on the waitlist. When an attendee place becomes available, the oldest waitlisted member is promoted automatically.
+
+Role restrictions can allow only selected roles or explicitly block selected roles from RSVPing.
+
+Members can manage their RSVP from the deployed event message, including:
+
+- Change or clear RSVP
+- View attendees
+- Configure personal reminders
+- Enable/disable Auto Join Next on repeating events
+- Add the event to Google Calendar through a generated calendar link
+
+When overlap warnings are enabled, Goliath warns a member if an attendee RSVP overlaps another event they are already attending.
+
+## Recurrence and timezone handling
+
+Supported repeat types:
 
 - None
+- Hourly
 - Daily
 - Weekly
 - Monthly
+- Yearly
 
-Each recurrence can define an interval, occurrence count and optional end date. A completed event creates its next occurrence once, with fresh RSVP and reminder state.
+Recurrence stores the event timezone and advances the event using local-time parts, preserving the intended wall-clock time across daylight-saving changes where the IANA timezone applies.
 
-## RSVP and waitlist
+Repeating events may define:
 
-When capacity is available, a `going` RSVP reserves a place. When the event is full and waitlists are enabled, additional `going` requests become `waitlist` automatically.
+- Interval
+- Occurrence count
+- End date
+- Weekly day selection
+- Auto Join Next permission
 
-The module stores one RSVP state per Discord user and exposes current counts for every state.
+Members who enabled Auto Join Next carry their RSVP and personal reminder configuration to the next occurrence. Other RSVP state is reset.
 
-## Reminders and recovery
+## Reminders and notifications
 
-The Schedule processor runs every minute and immediately after Discord becomes ready.
+The processor runs every minute and immediately after Discord becomes ready.
 
-Reminder offsets are persisted per event. Sent reminder offsets are stored, preventing duplicate reminders after restart.
+Schedule supports three notification layers:
 
-The processor also:
+1. Server/channel reminder offsets stored on the event.
+2. Per-member reminder offsets delivered by DM to members who RSVP.
+3. Custom event notifications with configurable fire time, title, description, channel and mention roles.
 
-- Marks ended events complete
-- Creates the next recurrence
-- Records delivery failures on the event
-- Updates module analytics
+Sent reminder/notification state is persisted so restarts do not intentionally send the same reminder again.
+
+Notification placeholders include:
+
+```text
+{event}
+{relative}
+{time}
+{host}
+```
+
+## Event threads
+
+Events can create a Discord thread from the deployed event message. Configuration includes:
+
+- Custom thread title with `{event}` placeholder
+- Auto-add attendees when they RSVP
+- Auto-archive duration
+- Stored thread ID for recovery/health checks
+
+## Discord native event mirroring
+
+An event can optionally mirror to Discord's native Scheduled Events system. The module creates or updates the native event when the Goliath event is deployed/updated, provided Goliath has `Manage Events`.
+
+Voice/stage events bind to the selected voice channel. Events without a voice channel use an external event location.
+
+The Goliath RSVP post remains canonical for Goliath attendance state.
+
+## Event templates
+
+Admins can save an event as a reusable template and create a fresh event from that template. New events reset runtime state such as RSVPs, reminder delivery state, deployment IDs, native-event IDs and event-thread IDs.
+
+## Discord admin
+
+Open:
+
+```text
+/admin -> Utility Studio -> Schedule
+```
+
+The Schedule Studio contains:
+
+- Home/event selector
+- Create/Edit event
+- Event Setup
+- RSVP & Roles
+- Repeat & Reminders
+- Templates
+- Deploy/update event post
+- Native event sync
+- Cancel/duplicate
+- Health
+
+No standalone Schedule slash command is registered.
+
+## Dashboard
+
+Dashboard route:
+
+```text
+/schedule
+```
+
+The dashboard provides server defaults plus a multi-section event editor for:
+
+- Basics
+- RSVP & Roles
+- Repeat & Reminders
+- Threads & Native Events
+- Templates
+- Deployment and operations
+
+API base:
+
+```text
+/api/schedule/:guildId
+```
+
+The API supports module settings, event CRUD, deployments, native sync, RSVP management, member reminders, templates, processing, health/repair, export and reset.
 
 ## Health and repair
 
-Health checks validate:
+Health validates:
 
-- Announcement channels
+- Event and voice channels
 - Timezones
-- Send Messages permission
-- Previous processing failures
+- Send Messages / Embed Links
+- Referenced roles
+- Attendee role hierarchy/manageability
+- Manage Events when native mirroring is enabled
+- Create Public Threads when event threads are enabled
+- Stored native-event references
+- Stored thread references
+- Previous processing errors
 
-Repair removes missing channel references and clears stale event errors without deleting valid events.
+Repair removes dead resource references, clears stale event errors and preserves valid event configuration.
 
-## API foundation
+## External Sesh features
 
-The module route supports:
+Goliath now matches the core Discord event/RSVP experience being used as the Sesh reference. Full OAuth-based Google Calendar bidirectional account synchronisation is not implemented by this module build; Goliath currently provides a member-facing Add to Calendar link instead. Polls/time-finder functionality belongs in Goliath's existing Polls/other modules rather than being duplicated inside Schedule.
 
-- Module configuration
-- Enable and disable
-- Event create, update and delete
-- Cancel and duplicate
-- RSVP update and removal
-- Manual processing
-- Health and repair
-- Export and reset
+## Acceptance state
 
-The route will be mounted with the dashboard and Discord administration slice.
-
-## Completion state
-
-Schedule is `IN_PROGRESS`.
-
-The canonical runtime foundation is present. Remaining flagship work includes:
-
-- Discord Schedule Studio
-- RSVP message deployment and member buttons
-- Dashboard calendar and event editor
-- Event templates
-- Native Discord Scheduled Event synchronisation
-- Attendance history and analytics
-- Reminder editor and delivery history
-- Doctor integration
-- Final API mount and acceptance testing
+Repository-side Sesh parity is implemented. Do not mark Schedule as fully working/locked until live-guild tests cover event creation/editing, deployment, custom RSVP options, attendee roles, role restrictions, capacity/waitlist promotion, personal reminders, recurrence/Auto Join Next, event threads, native event mirroring, templates, dashboard editing, restart recovery and health/repair.
