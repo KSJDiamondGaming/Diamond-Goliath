@@ -92,7 +92,17 @@ async function vote(interaction, suggestionId, direction, panel) {
   });
 }
 
-async function review(interaction, suggestionId, action, panel) {
+async function notifyAuthor(guild, suggestion) {
+  if (!suggestion?.authorId) return false;
+  const member = await guild.members.fetch(suggestion.authorId).catch(() => null);
+  if (!member?.user) return false;
+  const verdict = suggestion.status === 'approved' ? 'approved ✅' : 'denied ❌';
+  const note = suggestion.reviewReason ? `\nDecision note: ${suggestion.reviewReason}` : '';
+  await member.user.send(`Your suggestion in **${guild.name}** was **${verdict}**.${note}\nSuggestion ID: \`${suggestion.suggestionId}\``).catch(() => null);
+  return true;
+}
+
+async function review(interaction, suggestionId, action, panel, reason = '') {
   if (!['approve', 'deny'].includes(action)) throw new Error('Invalid review action.');
   const guildId = interaction?.guildId;
   return withSuggestionLock(guildId, suggestionId, async () => {
@@ -102,7 +112,13 @@ async function review(interaction, suggestionId, action, panel) {
     if (!current) throw new Error('Suggestion not found.');
     if (current.status !== 'pending') throw new Error(`Suggestion is already ${current.status}.`);
     const status = action === 'approve' ? 'approved' : 'denied';
-    const updated = suggestions.updateSuggestion(guildId, suggestionId, { status, reviewedBy: interaction.user.id, reviewedAt: new Date().toISOString() }, interaction.guild);
+    const reviewReason = String(reason || '').trim().slice(0, 500);
+    const updated = suggestions.updateSuggestion(guildId, suggestionId, {
+      status,
+      reviewedBy: interaction.user.id,
+      reviewedAt: new Date().toISOString(),
+      reviewReason,
+    }, interaction.guild);
     suggestions.incrementAnalytics(guildId, status === 'approved' ? { approved: 1 } : { denied: 1 }, interaction.guild);
     await refreshSuggestionMessage(interaction.guild, suggestionId, panel);
     const targetId = status === 'approved' ? section.approvedChannelId : section.deniedChannelId;
@@ -110,8 +126,18 @@ async function review(interaction, suggestionId, action, panel) {
       const target = await resolveSendableChannel(interaction.guild, targetId, `${status} suggestions channel`);
       await target.send({ embeds: [panel.buildSuggestionEmbed(interaction.guild, updated, section)] });
     }
+    await notifyAuthor(interaction.guild, updated);
     return updated;
   });
 }
 
-module.exports = { assertEnabled, isReviewer, resolveSendableChannel, submitSuggestion, refreshSuggestionMessage, vote, review };
+module.exports = {
+  assertEnabled,
+  isReviewer,
+  resolveSendableChannel,
+  submitSuggestion,
+  refreshSuggestionMessage,
+  vote,
+  review,
+  notifyAuthor,
+};
