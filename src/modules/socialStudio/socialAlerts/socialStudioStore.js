@@ -434,7 +434,6 @@ module.exports = {
   getManagerRoleIds,
   getUserRoleIds,
   saveConfig,
-  updateSection,
   getCreator,
   findCreatorByOwner,
   getCreatorAccounts,
