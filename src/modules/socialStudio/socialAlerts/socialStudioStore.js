@@ -429,8 +429,6 @@ function setEnabled(guildId, enabled, meta = {}) {
 }
 
 module.exports = {
-  SECTION,
-  normalizeSection,
   getSection,
   getConfig,
   getManagerRoleIds,
