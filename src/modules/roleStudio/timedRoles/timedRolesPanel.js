@@ -18,6 +18,7 @@ const {
 } = require('discord.js');
 const guildManager = require('../../../core/guild/guildManager');
 const timedRoles = require('./timedRoles');
+const timedRolesHealth = require('./timedRolesHealth');
 
 const PREFIX = 'admin:timedRoles';
 const row = (...components) => new ActionRowBuilder().addComponents(...components.filter(Boolean));
@@ -35,7 +36,7 @@ async function buildTimedRolesPanel(guild, memberDisplayName = 'Unknown User') {
   const section = timedRoles.getSection(guild.id);
   const enabled = guildManager.isModuleEnabled(guild.id, 'timedRoles');
   const rules = timedRoles.listRules(guild.id);
-  const health = await timedRoles.buildHealth(guild);
+  const health = await timedRolesHealth.buildTimedRolesHealth(guild);
   const mode = section.settings.progressionMode === 'keep_all' ? 'Keep every earned milestone role' : 'Keep highest milestone role only';
   const lines = rules.length
     ? rules.slice(0, 15).map((rule, index) => [
@@ -348,7 +349,7 @@ async function handleTimedRolesInteraction(interaction) {
     }
     if (customId === `${PREFIX}:repair`) {
       await interaction.deferUpdate();
-      await timedRoles.repair(interaction.guild, { actorId: interaction.user.id });
+      await timedRolesHealth.repairTimedRoles(interaction.guild, { actorId: interaction.user.id });
       return refresh(interaction);
     }
     if (customId === `${PREFIX}:reset`) {
