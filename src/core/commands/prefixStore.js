@@ -10,7 +10,7 @@ function normalizePrefix(value, fallback = DEFAULT_PREFIX) {
   const raw = String(value ?? '').trim();
   const prefix = raw || fallback;
 
-  if (prefix.includes(' ')) {
+  if (/\s/.test(prefix)) {
     throw new Error('Prefix cannot contain spaces.');
   }
 
