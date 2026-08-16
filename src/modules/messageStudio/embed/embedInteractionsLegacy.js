@@ -17,7 +17,7 @@ const {
 // interactionCreate loads this module independently of /embed, so importing
 // embedPanel directly would bypass compact preview/media normalization patches.
 const panel = require('./embedPreviewCompat');
-const { prepareEmbedMedia } = require('./embedMediaLayout');
+const { prepareEmbedMedia } = require('./embedRenderer');
 const {
   clone,
   trim,
