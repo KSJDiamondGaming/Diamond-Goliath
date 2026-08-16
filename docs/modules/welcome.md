@@ -201,9 +201,13 @@ Repair:
 - Removes deleted notification-role references
 - Disables role notifications if no valid notification roles remain
 
-## Doctor
+## Verification
+
+Use the repository-wide checks:
 
 ```powershell
-npm run audit:welcome
+npm run audit
 npm run doctor
 ```
+
+There is currently no dedicated `audit:welcome` npm script.
