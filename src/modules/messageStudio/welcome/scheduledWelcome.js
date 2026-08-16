@@ -193,7 +193,7 @@ async function runScheduledWelcome(guild, options = {}) {
     sendFailed: Number(config.analytics.sendFailed || 0) + sendFailed,
     roleRemovalFailed: Number(config.analytics.roleRemovalFailed || 0) + roleRemovalFailed,
     lastRunAt: now(),
-    lastRunDate: runDate,
+    lastRunDate: sendFailed > 0 ? config.analytics.lastRunDate : runDate,
     lastError: errors.length ? errors[0].slice(0, 500) : null,
   };
   updateScheduledConfig(guild.id, { analytics, completedMemberIds: [...completed] }, { actorId: options.actorId, action: 'scheduled_welcome_run' });
