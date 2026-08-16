@@ -512,8 +512,6 @@ const user = {
 };
 
 module.exports = {
-  startup() {},
-  shutdown() {},
   admin: adminPanel,
   user,
   ACTIVE,
