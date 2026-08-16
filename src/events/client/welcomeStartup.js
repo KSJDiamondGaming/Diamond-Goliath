@@ -3,6 +3,7 @@
 const { Events } = require('discord.js');
 const guildManager = require('../../core/guild/guildManager');
 const { startupWelcome } = require('../../modules/messageStudio/welcome/welcome');
+const scheduledWelcomeScheduler = require('../../modules/messageStudio/welcome/scheduledWelcomeScheduler');
 
 module.exports = {
   name: Events.ClientReady,
@@ -17,5 +18,7 @@ module.exports = {
       ...client,
       guilds: { ...client.guilds, cache: enabledGuilds },
     });
+
+    await scheduledWelcomeScheduler.startup(client);
   },
 };
