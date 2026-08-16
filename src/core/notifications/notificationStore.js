@@ -20,7 +20,7 @@ function normalise(input = {}) {
     route: text(input.route || '', 200),
     read: Boolean(input.read),
     createdAt: input.createdAt || now(),
-    updatedAt: now(),
+    updatedAt: input.updatedAt || now(),
     metadata: obj(input.metadata),
   };
 }
