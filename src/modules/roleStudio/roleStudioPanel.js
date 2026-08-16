@@ -10,6 +10,7 @@ const {
 const guildManager = require('../../core/guild/guildManager');
 const autoroles = require('./autoRoles/autoRoles');
 const timedRoles = require('./timedRoles/timedRoles');
+const timedRolesHealth = require('./timedRoles/timedRolesHealth');
 const reactionRoles = require('./reactionRoles/reactionRoles');
 const temporaryRoles = require('./temporaryRoles/temporaryRoles');
 
@@ -33,7 +34,7 @@ async function getRoleStudioState(guild) {
   const [autoHealth, reactionHealth, timedHealth] = await Promise.all([
     autoroles.buildHealthReport(guild),
     reactionRoles.buildHealth(guild),
-    timedRoles.buildHealth(guild),
+    timedRolesHealth.buildTimedRolesHealth(guild),
   ]);
 
   const reactionDeployments = reactionRoles.listPanels(guild.id);
