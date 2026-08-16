@@ -66,6 +66,22 @@ async function handleSuggestionsInteraction(interaction) {
       await interaction.showModal(panel.buildSubmitModal());
       return true;
     }
+    if (interaction.isButton?.() && parts[1] === 'mine' && parts[2] === 'page') {
+      const payload = panel.buildMySuggestionsPayload(interaction.guildId, interaction.user.id, Number(parts[3] || 0));
+      if (interaction.message?.flags?.has?.(MessageFlags.Ephemeral)) await interaction.update(payload);
+      else await interaction.reply(payload);
+      return true;
+    }
+    if (interaction.isStringSelectMenu?.() && interaction.customId === 'suggestions:mine:select') {
+      const [suggestionId, page = '0'] = String(interaction.values?.[0] || '').split('|');
+      await interaction.update(panel.buildMySuggestionDetail(interaction.guildId, interaction.user.id, suggestionId, Number(page || 0)));
+      return true;
+    }
+    if (interaction.isButton?.() && interaction.customId === 'suggestions:mine:close') {
+      await interaction.deferUpdate().catch(() => null);
+      await interaction.deleteReply().catch(() => null);
+      return true;
+    }
     if (interaction.isModalSubmit?.() && interaction.customId === 'suggestions:modal:submit') {
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const saved = await tracking.submitSuggestion(interaction, panel);
