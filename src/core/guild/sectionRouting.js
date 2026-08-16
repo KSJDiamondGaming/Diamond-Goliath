@@ -35,6 +35,10 @@ function getPathParts(sectionName) {
   const routedSection = SECTION_PATHS[rawSection] || rawSection;
   const pathParts = routedSection.split('.').map((part) => part.trim()).filter(Boolean);
 
+  if (pathParts.length === 0) {
+    throw new Error('Guild section path is required.');
+  }
+
   if (pathParts.some((part) => UNSAFE_PATH_SEGMENTS.has(part))) {
     throw new Error('Invalid guild section path.');
   }
