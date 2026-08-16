@@ -1,11 +1,22 @@
 'use strict';
 
-const interactionCore = require('./embedInteractionsCore');
+const { MessageFlags, PermissionFlagsBits } = require('discord.js');
+const legacyInteractions = require('./embedInteractionsLegacy');
 const { handleButtonAction } = require('./embedButtonsCompat');
 const panel = require('./embedNavigationCompat');
 const media = require('./embedMedia');
+const guildManager = require('../../../core/guild/guildManager');
+const { validateChannelAccess } = require('../../../core/security/goliathPermissionGuard');
 const { ensureAssetCached } = require('./embedAssetStore');
+const { saveEmbedDeployment, getEmbedDeployment, getDeploymentKeyFromState } = require('./embedDeployments');
+const { buildEmbedPayload } = require('./embedRenderer');
 
+media.installStateCompatibility(panel);
+media.installPersistentMediaCompatibility(panel);
+media.installStorageNormalization(panel);
+media.installUploadModals(panel);
+media.installMediaOptionsUi(panel);
+media.installMediaManagerUi(panel);
 media.installThumbnailUi(panel);
 panel.getPanelMedia = media.getPanelMedia;
 panel.setPanelMedia = media.setPanelMedia;
@@ -14,6 +25,12 @@ panel.mediaModel = media.mediaModel;
 const DELIVERY_ACTIONS = new Set(['embed:test-send', 'embed:use', 'embed:update-existing']);
 
 function who(i) { return panel.memberName(i); }
+function isTextBasedChannel(channel) {
+  if (!channel) return false;
+  if (typeof channel.isTextBased === 'function') return channel.isTextBased();
+  if (typeof channel.isTextBased === 'boolean') return channel.isTextBased;
+  return Boolean(channel.send && channel.messages);
+}
 function saveAppearance(i, state, patch) {
   const next = panel.saveSelected(state, patch);
   return panel.saveSession(i, { ...next, hasUnsavedChanges: true });
@@ -28,11 +45,44 @@ function saveThumbnailState(i, state, thumbnail) {
   next = panel.saveSelected(next, { thumbnail: current.thumbnail?.source || '' });
   return panel.saveSession(i, { ...next, hasUnsavedChanges: true });
 }
+function saveMediaState(i, state, mediaValue, extra = {}) {
+  const index = state.selectedPanelIndex || 0;
+  let next = panel.setPanelMedia(state, index, mediaValue);
+  const current = panel.getPanelMedia(next, index);
+  next = panel.saveSelected(next, { image: current.gallery?.[0]?.source || '', thumbnail: current.thumbnail?.source || '' });
+  return panel.saveSession(i, { ...next, ...extra, hasUnsavedChanges: true });
+}
 async function updateAppearance(i) { await i.update(panel.buildAppearancePanel(i)); return true; }
 async function updateIcon(i, kind) { await i.update(panel.buildAppearanceIconPanel(i, kind)); return true; }
 async function updateThumbnailPanel(i) { await i.update(panel.buildThumbnailOptionsPanel(i)); return true; }
+async function updateMediaPanel(i) { await i.update(panel.buildMediaManagerPanel(i, who(i))); return true; }
+async function updateMediaOptions(i) { await i.update(panel.buildMediaOptionsPanel(i)); return true; }
+async function updateFileOptions(i) { await i.update(panel.buildFileOptionsPanel(i)); return true; }
+async function replyMediaPanel(i) { await i.reply({ ...panel.buildMediaManagerPanel(i, who(i)), flags: 64 }); return true; }
 function validKind(kind) { return kind === 'author' || kind === 'footer'; }
 function iconField(kind) { return kind === 'author' ? 'authorIcon' : 'footerIcon'; }
+function uploadType(attachment) {
+  const type = String(attachment?.contentType || '').toLowerCase();
+  if (type.startsWith('image/')) return 'image';
+  if (type.startsWith('video/')) return 'video';
+  return 'file';
+}
+async function cacheUploadedAttachment(attachment) {
+  if (!attachment?.url) return;
+  try { await ensureAssetCached('global', attachment.url); }
+  catch (error) { console.warn('[Embed Media] upload persistence failed:', attachment?.name || attachment?.url, error?.message || error); }
+}
+async function buildPayload(state, interaction, ephemeral = false) {
+  return buildEmbedPayload({
+    embeds: panel.buildPreviewEmbeds(state, interaction),
+    actionRows: panel.buttonRows(state, interaction),
+    allowUserPing: Boolean(state.allowUserPing),
+    userId: interaction.user?.id || null,
+    ephemeral,
+    media: state.media || state.mediaV2,
+    interaction,
+  });
+}
 
 function selectedFieldIndex(state) {
   const fields = Array.isArray(state.fields) ? state.fields : [];
@@ -86,18 +136,9 @@ async function handleBuilderInteractions(i) {
     if (customId === 'embed:appearance-details') { await i.showModal(panel.appearanceDetailsModal(state)); return true; }
     if (customId === 'embed:appearance-author-icon') return updateIcon(i, 'author');
     if (customId === 'embed:appearance-footer-icon') return updateIcon(i, 'footer');
-    if (customId.startsWith('embed:appearance-icon-url:')) {
-      const kind = customId.split(':').pop(); if (!validKind(kind)) return true;
-      await i.showModal(panel.appearanceIconUrlModal(kind, state)); return true;
-    }
-    if (customId.startsWith('embed:appearance-icon-upload:')) {
-      const kind = customId.split(':').pop(); if (!validKind(kind)) return true;
-      await i.showModal(panel.appearanceIconUploadModal(kind)); return true;
-    }
-    if (customId.startsWith('embed:appearance-icon-clear:')) {
-      const kind = customId.split(':').pop(); if (!validKind(kind)) return true;
-      saveAppearance(i, state, { [iconField(kind)]: '' }); return updateIcon(i, kind);
-    }
+    if (customId.startsWith('embed:appearance-icon-url:')) { const kind = customId.split(':').pop(); if (!validKind(kind)) return true; await i.showModal(panel.appearanceIconUrlModal(kind, state)); return true; }
+    if (customId.startsWith('embed:appearance-icon-upload:')) { const kind = customId.split(':').pop(); if (!validKind(kind)) return true; await i.showModal(panel.appearanceIconUploadModal(kind)); return true; }
+    if (customId.startsWith('embed:appearance-icon-clear:')) { const kind = customId.split(':').pop(); if (!validKind(kind)) return true; saveAppearance(i, state, { [iconField(kind)]: '' }); return updateIcon(i, kind); }
     if (customId === 'embed:media-thumbnail') return updateThumbnailPanel(i);
     if (customId === 'embed:thumbnail-back') { await i.update(panel.buildMediaManagerPanel(i, who(i))); return true; }
     if (customId === 'embed:thumbnail-edit') { await i.showModal(panel.thumbnailModal(state)); return true; }
@@ -105,156 +146,112 @@ async function handleBuilderInteractions(i) {
     if (customId === 'embed:thumbnail-clear') { saveThumbnailState(i, state, { source: '', alt: '' }); return updateThumbnailPanel(i); }
 
     if (customId === 'embed:fields') return updateFields(i);
-    if (customId === 'embed:field-manager-add') {
-      if (fields.length >= panel.MAX_EMBED_FIELDS) { await i.reply({ content: `Maximum of ${panel.MAX_EMBED_FIELDS} fields reached.`, flags: 64 }); return true; }
-      await i.showModal(panel.fieldEditorModal(state)); return true;
-    }
-    if (customId === 'embed:field-manager-edit') {
-      if (fieldIndex == null) { await i.reply({ content: 'Select a field first.', flags: 64 }); return true; }
-      await i.showModal(panel.fieldEditorModal(state, fieldIndex)); return true;
-    }
-    if (customId === 'embed:field-manager-inline') {
-      if (fieldIndex == null) return updateFields(i);
-      fields[fieldIndex] = { ...fields[fieldIndex], inline: !Boolean(fields[fieldIndex].inline) };
-      saveFields(i, state, fields, fieldIndex); return updateFields(i);
-    }
-    if (customId === 'embed:field-manager-remove') {
-      if (fieldIndex == null) return updateFields(i);
-      fields.splice(fieldIndex, 1);
-      saveFields(i, state, fields, fields.length ? Math.min(fieldIndex, fields.length - 1) : null); return updateFields(i);
-    }
-    if (customId === 'embed:field-manager-up' || customId === 'embed:field-manager-down') {
-      if (fieldIndex == null) return updateFields(i);
-      const target = fieldIndex + (customId.endsWith('up') ? -1 : 1);
-      if (target < 0 || target >= fields.length) return updateFields(i);
-      [fields[fieldIndex], fields[target]] = [fields[target], fields[fieldIndex]];
-      saveFields(i, state, fields, target); return updateFields(i);
-    }
+    if (customId === 'embed:field-manager-add') { if (fields.length >= panel.MAX_EMBED_FIELDS) { await i.reply({ content: `Maximum of ${panel.MAX_EMBED_FIELDS} fields reached.`, flags: 64 }); return true; } await i.showModal(panel.fieldEditorModal(state)); return true; }
+    if (customId === 'embed:field-manager-edit') { if (fieldIndex == null) { await i.reply({ content: 'Select a field first.', flags: 64 }); return true; } await i.showModal(panel.fieldEditorModal(state, fieldIndex)); return true; }
+    if (customId === 'embed:field-manager-inline') { if (fieldIndex == null) return updateFields(i); fields[fieldIndex] = { ...fields[fieldIndex], inline: !Boolean(fields[fieldIndex].inline) }; saveFields(i, state, fields, fieldIndex); return updateFields(i); }
+    if (customId === 'embed:field-manager-remove') { if (fieldIndex == null) return updateFields(i); fields.splice(fieldIndex, 1); saveFields(i, state, fields, fields.length ? Math.min(fieldIndex, fields.length - 1) : null); return updateFields(i); }
+    if (customId === 'embed:field-manager-up' || customId === 'embed:field-manager-down') { if (fieldIndex == null) return updateFields(i); const target = fieldIndex + (customId.endsWith('up') ? -1 : 1); if (target < 0 || target >= fields.length) return updateFields(i); [fields[fieldIndex], fields[target]] = [fields[target], fields[fieldIndex]]; saveFields(i, state, fields, target); return updateFields(i); }
 
     if (customId === 'embed:buttons') return updateButtons(i);
-    if (customId === 'embed:button-manager-add') {
-      if (buttons.length >= panel.MAX_EMBED_BUTTONS) { await i.reply({ content: `Maximum of ${panel.MAX_EMBED_BUTTONS} buttons reached.`, flags: 64 }); return true; }
-      await i.showModal(panel.buttonEditorModal(state)); return true;
-    }
-    if (customId === 'embed:button-manager-edit') {
-      if (buttonIndex == null) { await i.reply({ content: 'Select a button first.', flags: 64 }); return true; }
-      await i.showModal(panel.buttonEditorModal(state, buttonIndex)); return true;
-    }
-    if (customId === 'embed:button-manager-options') {
-      if (buttonIndex == null) { await i.reply({ content: 'Select a button first.', flags: 64 }); return true; }
-      return updateButtonOptions(i);
-    }
+    if (customId === 'embed:button-manager-add') { if (buttons.length >= panel.MAX_EMBED_BUTTONS) { await i.reply({ content: `Maximum of ${panel.MAX_EMBED_BUTTONS} buttons reached.`, flags: 64 }); return true; } await i.showModal(panel.buttonEditorModal(state)); return true; }
+    if (customId === 'embed:button-manager-edit') { if (buttonIndex == null) { await i.reply({ content: 'Select a button first.', flags: 64 }); return true; } await i.showModal(panel.buttonEditorModal(state, buttonIndex)); return true; }
+    if (customId === 'embed:button-manager-options') { if (buttonIndex == null) { await i.reply({ content: 'Select a button first.', flags: 64 }); return true; } return updateButtonOptions(i); }
     if (customId === 'embed:button-options-back') return updateButtons(i);
-    if (customId === 'embed:button-reply-edit') {
-      if (buttonIndex == null || String(buttons[buttonIndex]?.action || '').toLowerCase() !== 'reply') return updateButtonOptions(i);
-      await i.showModal(panel.buttonReplyModal(state)); return true;
-    }
-    if (customId.startsWith('embed:button-style:')) {
-      if (buttonIndex == null) return updateButtons(i);
-      const style = customId.split(':').pop(); if (!['primary', 'secondary', 'success', 'danger'].includes(style)) return true;
-      buttons[buttonIndex] = { ...buttons[buttonIndex], style }; saveButtons(i, state, buttons, buttonIndex); return updateButtonOptions(i);
-    }
-    if (customId === 'embed:button-manager-remove') {
-      if (buttonIndex == null) return updateButtons(i);
-      buttons.splice(buttonIndex, 1); saveButtons(i, state, buttons, buttons.length ? Math.min(buttonIndex, buttons.length - 1) : null); return updateButtons(i);
-    }
-    if (customId === 'embed:button-manager-up' || customId === 'embed:button-manager-down') {
-      if (buttonIndex == null) return updateButtons(i);
-      const target = buttonIndex + (customId.endsWith('up') ? -1 : 1);
-      if (target < 0 || target >= buttons.length) return updateButtons(i);
-      [buttons[buttonIndex], buttons[target]] = [buttons[target], buttons[buttonIndex]];
-      saveButtons(i, state, buttons, target); return updateButtons(i);
-    }
+    if (customId === 'embed:button-reply-edit') { if (buttonIndex == null || String(buttons[buttonIndex]?.action || '').toLowerCase() !== 'reply') return updateButtonOptions(i); await i.showModal(panel.buttonReplyModal(state)); return true; }
+    if (customId.startsWith('embed:button-style:')) { if (buttonIndex == null) return updateButtons(i); const style = customId.split(':').pop(); if (!['primary', 'secondary', 'success', 'danger'].includes(style)) return true; buttons[buttonIndex] = { ...buttons[buttonIndex], style }; saveButtons(i, state, buttons, buttonIndex); return updateButtonOptions(i); }
+    if (customId === 'embed:button-manager-remove') { if (buttonIndex == null) return updateButtons(i); buttons.splice(buttonIndex, 1); saveButtons(i, state, buttons, buttons.length ? Math.min(buttonIndex, buttons.length - 1) : null); return updateButtons(i); }
+    if (customId === 'embed:button-manager-up' || customId === 'embed:button-manager-down') { if (buttonIndex == null) return updateButtons(i); const target = buttonIndex + (customId.endsWith('up') ? -1 : 1); if (target < 0 || target >= buttons.length) return updateButtons(i); [buttons[buttonIndex], buttons[target]] = [buttons[target], buttons[buttonIndex]]; saveButtons(i, state, buttons, target); return updateButtons(i); }
   }
 
   if (i.isStringSelectMenu?.()) {
     if (customId === 'embed:field-manager-select') { panel.saveSession(i, { ...state, selectedFieldIndex: Math.max(0, Number(i.values?.[0]) || 0) }); return updateFields(i); }
-    if (customId === 'embed:field-manager-layout') {
-      const layout = String(i.values?.[0] || 'auto'); if (!['auto', '1', '2', '3'].includes(layout)) return true;
-      panel.saveSession(i, { ...state, fieldLayout: layout, hasUnsavedChanges: true }); return updateFields(i);
-    }
+    if (customId === 'embed:field-manager-layout') { const layout = String(i.values?.[0] || 'auto'); if (!['auto', '1', '2', '3'].includes(layout)) return true; panel.saveSession(i, { ...state, fieldLayout: layout, hasUnsavedChanges: true }); return updateFields(i); }
     if (customId === 'embed:button-manager-select') { panel.saveSession(i, { ...state, selectedButtonIndex: Math.max(0, Number(i.values?.[0]) || 0) }); return updateButtons(i); }
-    if (customId === 'embed:button-action-select') {
-      if (buttonIndex == null) return updateButtons(i);
-      const action = String(i.values?.[0] || 'none').toLowerCase(); if (action !== 'none' && !panel.EMBED_BUTTON_ACTIONS.includes(action)) return true;
-      const existing = buttons[buttonIndex] || {};
-      buttons[buttonIndex] = action === 'none' ? { ...existing, action: '', actionValue: '' } : { ...existing, url: '', action, actionValue: '' };
-      saveButtons(i, state, buttons, buttonIndex); return updateButtonOptions(i);
-    }
-    if (customId === 'embed:button-row-select') {
-      if (buttonIndex == null) return updateButtons(i);
-      const raw = String(i.values?.[0] || 'auto'); const row = manualRow(raw); if (raw !== 'auto' && row == null) return true;
-      if (row != null) {
-        const assigned = buttons.filter((button, idx) => idx !== buttonIndex && manualRow(button?.row) === row).length;
-        if (assigned >= panel.MAX_BUTTONS_PER_ROW) { await i.reply({ content: `⚠️ Row ${row + 1} already has ${panel.MAX_BUTTONS_PER_ROW} explicitly placed buttons. Choose another row or Auto placement.`, flags: 64 }); return true; }
-      }
-      buttons[buttonIndex] = { ...buttons[buttonIndex], row: row == null ? null : row }; saveButtons(i, state, buttons, buttonIndex); return updateButtonOptions(i);
-    }
+    if (customId === 'embed:button-action-select') { if (buttonIndex == null) return updateButtons(i); const action = String(i.values?.[0] || 'none').toLowerCase(); if (action !== 'none' && !panel.EMBED_BUTTON_ACTIONS.includes(action)) return true; const existing = buttons[buttonIndex] || {}; buttons[buttonIndex] = action === 'none' ? { ...existing, action: '', actionValue: '' } : { ...existing, url: '', action, actionValue: '' }; saveButtons(i, state, buttons, buttonIndex); return updateButtonOptions(i); }
+    if (customId === 'embed:button-row-select') { if (buttonIndex == null) return updateButtons(i); const raw = String(i.values?.[0] || 'auto'); const row = manualRow(raw); if (raw !== 'auto' && row == null) return true; if (row != null) { const assigned = buttons.filter((button, idx) => idx !== buttonIndex && manualRow(button?.row) === row).length; if (assigned >= panel.MAX_BUTTONS_PER_ROW) { await i.reply({ content: `⚠️ Row ${row + 1} already has ${panel.MAX_BUTTONS_PER_ROW} explicitly placed buttons. Choose another row or Auto placement.`, flags: 64 }); return true; } } buttons[buttonIndex] = { ...buttons[buttonIndex], row: row == null ? null : row }; saveButtons(i, state, buttons, buttonIndex); return updateButtonOptions(i); }
   }
 
-  if (i.isRoleSelectMenu?.() && customId === 'embed:button-action-role') {
-    if (buttonIndex == null || !roleAction(buttons[buttonIndex]?.action)) return updateButtonOptions(i);
-    const roleId = String(i.values?.[0] || '');
-    const role = i.guild?.roles?.cache?.get?.(roleId) || (await i.guild?.roles?.fetch?.(roleId).catch(() => null));
-    if (!role || role.id === i.guildId || role.managed) { await i.reply({ content: '⚠️ Select a normal server role. Managed/integration roles and @everyone cannot be used.', flags: 64 }); return true; }
-    buttons[buttonIndex] = { ...buttons[buttonIndex], actionValue: role.id }; saveButtons(i, state, buttons, buttonIndex); return updateButtonOptions(i);
+  if (i.isRoleSelectMenu?.() && customId === 'embed:button-action-role') { if (buttonIndex == null || !roleAction(buttons[buttonIndex]?.action)) return updateButtonOptions(i); const roleId = String(i.values?.[0] || ''); const role = i.guild?.roles?.cache?.get?.(roleId) || (await i.guild?.roles?.fetch?.(roleId).catch(() => null)); if (!role || role.id === i.guildId || role.managed) { await i.reply({ content: '⚠️ Select a normal server role. Managed/integration roles and @everyone cannot be used.', flags: 64 }); return true; } buttons[buttonIndex] = { ...buttons[buttonIndex], actionValue: role.id }; saveButtons(i, state, buttons, buttonIndex); return updateButtonOptions(i); }
+
+  if (i.isModalSubmit?.() && customId.startsWith('embed:appearance-details-save:')) { saveAppearance(i, state, { authorName: i.fields.getTextInputValue('authorName'), authorUrl: i.fields.getTextInputValue('authorUrl'), footer: i.fields.getTextInputValue('footer') }); await i.reply({ ...panel.buildAppearancePanel(i), flags: 64 }); return true; }
+  if (i.isModalSubmit?.() && customId.startsWith('embed:appearance-icon-url-save:')) { const kind = customId.split(':')[3]; if (!validKind(kind)) return true; saveAppearance(i, state, { [iconField(kind)]: i.fields.getTextInputValue('source') }); await i.reply({ ...panel.buildAppearanceIconPanel(i, kind), flags: 64 }); return true; }
+  if (i.isModalSubmit?.() && customId.startsWith('embed:appearance-icon-upload-save:')) { const kind = customId.split(':').pop(); if (!validKind(kind)) return true; const uploaded = i.fields.getUploadedFiles('icon_file', true); const attachment = [...(uploaded?.values?.() || [])][0]; if (!attachment) { await i.reply({ content: 'No icon was uploaded.', flags: 64 }); return true; } const contentType = String(attachment.contentType || '').toLowerCase(); if (contentType && !contentType.startsWith('image/')) { await i.reply({ content: '⚠️ Author and footer icons must be image files.', flags: 64 }); return true; } try { await ensureAssetCached('global', attachment.url); } catch (error) { console.warn('[Embed Media] appearance icon persistence failed:', attachment?.name || attachment?.url, error?.message || error); } saveAppearance(i, state, { [iconField(kind)]: attachment.url }); await i.reply({ content: `✅ ${kind === 'author' ? 'Author' : 'Footer'} icon uploaded.`, ...panel.buildAppearanceIconPanel(i, kind), flags: 64 }); return true; }
+  if (i.isModalSubmit?.() && customId === 'embed:thumbnail-upload-save') { const uploaded = i.fields.getUploadedFiles('thumbnail_file', true); const attachment = [...(uploaded?.values?.() || [])][0]; if (!attachment) { await i.reply({ content: 'No thumbnail was uploaded.', flags: 64 }); return true; } const contentType = String(attachment.contentType || '').toLowerCase(); if (contentType && !contentType.startsWith('image/')) { await i.reply({ content: '⚠️ Thumbnails must be image files.', flags: 64 }); return true; } try { await ensureAssetCached('global', attachment.url); } catch (error) { console.warn('[Embed Media] thumbnail persistence failed:', attachment?.name || attachment?.url, error?.message || error); } saveThumbnailState(i, state, { source: attachment.url, alt: attachment.description || attachment.name || '' }); await i.reply({ content: '✅ Thumbnail uploaded.', ...panel.buildThumbnailOptionsPanel(i), flags: 64 }); return true; }
+
+  if (i.isModalSubmit?.() && (customId === 'embed:field-manager-save-new' || customId.startsWith('embed:field-manager-save:'))) { const name = String(i.fields.getTextInputValue('name') || '').trim(); const value = String(i.fields.getTextInputValue('value') || '').trim(); if (!name || !value) { await i.reply({ content: 'Field name and content are required.', flags: 64 }); return true; } const editingIndex = customId === 'embed:field-manager-save-new' ? null : Number(customId.split(':').pop()); let nextFieldIndex; if (editingIndex == null) { if (fields.length >= panel.MAX_EMBED_FIELDS) { await i.reply({ content: `Maximum of ${panel.MAX_EMBED_FIELDS} fields reached.`, flags: 64 }); return true; } fields.push({ name: name.slice(0, 256), value: value.slice(0, 1024), inline: false }); nextFieldIndex = fields.length - 1; } else { const existing = fields[editingIndex] || { inline: false }; fields[editingIndex] = { ...existing, name: name.slice(0, 256), value: value.slice(0, 1024), inline: Boolean(existing.inline) }; nextFieldIndex = editingIndex; } saveFields(i, state, fields, nextFieldIndex); return replyFields(i); }
+  if (i.isModalSubmit?.() && (customId === 'embed:button-manager-save-new' || customId.startsWith('embed:button-manager-save:'))) { const label = String(i.fields.getTextInputValue('label') || '').trim().slice(0, 80); const emoji = String(i.fields.getTextInputValue('emoji') || '').trim().slice(0, 100); const url = String(i.fields.getTextInputValue('url') || '').trim(); if (!label) { await i.reply({ content: 'A button label is required.', flags: 64 }); return true; } if (!validUrlOrVariable(url)) { await i.reply({ content: 'Button links must be HTTP/HTTPS URLs or a URL-producing Embed Studio variable.', flags: 64 }); return true; } const editingIndex = customId === 'embed:button-manager-save-new' ? null : Number(customId.split(':').pop()); const existing = Number.isInteger(editingIndex) ? (buttons[editingIndex] || {}) : {}; const entry = { ...existing, label, emoji, url, ...(url ? { action: '', actionValue: '' } : {}), style: ['primary', 'secondary', 'success', 'danger'].includes(String(existing.style || '').toLowerCase()) ? String(existing.style).toLowerCase() : 'primary' }; let nextButtonIndex; if (editingIndex == null) { if (buttons.length >= panel.MAX_EMBED_BUTTONS) { await i.reply({ content: `Maximum of ${panel.MAX_EMBED_BUTTONS} buttons reached.`, flags: 64 }); return true; } buttons.push({ ...entry, action: '', actionValue: '', row: null }); nextButtonIndex = buttons.length - 1; } else { buttons[editingIndex] = entry; nextButtonIndex = editingIndex; } saveButtons(i, state, buttons, nextButtonIndex); return replyButtons(i); }
+  if (i.isModalSubmit?.() && customId === 'embed:button-reply-save') { if (buttonIndex == null || String(buttons[buttonIndex]?.action || '').toLowerCase() !== 'reply') { await i.reply({ content: 'Select a Reply action button first.', flags: 64 }); return true; } const replyText = String(i.fields.getTextInputValue('replyText') || '').trim().slice(0, 1000); if (!replyText) { await i.reply({ content: 'Reply text is required.', flags: 64 }); return true; } buttons[buttonIndex] = { ...buttons[buttonIndex], actionValue: replyText }; saveButtons(i, state, buttons, buttonIndex); return replyButtonOptions(i); }
+
+  return handleCoreInteraction(i);
+}
+
+async function handleCoreInteraction(i) {
+  const customId = String(i.customId || '');
+  const state = panel.getSession(i);
+
+  if (customId === 'embed:edit-images' && i.isButton?.()) return updateMediaPanel(i);
+  if (i.isStringSelectMenu?.() && customId === 'embed:media-gallery-select') { panel.saveSession(i, { ...state, selectedMediaIndex: Number(i.values[0]) }); return updateMediaPanel(i); }
+  if (i.isStringSelectMenu?.() && customId === 'embed:media-file-select') { panel.saveSession(i, { ...state, selectedFileIndex: Number(i.values[0]) }); return updateMediaPanel(i); }
+
+  if (i.isButton?.()) {
+    const panelMedia = panel.getPanelMedia(state);
+    const galleryIndex = Number.isInteger(state.selectedMediaIndex) ? state.selectedMediaIndex : null;
+    const fileIndex = Number.isInteger(state.selectedFileIndex) ? state.selectedFileIndex : null;
+    if (customId === 'embed:media-upload') { await i.showModal(panel.mediaUploadModal()); return true; }
+    if (customId === 'embed:media-options') { if (galleryIndex == null || !panelMedia.gallery[galleryIndex]) { await i.reply({ content: 'Select a gallery item first.', flags: 64 }); return true; } return updateMediaOptions(i); }
+    if (customId === 'embed:media-options-back') return updateMediaPanel(i);
+    if (customId.startsWith('embed:media-type:')) { if (galleryIndex == null || !panelMedia.gallery[galleryIndex]) return updateMediaPanel(i); const type = customId.split(':').pop(); if (!['auto', 'image', 'video'].includes(type)) return true; const gallery = [...panelMedia.gallery]; gallery[galleryIndex] = panel.mediaModel.normalizeGalleryItem({ ...gallery[galleryIndex], type }); saveMediaState(i, state, { ...panelMedia, gallery }, { selectedMediaIndex: galleryIndex }); return updateMediaOptions(i); }
+    if (customId.startsWith('embed:media-spoiler:')) { if (galleryIndex == null || !panelMedia.gallery[galleryIndex]) return updateMediaPanel(i); const gallery = [...panelMedia.gallery]; gallery[galleryIndex] = panel.mediaModel.normalizeGalleryItem({ ...gallery[galleryIndex], spoiler: customId.endsWith(':on') }); saveMediaState(i, state, { ...panelMedia, gallery }, { selectedMediaIndex: galleryIndex }); return updateMediaOptions(i); }
+    if (customId === 'embed:file-options') { if (fileIndex == null || !panelMedia.files[fileIndex]) { await i.reply({ content: 'Select an attached file first.', flags: 64 }); return true; } return updateFileOptions(i); }
+    if (customId === 'embed:file-options-back') return updateMediaPanel(i);
+    if (customId.startsWith('embed:file-spoiler:')) { if (fileIndex == null || !panelMedia.files[fileIndex]) return updateMediaPanel(i); const files = [...panelMedia.files]; files[fileIndex] = panel.mediaModel.normalizeFile({ ...files[fileIndex], spoiler: customId.endsWith(':on') }); saveMediaState(i, state, { ...panelMedia, files }, { selectedFileIndex: fileIndex }); return updateFileOptions(i); }
+    if (customId === 'embed:media-gallery-add') { if (panelMedia.gallery.length >= panel.mediaModel.MAX_GALLERY_ITEMS) { await i.reply({ content: `Maximum of ${panel.mediaModel.MAX_GALLERY_ITEMS} gallery items reached.`, flags: 64 }); return true; } await i.showModal(panel.galleryItemModal(state)); return true; }
+    if (customId === 'embed:media-gallery-edit') { if (galleryIndex == null || !panelMedia.gallery[galleryIndex]) { await i.reply({ content: 'Select a gallery item first.', flags: 64 }); return true; } await i.showModal(panel.galleryItemModal(state, galleryIndex)); return true; }
+    if (customId === 'embed:media-gallery-remove') { if (galleryIndex == null || !panelMedia.gallery[galleryIndex]) return updateMediaPanel(i); const gallery = [...panelMedia.gallery]; gallery.splice(galleryIndex, 1); saveMediaState(i, state, { ...panelMedia, gallery }, { selectedMediaIndex: null }); return updateMediaPanel(i); }
+    if (customId === 'embed:media-gallery-up' || customId === 'embed:media-gallery-down') { if (galleryIndex == null || !panelMedia.gallery[galleryIndex]) return updateMediaPanel(i); const target = galleryIndex + (customId.endsWith('up') ? -1 : 1); if (target < 0 || target >= panelMedia.gallery.length) return updateMediaPanel(i); const gallery = [...panelMedia.gallery]; [gallery[galleryIndex], gallery[target]] = [gallery[target], gallery[galleryIndex]]; saveMediaState(i, state, { ...panelMedia, gallery }, { selectedMediaIndex: target }); return updateMediaPanel(i); }
+    if (customId === 'embed:media-file-add') { if (panelMedia.files.length >= panel.mediaModel.MAX_FILES) { await i.reply({ content: `Maximum of ${panel.mediaModel.MAX_FILES} files reached.`, flags: 64 }); return true; } await i.showModal(panel.fileItemModal(state)); return true; }
+    if (customId === 'embed:media-file-edit') { if (fileIndex == null || !panelMedia.files[fileIndex]) { await i.reply({ content: 'Select a file first.', flags: 64 }); return true; } await i.showModal(panel.fileItemModal(state, fileIndex)); return true; }
+    if (customId === 'embed:media-file-remove') { if (fileIndex == null || !panelMedia.files[fileIndex]) return updateMediaPanel(i); const files = [...panelMedia.files]; files.splice(fileIndex, 1); saveMediaState(i, state, { ...panelMedia, files }, { selectedFileIndex: null }); return updateMediaPanel(i); }
   }
 
-  if (i.isModalSubmit?.() && customId.startsWith('embed:appearance-details-save:')) {
-    saveAppearance(i, state, { authorName: i.fields.getTextInputValue('authorName'), authorUrl: i.fields.getTextInputValue('authorUrl'), footer: i.fields.getTextInputValue('footer') });
-    await i.reply({ ...panel.buildAppearancePanel(i), flags: 64 }); return true;
+  if (i.isModalSubmit?.() && customId === 'embed:media-upload-save') {
+    const uploaded = i.fields.getUploadedFiles('media_files', true); const attachments = [...(uploaded?.values?.() || [])];
+    if (!attachments.length) { await i.reply({ content: 'No files were uploaded.', flags: 64 }); return true; }
+    const panelMedia = panel.getPanelMedia(state), gallery = [...panelMedia.gallery], files = [...panelMedia.files]; let addedGallery = 0, addedFiles = 0, skipped = 0;
+    for (const attachment of attachments) { await cacheUploadedAttachment(attachment); const kind = uploadType(attachment); if ((kind === 'image' || kind === 'video') && gallery.length < panel.mediaModel.MAX_GALLERY_ITEMS) { gallery.push(panel.mediaModel.normalizeGalleryItem({ source: attachment.url, alt: attachment.description || attachment.name || '', type: kind, spoiler: Boolean(attachment.spoiler) })); addedGallery += 1; } else if (files.length < panel.mediaModel.MAX_FILES) { files.push(panel.mediaModel.normalizeFile({ source: attachment.url, name: attachment.name || '', description: attachment.description || '', spoiler: Boolean(attachment.spoiler) })); addedFiles += 1; } else skipped += 1; }
+    saveMediaState(i, state, { ...panelMedia, gallery, files }, { selectedMediaIndex: addedGallery ? gallery.length - 1 : state.selectedMediaIndex, selectedFileIndex: addedFiles ? files.length - 1 : state.selectedFileIndex });
+    await i.reply({ content: `✅ Added ${addedGallery} gallery media item(s) and ${addedFiles} attached file(s).${skipped ? ` ${skipped} item(s) were skipped because the panel limits were reached.` : ''}`, ...panel.buildMediaManagerPanel(i, who(i)), flags: 64 }); return true;
   }
-  if (i.isModalSubmit?.() && customId.startsWith('embed:appearance-icon-url-save:')) {
-    const kind = customId.split(':')[3]; if (!validKind(kind)) return true;
-    saveAppearance(i, state, { [iconField(kind)]: i.fields.getTextInputValue('source') }); await i.reply({ ...panel.buildAppearanceIconPanel(i, kind), flags: 64 }); return true;
+  if (i.isModalSubmit?.() && customId.startsWith('embed:save-content-clean:')) { panel.markUnsaved(i, panel.saveSelected(state, { title: i.fields.getTextInputValue('title'), description: i.fields.getTextInputValue('description') })); await i.reply({ ...panel.buildBuilderPanel(i, who(i)), flags: 64 }); return true; }
+  if (i.isModalSubmit?.() && customId.startsWith('embed:media-thumbnail-save:')) { const panelMedia = panel.getPanelMedia(state); panelMedia.thumbnail = panel.mediaModel.normalizeThumbnail({ source: i.fields.getTextInputValue('source'), alt: i.fields.getTextInputValue('alt') }); saveMediaState(i, state, panelMedia); return replyMediaPanel(i); }
+  if (i.isModalSubmit?.() && (customId === 'embed:media-gallery-save-new' || customId.startsWith('embed:media-gallery-save:'))) { const panelMedia = panel.getPanelMedia(state); const editingIndex = customId === 'embed:media-gallery-save-new' ? null : Number(customId.split(':').pop()); const existing = Number.isInteger(editingIndex) ? (panelMedia.gallery[editingIndex] || {}) : {}; const entry = panel.mediaModel.normalizeGalleryItem({ source: i.fields.getTextInputValue('source'), alt: i.fields.getTextInputValue('alt'), type: existing.type || 'auto', spoiler: existing.spoiler === true }); if (!entry.source) { await i.reply({ content: 'A media URL or variable is required.', flags: 64 }); return true; } const gallery = [...panelMedia.gallery]; let selectedMediaIndex; if (editingIndex == null) { if (gallery.length >= panel.mediaModel.MAX_GALLERY_ITEMS) { await i.reply({ content: 'Maximum gallery item limit reached.', flags: 64 }); return true; } gallery.push(entry); selectedMediaIndex = gallery.length - 1; } else { gallery[editingIndex] = entry; selectedMediaIndex = editingIndex; } saveMediaState(i, state, { ...panelMedia, gallery }, { selectedMediaIndex }); return replyMediaPanel(i); }
+  if (i.isModalSubmit?.() && (customId === 'embed:media-file-save-new' || customId.startsWith('embed:media-file-save:'))) { const panelMedia = panel.getPanelMedia(state); const editingIndex = customId === 'embed:media-file-save-new' ? null : Number(customId.split(':').pop()); const existing = Number.isInteger(editingIndex) ? (panelMedia.files[editingIndex] || {}) : {}; const entry = panel.mediaModel.normalizeFile({ source: i.fields.getTextInputValue('source'), name: i.fields.getTextInputValue('name'), description: i.fields.getTextInputValue('description'), spoiler: existing.spoiler === true }); if (!entry.source) { await i.reply({ content: 'A file URL or variable is required.', flags: 64 }); return true; } const files = [...panelMedia.files]; let selectedFileIndex; if (editingIndex == null) { if (files.length >= panel.mediaModel.MAX_FILES) { await i.reply({ content: 'Maximum file limit reached.', flags: 64 }); return true; } files.push(entry); selectedFileIndex = files.length - 1; } else { files[editingIndex] = entry; selectedFileIndex = editingIndex; } saveMediaState(i, state, { ...panelMedia, files }, { selectedFileIndex }); return replyMediaPanel(i); }
+
+  if (customId === 'embed:test-send') { try { const payload = await buildPayload(state, i, true); payload.allowedMentions = panel.allowedMentions(state, i); await i.reply(payload); } catch (error) { console.error('[Embed] test payload failed:', error); await i.reply({ content: `❌ Embed test failed: ${error?.message || error}`, flags: 64 }); } return true; }
+  if (customId === 'embed:update-existing') {
+    const deployment = getEmbedDeployment(i.guild.id, getDeploymentKeyFromState(state));
+    if (!deployment) return legacyInteractions.handleInteraction(i);
+    const channel = i.guild.channels.cache.get(deployment.channelId) || await i.guild.channels.fetch(deployment.channelId).catch(() => null);
+    if (!isTextBasedChannel(channel)) { await i.reply({ content: '⚠️ The original embed channel no longer exists or is not text-based.', flags: 64 }); return true; }
+    const access = await validateChannelAccess(i.guild, channel.id, [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.SendMessages, PermissionFlagsBits.EmbedLinks], { scope: 'embed.update' });
+    if (!access.ok) { await i.reply({ content: panel.trim(access.message, 1800), flags: 64 }); return true; }
+    const message = await channel.messages.fetch(deployment.messageId).catch(() => null);
+    if (!message || !message.flags?.has?.(MessageFlags.IsComponentsV2)) return legacyInteractions.handleInteraction(i);
+    try { const payload = await buildPayload(state, i, false); payload.allowedMentions = panel.allowedMentions(state, i); await message.edit(payload); saveEmbedDeployment(i.guild.id, getDeploymentKeyFromState(state), { ...deployment, lastUpdatedBy: i.user.id }); await i.reply({ content: '✅ Existing embed updated.', flags: 64 }); }
+    catch (error) { await i.reply({ content: panel.embedOperationError(error, channel.id, 'update'), flags: 64 }); }
+    return true;
   }
-  if (i.isModalSubmit?.() && customId.startsWith('embed:appearance-icon-upload-save:')) {
-    const kind = customId.split(':').pop(); if (!validKind(kind)) return true;
-    const uploaded = i.fields.getUploadedFiles('icon_file', true); const attachment = [...(uploaded?.values?.() || [])][0];
-    if (!attachment) { await i.reply({ content: 'No icon was uploaded.', flags: 64 }); return true; }
-    const contentType = String(attachment.contentType || '').toLowerCase(); if (contentType && !contentType.startsWith('image/')) { await i.reply({ content: '⚠️ Author and footer icons must be image files.', flags: 64 }); return true; }
-    try { await ensureAssetCached('global', attachment.url); } catch (error) { console.warn('[Embed Media] appearance icon persistence failed:', attachment?.name || attachment?.url, error?.message || error); }
-    saveAppearance(i, state, { [iconField(kind)]: attachment.url }); await i.reply({ content: `✅ ${kind === 'author' ? 'Author' : 'Footer'} icon uploaded.`, ...panel.buildAppearanceIconPanel(i, kind), flags: 64 }); return true;
-  }
-  if (i.isModalSubmit?.() && customId === 'embed:thumbnail-upload-save') {
-    const uploaded = i.fields.getUploadedFiles('thumbnail_file', true); const attachment = [...(uploaded?.values?.() || [])][0];
-    if (!attachment) { await i.reply({ content: 'No thumbnail was uploaded.', flags: 64 }); return true; }
-    const contentType = String(attachment.contentType || '').toLowerCase(); if (contentType && !contentType.startsWith('image/')) { await i.reply({ content: '⚠️ Thumbnails must be image files.', flags: 64 }); return true; }
-    try { await ensureAssetCached('global', attachment.url); } catch (error) { console.warn('[Embed Media] thumbnail persistence failed:', attachment?.name || attachment?.url, error?.message || error); }
-    saveThumbnailState(i, state, { source: attachment.url, alt: attachment.description || attachment.name || '' }); await i.reply({ content: '✅ Thumbnail uploaded.', ...panel.buildThumbnailOptionsPanel(i), flags: 64 }); return true;
+  if (customId === 'embed:use') {
+    const channel = i.guild.channels.cache.get(state.channelId) || await i.guild.channels.fetch(state.channelId).catch(() => null);
+    if (!isTextBasedChannel(channel)) { await i.reply({ content: 'Invalid channel.', flags: 64 }); return true; }
+    const access = await validateChannelAccess(i.guild, channel.id, [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.EmbedLinks], { scope: 'embed.deploy' });
+    if (!access.ok) { await i.reply({ content: panel.trim(access.message, 1800), flags: 64 }); return true; }
+    try { const payload = await buildPayload(state, i, false); payload.allowedMentions = panel.allowedMentions(state, i); const sent = await channel.send(payload); const presetName = `auto-${state.template || 'custom'}`; guildManager.saveEmbedPreset(i.guild.id, presetName, panel.presetData(state), i.guild); saveEmbedDeployment(i.guild.id, getDeploymentKeyFromState({ ...state, selectedPreset: presetName }), { channelId: channel.id, messageId: sent.id, template: state.template, preset: presetName, createdBy: i.user.id, lastUpdatedBy: i.user.id }); const ok = panel.setDefault(i.guild.id, state.template, presetName); panel.clearUnsaved(i, { ...state, selectedPreset: presetName }); await i.reply({ content: ok ? `✅ Embed posted to <#${state.channelId}> and saved as active` : '⚠️ Preset saved, but default assignment failed.', flags: 64 }); }
+    catch (error) { await i.reply({ content: panel.embedOperationError(error, channel.id, 'send'), flags: 64 }); }
+    return true;
   }
 
-  if (i.isModalSubmit?.() && (customId === 'embed:field-manager-save-new' || customId.startsWith('embed:field-manager-save:'))) {
-    const name = String(i.fields.getTextInputValue('name') || '').trim(); const value = String(i.fields.getTextInputValue('value') || '').trim();
-    if (!name || !value) { await i.reply({ content: 'Field name and content are required.', flags: 64 }); return true; }
-    const editingIndex = customId === 'embed:field-manager-save-new' ? null : Number(customId.split(':').pop()); let nextFieldIndex;
-    if (editingIndex == null) {
-      if (fields.length >= panel.MAX_EMBED_FIELDS) { await i.reply({ content: `Maximum of ${panel.MAX_EMBED_FIELDS} fields reached.`, flags: 64 }); return true; }
-      fields.push({ name: name.slice(0, 256), value: value.slice(0, 1024), inline: false }); nextFieldIndex = fields.length - 1;
-    } else {
-      const existing = fields[editingIndex] || { inline: false }; fields[editingIndex] = { ...existing, name: name.slice(0, 256), value: value.slice(0, 1024), inline: Boolean(existing.inline) }; nextFieldIndex = editingIndex;
-    }
-    saveFields(i, state, fields, nextFieldIndex); return replyFields(i);
-  }
-
-  if (i.isModalSubmit?.() && (customId === 'embed:button-manager-save-new' || customId.startsWith('embed:button-manager-save:'))) {
-    const label = String(i.fields.getTextInputValue('label') || '').trim().slice(0, 80); const emoji = String(i.fields.getTextInputValue('emoji') || '').trim().slice(0, 100); const url = String(i.fields.getTextInputValue('url') || '').trim();
-    if (!label) { await i.reply({ content: 'A button label is required.', flags: 64 }); return true; }
-    if (!validUrlOrVariable(url)) { await i.reply({ content: 'Button links must be HTTP/HTTPS URLs or a URL-producing Embed Studio variable.', flags: 64 }); return true; }
-    const editingIndex = customId === 'embed:button-manager-save-new' ? null : Number(customId.split(':').pop()); const existing = Number.isInteger(editingIndex) ? (buttons[editingIndex] || {}) : {};
-    const entry = { ...existing, label, emoji, url, ...(url ? { action: '', actionValue: '' } : {}), style: ['primary', 'secondary', 'success', 'danger'].includes(String(existing.style || '').toLowerCase()) ? String(existing.style).toLowerCase() : 'primary' };
-    let nextButtonIndex;
-    if (editingIndex == null) { if (buttons.length >= panel.MAX_EMBED_BUTTONS) { await i.reply({ content: `Maximum of ${panel.MAX_EMBED_BUTTONS} buttons reached.`, flags: 64 }); return true; } buttons.push({ ...entry, action: '', actionValue: '', row: null }); nextButtonIndex = buttons.length - 1; }
-    else { buttons[editingIndex] = entry; nextButtonIndex = editingIndex; }
-    saveButtons(i, state, buttons, nextButtonIndex); return replyButtons(i);
-  }
-  if (i.isModalSubmit?.() && customId === 'embed:button-reply-save') {
-    if (buttonIndex == null || String(buttons[buttonIndex]?.action || '').toLowerCase() !== 'reply') { await i.reply({ content: 'Select a Reply action button first.', flags: 64 }); return true; }
-    const replyText = String(i.fields.getTextInputValue('replyText') || '').trim().slice(0, 1000); if (!replyText) { await i.reply({ content: 'Reply text is required.', flags: 64 }); return true; }
-    buttons[buttonIndex] = { ...buttons[buttonIndex], actionValue: replyText }; saveButtons(i, state, buttons, buttonIndex); return replyButtonOptions(i);
-  }
-
-  return interactionCore.handleInteraction(i);
+  return legacyInteractions.handleInteraction(i);
 }
 
 async function showReadiness(interaction) {
@@ -264,95 +261,26 @@ async function showReadiness(interaction) {
   else await interaction.reply({ ...payload, flags: 64 });
   return true;
 }
-
-async function updateWith(interaction, payload) {
-  if (interaction.deferred || interaction.replied) await interaction.editReply(payload);
-  else await interaction.update(payload);
-  return true;
-}
-
-function selectState(interaction, patch = {}) {
-  const state = panel.getSession(interaction);
-  return panel.saveSession(interaction, { ...state, ...patch });
-}
-
+async function updateWith(interaction, payload) { if (interaction.deferred || interaction.replied) await interaction.editReply(payload); else await interaction.update(payload); return true; }
+function selectState(interaction, patch = {}) { const state = panel.getSession(interaction); return panel.saveSession(interaction, { ...state, ...patch }); }
 async function routeReadinessFix(interaction) {
-  const report = panel.getReadinessReport(interaction);
-  const target = panel.getReadinessFixTarget(report);
-  const state = panel.getSession(interaction);
-
+  const report = panel.getReadinessReport(interaction); const target = panel.getReadinessFixTarget(report); const state = panel.getSession(interaction);
   if (target.type === 'channel') return updateWith(interaction, panel.buildEditorPanel(interaction, panel.memberName?.(interaction)));
-
-  if (target.type === 'button') {
-    const buttons = Array.isArray(state.buttons) ? state.buttons : [];
-    const selectedButtonIndex = Number.isInteger(target.index) && buttons[target.index] ? target.index : (buttons.length ? 0 : null);
-    selectState(interaction, { selectedButtonIndex });
-    return updateWith(interaction, panel.buildButtonsManagerPanel(interaction));
-  }
-
-  if (target.type === 'field') {
-    const panels = Array.isArray(state.panels) ? state.panels : [];
-    const panelIndex = Math.max(0, Math.min(Number(target.panelIndex) || 0, Math.max(0, panels.length - 1)));
-    const fields = Array.isArray(panels[panelIndex]?.fields) ? panels[panelIndex].fields : [];
-    const selectedFieldIndex = Number.isInteger(target.fieldIndex) && fields[target.fieldIndex] ? target.fieldIndex : (fields.length ? 0 : null);
-    selectState(interaction, { selectedPanelIndex: panelIndex, selectedFieldIndex });
-    return updateWith(interaction, panel.buildFieldsManagerPanel(interaction));
-  }
-
-  if (target.type === 'media') {
-    const panels = Array.isArray(state.panels) ? state.panels : [];
-    const panelIndex = Math.max(0, Math.min(Number(target.panelIndex) || 0, Math.max(0, panels.length - 1)));
-    selectState(interaction, { selectedPanelIndex: panelIndex });
-    return updateWith(interaction, panel.buildMediaManagerPanel(interaction));
-  }
-
-  if (target.type === 'panel') {
-    const panels = Array.isArray(state.panels) ? state.panels : [];
-    const panelIndex = Math.max(0, Math.min(Number(target.panelIndex) || 0, Math.max(0, panels.length - 1)));
-    selectState(interaction, { selectedPanelIndex: panelIndex });
-    return updateWith(interaction, panel.buildBuilderPanel(interaction, panel.memberName?.(interaction)));
-  }
-
-  if (target.type === 'variables' && typeof panel.buildHelpersPanel === 'function') {
-    return updateWith(interaction, panel.buildHelpersPanel(interaction, panel.memberName?.(interaction)));
-  }
-
+  if (target.type === 'button') { const buttons = Array.isArray(state.buttons) ? state.buttons : []; const selectedButtonIndex = Number.isInteger(target.index) && buttons[target.index] ? target.index : (buttons.length ? 0 : null); selectState(interaction, { selectedButtonIndex }); return updateWith(interaction, panel.buildButtonsManagerPanel(interaction)); }
+  if (target.type === 'field') { const panels = Array.isArray(state.panels) ? state.panels : []; const panelIndex = Math.max(0, Math.min(Number(target.panelIndex) || 0, Math.max(0, panels.length - 1))); const fields = Array.isArray(panels[panelIndex]?.fields) ? panels[panelIndex].fields : []; const selectedFieldIndex = Number.isInteger(target.fieldIndex) && fields[target.fieldIndex] ? target.fieldIndex : (fields.length ? 0 : null); selectState(interaction, { selectedPanelIndex: panelIndex, selectedFieldIndex }); return updateWith(interaction, panel.buildFieldsManagerPanel(interaction)); }
+  if (target.type === 'media') { const panels = Array.isArray(state.panels) ? state.panels : []; const panelIndex = Math.max(0, Math.min(Number(target.panelIndex) || 0, Math.max(0, panels.length - 1))); selectState(interaction, { selectedPanelIndex: panelIndex }); return updateWith(interaction, panel.buildMediaManagerPanel(interaction)); }
+  if (target.type === 'panel') { const panels = Array.isArray(state.panels) ? state.panels : []; const panelIndex = Math.max(0, Math.min(Number(target.panelIndex) || 0, Math.max(0, panels.length - 1))); selectState(interaction, { selectedPanelIndex: panelIndex }); return updateWith(interaction, panel.buildBuilderPanel(interaction, panel.memberName?.(interaction))); }
+  if (target.type === 'variables' && typeof panel.buildHelpersPanel === 'function') return updateWith(interaction, panel.buildHelpersPanel(interaction, panel.memberName?.(interaction)));
   return updateWith(interaction, panel.buildBuilderPanel(interaction, panel.memberName?.(interaction)));
 }
 
 async function handleInteraction(interaction) {
   const customId = String(interaction.customId || '');
-
-  if (interaction.isStringSelectMenu?.() && customId === 'embed:builder-panel-select') {
-    const state = panel.getSession(interaction);
-    const index = Math.max(0, Math.min(Number(interaction.values?.[0]) || 0, Math.max(0, (state.panels?.length || 1) - 1)));
-    panel.saveSession(interaction, { ...state, selectedPanelIndex: index, selectedFieldIndex: null });
-    await interaction.update(panel.buildBuilderPanel(interaction, panel.memberName(interaction)));
-    return true;
-  }
-
-  if (interaction.isButton?.() && customId === 'embed:actions') {
-    await interaction.update(panel.buildActionsPanel(interaction));
-    return true;
-  }
-
-  if ((customId === 'embed:readiness' || customId === 'embed:readiness-refresh') && interaction.isButton?.()) {
-    return showReadiness(interaction);
-  }
+  if (interaction.isStringSelectMenu?.() && customId === 'embed:builder-panel-select') { const state = panel.getSession(interaction); const index = Math.max(0, Math.min(Number(interaction.values?.[0]) || 0, Math.max(0, (state.panels?.length || 1) - 1))); panel.saveSession(interaction, { ...state, selectedPanelIndex: index, selectedFieldIndex: null }); await interaction.update(panel.buildBuilderPanel(interaction, panel.memberName(interaction))); return true; }
+  if (interaction.isButton?.() && customId === 'embed:actions') { await interaction.update(panel.buildActionsPanel(interaction)); return true; }
+  if ((customId === 'embed:readiness' || customId === 'embed:readiness-refresh') && interaction.isButton?.()) return showReadiness(interaction);
   if (customId === 'embed:readiness-fix' && interaction.isButton?.()) return routeReadinessFix(interaction);
-
-  if (DELIVERY_ACTIONS.has(customId)) {
-    const report = panel.getReadinessReport(interaction);
-    if (!report.ready) {
-      const payload = panel.buildReadinessPanel(interaction);
-      const prefix = '❌ This embed is not ready to send. Fix the issues below first.';
-      payload.embeds[0].setDescription(`${prefix}\n\n${payload.embeds[0].data.description || ''}`.slice(0, 4096));
-      if (interaction.deferred || interaction.replied) await interaction.editReply(payload);
-      else await interaction.reply({ ...payload, flags: 64 });
-      return true;
-    }
-  }
-
+  if (DELIVERY_ACTIONS.has(customId)) { const report = panel.getReadinessReport(interaction); if (!report.ready) { const payload = panel.buildReadinessPanel(interaction); const prefix = '❌ This embed is not ready to send. Fix the issues below first.'; payload.embeds[0].setDescription(`${prefix}\n\n${payload.embeds[0].data.description || ''}`.slice(0, 4096)); if (interaction.deferred || interaction.replied) await interaction.editReply(payload); else await interaction.reply({ ...payload, flags: 64 }); return true; } }
   if (await handleButtonAction(interaction)) return true;
   return handleBuilderInteractions(interaction);
 }
