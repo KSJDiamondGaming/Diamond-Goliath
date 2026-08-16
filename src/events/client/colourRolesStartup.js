@@ -11,11 +11,9 @@ const TIMER_KEY = Symbol.for('goliath.colourRoles.maintenanceTimer');
 async function maintainGuild(guild) {
   if (!guildManager.isModuleEnabled(guild.id, colourRoles.MODULE)) return;
   await colourRolesAppearance.syncManagedRoleAppearance(guild)
-    .catch((error) => console.warn(`[ColourRoles] Appearance sync failed for ${guild.id}:`, error.message || error));
+    .catch((error) => console.warn(`[ColourRoles] Appearance/hierarchy sync failed for ${guild.id}:`, error.message || error));
   await colourRoles.markAndCleanupUnused(guild)
     .catch((error) => console.warn(`[ColourRoles] Cleanup failed for ${guild.id}:`, error.message || error));
-  await colourRoles.reorderManagedRoles(guild)
-    .catch((error) => console.warn(`[ColourRoles] Reorder failed for ${guild.id}:`, error.message || error));
 }
 
 async function maintainAll(client) {
