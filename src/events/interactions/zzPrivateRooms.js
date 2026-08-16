@@ -1,6 +1,7 @@
 'use strict';
 
 const { Events, MessageFlags } = require('discord.js');
+const guildManager = require('../../core/guild/guildManager');
 const privateRooms = require('../../modules/utilityStudio/privateRooms/privateRooms');
 const panel = require('../../modules/utilityStudio/privateRooms/privateRoomsPanel');
 
@@ -46,6 +47,18 @@ async function safeError(interaction, error) {
   } catch {}
 }
 
+async function disabledReply(interaction) {
+  const content = '❌ Private Rooms is currently disabled for this server.';
+  if (interaction.deferred || interaction.replied) return interaction.followUp({ content, flags: MessageFlags.Ephemeral }).catch(() => null);
+  return interaction.reply({ content, flags: MessageFlags.Ephemeral }).catch(() => null);
+}
+
+function startsNewRoomFlow(id) {
+  return id === 'user:privateRooms:request'
+    || id === 'privateRooms:staff:create'
+    || id.startsWith('privateRooms:wizard:');
+}
+
 module.exports = [
   {
     name: Events.ClientReady,
@@ -82,7 +95,19 @@ module.exports = [
           await panel.handleAdminInteraction(interaction);
           return;
         }
+        if (id === 'user:module:privateRooms' || id.startsWith('user:privateRooms:')) {
+          if (!guildManager.isModuleEnabled(interaction.guildId, privateRooms.SECTION) && id === 'user:privateRooms:request') {
+            await disabledReply(interaction);
+            return;
+          }
+          await panel.handleUserInteraction(interaction);
+          return;
+        }
         if (id.startsWith('privateRooms:')) {
+          if (!guildManager.isModuleEnabled(interaction.guildId, privateRooms.SECTION) && startsNewRoomFlow(id)) {
+            await disabledReply(interaction);
+            return;
+          }
           await panel.handleInteraction(interaction);
         }
       } catch (error) {
