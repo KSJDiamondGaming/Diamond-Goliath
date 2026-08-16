@@ -70,7 +70,7 @@ function startupSocialStudio(client) {
 }
 
 module.exports = {
-  ...core,
+  providerInfo: core.providerInfo,
   startupSocialStudio,
   checkGuildAccounts,
   forcePostCreatorLive,
