@@ -36,6 +36,39 @@ function hasLegacyPayload(value) {
   return isPlainObject(value) && Object.keys(value).length > 0;
 }
 
+function migrateColourRolesToRoleSelector(colourRoles = {}) {
+  if (!isPlainObject(colourRoles)) return {};
+  const colourGroup = {
+    id: 'colours',
+    key: 'colours',
+    name: 'Colours',
+    emoji: '🌈',
+    description: 'Choose a cosmetic Discord name colour.',
+    type: 'colour',
+    builtIn: true,
+    enabled: true,
+    selectionMode: 'single',
+    allowRemove: colourRoles.allowRemoveColour !== false,
+    palette: clone(colourRoles.palette || []),
+    customHexEnabled: colourRoles.customHexEnabled !== false,
+    managedRoles: clone(colourRoles.managedRoles || {}),
+    memberSelections: clone(colourRoles.memberSelections || {}),
+  };
+
+  return {
+    enabled: colourRoles.enabled !== false,
+    groups: { colours: colourGroup },
+    groupOrder: ['colours'],
+    style: clone(colourRoles.style || {}),
+    deployment: clone(colourRoles.deployment || {}),
+    cleanup: clone(colourRoles.cleanup || {}),
+    analytics: clone(colourRoles.analytics || {}),
+    createdAt: colourRoles.createdAt,
+    migratedFrom: 'colourRoles',
+    migratedAt: new Date().toISOString(),
+  };
+}
+
 /**
  * Known legacy Role Studio locations. These are copied into the modern module
  * section the first time that module is loaded.
@@ -68,6 +101,10 @@ function getLegacyModuleSection(modules, moduleName) {
       settings: clone(roles.settings || {}),
       analytics: clone(roles.analytics || {}),
     };
+  }
+
+  if (moduleName === 'roleSelector' && isPlainObject(modules.colourRoles)) {
+    return migrateColourRolesToRoleSelector(modules.colourRoles);
   }
 
   return {};
@@ -104,6 +141,21 @@ function cleanupLegacyRolesIfSafe(guildId, modules, guildOrMeta = {}) {
   );
 }
 
+function cleanupLegacyColourRolesIfSafe(guildId, modules, guildOrMeta = {}) {
+  if (!isPlainObject(modules.roleSelector) || !isPlainObject(modules.colourRoles)) return modules;
+  return updateGuildSection(
+    guildId,
+    'modules',
+    (existingModules = {}) => {
+      const nextModules = isPlainObject(existingModules) ? clone(existingModules) : {};
+      if (isPlainObject(nextModules.roleSelector)) delete nextModules.colourRoles;
+      return nextModules;
+    },
+    {},
+    guildOrMeta
+  );
+}
+
 /**
  * Ensure modules.<moduleName> exists in the mode-specific guild JSON.
  *
@@ -119,6 +171,7 @@ function ensureModuleSection(guildId, moduleName, fallback = {}, guildOrMeta = {
 
   if (isPlainObject(current)) {
     cleanupLegacyRolesIfSafe(guildId, modules, guildOrMeta);
+    if (safeModuleName === 'roleSelector') cleanupLegacyColourRolesIfSafe(guildId, modules, guildOrMeta);
     return {
       ...clone(fallback),
       ...clone(current),
@@ -149,7 +202,9 @@ function ensureModuleSection(guildId, moduleName, fallback = {}, guildOrMeta = {
     guildOrMeta
   );
 
-  cleanupLegacyRolesIfSafe(guildId, getModules(guildId), guildOrMeta);
+  const refreshedModules = getModules(guildId);
+  cleanupLegacyRolesIfSafe(guildId, refreshedModules, guildOrMeta);
+  if (safeModuleName === 'roleSelector') cleanupLegacyColourRolesIfSafe(guildId, refreshedModules, guildOrMeta);
   return clone(initialSection);
 }
 
