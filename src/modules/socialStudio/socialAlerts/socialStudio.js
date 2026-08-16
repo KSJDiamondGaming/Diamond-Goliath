@@ -8,8 +8,6 @@ const { providerInfo } = require('./socialStudioProviders');
 const store = require('./socialStudioStore');
 const adminPanel = require('./socialStudioPanel');
 
-const ACTIVE = 'active';
-const LEFT_SERVER = 'left_server';
 const PLATFORMS = ['twitch', 'youtube', 'tiktok', 'kick', 'facebook', 'instagram', 'x'];
 const ALERT_TYPES = ['live', 'ended', 'vod', 'clip', 'upload', 'short', 'post'];
 const LABEL = { twitch: 'Twitch', youtube: 'YouTube', tiktok: 'TikTok', kick: 'Kick', facebook: 'Facebook', instagram: 'Instagram', x: 'X' };
@@ -514,8 +512,6 @@ const user = {
 module.exports = {
   admin: adminPanel,
   user,
-  ACTIVE,
-  LEFT_SERVER,
   getConfiguredRoleIds,
   getAccess,
   findByOwnerDiscordId,
