@@ -136,8 +136,6 @@ function upsertUserAccount(guildId, creator, platform, rawValue, actorId) {
     alertTypes: Array.isArray(primary?.alertTypes) ? primary.alertTypes : supportedAlerts(platform),
     alertChannelId: primary?.alertChannelId || null,
     alertChannels: primary?.alertChannels && typeof primary.alertChannels === 'object' ? primary.alertChannels : {},
-    mentionMode: primary?.mentionMode || section.notificationMentionMode || 'none',
-    mentionRoleId: primary?.mentionRoleId || (section.notificationMentionMode === 'role' ? section.notificationRoleId || null : null),
     createdAt: primary?.createdAt || new Date().toISOString(),
   };
 
