@@ -8,6 +8,7 @@ export const MODULE_STATUS_META = {
 export const moduleRegistry = [
   { key: 'autoRoles', name: 'Auto Roles', icon: 'AR', route: '/autoroles', category: MODULE_CATEGORIES.feature, status: MODULE_STATUSES.backendReady, enabled: false, summary: 'Assign roles automatically when members join or meet conditions.' },
   { key: 'automation', name: 'Automation', icon: 'AU', route: '/automation', category: MODULE_CATEGORIES.feature, status: MODULE_STATUSES.backendReady, enabled: false, summary: 'Rules, triggers and execution history for server workflows.' },
+  { key: 'colourRoles', name: 'Colour Roles', icon: 'CR', route: '/colour-roles', category: MODULE_CATEGORIES.feature, status: MODULE_STATUSES.backendReady, enabled: false, summary: 'Dynamic cosmetic colour roles, guild-aware styling, hierarchy grouping and colour usage leaderboards.' },
   { key: 'embedBuilder', name: 'Embed Studio', icon: 'ES', route: '/embed-studio', category: MODULE_CATEGORIES.feature, status: MODULE_STATUSES.backendReady, enabled: true, summary: 'Build, preview, save and manage Discord embeds from the dashboard.' },
   { key: 'forms', name: 'Forms', icon: 'FM', route: '/forms', category: MODULE_CATEGORIES.feature, status: MODULE_STATUSES.backendReady, enabled: true, summary: 'Universal forms, submissions, analytics and workflow foundations.' },
   { key: 'giveaways', name: 'Giveaways', icon: 'GW', route: '/giveaways', category: MODULE_CATEGORIES.feature, status: MODULE_STATUSES.backendReady, enabled: false, summary: 'Create and manage server giveaways.' },
