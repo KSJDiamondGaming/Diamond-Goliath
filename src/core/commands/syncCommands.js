@@ -63,6 +63,7 @@ async function cleanupCommandCenterScope() {
 
 async function syncCommands(...args) {
   const result = await core.syncCommands(...args);
+  if (result?.dryRun) return result;
   await cleanupCommandCenterScope();
   return result;
 }
