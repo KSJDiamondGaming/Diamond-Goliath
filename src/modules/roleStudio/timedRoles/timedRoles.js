@@ -49,14 +49,16 @@ function normalizeRule(rule = {}) {
   const value = Math.max(1, Math.floor(Number(rule.value || rule.durationValue || 1)));
   const requestedUnit = String(rule.unit || rule.durationUnit || 'days').toLowerCase();
   const unit = UNITS.includes(requestedUnit) ? requestedUnit : 'days';
+  const roleId = cleanId(rule.roleId);
+  const removeRoleIds = [...new Set((Array.isArray(rule.removeRoleIds) ? rule.removeRoleIds : []).map(cleanId).filter((id) => id && id !== roleId))];
   return {
     ruleId: cleanText(rule.ruleId || rule.id, 80) || createId(),
     enabled: rule.enabled !== false,
     name: cleanText(rule.name || 'Timed role milestone', 100),
-    roleId: cleanId(rule.roleId),
+    roleId,
     value,
     unit,
-    removeRoleIds: [...new Set((Array.isArray(rule.removeRoleIds) ? rule.removeRoleIds : []).map(cleanId).filter(Boolean))],
+    removeRoleIds,
     createdBy: cleanId(rule.createdBy),
     createdAt: rule.createdAt || now(),
     updatedAt: now(),
@@ -343,36 +345,6 @@ async function scanGuild(guild, meta = {}) {
   return result;
 }
 
-async function buildHealth(guild) {
-  const issues = [];
-  const warnings = [];
-  const section = getSection(guild.id);
-  if (!guild.members.me?.permissions.has(PermissionFlagsBits.ManageRoles)) issues.push('Goliath requires Manage Roles.');
-  for (const rule of listRules(guild.id)) {
-    const role = await resolveRole(guild, rule.roleId);
-    if (!role) issues.push(`${rule.name}: target role no longer exists.`);
-    else if (!canManageRole(guild, role)) issues.push(`${rule.name}: target role is above Goliath or managed.`);
-    for (const roleId of rule.removeRoleIds) if (!guild.roles.cache.has(roleId)) warnings.push(`${rule.name}: cleanup role ${roleId} no longer exists.`);
-    if (rule.lastError) warnings.push(`${rule.name}: last scan failed — ${rule.lastError}`);
-  }
-  if (section.settings.announcePromotions) {
-    const channel = guild.channels.cache.get(section.settings.announcementChannelId);
-    if (!channel?.isTextBased?.()) warnings.push('Promotion announcements are enabled but the configured channel is missing or invalid.');
-  }
-  return { healthy: issues.length === 0, enabled: guildManager.isModuleEnabled(guild.id, SECTION), rules: listRules(guild.id).length, issues, warnings, checkedAt: now() };
-}
-async function repair(guild, meta = {}) {
-  const section = getSection(guild.id);
-  const validRules = {};
-  for (const rule of listRules(guild.id)) {
-    const role = await resolveRole(guild, rule.roleId);
-    if (!role) continue;
-    validRules[rule.ruleId] = normalizeRule({ ...rule, removeRoleIds: rule.removeRoleIds.filter((id) => guild.roles.cache.has(id)) });
-  }
-  const settings = { ...section.settings };
-  if (settings.announcementChannelId && !guild.channels.cache.has(settings.announcementChannelId)) settings.announcementChannelId = null;
-  return saveSection(guild.id, { ...section, settings, rules: validRules }, meta);
-}
 async function startup(client) {
   if (client.__goliathTimedRolesStarted) return null;
   client.__goliathTimedRolesStarted = true;
@@ -409,8 +381,6 @@ module.exports = {
   shouldScanGuild,
   simulateGuild,
   scanGuild,
-  buildHealth,
-  repair,
   startup,
   exportConfiguration: getSection,
   reset: (guildId, meta = {}) => saveSection(guildId, defaultSection(), meta),
