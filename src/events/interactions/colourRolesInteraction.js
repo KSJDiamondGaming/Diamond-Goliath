@@ -3,11 +3,21 @@
 const { Events } = require('discord.js');
 const colourRolesPanel = require('../../modules/roleStudio/colourRoles/colourRolesPanel');
 const colourRolesAppearance = require('../../modules/roleStudio/colourRoles/colourRolesAppearance');
+const colourRolesHierarchy = require('../../modules/roleStudio/colourRoles/colourRolesHierarchy');
 const roleStudioPanel = require('../../modules/roleStudio/roleStudioPanel');
 
 const APPEARANCE_SYNC_IDS = new Set([
   'admin:colourRoles:styleModal',
   'admin:colourRoles:applyStyleSuggestion',
+]);
+
+const HIERARCHY_SYNC_IDS = new Set([
+  'admin:colourRoles:anchor',
+  'admin:colourRoles:createDividerModal',
+  'admin:colourRoles:togglePlacement',
+  'admin:colourRoles:toggleGrouped',
+  'colourRoles:choose',
+  'colourRoles:customModal',
 ]);
 
 module.exports = {
@@ -32,6 +42,12 @@ module.exports = {
     if (APPEARANCE_SYNC_IDS.has(customId) && interaction.guild) {
       await colourRolesAppearance.syncManagedRoleAppearance(interaction.guild)
         .catch((error) => console.warn(`[ColourRoles] Immediate appearance sync failed for ${interaction.guild.id}:`, error.message || error));
+      return;
+    }
+
+    if (HIERARCHY_SYNC_IDS.has(customId) && interaction.guild) {
+      await colourRolesHierarchy.syncManagedRoleHierarchy(interaction.guild)
+        .catch((error) => console.warn(`[ColourRoles] Immediate hierarchy sync failed for ${interaction.guild.id}:`, error.message || error));
     }
   },
 };
