@@ -87,6 +87,9 @@ function getScheduledConfig(guildId) {
 }
 
 function updateScheduledConfig(guildId, patch = {}, meta = {}) {
+  if (patch?.enabled === true && !guildManager.isModuleEnabled(guildId, MODULE)) {
+    guildManager.setModuleEnabled(guildId, MODULE, true, { ...meta, action: meta.action || 'scheduled_welcome_enable_parent' });
+  }
   let saved = null;
   updateModuleSection(guildId, MODULE, (section = {}) => {
     const current = normalizeScheduledConfig(section.scheduled);
