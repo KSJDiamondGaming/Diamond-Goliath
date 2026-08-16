@@ -433,7 +433,6 @@ module.exports = {
   getConfig,
   getManagerRoleIds,
   getUserRoleIds,
-  saveSection,
   saveConfig,
   updateSection,
   getCreator,
