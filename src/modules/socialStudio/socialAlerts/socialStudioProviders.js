@@ -82,7 +82,6 @@ async function checkAccount(account = {}) {
 }
 
 module.exports = {
-  PROVIDERS,
   providerInfo,
   checkAccount,
 };
