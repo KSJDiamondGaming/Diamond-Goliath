@@ -107,7 +107,11 @@ function listSubscriptions() {
 
 function grantSubscription({ guildId, plan = PLAN_IDS.PLUS, duration = 30, actor = 'owner' } = {}) {
   const safeGuildId = cleanGuildId(guildId);
-  const normalizedPlan = normalizePlanId(plan);
+  const requestedPlan = String(plan || '').trim().toLowerCase();
+  if (!Object.values(PLAN_IDS).includes(requestedPlan)) {
+    throw new Error('Invalid subscription plan.');
+  }
+  const normalizedPlan = normalizePlanId(requestedPlan);
   const durationDays = normalizeDurationDays(duration, normalizedPlan);
   const expiresAt = normalizedPlan === PLAN_IDS.LIFETIME ? null : addDaysFrom(null, durationDays);
 
