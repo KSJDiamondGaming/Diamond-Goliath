@@ -59,12 +59,42 @@ router.put('/:guildId/config', async (req, res) => {
 
 router.post('/:guildId/scan-style', async (req, res) => {
   try {
-    const id = guildId(req); const g = await guild(req, id);
+    const id = guildId(req);
+    const g = await guild(req, id);
     if (!g) throw new Error('Guild is unavailable.');
     const suggestion = colourRoles.suggestRoleStyle(g);
     const current = colourRoles.getSection(id);
-    colourRoles.updateSection(id, { ...current, style: { ...current.style, ...suggestion, detectedFormat: suggestion.format } }, { actorId: actorId(req), action: 'colour_roles_style_scan' });
+    colourRoles.updateSection(id, {
+      ...current,
+      style: {
+        ...current.style,
+        detectedFormat: suggestion.format,
+        detectedIcon: suggestion.icon,
+        detectedSeparator: suggestion.separator,
+        detectedConfidence: suggestion.confidence,
+      },
+    }, { actorId: actorId(req), action: 'colour_roles_style_scan' });
     return success(res, { suggestion, ...(await overview(req, id)) });
+  } catch (error) { return failure(res, error); }
+});
+
+router.post('/:guildId/apply-style-suggestion', async (req, res) => {
+  try {
+    const id = guildId(req);
+    const current = colourRoles.getSection(id);
+    if (!current.style.detectedFormat) throw new Error('Run the guild style scan first.');
+    colourRoles.updateSection(id, {
+      ...current,
+      style: {
+        ...current.style,
+        format: current.style.detectedFormat,
+        icon: current.style.detectedIcon || '',
+        separator: current.style.detectedSeparator || '|',
+      },
+    }, { actorId: actorId(req), action: 'colour_roles_style_suggestion_applied' });
+    const g = await guild(req, id);
+    if (g && current.style.anchorRoleId && current.style.keepGrouped) await colourRoles.reorderManagedRoles(g);
+    return success(res, await overview(req, id));
   } catch (error) { return failure(res, error); }
 });
 
