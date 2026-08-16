@@ -8,6 +8,21 @@ guild.modules.colourRoles
 
 The same canonical implementation is used in dev, beta and production. Runtime mode selects the correct guild JSON; Colour Roles does not use a standalone JSON file or database.
 
+## Canonical module files
+
+```text
+src/modules/roleStudio/colourRoles/
+├── colourRoles.js
+├── colourRolesAppearance.js
+├── colourRolesHealth.js
+└── colourRolesPanel.js
+```
+
+- `colourRoles.js` owns configuration, palette definitions, HEX classification, dynamic-role lifecycle, hierarchy ordering, member selection and usage data.
+- `colourRolesAppearance.js` owns safe appearance synchronisation for Goliath-managed colour roles.
+- `colourRolesHealth.js` owns diagnostics and repair.
+- `colourRolesPanel.js` owns the Discord admin and member-facing UI.
+
 ## Core design
 
 Goliath stores the available palette internally and only creates physical Discord roles when a member actually selects a colour. This avoids permanently creating dozens of unused cosmetic roles.
@@ -24,6 +39,8 @@ Default palette order:
 8. Black — `#23272A`
 9. White — `#F5F5F5`
 10. Custom HEX — optional
+
+Admins can enable or disable individual built-in palette entries, but their logical order remains rainbow-first followed by black and white.
 
 Custom HEX colours are classified by HSL hue into the closest rainbow family so their managed Discord roles can be grouped with the appropriate primary colour family. Black and white are handled separately.
 
@@ -42,7 +59,7 @@ Goliath tracks the Discord role IDs it owns in `modules.colourRoles.managedRoles
 
 Managed colour roles are created with no permissions, are not hoisted and are not mentionable by default.
 
-Unused managed roles can be removed after the configured grace period. The default is seven days.
+Unused managed roles can be removed after the configured grace period. The default is seven days. Colour Roles runs maintenance at startup and then hourly so cleanup does not depend on a bot restart.
 
 ## Guild role styling
 
@@ -68,21 +85,21 @@ Supported style placeholders:
 {colour}
 ```
 
-The admin panel can scan existing guild role names and suggest a matching style. The scan is advisory; the guild owner/admin remains in control of the final format.
+The admin panel can scan existing guild role names and produce a suggested format. Scanning is advisory and does not automatically change the active Colour Roles format. The admin must explicitly choose **Apply Suggestion**. Existing Goliath-managed colour roles are safely renamed to the active format when the style changes.
 
 ## Divider / hierarchy placement
 
-Admins select a divider or anchor role and choose whether Colour Roles should sit above or below it.
+Admins can select an existing divider/anchor role or ask Goliath to create a cosmetic Colour Roles divider. They then choose whether managed Colour Roles sit above or below it.
 
-Goliath only repositions roles recorded in `managedRoles`. Existing unrelated guild roles are not intentionally re-sorted by Colour Roles.
+Goliath only repositions roles recorded in `managedRoles`. Existing unrelated guild roles are not intentionally re-sorted by Colour Roles. Managed roles are ordered by rainbow family, then hue/lightness within that family, followed by black and white.
 
 The module validates the bot's `Manage Roles` permission and Discord role hierarchy. Goliath cannot create/edit/move roles at or above its highest role.
 
-A member's visible Discord name colour is still controlled by Discord's normal highest-coloured-role rule. Higher coloured staff/subscriber roles can override a lower cosmetic Colour Role.
+A member's visible Discord name colour is still controlled by Discord's normal role-colour hierarchy behaviour, so a higher coloured staff/subscriber role can visually override a lower cosmetic Colour Role.
 
 ## Member picker
 
-The admin can deploy a member-facing colour selector to a configured text channel. Members can:
+The admin can deploy or update a member-facing colour selector in a configured text channel. Members can:
 
 - Choose one of the enabled default palette colours.
 - Pick a custom `#RRGGBB` HEX colour when custom HEX is enabled.
@@ -117,13 +134,15 @@ Admin → Modules → Role Studio → Colour Roles
 The panel provides:
 
 - Enable / disable.
-- Guild role style scan.
+- Built-in palette enable/disable controls.
+- Custom HEX enable/disable.
+- Guild role-style scan and explicit Apply Suggestion.
 - Custom role-name format.
-- Divider/anchor selection.
+- Existing divider/anchor selection.
+- Create Divider.
 - Above/below placement.
 - Managed grouping toggle.
-- Custom HEX enable/disable.
-- Member picker deployment.
+- Member picker deployment/update.
 - Colour usage leaderboard.
 - Members-by-colour view.
 - Health / repair.
@@ -142,7 +161,9 @@ API base:
 /api/colour-roles/:guildId
 ```
 
-Endpoints include overview, config, guild-style scan, picker deployment, usage, cleanup and repair.
+The dashboard mirrors the core controls: module state, palette, custom HEX, role format, advisory guild-style scan/apply, anchor/divider creation, placement, member-picker deployment, cleanup, leaderboard/member names, analytics and health.
+
+API endpoints include overview, config, guild-style scan, apply-style-suggestion, create-divider, picker deployment, usage, cleanup and repair.
 
 ## Health and repair
 
@@ -152,10 +173,12 @@ Health checks:
 - Divider/anchor existence and hierarchy.
 - Managed role existence.
 - Managed role hierarchy.
+- Managed role naming against the active format.
 - Unexpected permissions on cosmetic roles.
 - Hoisted/mentionable managed roles.
+- Stale stored member selections that no longer match Discord state.
 
-Repair removes dead managed-role references, clears a missing anchor, restores cosmetic role safety defaults, re-groups managed roles and runs unused-role cleanup.
+Repair removes dead managed-role references, clears a missing anchor, removes stale member-selection records, restores cosmetic-role safety/appearance, re-groups managed roles and runs unused-role cleanup.
 
 ## Verification
 
@@ -168,4 +191,4 @@ npm run audit
 npm run doctor
 ```
 
-Colour Roles should not be considered live-locked until the Discord member picker, dynamic role creation, switching, custom HEX, hierarchy placement and dashboard have been tested in a real guild.
+Colour Roles should not be considered live-locked until the Discord member picker, dynamic role creation/reuse, switching, custom HEX family placement, divider/hierarchy placement, cleanup, leaderboard and dashboard have been tested in a real guild.
