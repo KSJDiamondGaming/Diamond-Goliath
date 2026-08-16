@@ -13,10 +13,7 @@ const {
   getEmbedDeployment,
   getDeploymentKeyFromState,
 } = require('./embedDeployments');
-// IMPORTANT: load the compatibility layer here, not embedPanel directly.
-// interactionCreate loads this module independently of /embed, so importing
-// embedPanel directly would bypass compact preview/media normalization patches.
-const panel = require('./embedPreviewCompat');
+const panel = require('./embedPanel');
 const { prepareEmbedMedia } = require('./embedRenderer');
 const {
   clone,
