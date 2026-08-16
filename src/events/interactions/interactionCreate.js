@@ -26,6 +26,7 @@ const adminPanel = optionalRequire('admin panel', '../../core/admin/functions/ad
 const restoreRequestManager = optionalRequire('restore requests', '../../core/security/restoreRequestManager');
 const statsAdminPanel = optionalRequire('stats admin', '../../modules/utilityStudio/stats/statsPanel');
 const reactionRolesAdminPanel = optionalRequire('reaction roles admin', '../../modules/roleStudio/reactionRoles/reactionRolesPanel');
+const temporaryRolesPanel = optionalRequire('temporary roles', '../../modules/roleStudio/temporaryRoles/temporaryRolesPanel');
 const giveawaysAdminPanel = optionalRequire('giveaways admin', '../../modules/communityStudio/giveaways/giveawaysAdminPanel');
 const starboardPanel = optionalRequire('starboard admin', '../../modules/messageStudio/starboard/starboardPanel');
 const stickyAdminPanel = optionalRequire('sticky admin', '../../modules/messageStudio/sticky/stickyAdminPanel');
@@ -394,6 +395,7 @@ module.exports = {
       }
       if (startsWith(interaction, 'admin:verification')) { await callHandler(verificationAdminPanel, 'handleVerificationAdminInteraction', interaction); return; }
       if (startsWith(interaction, 'admin:autoRoles')) { await callHandler(autorolesPanel, 'handleAutoRolesInteraction', interaction); return; }
+      if (startsWith(interaction, 'admin:temporaryRoles')) { await callHandler(temporaryRolesPanel, 'handleTemporaryRolesInteraction', interaction); return; }
       if (startsWith(interaction, 'admin:timedRoles')) { await callHandler(timedRolesPanel, 'handleTimedRolesInteraction', interaction); return; }
       if (startsWith(interaction, 'admin:welcome')) { await callHandler(welcomePanel, 'handleWelcomeInteraction', interaction); return; }
       if (startsWith(interaction, 'admin:goodbye')) { await callHandler(goodbyePanel, 'handleGoodbyeInteraction', interaction); return; }
