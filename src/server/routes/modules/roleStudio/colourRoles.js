@@ -4,6 +4,7 @@ const express = require('express');
 const guildManager = require('../../../../core/guild/guildManager');
 const colourRoles = require('../../../../modules/roleStudio/colourRoles/colourRoles');
 const healthService = require('../../../../modules/roleStudio/colourRoles/colourRolesHealth');
+const colourRolesPanel = require('../../../../modules/roleStudio/colourRoles/colourRolesPanel');
 
 const router = express.Router();
 
@@ -64,6 +65,24 @@ router.post('/:guildId/scan-style', async (req, res) => {
     const current = colourRoles.getSection(id);
     colourRoles.updateSection(id, { ...current, style: { ...current.style, ...suggestion, detectedFormat: suggestion.format } }, { actorId: actorId(req), action: 'colour_roles_style_scan' });
     return success(res, { suggestion, ...(await overview(req, id)) });
+  } catch (error) { return failure(res, error); }
+});
+
+router.post('/:guildId/deploy', async (req, res) => {
+  try {
+    const id = guildId(req); const g = await guild(req, id);
+    if (!g) throw new Error('Guild is unavailable.');
+    const config = colourRoles.getSection(id);
+    const channelId = config.deployment?.channelId;
+    if (!channelId) throw new Error('Select a Colour Roles deployment channel first.');
+    const channel = g.channels.cache.get(channelId) || await g.channels.fetch(channelId).catch(() => null);
+    if (!channel?.isTextBased?.()) throw new Error('Colour Roles deployment channel is unavailable.');
+    let message = null;
+    if (config.deployment?.messageId) message = await channel.messages.fetch(config.deployment.messageId).catch(() => null);
+    const payload = colourRolesPanel.buildMemberPayload(g);
+    message = message ? await message.edit(payload) : await channel.send(payload);
+    colourRoles.updateSection(id, (current) => ({ ...current, deployment: { channelId: channel.id, messageId: message.id } }), { actorId: actorId(req), action: 'colour_roles_dashboard_deploy' });
+    return success(res, { messageId: message.id, ...(await overview(req, id)) });
   } catch (error) { return failure(res, error); }
 });
 
