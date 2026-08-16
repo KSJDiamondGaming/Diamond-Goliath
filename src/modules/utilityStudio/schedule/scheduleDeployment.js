@@ -111,6 +111,15 @@ async function resolveChannel(guild, event, overrideChannelId = null) {
 }
 
 async function syncDiscordEvent(guild, event) {
+  if (!event) return { synced: false, reason: 'missing_event' };
+  const shouldRemove = Boolean(event.discordEventId) && (event.status !== 'scheduled' || !event.mirrorDiscordEvent);
+  if (shouldRemove) {
+    if (!guild.members.me?.permissions.has(PermissionFlagsBits.ManageEvents)) return { synced: false, reason: 'missing_permission' };
+    await guild.scheduledEvents.delete(event.discordEventId).catch(() => null);
+    schedule.saveEvent(guild.id, { ...event, discordEventId: null }, { action: 'schedule_native_event_removed' });
+    return { synced: true, removed: true, reason: event.status !== 'scheduled' ? event.status : 'mirror_disabled' };
+  }
+  if (event.status !== 'scheduled') return { synced: false, reason: event.status };
   if (!event.mirrorDiscordEvent) return { synced: false, reason: 'disabled' };
   if (!guild.members.me?.permissions.has(PermissionFlagsBits.ManageEvents)) return { synced: false, reason: 'missing_permission' };
   const common = {
@@ -162,10 +171,16 @@ async function updateDeployment(guild, eventId) {
   if (!guild?.id) throw new Error('Guild is required.');
   if (!guildManager.isModuleEnabled(guild.id, 'schedule')) return { updated: false, reason: 'module_disabled' };
   const event = schedule.getEvent(guild.id, eventId);
-  if (!event?.channelId || !event?.messageId) return { updated: false, reason: 'not_deployed' };
+  if (!event?.channelId || !event?.messageId) {
+    if (event?.discordEventId) await syncDiscordEvent(guild, event).catch(() => null);
+    return { updated: false, reason: 'not_deployed' };
+  }
   const channel = await resolveChannel(guild, event);
   const message = await channel.messages.fetch(event.messageId).catch(() => null);
-  if (!message) return { updated: false, reason: 'message_missing' };
+  if (!message) {
+    await syncDiscordEvent(guild, event).catch(() => null);
+    return { updated: false, reason: 'message_missing' };
+  }
   await message.edit(buildEventPayload(event));
   await syncDiscordEvent(guild, event).catch(() => null);
   return { updated: true, channelId: channel.id, messageId: message.id };
@@ -196,6 +211,17 @@ async function addToThread(guild, event, member) {
   if (!event.thread?.threadId || !event.thread.addAttendeesOnRsvp || !member) return;
   const thread = guild.channels.cache.get(event.thread.threadId) || await guild.channels.fetch(event.thread.threadId).catch(() => null);
   await thread?.members?.add?.(member.id).catch(() => null);
+}
+
+async function syncPromotedMember(guild, event, userId) {
+  if (!userId) return null;
+  const member = await guild.members.fetch(userId).catch(() => null);
+  if (!member) return null;
+  const status = event.rsvps?.[userId]?.status || null;
+  await syncAttendeeRole(member, event, 'waitlist', status);
+  if (schedule.isAttendeeStatus(event, status)) await addToThread(guild, event, member);
+  await member.user?.send?.(`✅ A place opened up for **${event.title}** and you have been promoted from the waitlist.`).catch(() => null);
+  return member;
 }
 
 function managePayload(event, userId) {
@@ -276,6 +302,7 @@ async function handleMemberInteraction(interaction) {
   event = result.event;
   await syncAttendeeRole(member, event, result.previousStatus, action === 'remove' ? null : result.status);
   if (action !== 'remove' && schedule.isAttendeeStatus(event, result.status)) await addToThread(interaction.guild, event, member);
+  if (result.promotedUserId) await syncPromotedMember(interaction.guild, event, result.promotedUserId);
   await interaction.update(buildEventPayload(event));
   const overlaps = schedule.getSection(interaction.guildId).settings.warnOverlaps && action !== 'remove' && schedule.isAttendeeStatus(event, result.status)
     ? schedule.findOverlaps(interaction.guildId, interaction.user.id, eventId)
