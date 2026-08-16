@@ -32,17 +32,38 @@ guild.embedStudio.bindings.welcome.welcome
 
 No standalone module JSON files are used.
 
+Welcome role-notification settings are stored in the same module section:
+
+```text
+modules.welcome.allowRolePings
+modules.welcome.mentionRoleIds
+```
+
 ## Runtime
 
-Welcome runs from the shared member join event. It supports:
+Welcome runs from the shared member join event. The current join order is:
+
+```text
+Verification
+→ Auto Roles
+→ Welcome
+→ Admin join log
+```
+
+This means Auto Roles can assign an initial member role before the Welcome message is delivered.
+
+Welcome supports:
 
 - Public welcome messages
 - Optional direct-message welcomes
-- Member mentions
+- New-member mentions
+- Configurable role notifications
 - Bot filtering
 - Embed Studio template bindings
 - Member and server template variables
 - Delivery analytics
+
+Role notifications are restricted with Discord `allowedMentions`. Welcome never enables unrestricted role, `@everyone` or `@here` parsing. Only the configured new member and selected notification roles can generate a real ping.
 
 Supported Welcome variables include:
 
@@ -63,7 +84,35 @@ Supported Welcome variables include:
 {createdAt}
 {joinedAt}
 {timestamp}
+{welcomeRoles}
+{welcomeRoleMentions}
+{welcomeRolesNoPing}
 ```
+
+`{welcomeRoles}` and `{welcomeRoleMentions}` resolve to the configured role mentions for public delivery. When pings are suppressed, including previews and DMs, they render as display-only role names instead.
+
+## Auto Roles and Timed Roles workflow
+
+Welcome does not duplicate role assignment or role timers.
+
+The intended onboarding progression is:
+
+```text
+Member joins
+→ Auto Roles optionally assigns an initial role
+→ Welcome sends the public/DM welcome and optional role notifications
+→ Timed Roles later evaluates the member's real guild join date
+→ Timed Roles awards the configured milestone role
+→ Timed Roles optionally removes the earlier role through its cleanup-role setting
+```
+
+This keeps responsibilities separate:
+
+- Auto Roles: immediate join-time role assignment.
+- Welcome: message delivery and safe notifications.
+- Timed Roles: tenure progression and later role cleanup.
+
+Welcome stores no duplicate Timed Roles rule, timer or schedule.
 
 ## Discord Admin panel
 
@@ -79,16 +128,28 @@ The panel provides:
 - Welcome channel selector
 - Embed Studio template selector and binding
 - DM welcome toggle
-- Member ping toggle
+- Mention settings sub-panel
+- New-member ping toggle
+- Native multi-role selector for welcome notification roles
+- Role-notification enable/disable toggle
 - Bot filtering toggle
 - Preview delivery, including while the module is disabled
 - Health repair
 - JSON export
 - Full reset
 
+Up to 10 notification roles can be configured.
+
 ## Dashboard
 
 The Welcome dashboard displays the active bound template, delivery settings, analytics and health. Selecting a template creates the same `welcome → welcome` binding used by Embed Studio.
+
+The dashboard also supports:
+
+- New-member ping enable/disable
+- Role-notification enable/disable
+- Multi-role notification selection
+- Notification-role health visibility
 
 ## API
 
@@ -109,9 +170,13 @@ Endpoints:
 - `POST /reset`
 - `GET /export`
 
+`PUT /config` accepts the canonical Welcome settings, including `allowRolePings` and `mentionRoleIds`.
+
 ## Preview delivery
 
 A preview welcome uses the selected channel and active Embed Studio template even when Welcome is currently disabled. Preview sends do not increase live delivery analytics.
+
+Preview/ephemeral output suppresses real member and role pings while preserving display-only names.
 
 ## Startup recovery and health
 
@@ -124,8 +189,17 @@ Startup validates:
 - Embed Links permission
 - Active template existence
 - Explicit Embed Studio binding
+- Selected role-notification references
+- Whether selected roles are mentionable, or Goliath has `Mention Everyone` in the welcome channel
 
-Missing or unusable channels are reported through health warnings and can be cleared with the repair action.
+Health reports deleted notification roles and roles that cannot actually be pinged with the bot's current channel permissions.
+
+Repair:
+
+- Clears missing/unusable welcome channels
+- Clears invalid DM template references
+- Removes deleted notification-role references
+- Disables role notifications if no valid notification roles remain
 
 ## Doctor
 
