@@ -3,6 +3,8 @@
 const express = require('express');
 const guildManager = require('../../../../core/guild/guildManager');
 const welcome = require('../../../../modules/messageStudio/welcome/welcome');
+const scheduledWelcome = require('../../../../modules/messageStudio/welcome/scheduledWelcome');
+const scheduledWelcomeHealth = require('../../../../modules/messageStudio/welcome/scheduledWelcomeHealth');
 
 const router = express.Router();
 
@@ -46,13 +48,16 @@ function canonicalExport(guildId) {
 
 async function buildOverview(req, guildId) {
   const config = canonicalConfig(guildId);
+  const scheduled = scheduledWelcome.getScheduledConfig(guildId);
   const guild = await getGuild(req, guildId);
   const health = guild ? await welcome.buildHealthReport(guild) : null;
+  const scheduledHealth = guild ? await scheduledWelcomeHealth.buildHealth(guild) : null;
   const templates = welcome.getWelcomeTemplates(guildId, 'welcome');
   const binding = welcome.getWelcomeBinding(guildId, 'welcome');
   return {
     guildId,
     config,
+    scheduled,
     templates,
     binding,
     overview: {
@@ -61,6 +66,9 @@ async function buildOverview(req, guildId) {
       dmEnabled: config.dmEnabled === true,
       analytics: config.analytics,
       health,
+      scheduledHealth,
+      scheduledEnabled: scheduled.enabled,
+      scheduledWaiting: scheduledHealth?.waitingMembers || 0,
       templateId: binding?.templateId || config.templateId,
       templateName: binding?.name || health?.templateName || null,
       templateBound: Boolean(binding),
@@ -69,11 +77,8 @@ async function buildOverview(req, guildId) {
 }
 
 router.get('/:guildId/overview', async (req, res) => {
-  try {
-    return success(res, await buildOverview(req, getGuildId(req)));
-  } catch (error) {
-    return failure(res, error, 400);
-  }
+  try { return success(res, await buildOverview(req, getGuildId(req))); }
+  catch (error) { return failure(res, error, 400); }
 });
 
 router.put('/:guildId/config', async (req, res) => {
@@ -81,16 +86,11 @@ router.put('/:guildId/config', async (req, res) => {
     const guildId = getGuildId(req);
     const patch = req.body || {};
     const { enabled, templateId, ...settingsPatch } = patch;
-    if (typeof enabled === 'boolean') {
-      guildManager.setModuleEnabled(guildId, 'welcome', enabled, { actorId: getActorId(req) });
-    }
+    if (typeof enabled === 'boolean') guildManager.setModuleEnabled(guildId, 'welcome', enabled, { actorId: getActorId(req) });
     if (templateId) welcome.bindWelcomeTemplate(guildId, templateId, 'welcome', { actorId: getActorId(req) });
     if (Object.keys(settingsPatch).length) welcome.updateConfig(guildId, settingsPatch, { actorId: getActorId(req) });
-    const config = canonicalConfig(guildId);
-    return success(res, { config, ...(await buildOverview(req, guildId)) });
-  } catch (error) {
-    return failure(res, error, 400);
-  }
+    return success(res, await buildOverview(req, guildId));
+  } catch (error) { return failure(res, error, 400); }
 });
 
 router.patch('/:guildId/enabled', async (req, res) => {
@@ -98,9 +98,7 @@ router.patch('/:guildId/enabled', async (req, res) => {
     const guildId = getGuildId(req);
     guildManager.setModuleEnabled(guildId, 'welcome', req.body?.enabled === true, { actorId: getActorId(req) });
     return success(res, await buildOverview(req, guildId));
-  } catch (error) {
-    return failure(res, error, 400);
-  }
+  } catch (error) { return failure(res, error, 400); }
 });
 
 router.post('/:guildId/template', async (req, res) => {
@@ -109,10 +107,8 @@ router.post('/:guildId/template', async (req, res) => {
     const templateId = String(req.body?.templateId || '').trim();
     if (!templateId) throw new Error('A template ID is required.');
     const result = welcome.bindWelcomeTemplate(guildId, templateId, 'welcome', { actorId: getActorId(req) });
-    return success(res, { ...result, config: canonicalConfig(guildId, result.config), ...(await buildOverview(req, guildId)) });
-  } catch (error) {
-    return failure(res, error, 400);
-  }
+    return success(res, { ...result, ...(await buildOverview(req, guildId)) });
+  } catch (error) { return failure(res, error, 400); }
 });
 
 router.post('/:guildId/repair', async (req, res) => {
@@ -120,11 +116,10 @@ router.post('/:guildId/repair', async (req, res) => {
     const guildId = getGuildId(req);
     const guild = await getGuild(req, guildId);
     if (!guild) throw new Error('Guild is unavailable.');
-    const config = canonicalConfig(guildId, await welcome.repairConfiguration(guild, { actorId: getActorId(req) }));
-    return success(res, { config, ...(await buildOverview(req, guildId)) });
-  } catch (error) {
-    return failure(res, error, 400);
-  }
+    await welcome.repairConfiguration(guild, { actorId: getActorId(req) });
+    await scheduledWelcomeHealth.repair(guild, { actorId: getActorId(req) });
+    return success(res, await buildOverview(req, guildId));
+  } catch (error) { return failure(res, error, 400); }
 });
 
 router.post('/:guildId/test', async (req, res) => {
@@ -140,9 +135,57 @@ router.post('/:guildId/test', async (req, res) => {
     if (!config.channelId && !config.dmEnabled) throw new Error('Select a welcome channel or enable welcome DMs before previewing.');
     const result = await welcome.sendWelcome(member, { silent: false, force: true, previewOnly: true });
     return success(res, { result, ...(await buildOverview(req, guildId)) });
-  } catch (error) {
-    return failure(res, error, 400);
-  }
+  } catch (error) { return failure(res, error, 400); }
+});
+
+router.get('/:guildId/scheduled', async (req, res) => {
+  try {
+    const guildId = getGuildId(req);
+    const guild = await getGuild(req, guildId);
+    const scheduled = scheduledWelcome.getScheduledConfig(guildId);
+    const health = guild ? await scheduledWelcomeHealth.buildHealth(guild) : null;
+    return success(res, { scheduled, health });
+  } catch (error) { return failure(res, error, 400); }
+});
+
+router.put('/:guildId/scheduled', async (req, res) => {
+  try {
+    const guildId = getGuildId(req);
+    const scheduled = scheduledWelcome.updateScheduledConfig(guildId, req.body || {}, { actorId: getActorId(req) });
+    const guild = await getGuild(req, guildId);
+    const health = guild ? await scheduledWelcomeHealth.buildHealth(guild) : null;
+    return success(res, { scheduled, health });
+  } catch (error) { return failure(res, error, 400); }
+});
+
+router.get('/:guildId/scheduled/queue', async (req, res) => {
+  try {
+    const guildId = getGuildId(req);
+    const guild = await getGuild(req, guildId);
+    if (!guild) throw new Error('Guild is unavailable.');
+    const members = await scheduledWelcome.getWaitingMembers(guild);
+    return success(res, { count: members.length, members: members.map((member) => ({ id: member.id, username: member.user?.username || member.id, displayName: member.displayName || member.user?.username || member.id })) });
+  } catch (error) { return failure(res, error, 400); }
+});
+
+router.post('/:guildId/scheduled/run', async (req, res) => {
+  try {
+    const guildId = getGuildId(req);
+    const guild = await getGuild(req, guildId);
+    if (!guild) throw new Error('Guild is unavailable.');
+    const result = await scheduledWelcome.runScheduledWelcome(guild, { force: true, actorId: getActorId(req) });
+    return success(res, { result, ...(await buildOverview(req, guildId)) });
+  } catch (error) { return failure(res, error, 400); }
+});
+
+router.post('/:guildId/scheduled/repair', async (req, res) => {
+  try {
+    const guildId = getGuildId(req);
+    const guild = await getGuild(req, guildId);
+    if (!guild) throw new Error('Guild is unavailable.');
+    const result = await scheduledWelcomeHealth.repair(guild, { actorId: getActorId(req) });
+    return success(res, { result, ...(await buildOverview(req, guildId)) });
+  } catch (error) { return failure(res, error, 400); }
 });
 
 router.post('/:guildId/reset', async (req, res) => {
@@ -150,9 +193,7 @@ router.post('/:guildId/reset', async (req, res) => {
     const guildId = getGuildId(req);
     welcome.resetWelcome(guildId, { actorId: getActorId(req) });
     return success(res, await buildOverview(req, guildId));
-  } catch (error) {
-    return failure(res, error, 400);
-  }
+  } catch (error) { return failure(res, error, 400); }
 });
 
 router.get('/:guildId/export', (req, res) => {
@@ -161,9 +202,7 @@ router.get('/:guildId/export', (req, res) => {
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="goliath-welcome-${guildId}.json"`);
     return res.send(JSON.stringify(canonicalExport(guildId), null, 2));
-  } catch (error) {
-    return failure(res, error, 400);
-  }
+  } catch (error) { return failure(res, error, 400); }
 });
 
 module.exports = router;
