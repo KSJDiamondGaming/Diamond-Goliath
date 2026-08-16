@@ -6,6 +6,7 @@ const {
   ButtonBuilder,
   ButtonStyle,
   ChannelSelectMenuBuilder,
+  RoleSelectMenuBuilder,
   StringSelectMenuBuilder,
   ChannelType,
   AttachmentBuilder,
@@ -86,6 +87,9 @@ async function buildWelcomePanel(guild, memberDisplayName = 'Unknown User', user
   const stagedTemplateId = selections.get(`${guild.id}:${userId}`);
   const stagedTemplate = stagedTemplateId ? embedTemplateManager.getTemplate(guild.id, stagedTemplateId) : null;
   const warnings = health.warnings || [];
+  const roleNotificationLabel = config.mentionRoleIds.length
+    ? config.mentionRoleIds.map((roleId) => `<@&${roleId}>`).join(', ')
+    : 'None selected';
 
   const embed = new EmbedBuilder()
     .setColor(!moduleEnabled ? 0xed4245 : warnings.length ? 0xfaa61a : 0x57f287)
@@ -94,7 +98,8 @@ async function buildWelcomePanel(guild, memberDisplayName = 'Unknown User', user
       `**Status:** ${moduleEnabled ? 'Enabled ✅' : 'Disabled ❌'}`,
       `**Channel:** ${config.channelId ? `<#${config.channelId}>` : '`Not set`'}`,
       `**DM:** ${config.dmEnabled ? 'Enabled ✅' : 'Disabled ❌'}`,
-      `**Notify:** ${config.allowUserPing ? 'Real ping above embed ✅' : 'No notification'}`,
+      `**Member notify:** ${config.allowUserPing ? 'Real ping ✅' : 'Display only'}`,
+      `**Role notify:** ${config.allowRolePings ? `Enabled ✅ · ${roleNotificationLabel}` : `Disabled · ${roleNotificationLabel}`}`,
       `**Bots:** ${config.ignoreBots ? 'Excluded' : 'Included'}`,
       '',
       '**📨 Public Welcome**',
@@ -126,7 +131,7 @@ async function buildWelcomePanel(guild, memberDisplayName = 'Unknown User', user
       row(
         button(moduleEnabled ? 'admin:welcome:disable' : 'admin:welcome:enable', moduleEnabled ? '⏸ Disable' : '▶ Enable', moduleEnabled ? ButtonStyle.Secondary : ButtonStyle.Success),
         button('admin:welcome:toggleDm', config.dmEnabled ? '📨 DM On' : '📨 DM Off', config.dmEnabled ? ButtonStyle.Success : ButtonStyle.Secondary),
-        button('admin:welcome:togglePing', config.allowUserPing ? '🔔 Ping On' : '🔕 Ping Off', config.allowUserPing ? ButtonStyle.Success : ButtonStyle.Secondary),
+        button('admin:welcome:mentions', '🔔 Mentions', (config.allowUserPing || config.allowRolePings) ? ButtonStyle.Success : ButtonStyle.Secondary),
         button('admin:welcome:toggleBots', config.ignoreBots ? '🤖 Bots Off' : '🤖 Bots On', config.ignoreBots ? ButtonStyle.Secondary : ButtonStyle.Success)
       ),
       row(
@@ -146,14 +151,51 @@ async function buildWelcomePanel(guild, memberDisplayName = 'Unknown User', user
   };
 }
 
-async function updatePanel(interaction) {
-  const payload = await buildWelcomePanel(
+function buildMentionSettingsPanel(guild, memberDisplayName = 'Unknown User') {
+  const config = welcome.getWelcomeSection(guild.id);
+  const selectedRoles = config.mentionRoleIds.length
+    ? config.mentionRoleIds.map((roleId) => `<@&${roleId}>`).join(', ')
+    : '`None`';
+
+  return {
+    embeds: [new EmbedBuilder()
+      .setColor(config.allowRolePings ? 0x57f287 : 0x5865f2)
+      .setTitle('🔔 Welcome · Mention Settings')
+      .setDescription([
+        'Choose who the public welcome should notify above the embed.',
+        '',
+        `**New member ping:** ${config.allowUserPing ? 'Enabled ✅' : 'Disabled'}`,
+        `**Role pings:** ${config.allowRolePings ? 'Enabled ✅' : 'Disabled'}`,
+        `**Selected roles:** ${selectedRoles}`,
+        '',
+        'Role notifications are restricted to only the selected roles. Embed mentions remain display-only.',
+        'This works cleanly with Auto Roles and Timed Roles: an initial join role can be awarded first, welcomed, then later removed/replaced by a Timed Roles milestone.',
+      ].join('\n'))
+      .setFooter({ text: `Requested by ${memberDisplayName}` })
+      .setTimestamp()],
+    components: [
+      row(new RoleSelectMenuBuilder()
+        .setCustomId('admin:welcome:roles')
+        .setPlaceholder('Choose roles to notify in welcome messages')
+        .setMinValues(0)
+        .setMaxValues(10)),
+      row(
+        button('admin:welcome:togglePing', config.allowUserPing ? '🔔 Member Ping On' : '🔕 Member Ping Off', config.allowUserPing ? ButtonStyle.Success : ButtonStyle.Secondary),
+        button('admin:welcome:toggleRolePings', config.allowRolePings ? '📣 Role Pings On' : '📣 Role Pings Off', config.allowRolePings ? ButtonStyle.Success : ButtonStyle.Secondary),
+        button('admin:welcome', '⬅ Back')
+      ),
+    ],
+  };
+}
+
+async function updatePanel(interaction, payload = null) {
+  const next = payload || await buildWelcomePanel(
     interaction.guild,
     interaction.member?.displayName || interaction.user?.username,
     interaction.user.id
   );
-  if (interaction.deferred || interaction.replied) return interaction.editReply(payload);
-  return interaction.update(payload);
+  if (interaction.deferred || interaction.replied) return interaction.editReply(next);
+  return interaction.update(next);
 }
 
 function selectedTemplate(interaction) {
@@ -170,10 +212,25 @@ async function handleWelcomeInteraction(interaction) {
 
   try {
     if (customId === 'admin:welcome') return updatePanel(interaction);
+    if (customId === 'admin:welcome:mentions') {
+      return updatePanel(interaction, buildMentionSettingsPanel(
+        interaction.guild,
+        interaction.member?.displayName || interaction.user?.username
+      ));
+    }
 
     if (interaction.isChannelSelectMenu?.() && customId === 'admin:welcome:channel') {
       welcome.updateConfig(interaction.guild.id, { channelId: interaction.values?.[0] || null }, { actorId: interaction.user.id });
       return updatePanel(interaction);
+    }
+
+    if (interaction.isRoleSelectMenu?.() && customId === 'admin:welcome:roles') {
+      const mentionRoleIds = (interaction.values || []).filter((roleId) => roleId !== interaction.guild.id);
+      welcome.updateConfig(interaction.guild.id, { mentionRoleIds }, { actorId: interaction.user.id });
+      return updatePanel(interaction, buildMentionSettingsPanel(
+        interaction.guild,
+        interaction.member?.displayName || interaction.user?.username
+      ));
     }
 
     if (interaction.isStringSelectMenu?.() && customId === 'admin:welcome:template') {
@@ -202,10 +259,24 @@ async function handleWelcomeInteraction(interaction) {
     if (customId === 'admin:welcome:enable') guildManager.setModuleEnabled(interaction.guild.id, 'welcome', true, { actorId: interaction.user.id });
     if (customId === 'admin:welcome:disable') guildManager.setModuleEnabled(interaction.guild.id, 'welcome', false, { actorId: interaction.user.id });
     if (customId === 'admin:welcome:toggleDm') welcome.updateConfig(interaction.guild.id, { dmEnabled: !config.dmEnabled }, { actorId: interaction.user.id });
-    if (customId === 'admin:welcome:togglePing') welcome.updateConfig(interaction.guild.id, { allowUserPing: !config.allowUserPing }, { actorId: interaction.user.id });
+    if (customId === 'admin:welcome:togglePing') {
+      welcome.updateConfig(interaction.guild.id, { allowUserPing: !config.allowUserPing }, { actorId: interaction.user.id });
+      return updatePanel(interaction, buildMentionSettingsPanel(
+        interaction.guild,
+        interaction.member?.displayName || interaction.user?.username
+      ));
+    }
+    if (customId === 'admin:welcome:toggleRolePings') {
+      if (!config.allowRolePings && !config.mentionRoleIds.length) throw new Error('Choose at least one role before enabling role pings.');
+      welcome.updateConfig(interaction.guild.id, { allowRolePings: !config.allowRolePings }, { actorId: interaction.user.id });
+      return updatePanel(interaction, buildMentionSettingsPanel(
+        interaction.guild,
+        interaction.member?.displayName || interaction.user?.username
+      ));
+    }
     if (customId === 'admin:welcome:toggleBots') welcome.updateConfig(interaction.guild.id, { ignoreBots: !config.ignoreBots }, { actorId: interaction.user.id });
 
-    if (['admin:welcome:enable', 'admin:welcome:disable', 'admin:welcome:toggleDm', 'admin:welcome:togglePing', 'admin:welcome:toggleBots'].includes(customId)) {
+    if (['admin:welcome:enable', 'admin:welcome:disable', 'admin:welcome:toggleDm', 'admin:welcome:toggleBots'].includes(customId)) {
       return updatePanel(interaction);
     }
 
@@ -275,6 +346,7 @@ async function handleWelcomeInteraction(interaction) {
 
 module.exports = {
   buildWelcomePanel,
+  buildMentionSettingsPanel,
   handleWelcomeInteraction,
   buildWelcomeAdminPanel: buildWelcomePanel,
   handleWelcomeAdminInteraction: handleWelcomeInteraction,
