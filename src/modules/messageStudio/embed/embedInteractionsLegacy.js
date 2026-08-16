@@ -1,26 +1,23 @@
 'use strict';
 
 /**
- * Canonical Embed interactions layer.
- * Owns Discord component and modal routing for Embed Studio.
+ * Transitional fallback for legacy Embed Studio component IDs that are still
+ * emitted by the canonical panel surface. Modern media, buttons, readiness,
+ * test-send and deployment flows live in embedInteractions.js.
  */
 
 const { PermissionFlagsBits } = require('discord.js');
 const guildManager = require('../../../core/guild/guildManager');
 const { validateChannelAccess } = require('../../../core/security/goliathPermissionGuard');
-const {
-  saveEmbedDeployment,
-  getEmbedDeployment,
-  getDeploymentKeyFromState,
-} = require('./embedDeployments');
+const { getEmbedDeployment, getDeploymentKeyFromState } = require('./embedDeployments');
 const panel = require('./embedPanel');
 const { prepareEmbedMedia } = require('./embedRenderer');
+
 const {
   clone,
   trim,
   discordErrorDetail,
   embedOperationError,
-  safeUrl,
   validHex,
   normHex,
   memberName,
@@ -32,10 +29,8 @@ const {
   clearUnsaved,
   resetSession,
   allowedMentions,
-  presetData,
   applyTemplate,
   applyPreset,
-  setDefault,
   buildPreviewEmbeds,
   buttonRows,
   buildEditorPanel,
@@ -53,7 +48,6 @@ const {
   presetModal,
   CUSTOM_HEX_VALUE,
   MAX_PANELS,
-  MAX_BUTTONS,
 } = panel;
 
 function isTextBasedChannel(channel) {
@@ -65,76 +59,66 @@ function isTextBasedChannel(channel) {
 
 async function replyOrUpdate(i, payload) {
   const safePayload = { ...payload, flags: 64 };
-
-  if (i.isModalSubmit()) {
-    if (typeof i.update === 'function') {
-      return i.update(payload);
-    }
-
-    if (i.deferred || i.replied) {
-      return i.editReply(safePayload);
-    }
-
+  if (i.isModalSubmit?.()) {
+    if (typeof i.update === 'function') return i.update(payload);
+    if (i.deferred || i.replied) return i.editReply(safePayload);
     return i.reply(safePayload);
   }
-
   return i.update(payload);
 }
 
 async function handleInteraction(i) {
   const customId = String(i.customId || '');
   if (customId !== 'admin:embed' && !customId.startsWith('embed:')) return false;
+
   const who = memberName(i);
-  const s = getSession(i);
+  const state = getSession(i);
 
   if (customId === 'admin:embed') {
     await i.update(buildEditorPanel(i, who));
     return true;
   }
 
-  if (i.isStringSelectMenu()) {
-    if (i.customId === 'embed:template') {
+  if (i.isStringSelectMenu?.()) {
+    if (customId === 'embed:template') {
       applyTemplate(i, i.values[0]);
       await replyOrUpdate(i, buildEditorPanel(i, who));
       return true;
     }
-    if (i.customId === 'embed:color') {
+    if (customId === 'embed:color') {
       const value = i.values[0];
       if (value === CUSTOM_HEX_VALUE) {
-        await i.showModal(colorModal(s));
+        await i.showModal(colorModal(state));
         return true;
       }
-      markUnsaved(i, saveSelected(s, { color: value }));
+      markUnsaved(i, saveSelected(state, { color: value }));
       await replyOrUpdate(i, buildEditorPanel(i, who));
       return true;
     }
-    if (i.customId === 'embed:panel-select') {
-      const index = Number(i.values[0]);
+    if (customId === 'embed:panel-select') {
       const current = getSession(i);
-      saveSession(i, { ...current, selectedPanelIndex: index, selectedFieldIndex: null });
+      saveSession(i, { ...current, selectedPanelIndex: Number(i.values[0]), selectedFieldIndex: null });
       await replyOrUpdate(i, buildEditorPanel(i, who));
       return true;
     }
-    if (i.customId === 'embed:field-layout') {
-      markUnsaved(i, { ...s, fieldLayout: i.values[0] });
+    if (customId === 'embed:field-layout') {
+      markUnsaved(i, { ...state, fieldLayout: i.values[0] });
       await replyOrUpdate(i, buildFieldsPanel(i, who));
       return true;
     }
-    if (i.customId === 'embed:field-select') {
-      saveSession(i, { ...s, selectedFieldIndex: Number(i.values[0]) });
+    if (customId === 'embed:field-select') {
+      saveSession(i, { ...state, selectedFieldIndex: Number(i.values[0]) });
       await replyOrUpdate(i, buildFieldsPanel(i, who));
       return true;
     }
-    if (i.customId === 'embed:button-select') {
-      saveSession(i, { ...s, selectedButtonIndex: Number(i.values[0]) });
+    if (customId === 'embed:button-select') {
+      saveSession(i, { ...state, selectedButtonIndex: Number(i.values[0]) });
       await replyOrUpdate(i, buildButtonsPanel(i, who));
       return true;
     }
-    if (i.customId === 'embed:preset-select') {
+    if (customId === 'embed:preset-select') {
       const name = i.values[0];
-      const presets = typeof guildManager.getEmbedPresets === 'function'
-        ? guildManager.getEmbedPresets(i.guild.id) || {}
-        : {};
+      const presets = typeof guildManager.getEmbedPresets === 'function' ? guildManager.getEmbedPresets(i.guild.id) || {} : {};
       const preset = presets[name];
       if (!preset) {
         await i.reply({ content: 'Preset not found.', flags: 64 });
@@ -146,368 +130,243 @@ async function handleInteraction(i) {
     }
   }
 
-  if (i.isChannelSelectMenu?.() && i.customId === 'embed:channel') {
-    markUnsaved(i, { ...s, channelId: i.values[0] });
+  if (i.isChannelSelectMenu?.() && customId === 'embed:channel') {
+    markUnsaved(i, { ...state, channelId: i.values[0] });
     await replyOrUpdate(i, buildEditorPanel(i, who));
     return true;
   }
 
-  if (i.isButton()) {
-    if (i.customId === 'embed:editor' || i.customId === 'embed:back') {
+  if (i.isButton?.()) {
+    if (customId === 'embed:editor' || customId === 'embed:back') {
       await i.update(buildEditorPanel(i, who));
       return true;
     }
-    if (i.customId === 'embed:builder') {
+    if (customId === 'embed:builder') {
       await i.update(buildBuilderPanel(i, who));
       return true;
     }
-    if (i.customId === 'embed:presets') {
+    if (customId === 'embed:presets') {
       await i.update(buildPresetsPanel(i, who));
       return true;
     }
-    if (i.customId === 'embed:panels') {
+    if (customId === 'embed:panels') {
       await i.update(buildPanelsPanel(i, who));
       return true;
     }
-    if (i.customId === 'embed:fields') {
+    if (customId === 'embed:fields') {
       await i.update(buildFieldsPanel(i, who));
       return true;
     }
-    if (i.customId === 'embed:buttons') {
+    if (customId === 'embed:buttons') {
       await i.update(buildButtonsPanel(i, who));
       return true;
     }
-    if (i.customId === 'embed:helpers') {
+    if (customId === 'embed:helpers') {
       await i.update(buildHelpersPanel(who));
       return true;
     }
-    if (i.customId === 'embed:edit-content') {
-      await i.showModal(contentModal(s));
+    if (customId === 'embed:edit-content') {
+      await i.showModal(contentModal(state));
       return true;
     }
-    if (i.customId === 'embed:edit-media') {
-      await i.showModal(mediaModal(s));
+    if (customId === 'embed:edit-media') {
+      await i.showModal(mediaModal(state));
       return true;
     }
-    if (i.customId === 'embed:toggle-ping') {
-      markUnsaved(i, { ...s, allowUserPing: !s.allowUserPing });
+    if (customId === 'embed:toggle-ping') {
+      markUnsaved(i, { ...state, allowUserPing: !state.allowUserPing });
       await i.update(buildBuilderPanel(i, who));
       return true;
     }
-    if (i.customId === 'embed:toggle-timestamp') {
-      markUnsaved(i, { ...s, showTimestamp: !s.showTimestamp });
+    if (customId === 'embed:toggle-timestamp') {
+      markUnsaved(i, { ...state, showTimestamp: !state.showTimestamp });
       await i.update(buildBuilderPanel(i, who));
       return true;
     }
-    if (i.customId === 'embed:reset') {
+    if (customId === 'embed:reset') {
       resetSession(i);
       await i.update(buildEditorPanel(i, who));
       return true;
     }
-    if (i.customId === 'embed:panel-add') {
-      if (s.panels.length >= MAX_PANELS) {
+
+    if (customId === 'embed:panel-add') {
+      if (state.panels.length >= MAX_PANELS) {
         await i.reply({ content: 'Maximum panel limit reached.', flags: 64 });
         return true;
       }
-      const panels = [
-        ...s.panels,
-        basePanel({
-          title: `Panel ${s.panels.length + 1}`,
-          description: 'Add content here.',
-          color: s.color,
-        }),
-      ];
-      markUnsaved(i, {
-        ...s,
-        panels,
-        selectedPanelIndex: panels.length - 1,
-        selectedFieldIndex: null,
-      });
+      const panels = [...state.panels, basePanel({ title: `Panel ${state.panels.length + 1}`, description: 'Add content here.', color: state.color })];
+      markUnsaved(i, { ...state, panels, selectedPanelIndex: panels.length - 1, selectedFieldIndex: null });
       await i.update(buildPanelsPanel(i, who));
       return true;
     }
-    if (i.customId === 'embed:panel-duplicate') {
-      if (s.panels.length >= MAX_PANELS) {
+    if (customId === 'embed:panel-duplicate') {
+      if (state.panels.length >= MAX_PANELS) {
         await i.reply({ content: 'Maximum panel limit reached.', flags: 64 });
         return true;
       }
-      const panels = [...s.panels];
-      panels.splice(s.selectedPanelIndex + 1, 0, clone(s.panels[s.selectedPanelIndex]));
-      markUnsaved(i, {
-        ...s,
-        panels,
-        selectedPanelIndex: s.selectedPanelIndex + 1,
-        selectedFieldIndex: null,
-      });
+      const panels = [...state.panels];
+      panels.splice(state.selectedPanelIndex + 1, 0, clone(state.panels[state.selectedPanelIndex]));
+      markUnsaved(i, { ...state, panels, selectedPanelIndex: state.selectedPanelIndex + 1, selectedFieldIndex: null });
       await i.update(buildPanelsPanel(i, who));
       return true;
     }
-    if (i.customId === 'embed:panel-remove') {
-      if (s.panels.length <= 1) {
+    if (customId === 'embed:panel-remove') {
+      if (state.panels.length <= 1) {
         await i.reply({ content: 'You need at least one panel.', flags: 64 });
         return true;
       }
-      const panels = [...s.panels];
-      panels.splice(s.selectedPanelIndex, 1);
-      markUnsaved(i, {
-        ...s,
-        panels,
-        selectedPanelIndex: Math.max(0, s.selectedPanelIndex - 1),
-        selectedFieldIndex: null,
-      });
+      const panels = [...state.panels];
+      panels.splice(state.selectedPanelIndex, 1);
+      markUnsaved(i, { ...state, panels, selectedPanelIndex: Math.max(0, state.selectedPanelIndex - 1), selectedFieldIndex: null });
       await i.update(buildPanelsPanel(i, who));
       return true;
     }
-    if (i.customId === 'embed:panel-up' || i.customId === 'embed:panel-down') {
-      const d = i.customId.endsWith('up') ? -1 : 1;
-      const target = s.selectedPanelIndex + d;
-      if (target < 0 || target >= s.panels.length) return true;
-      const panels = [...s.panels];
-      [panels[s.selectedPanelIndex], panels[target]] = [panels[target], panels[s.selectedPanelIndex]];
-      markUnsaved(i, { ...s, panels, selectedPanelIndex: target });
+    if (customId === 'embed:panel-up' || customId === 'embed:panel-down') {
+      const delta = customId.endsWith('up') ? -1 : 1;
+      const target = state.selectedPanelIndex + delta;
+      if (target < 0 || target >= state.panels.length) return true;
+      const panels = [...state.panels];
+      [panels[state.selectedPanelIndex], panels[target]] = [panels[target], panels[state.selectedPanelIndex]];
+      markUnsaved(i, { ...state, panels, selectedPanelIndex: target });
       await i.update(buildPanelsPanel(i, who));
       return true;
     }
-    if (i.customId === 'embed:field-add') {
-      await i.showModal(fieldModal(s));
+
+    if (customId === 'embed:field-add') {
+      await i.showModal(fieldModal(state));
       return true;
     }
-    if (i.customId === 'embed:field-edit') {
-      if (!Number.isInteger(s.selectedFieldIndex)) {
+    if (customId === 'embed:field-edit') {
+      if (!Number.isInteger(state.selectedFieldIndex)) {
         await i.reply({ content: 'Select a field first.', flags: 64 });
         return true;
       }
-      await i.showModal(fieldModal(s, s.selectedFieldIndex));
+      await i.showModal(fieldModal(state, state.selectedFieldIndex));
       return true;
     }
-    if (i.customId === 'embed:field-remove-selected') {
-      const fields = [...(s.fields || [])];
-      if (Number.isInteger(s.selectedFieldIndex)) fields.splice(s.selectedFieldIndex, 1);
-      markUnsaved(i, saveSelected({ ...s, selectedFieldIndex: null }, { fields }));
+    if (customId === 'embed:field-remove-selected') {
+      const fields = [...(state.fields || [])];
+      if (Number.isInteger(state.selectedFieldIndex)) fields.splice(state.selectedFieldIndex, 1);
+      markUnsaved(i, saveSelected({ ...state, selectedFieldIndex: null }, { fields }));
       await i.update(buildFieldsPanel(i, who));
       return true;
     }
-    if (i.customId === 'embed:button-add') {
-      await i.showModal(buttonModal(s));
+
+    if (customId === 'embed:button-add') {
+      await i.showModal(buttonModal(state));
       return true;
     }
-    if (i.customId === 'embed:button-edit') {
-      if (!Number.isInteger(s.selectedButtonIndex)) {
+    if (customId === 'embed:button-edit') {
+      if (!Number.isInteger(state.selectedButtonIndex)) {
         await i.reply({ content: 'Select a button first.', flags: 64 });
         return true;
       }
-      await i.showModal(buttonModal(s, s.selectedButtonIndex));
+      await i.showModal(buttonModal(state, state.selectedButtonIndex));
       return true;
     }
-    if (i.customId === 'embed:button-remove-selected') {
-      const buttons = [...(s.buttons || [])];
-      if (Number.isInteger(s.selectedButtonIndex)) buttons.splice(s.selectedButtonIndex, 1);
-      markUnsaved(i, { ...s, buttons, selectedButtonIndex: null });
+    if (customId === 'embed:button-remove-selected') {
+      const buttons = [...(state.buttons || [])];
+      if (Number.isInteger(state.selectedButtonIndex)) buttons.splice(state.selectedButtonIndex, 1);
+      markUnsaved(i, { ...state, buttons, selectedButtonIndex: null });
       await i.update(buildButtonsPanel(i, who));
       return true;
     }
-    if (i.customId === 'embed:button-move-up' || i.customId === 'embed:button-move-down') {
-      const d = i.customId.endsWith('up') ? -1 : 1;
-      const target = s.selectedButtonIndex + d;
-      if (!Number.isInteger(s.selectedButtonIndex) || target < 0 || target >= (s.buttons || []).length) return true;
-      const buttons = [...s.buttons];
-      [buttons[s.selectedButtonIndex], buttons[target]] = [buttons[target], buttons[s.selectedButtonIndex]];
-      markUnsaved(i, { ...s, buttons, selectedButtonIndex: target });
+    if (customId === 'embed:button-move-up' || customId === 'embed:button-move-down') {
+      const delta = customId.endsWith('up') ? -1 : 1;
+      const target = state.selectedButtonIndex + delta;
+      if (!Number.isInteger(state.selectedButtonIndex) || target < 0 || target >= (state.buttons || []).length) return true;
+      const buttons = [...state.buttons];
+      [buttons[state.selectedButtonIndex], buttons[target]] = [buttons[target], buttons[state.selectedButtonIndex]];
+      markUnsaved(i, { ...state, buttons, selectedButtonIndex: target });
       await i.update(buildButtonsPanel(i, who));
       return true;
     }
-    if (i.customId === 'embed:preset-save') {
-      await i.showModal(presetModal(s));
+
+    if (customId === 'embed:preset-save') {
+      await i.showModal(presetModal(state));
       return true;
     }
-    if (i.customId === 'embed:preset-delete') {
-      const name = s.selectedPreset;
+    if (customId === 'embed:preset-delete') {
+      const name = state.selectedPreset;
       if (!name) {
         await i.reply({ content: 'Select a preset first.', flags: 64 });
         return true;
       }
-      const presets = typeof guildManager.getEmbedPresets === 'function'
-        ? guildManager.getEmbedPresets(i.guild.id) || {}
-        : {};
+      const presets = typeof guildManager.getEmbedPresets === 'function' ? guildManager.getEmbedPresets(i.guild.id) || {} : {};
       delete presets[name];
-      if (typeof guildManager.replaceGuildSection === 'function') {
-        guildManager.replaceGuildSection(i.guild.id, 'embedPresets', presets);
-      }
-      clearUnsaved(i, { ...s, selectedPreset: null });
+      if (typeof guildManager.replaceGuildSection === 'function') guildManager.replaceGuildSection(i.guild.id, 'embedPresets', presets);
+      clearUnsaved(i, { ...state, selectedPreset: null });
       await i.update(buildPresetsPanel(i, who));
       return true;
     }
-    if (i.customId === 'embed:test-send') {
-      const media = await prepareEmbedMedia(buildPreviewEmbeds(s, i));
-      await i.reply({
-        content: '🧪 Test Preview',
-        embeds: media.embeds,
-        files: media.files,
-        components: buttonRows(s),
-        allowedMentions: allowedMentions(s, i),
-        flags: 64,
-      });
-      return true;
-    }
-    if (i.customId === 'embed:update-existing') {
-      const deployment = getEmbedDeployment(i.guild.id, getDeploymentKeyFromState(s));
+
+    // Only legacy deployment fallback remains here: canonical interactions own the
+    // Components V2 update path, while this keeps older deployed messages editable.
+    if (customId === 'embed:update-existing') {
+      const deployment = getEmbedDeployment(i.guild.id, getDeploymentKeyFromState(state));
       if (!deployment) {
         await i.reply({ content: '⚠️ No deployed embed found. Use the embed first.', flags: 64 });
         return true;
       }
-
-      const channel = i.guild.channels.cache.get(deployment.channelId)
-        || (await i.guild.channels.fetch(deployment.channelId).catch(() => null));
+      const channel = i.guild.channels.cache.get(deployment.channelId) || await i.guild.channels.fetch(deployment.channelId).catch(() => null);
       if (!isTextBasedChannel(channel)) {
-        await i.reply({
-          content: '⚠️ The original embed channel no longer exists or is not text-based.',
-          flags: 64,
-        });
+        await i.reply({ content: '⚠️ The original embed channel no longer exists or is not text-based.', flags: 64 });
         return true;
       }
-
-      const access = await validateChannelAccess(
-        i.guild,
-        channel.id,
-        [
-          PermissionFlagsBits.ViewChannel,
-          PermissionFlagsBits.ReadMessageHistory,
-          PermissionFlagsBits.SendMessages,
-          PermissionFlagsBits.EmbedLinks,
-        ],
-        { scope: 'embed.update' },
-      );
+      const access = await validateChannelAccess(i.guild, channel.id, [
+        PermissionFlagsBits.ViewChannel,
+        PermissionFlagsBits.ReadMessageHistory,
+        PermissionFlagsBits.SendMessages,
+        PermissionFlagsBits.EmbedLinks,
+      ], { scope: 'embed.update' });
       if (!access.ok) {
         await i.reply({ content: trim(access.message, 1800), flags: 64 });
         return true;
       }
-
-      let payload;
       try {
-        const media = await prepareEmbedMedia(buildPreviewEmbeds(s, i));
-        payload = {
-          content: s.allowUserPing ? `<@${i.user.id}>` : '',
-          embeds: media.embeds,
-          files: media.files,
-          components: buttonRows(s),
-          allowedMentions: allowedMentions(s, i),
-        };
-      } catch (error) {
-        console.error('Embed update payload build failed:', error);
-        await i.reply({
-          content: `❌ The embed could not be built: ${discordErrorDetail(error)}`,
-          flags: 64,
-        });
-        return true;
-      }
-
-      try {
+        const rendered = await prepareEmbedMedia(buildPreviewEmbeds(state, i));
         const message = await channel.messages.fetch(deployment.messageId);
-        await message.edit(payload);
+        await message.edit({
+          content: state.allowUserPing ? `<@${i.user.id}>` : '',
+          embeds: rendered.embeds,
+          files: rendered.files,
+          components: buttonRows(state),
+          allowedMentions: allowedMentions(state, i),
+        });
         await i.reply({ content: '✅ Existing embed updated.', flags: 64 });
       } catch (error) {
-        console.error('Failed to update existing embed:', error);
-        await i.reply({ content: embedOperationError(error, channel.id, 'update'), flags: 64 });
+        console.error('Failed to update legacy embed:', error);
+        const detail = error?.code ? embedOperationError(error, channel.id, 'update') : `❌ The embed could not be built: ${discordErrorDetail(error)}`;
+        await i.reply({ content: detail, flags: 64 });
       }
-      return true;
-    }
-    if (i.customId === 'embed:use') {
-      const channel = i.guild.channels.cache.get(s.channelId)
-        || (await i.guild.channels.fetch(s.channelId).catch(() => null));
-      if (!isTextBasedChannel(channel)) {
-        await i.reply({ content: 'Invalid channel.', flags: 64 });
-        return true;
-      }
-
-      const access = await validateChannelAccess(
-        i.guild,
-        channel.id,
-        [
-          PermissionFlagsBits.ViewChannel,
-          PermissionFlagsBits.SendMessages,
-          PermissionFlagsBits.EmbedLinks,
-        ],
-        { scope: 'embed.deploy' },
-      );
-      if (!access.ok) {
-        await i.reply({ content: trim(access.message, 1800), flags: 64 });
-        return true;
-      }
-
-      let payload;
-      try {
-        const media = await prepareEmbedMedia(buildPreviewEmbeds(s, i));
-        payload = {
-          content: s.allowUserPing ? `<@${i.user.id}>` : '',
-          embeds: media.embeds,
-          files: media.files,
-          components: buttonRows(s),
-          allowedMentions: allowedMentions(s, i),
-        };
-      } catch (error) {
-        console.error('Embed payload build failed:', error);
-        await i.reply({
-          content: `❌ The embed could not be built: ${discordErrorDetail(error)}`,
-          flags: 64,
-        });
-        return true;
-      }
-
-      let sent;
-      try {
-        sent = await channel.send(payload);
-      } catch (error) {
-        console.error('Embed send failed:', error);
-        await i.reply({ content: embedOperationError(error, channel.id, 'send'), flags: 64 });
-        return true;
-      }
-
-      const presetName = `auto-${s.template || 'custom'}`;
-      guildManager.saveEmbedPreset(i.guild.id, presetName, presetData(s), i.guild);
-      saveEmbedDeployment(i.guild.id, getDeploymentKeyFromState({ ...s, selectedPreset: presetName }), {
-        channelId: channel.id,
-        messageId: sent.id,
-        template: s.template,
-        preset: presetName,
-        createdBy: i.user.id,
-        lastUpdatedBy: i.user.id,
-      });
-      const ok = setDefault(i.guild.id, s.template, presetName);
-      clearUnsaved(i, { ...s, selectedPreset: presetName });
-      await i.reply({
-        content: ok
-          ? `✅ Embed posted to <#${s.channelId}> and saved as active`
-          : '⚠️ Preset saved, but default assignment failed.',
-        flags: 64,
-      });
       return true;
     }
   }
 
-  if (i.isModalSubmit()) {
-    if (i.customId === 'embed:preset-save-modal') {
+  if (i.isModalSubmit?.()) {
+    if (customId === 'embed:preset-save-modal') {
       const name = i.fields.getTextInputValue('name').trim();
       if (!name) {
         await i.reply({ content: 'Name required.', flags: 64 });
         return true;
       }
-      guildManager.saveEmbedPreset(i.guild.id, name, presetData(s), i.guild);
-      clearUnsaved(i, { ...s, selectedPreset: name });
+      guildManager.saveEmbedPreset(i.guild.id, name, panel.presetData(state), i.guild);
+      clearUnsaved(i, { ...state, selectedPreset: name });
       await i.reply({ ...buildPresetsPanel(i, who), flags: 64 });
       return true;
     }
-    if (i.customId === 'embed:save-color') {
+    if (customId === 'embed:save-color') {
       const hex = i.fields.getTextInputValue('hex');
       if (!validHex(hex)) {
         await i.reply({ content: 'Invalid HEX.', flags: 64 });
         return true;
       }
-      markUnsaved(i, saveSelected(s, { color: normHex(hex) }));
+      markUnsaved(i, saveSelected(state, { color: normHex(hex) }));
       await i.reply({ ...buildEditorPanel(i, who), flags: 64 });
       return true;
     }
-    if (i.customId.startsWith('embed:save-content:')) {
-      markUnsaved(i, saveSelected(s, {
+    if (customId.startsWith('embed:save-content:')) {
+      markUnsaved(i, saveSelected(state, {
         title: i.fields.getTextInputValue('title'),
         description: i.fields.getTextInputValue('description'),
         authorName: i.fields.getTextInputValue('authorName'),
@@ -516,8 +375,8 @@ async function handleInteraction(i) {
       await i.reply({ ...buildBuilderPanel(i, who), flags: 64 });
       return true;
     }
-    if (i.customId.startsWith('embed:save-media:')) {
-      markUnsaved(i, saveSelected(s, {
+    if (customId.startsWith('embed:save-media:')) {
+      markUnsaved(i, saveSelected(state, {
         authorIcon: i.fields.getTextInputValue('authorIcon'),
         thumbnail: i.fields.getTextInputValue('thumbnail'),
         image: i.fields.getTextInputValue('image'),
@@ -527,30 +386,30 @@ async function handleInteraction(i) {
       await i.reply({ ...buildBuilderPanel(i, who), flags: 64 });
       return true;
     }
-    if (i.customId === 'embed:field-save-new' || i.customId.startsWith('embed:field-save:')) {
-      const fields = [...(s.fields || [])];
+    if (customId === 'embed:field-save-new' || customId.startsWith('embed:field-save:')) {
+      const fields = [...(state.fields || [])];
       const field = {
         name: i.fields.getTextInputValue('name'),
         value: i.fields.getTextInputValue('value'),
         inline: /^y(es)?$/i.test(i.fields.getTextInputValue('layout')),
       };
-      if (i.customId === 'embed:field-save-new') fields.push(field);
-      else fields[Number(i.customId.split(':').pop())] = field;
-      markUnsaved(i, saveSelected(s, { fields }));
+      if (customId === 'embed:field-save-new') fields.push(field);
+      else fields[Number(customId.split(':').pop())] = field;
+      markUnsaved(i, saveSelected(state, { fields }));
       await i.reply({ ...buildFieldsPanel(i, who), flags: 64 });
       return true;
     }
-    if (i.customId === 'embed:button-save-new' || i.customId.startsWith('embed:button-save:')) {
-      const buttons = [...(s.buttons || [])];
+    if (customId === 'embed:button-save-new' || customId.startsWith('embed:button-save:')) {
+      const buttons = [...(state.buttons || [])];
       const entry = {
         label: i.fields.getTextInputValue('label'),
         emoji: i.fields.getTextInputValue('emoji'),
         style: i.fields.getTextInputValue('style'),
         url: i.fields.getTextInputValue('url'),
       };
-      if (i.customId === 'embed:button-save-new') buttons.push(entry);
-      else buttons[Number(i.customId.split(':').pop())] = entry;
-      markUnsaved(i, { ...s, buttons });
+      if (customId === 'embed:button-save-new') buttons.push(entry);
+      else buttons[Number(customId.split(':').pop())] = entry;
+      markUnsaved(i, { ...state, buttons });
       await i.reply({ ...buildButtonsPanel(i, who), flags: 64 });
       return true;
     }
@@ -559,6 +418,4 @@ async function handleInteraction(i) {
   return false;
 }
 
-module.exports = {
-  handleInteraction,
-};
+module.exports = { handleInteraction };
