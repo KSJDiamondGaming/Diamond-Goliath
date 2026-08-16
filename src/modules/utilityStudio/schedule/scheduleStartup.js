@@ -5,11 +5,65 @@ const deployment = require('./scheduleDeployment');
 
 const REMINDER_TICK_MS = 60 * 1000;
 const timers = new WeakMap();
+const cleanedRoleEvents = new Set();
+
+function shiftedRsvpCloseAt(parent, occurrence) {
+  if (!parent?.rsvpCloseAt) return null;
+  const parentStart = new Date(parent.startAt).getTime();
+  const parentClose = new Date(parent.rsvpCloseAt).getTime();
+  const occurrenceStart = new Date(occurrence.startAt).getTime();
+  if (![parentStart, parentClose, occurrenceStart].every(Number.isFinite)) return null;
+  return new Date(occurrenceStart + (parentClose - parentStart)).toISOString();
+}
+
+function resetRecurringRuntime(parent, occurrence) {
+  const rsvps = Object.fromEntries(Object.entries(occurrence.rsvps || {}).map(([userId, entry]) => [userId, {
+    ...entry,
+    sentReminderMinutes: [],
+    promotedAt: null,
+    updatedAt: new Date().toISOString(),
+  }]));
+  return {
+    ...occurrence,
+    rsvpCloseAt: shiftedRsvpCloseAt(parent, occurrence),
+    rsvps,
+    startedAt: null,
+    startMessageSent: false,
+    lastError: null,
+  };
+}
+
+function roleNeededByAnotherScheduledEvent(guildId, endedEventId, userId, roleId) {
+  return schedule.listEvents(guildId, { status: 'scheduled' }).some((event) => {
+    if (event.eventId === endedEventId) return false;
+    const entry = event.rsvps?.[userId];
+    if (!entry || !schedule.isAttendeeStatus(event, entry.status)) return false;
+    return schedule.getRsvpOption(event, entry.status)?.roleId === roleId;
+  });
+}
+
+async function cleanupEndedEventRoles(guild, event) {
+  if (!event || event.status === 'scheduled' || cleanedRoleEvents.has(event.eventId)) return;
+  const failures = [];
+  for (const [userId, entry] of Object.entries(event.rsvps || {})) {
+    const roleId = schedule.getRsvpOption(event, entry.status)?.roleId || null;
+    if (!roleId || roleNeededByAnotherScheduledEvent(guild.id, event.eventId, userId, roleId)) continue;
+    const member = guild.members.cache.get(userId) || await guild.members.fetch(userId).catch(() => null);
+    if (!member?.roles?.cache?.has(roleId)) continue;
+    try {
+      await member.roles.remove(roleId, `Goliath Schedule ${event.status} attendee role cleanup`);
+    } catch (error) {
+      failures.push(`${userId}:${roleId}:${error.message}`);
+    }
+  }
+  if (failures.length) throw new Error(failures.slice(0, 3).join(' | '));
+  cleanedRoleEvents.add(event.eventId);
+}
 
 async function reconcileProcessedGuild(guild, beforeEvents, action) {
   const before = new Map(beforeEvents.map((event) => [event.eventId, event]));
-  const afterEvents = schedule.listEvents(guild.id);
-  const after = new Map(afterEvents.map((event) => [event.eventId, event]));
+  let afterEvents = schedule.listEvents(guild.id);
+  let after = new Map(afterEvents.map((event) => [event.eventId, event]));
 
   for (const [eventId, previous] of before.entries()) {
     const current = after.get(eventId);
@@ -25,13 +79,24 @@ async function reconcileProcessedGuild(guild, beforeEvents, action) {
     }
   }
 
-  for (const current of afterEvents) {
-    if (before.has(current.eventId) || current.status !== 'scheduled' || current.messageId) continue;
-    const parent = current.parentEventId ? before.get(current.parentEventId) || after.get(current.parentEventId) : null;
-    if (!parent?.messageId || !current.channelId) continue;
+  for (const original of [...afterEvents]) {
+    if (before.has(original.eventId) || original.status !== 'scheduled' || original.messageId) continue;
+    const parent = original.parentEventId ? before.get(original.parentEventId) || after.get(original.parentEventId) : null;
+    if (!parent?.messageId || !original.channelId) continue;
+    const normalizedOccurrence = resetRecurringRuntime(parent, original);
+    const current = schedule.saveEvent(guild.id, normalizedOccurrence, { action: `${action}_recurrence_runtime_reset` });
+    after.set(current.eventId, current);
     await deployment.deploy(guild, current.eventId, current.channelId, { action: `${action}_recurrence_deploy` }).catch((error) => {
       schedule.saveEvent(guild.id, { ...current, lastError: `Recurring deployment: ${error.message}` }, { action: `${action}_recurrence_deploy_failed` });
       console.warn(`[Schedule] ${guild.id} recurring event deployment failed for ${current.eventId}: ${error.message}`);
+    });
+  }
+
+  afterEvents = schedule.listEvents(guild.id);
+  for (const event of afterEvents) {
+    if (event.status === 'scheduled') continue;
+    await cleanupEndedEventRoles(guild, event).catch((error) => {
+      console.warn(`[Schedule] ${guild.id} attendee role cleanup failed for ${event.eventId}: ${error.message}`);
     });
   }
 }
