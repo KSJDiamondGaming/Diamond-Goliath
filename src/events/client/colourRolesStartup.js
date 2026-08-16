@@ -3,12 +3,15 @@
 const { Events } = require('discord.js');
 const guildManager = require('../../core/guild/guildManager');
 const colourRoles = require('../../modules/roleStudio/colourRoles/colourRoles');
+const colourRolesAppearance = require('../../modules/roleStudio/colourRoles/colourRolesAppearance');
 
 const INTERVAL_MS = 60 * 60 * 1000;
 const TIMER_KEY = Symbol.for('goliath.colourRoles.maintenanceTimer');
 
 async function maintainGuild(guild) {
   if (!guildManager.isModuleEnabled(guild.id, colourRoles.MODULE)) return;
+  await colourRolesAppearance.syncManagedRoleAppearance(guild)
+    .catch((error) => console.warn(`[ColourRoles] Appearance sync failed for ${guild.id}:`, error.message || error));
   await colourRoles.markAndCleanupUnused(guild)
     .catch((error) => console.warn(`[ColourRoles] Cleanup failed for ${guild.id}:`, error.message || error));
   await colourRoles.reorderManagedRoles(guild)
