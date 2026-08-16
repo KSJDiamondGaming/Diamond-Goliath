@@ -30,7 +30,7 @@ function getIntervalDays() {
 }
 
 function getRetentionLimit() {
-  return getEnvNumber('SERVER_BACKUP_RETENTION', 3);
+  return Math.max(1, Math.trunc(getEnvNumber('SERVER_BACKUP_RETENTION', 3)));
 }
 
 function daysToMs(days) {
