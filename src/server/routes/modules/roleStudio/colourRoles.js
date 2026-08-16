@@ -3,6 +3,7 @@
 const express = require('express');
 const guildManager = require('../../../../core/guild/guildManager');
 const colourRoles = require('../../../../modules/roleStudio/colourRoles/colourRoles');
+const colourRolesAppearance = require('../../../../modules/roleStudio/colourRoles/colourRolesAppearance');
 const healthService = require('../../../../modules/roleStudio/colourRoles/colourRolesHealth');
 const colourRolesPanel = require('../../../../modules/roleStudio/colourRoles/colourRolesPanel');
 
@@ -52,7 +53,8 @@ router.put('/:guildId/config', async (req, res) => {
       ...(patch.cleanup ? { cleanup: { ...current.cleanup, ...patch.cleanup } } : {}),
     }, { actorId: actorId(req), action: 'colour_roles_dashboard_config' });
     const g = await guild(req, id);
-    if (g && next.style.anchorRoleId && next.style.keepGrouped) await colourRoles.reorderManagedRoles(g);
+    if (g && patch.style) await colourRolesAppearance.syncManagedRoleAppearance(g);
+    else if (g && next.style.anchorRoleId && next.style.keepGrouped) await colourRoles.reorderManagedRoles(g);
     return success(res, await overview(req, id));
   } catch (error) { return failure(res, error); }
 });
@@ -83,7 +85,7 @@ router.post('/:guildId/apply-style-suggestion', async (req, res) => {
     const id = guildId(req);
     const current = colourRoles.getSection(id);
     if (!current.style.detectedFormat) throw new Error('Run the guild style scan first.');
-    const next = colourRoles.updateSection(id, {
+    colourRoles.updateSection(id, {
       ...current,
       style: {
         ...current.style,
@@ -93,7 +95,7 @@ router.post('/:guildId/apply-style-suggestion', async (req, res) => {
       },
     }, { actorId: actorId(req), action: 'colour_roles_style_suggestion_applied' });
     const g = await guild(req, id);
-    if (g && next.style.anchorRoleId && next.style.keepGrouped) await colourRoles.reorderManagedRoles(g);
+    if (g) await colourRolesAppearance.syncManagedRoleAppearance(g);
     return success(res, await overview(req, id));
   } catch (error) { return failure(res, error); }
 });
@@ -128,7 +130,8 @@ router.post('/:guildId/create-divider', async (req, res) => {
 
 router.post('/:guildId/deploy', async (req, res) => {
   try {
-    const id = guildId(req); const g = await guild(req, id);
+    const id = guildId(req);
+    const g = await guild(req, id);
     if (!g) throw new Error('Guild is unavailable.');
     const config = colourRoles.getSection(id);
     const channelId = config.deployment?.channelId;
@@ -146,7 +149,8 @@ router.post('/:guildId/deploy', async (req, res) => {
 
 router.post('/:guildId/repair', async (req, res) => {
   try {
-    const id = guildId(req); const g = await guild(req, id);
+    const id = guildId(req);
+    const g = await guild(req, id);
     if (!g) throw new Error('Guild is unavailable.');
     const repair = await healthService.repair(g, { actorId: actorId(req) });
     return success(res, { repair, ...(await overview(req, id)) });
@@ -155,7 +159,8 @@ router.post('/:guildId/repair', async (req, res) => {
 
 router.post('/:guildId/cleanup', async (req, res) => {
   try {
-    const id = guildId(req); const g = await guild(req, id);
+    const id = guildId(req);
+    const g = await guild(req, id);
     if (!g) throw new Error('Guild is unavailable.');
     const cleanup = await colourRoles.markAndCleanupUnused(g);
     return success(res, { cleanup, ...(await overview(req, id)) });
@@ -164,7 +169,8 @@ router.post('/:guildId/cleanup', async (req, res) => {
 
 router.get('/:guildId/usage', async (req, res) => {
   try {
-    const id = guildId(req); const g = await guild(req, id);
+    const id = guildId(req);
+    const g = await guild(req, id);
     if (!g) throw new Error('Guild is unavailable.');
     return success(res, { usage: await colourRoles.getUsage(g) });
   } catch (error) { return failure(res, error); }
