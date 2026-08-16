@@ -14,7 +14,7 @@ const {
 const fetch = require('node-fetch');
 const path = require('node:path');
 const sharp = require('sharp');
-const { getCachedAsset, saveCachedAsset, ensureAssetCached } = require('./embedAssetStore');
+const { getCachedAsset, saveCachedAsset, ensureAssetCached } = require('./embedMedia');
 const { replaceVars } = require('./embedPanel');
 
 const CANVAS_WIDTH = 600;
@@ -26,9 +26,6 @@ const PANEL_BG = { r: 19, g: 20, b: 22, alpha: 1 };
 const STATIC_RASTER_TYPES = new Set(['image/png', 'image/jpeg', 'image/jpg']);
 const NATIVE_IMAGE_TYPES = new Set(['image/gif', 'image/webp', 'image/avif', 'image/svg+xml']);
 
-// Legacy embed media layout constants retained here while the old interaction
-// path remains supported. Keeping them in the canonical renderer prevents a
-// second renderer/media-layout implementation from surviving beside V2.
 const LEGACY_TARGET_WIDTH = 299;
 const LEGACY_PORTRAIT_VISIBLE_WIDTH = 212;
 const LEGACY_PORTRAIT_RIGHT_INSET = 0;
@@ -108,16 +105,11 @@ async function makeCenteredPortrait(buffer) {
   const meta = await sharp(buffer, { failOn: 'warning' }).metadata();
   const width = Number(meta.width || 0), height = Number(meta.height || 0);
   if (!width || !height) return null;
-  if ((width / height) > 1.25) {
-    return sharp(buffer, { failOn: 'warning' }).resize({ width: CANVAS_WIDTH, withoutEnlargement: false }).png().toBuffer();
-  }
-  const portrait = await sharp(buffer, { failOn: 'warning' })
-    .resize(PORTRAIT_WIDTH, PORTRAIT_WIDTH, { fit: 'cover', position: 'centre', withoutEnlargement: false })
-    .ensureAlpha().composite([{ input: circleMaskSvg(PORTRAIT_WIDTH), blend: 'dest-in' }]).png().toBuffer();
+  if ((width / height) > 1.25) return sharp(buffer, { failOn: 'warning' }).resize({ width: CANVAS_WIDTH, withoutEnlargement: false }).png().toBuffer();
+  const portrait = await sharp(buffer, { failOn: 'warning' }).resize(PORTRAIT_WIDTH, PORTRAIT_WIDTH, { fit: 'cover', position: 'centre', withoutEnlargement: false }).ensureAlpha().composite([{ input: circleMaskSvg(PORTRAIT_WIDTH), blend: 'dest-in' }]).png().toBuffer();
   const naturalLeft = Math.floor((CANVAS_WIDTH - PORTRAIT_WIDTH) / 2);
   const left = Math.min(CANVAS_WIDTH - PORTRAIT_WIDTH, Math.max(0, naturalLeft + PORTRAIT_SHIFT_RIGHT));
-  return sharp({ create: { width: CANVAS_WIDTH, height: PORTRAIT_WIDTH, channels: 4, background: PANEL_BG } })
-    .composite([{ input: portrait, left, top: 0 }]).png().toBuffer();
+  return sharp({ create: { width: CANVAS_WIDTH, height: PORTRAIT_WIDTH, channels: 4, background: PANEL_BG } }).composite([{ input: portrait, left, top: 0 }]).png().toBuffer();
 }
 function cleanFooter(text) { return String(text || '').replace(/\u200B/g, '').trim(); }
 function panelText(data) {
@@ -125,9 +117,7 @@ function panelText(data) {
   if (data.author?.name) blocks.push(`-# ${data.author.name}`);
   if (data.title) blocks.push(`**${data.title}**`);
   if (data.description) blocks.push(String(data.description));
-  for (const field of Array.isArray(data.fields) ? data.fields : []) {
-    if (field?.name && field?.value) blocks.push(`**${field.name}**\n${field.value}`);
-  }
+  for (const field of Array.isArray(data.fields) ? data.fields : []) if (field?.name && field?.value) blocks.push(`**${field.name}**\n${field.value}`);
   return blocks.join('\n\n').trim();
 }
 function footerText(data) {
@@ -140,15 +130,12 @@ function footerText(data) {
   }
   return bits.length ? `-# ${bits.join(' · ')}` : '';
 }
-function panelMedia(mediaState, index) {
-  return Array.isArray(mediaState?.panels) ? (mediaState.panels[index] || null) : null;
-}
+function panelMedia(mediaState, index) { return Array.isArray(mediaState?.panels) ? (mediaState.panels[index] || null) : null; }
 function isEnhancedMedia(media) {
   if (!media) return false;
   const gallery = Array.isArray(media.gallery) ? media.gallery : [];
   const first = gallery[0] || {};
-  return gallery.length > 1 || Boolean(first.alt) || first.spoiler === true || first.type === 'video'
-    || Boolean(media.thumbnail?.alt) || (Array.isArray(media.files) && media.files.length > 0);
+  return gallery.length > 1 || Boolean(first.alt) || first.spoiler === true || first.type === 'video' || Boolean(media.thumbnail?.alt) || (Array.isArray(media.files) && media.files.length > 0);
 }
 async function galleryItems(media, interaction) {
   const output = [];
@@ -168,10 +155,7 @@ function safeFilename(name, fallback) {
   return (base || fallback || 'file').slice(0, 120);
 }
 function sourceFilename(source, fallback) {
-  try {
-    const parsed = new URL(source);
-    return decodeURIComponent(path.basename(parsed.pathname || '')) || fallback;
-  } catch { return fallback; }
+  try { const parsed = new URL(source); return decodeURIComponent(path.basename(parsed.pathname || '')) || fallback; } catch { return fallback; }
 }
 async function addMediaFiles(container, media, interaction, payloadFiles, panelIndex) {
   const entries = (Array.isArray(media?.files) ? media.files : []).slice(0, 10);
@@ -189,9 +173,7 @@ async function addMediaFiles(container, media, interaction, payloadFiles, panelI
       if (entry?.spoiler) attachment.setSpoiler(true);
       payloadFiles.push(attachment);
       container.addFileComponents(new FileBuilder().setURL(`attachment://${name}`).setSpoiler(entry?.spoiler === true));
-    } catch (error) {
-      throw new Error(`Attached file "${entry?.name || sourceFilename(source, 'file')}" could not be prepared: ${error?.message || error}`);
-    }
+    } catch (error) { throw new Error(`Attached file "${entry?.name || sourceFilename(source, 'file')}" could not be prepared: ${error?.message || error}`); }
   }
 }
 function nativeImageShouldPassThrough(contentType) {
@@ -219,54 +201,41 @@ async function addLegacyImage(container, imageUrl, files, index) {
 }
 
 async function buildEmbedPayload(options = {}) {
-  const {
-    embeds = [], actionRows = [], allowUserPing = false, userId = null,
-    ephemeral = false, interaction = null,
-  } = options;
+  const { embeds = [], actionRows = [], allowUserPing = false, userId = null, ephemeral = false, interaction = null } = options;
   const mediaState = options.media || options.mediaV2 || null;
   const components = [];
   const files = [];
   if (allowUserPing && userId) components.push(new TextDisplayBuilder().setContent(`<@${userId}>`));
-
   for (let index = 0; index < embeds.length; index += 1) {
     const embed = embeds[index];
     const data = typeof embed?.toJSON === 'function' ? embed.toJSON() : embed;
     if (!data || typeof data !== 'object') continue;
-
     const media = panelMedia(mediaState, index);
     const container = new ContainerBuilder();
     if (Number.isInteger(data.color)) container.setAccentColor(data.color);
     const text = panelText(data);
-
     const thumbSource = resolveSource(media?.thumbnail?.source || data.thumbnail?.url, interaction);
     if (thumbSource) await probeRemoteSource(thumbSource, 'thumbnail');
     if (text && isHttpsUrl(thumbSource)) {
       const thumbnail = new ThumbnailBuilder().setURL(thumbSource);
       if (media?.thumbnail?.alt) thumbnail.setDescription(String(media.thumbnail.alt).slice(0, 1024));
       container.addSectionComponents(new SectionBuilder().addTextDisplayComponents(new TextDisplayBuilder().setContent(text)).setThumbnailAccessory(thumbnail));
-    } else if (text) {
-      container.addTextDisplayComponents(new TextDisplayBuilder().setContent(text));
-    }
-
+    } else if (text) container.addTextDisplayComponents(new TextDisplayBuilder().setContent(text));
     const enhanced = isEnhancedMedia(media);
     const items = enhanced ? await galleryItems(media, interaction) : [];
-    if (items.length) {
-      container.addMediaGalleryComponents(new MediaGalleryBuilder().addItems(...items));
-    } else {
+    if (items.length) container.addMediaGalleryComponents(new MediaGalleryBuilder().addItems(...items));
+    else {
       const imageUrl = resolveSource(media?.gallery?.[0]?.source || data.image?.url, interaction);
       if (isHttpsUrl(imageUrl)) {
         try { await addLegacyImage(container, imageUrl, files, index); }
         catch (error) { throw new Error(`Panel ${index + 1} image could not be prepared: ${error?.message || error}`); }
       }
     }
-
     if (media?.files?.length) await addMediaFiles(container, media, interaction, files, index);
-
     const footer = footerText(data);
     if (footer) container.addTextDisplayComponents(new TextDisplayBuilder().setContent(footer));
     components.push(container);
   }
-
   for (const row of actionRows || []) components.push(row);
   let flags = MessageFlags.IsComponentsV2;
   if (ephemeral) flags |= MessageFlags.Ephemeral;
@@ -276,61 +245,37 @@ async function buildEmbedPayload(options = {}) {
 async function centerOnLegacyEmbedCanvas(buffer) {
   const input = sharp(buffer, { failOn: 'warning' });
   const metadata = await input.metadata();
-  const width = Number(metadata.width || 0);
-  const height = Number(metadata.height || 0);
+  const width = Number(metadata.width || 0), height = Number(metadata.height || 0);
   if (!width || !height) return null;
-
   const aspect = width / height;
-  if (aspect > 1.25) {
-    return sharp(buffer, { failOn: 'warning' })
-      .resize({ width: LEGACY_TARGET_WIDTH, withoutEnlargement: false })
-      .png()
-      .toBuffer();
-  }
-
+  if (aspect > 1.25) return sharp(buffer, { failOn: 'warning' }).resize({ width: LEGACY_TARGET_WIDTH, withoutEnlargement: false }).png().toBuffer();
   const visibleWidth = Math.min(LEGACY_PORTRAIT_VISIBLE_WIDTH, LEGACY_TARGET_WIDTH);
-  const resized = await sharp(buffer, { failOn: 'warning' })
-    .resize({ width: visibleWidth, withoutEnlargement: false })
-    .ensureAlpha()
-    .png()
-    .toBuffer();
-
+  const resized = await sharp(buffer, { failOn: 'warning' }).resize({ width: visibleWidth, withoutEnlargement: false }).ensureAlpha().png().toBuffer();
   const resizedMeta = await sharp(resized).metadata();
   const renderedWidth = Number(resizedMeta.width || visibleWidth);
   const right = Math.min(LEGACY_PORTRAIT_RIGHT_INSET, Math.max(0, LEGACY_TARGET_WIDTH - renderedWidth));
   const left = Math.max(0, LEGACY_TARGET_WIDTH - renderedWidth - right);
-
-  return sharp(resized)
-    .extend({ top: 0, bottom: 0, left, right, background: { r: 0, g: 0, b: 0, alpha: 0 } })
-    .png()
-    .toBuffer();
+  return sharp(resized).extend({ top: 0, bottom: 0, left, right, background: { r: 0, g: 0, b: 0, alpha: 0 } }).png().toBuffer();
 }
 
 async function prepareEmbedMedia(embeds = [], options = {}) {
   const files = [];
   const output = Array.isArray(embeds) ? embeds : [];
   const guildId = options.guildId || 'global';
-
   for (let index = 0; index < output.length; index += 1) {
     const embed = output[index];
     if (!embed || typeof embed.toJSON !== 'function' || typeof embed.setImage !== 'function') continue;
-
     const imageUrl = embed.toJSON()?.image?.url;
     if (!imageUrl || !isHttpsUrl(imageUrl)) continue;
-
     try {
       const source = await sourceImage(imageUrl, guildId);
       const processed = await centerOnLegacyEmbedCanvas(source.buffer);
       if (!processed) continue;
-
       const name = `embed-panel-${index + 1}-large.png`;
       files.push(new AttachmentBuilder(processed, { name }));
       embed.setImage(`attachment://${name}`);
-    } catch (error) {
-      console.warn(`[EmbedMedia] panel ${index + 1}: media normalization failed:`, error?.message || error);
-    }
+    } catch (error) { console.warn(`[EmbedMedia] panel ${index + 1}: media normalization failed:`, error?.message || error); }
   }
-
   return { embeds: output, files };
 }
 
