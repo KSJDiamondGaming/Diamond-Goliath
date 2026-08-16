@@ -13,6 +13,7 @@ const timedRoles = require('./timedRoles/timedRoles');
 const timedRolesHealth = require('./timedRoles/timedRolesHealth');
 const reactionRoles = require('./reactionRoles/reactionRoles');
 const temporaryRoles = require('./temporaryRoles/temporaryRoles');
+const temporaryRolesHealth = require('./temporaryRoles/temporaryRolesHealth');
 
 const row = (...components) => new ActionRowBuilder().addComponents(...components.filter(Boolean));
 const button = (customId, label, style = ButtonStyle.Primary, disabled = false) => new ButtonBuilder()
@@ -31,16 +32,16 @@ async function getRoleStudioState(guild) {
   const timed = timedRoles.getSection(guild.id);
   const temporary = temporaryRoles.getSection(guild.id);
 
-  const [autoHealth, reactionHealth, timedHealth] = await Promise.all([
+  const [autoHealth, reactionHealth, timedHealth, temporaryHealth] = await Promise.all([
     autoroles.buildHealthReport(guild),
     reactionRoles.buildHealth(guild),
     timedRolesHealth.buildTimedRolesHealth(guild),
+    temporaryRolesHealth.buildHealth(guild),
   ]);
 
   const reactionDeployments = reactionRoles.listPanels(guild.id);
   const timedRules = timedRoles.listRules(guild.id);
   const tempAssignments = temporaryRoles.listAssignments(guild.id, { activeOnly: true });
-  const missingTemporaryRoles = tempAssignments.filter((item) => !guild.roles.cache.has(item.roleId)).length;
 
   return {
     auto,
@@ -50,10 +51,10 @@ async function getRoleStudioState(guild) {
     autoHealth,
     reactionHealth,
     timedHealth,
+    temporaryHealth,
     reactionDeployments,
     timedRules,
     tempAssignments,
-    missingTemporaryRoles,
     autoRoleCount: (auto.joinRoles || []).length + (auto.botRoles || []).length,
     autoEnabled: guildManager.isModuleEnabled(guild.id, 'autoRoles'),
     reactionEnabled: guildManager.isModuleEnabled(guild.id, reactionRoles.SECTION),
@@ -80,7 +81,7 @@ async function buildRoleStudioPanel(guild, memberDisplayName = 'Unknown User') {
     !state.autoEnabled || !autoConfigured || state.autoHealth.healthy,
     !state.reactionEnabled || !reactionConfigured || state.reactionHealth.healthy,
     !state.timedEnabled || !timedConfigured || state.timedHealth.healthy,
-    !state.temporaryEnabled || !temporaryConfigured || state.missingTemporaryRoles === 0,
+    !state.temporaryEnabled || !temporaryConfigured || state.temporaryHealth.healthy,
   ].every(Boolean);
   const overallHealthy = state.canManageRoles && activeSystemsHealthy;
 
@@ -121,8 +122,8 @@ async function buildRoleStudioPanel(guild, memberDisplayName = 'Unknown User') {
       `Health: ${moduleHealthLabel({
         enabled: state.temporaryEnabled,
         configured: temporaryConfigured,
-        healthy: state.missingTemporaryRoles === 0,
-        detail: `${state.missingTemporaryRoles} missing role reference(s)`,
+        healthy: state.temporaryHealth.healthy,
+        detail: `${state.temporaryHealth.issues?.length || 0} issue(s) • ${state.temporaryHealth.warnings?.length || 0} warning(s)`,
       })}`,
       '',
       state.canManageRoles
@@ -178,7 +179,7 @@ async function buildRoleHealthPanel(guild, memberDisplayName = 'Unknown User') {
     && state.autoHealth.healthy
     && state.reactionHealth.healthy
     && state.timedHealth.healthy
-    && state.missingTemporaryRoles === 0;
+    && state.temporaryHealth.healthy;
 
   return {
     embeds: [new EmbedBuilder()
@@ -190,11 +191,12 @@ async function buildRoleHealthPanel(guild, memberDisplayName = 'Unknown User') {
         `**Auto Roles:** ${healthLabel(state.autoHealth.healthy)}`,
         `**Reaction Roles:** ${healthLabel(state.reactionHealth.healthy, state.reactionHealth.healthy ? '' : `${state.reactionHealth.unhealthy || 0} panel(s)`)}`,
         `**Timed Roles:** ${healthLabel(state.timedHealth.healthy, state.timedHealth.healthy ? '' : `${state.timedHealth.issues?.length || 0} issue(s)`)}`,
-        `**Temporary Roles:** ${healthLabel(state.missingTemporaryRoles === 0, state.missingTemporaryRoles ? `${state.missingTemporaryRoles} missing role reference(s)` : '')}`,
+        `**Temporary Roles:** ${healthLabel(state.temporaryHealth.healthy, state.temporaryHealth.healthy ? '' : `${state.temporaryHealth.issues?.length || 0} issue(s)`)}`,
+        state.temporaryHealth.warnings?.length ? `**Temporary Roles warnings:** \`${state.temporaryHealth.warnings.length}\`` : null,
         '',
         `**Goliath highest role:** ${guild.members.me?.roles.highest ? `<@&${guild.members.me.roles.highest.id}>` : 'Unavailable'}`,
         `**Manage Roles permission:** ${state.canManageRoles ? '✅ Granted' : '❌ Missing'}`,
-      ].join('\n'))
+      ].filter(Boolean).join('\n'))
       .setFooter({ text: `Requested by ${memberDisplayName}` })
       .setTimestamp()],
     components: [row(button('admin:studio:roleStudio', '⬅️ Back to Role Studio', ButtonStyle.Secondary))],
