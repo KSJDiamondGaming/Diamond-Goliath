@@ -32,10 +32,13 @@ function getModules(guildId) {
   return isPlainObject(modules) ? modules : {};
 }
 
+function hasLegacyPayload(value) {
+  return isPlainObject(value) && Object.keys(value).length > 0;
+}
+
 /**
  * Known legacy Role Studio locations. These are copied into the modern module
- * section the first time that module is loaded. The legacy data is retained so
- * migration is non-destructive and can be removed by a dedicated cleanup later.
+ * section the first time that module is loaded.
  */
 function getLegacyModuleSection(modules, moduleName) {
   const roles = isPlainObject(modules.roles) ? modules.roles : {};
@@ -70,6 +73,37 @@ function getLegacyModuleSection(modules, moduleName) {
   return {};
 }
 
+function canRemoveLegacyRoles(modules) {
+  const roles = isPlainObject(modules.roles) ? modules.roles : null;
+  if (!roles) return false;
+
+  const legacyTargets = [
+    ['joinRoles', 'autoRoles'],
+    ['reactionPanels', 'reactionRoles'],
+    ['timedRoles', 'timedRoles'],
+  ];
+
+  return legacyTargets.every(([legacyKey, canonicalKey]) => (
+    !hasLegacyPayload(roles[legacyKey]) || isPlainObject(modules[canonicalKey])
+  ));
+}
+
+function cleanupLegacyRolesIfSafe(guildId, modules, guildOrMeta = {}) {
+  if (!canRemoveLegacyRoles(modules)) return modules;
+
+  return updateGuildSection(
+    guildId,
+    'modules',
+    (existingModules = {}) => {
+      const nextModules = isPlainObject(existingModules) ? clone(existingModules) : {};
+      delete nextModules.roles;
+      return nextModules;
+    },
+    {},
+    guildOrMeta
+  );
+}
+
 /**
  * Ensure modules.<moduleName> exists in the mode-specific guild JSON.
  *
@@ -84,6 +118,7 @@ function ensureModuleSection(guildId, moduleName, fallback = {}, guildOrMeta = {
   const current = modules[safeModuleName];
 
   if (isPlainObject(current)) {
+    cleanupLegacyRolesIfSafe(guildId, modules, guildOrMeta);
     return {
       ...clone(fallback),
       ...clone(current),
@@ -114,6 +149,7 @@ function ensureModuleSection(guildId, moduleName, fallback = {}, guildOrMeta = {
     guildOrMeta
   );
 
+  cleanupLegacyRolesIfSafe(guildId, getModules(guildId), guildOrMeta);
   return clone(initialSection);
 }
 
