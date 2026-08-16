@@ -24,6 +24,11 @@ async function safeUpdate(interaction, payload) {
   return true;
 }
 
+function withoutReplyFlags(payload = {}) {
+  const { flags, ephemeral, ...rest } = payload;
+  return rest;
+}
+
 async function handleSuggestionsAdminInteraction(interaction) {
   const id = String(interaction?.customId || '');
   if (!id.startsWith('admin:suggestions')) return false;
@@ -68,13 +73,13 @@ async function handleSuggestionsInteraction(interaction) {
     }
     if (interaction.isButton?.() && parts[1] === 'mine' && parts[2] === 'page') {
       const payload = panel.buildMySuggestionsPayload(interaction.guildId, interaction.user.id, Number(parts[3] || 0));
-      if (interaction.message?.flags?.has?.(MessageFlags.Ephemeral)) await interaction.update(payload);
+      if (interaction.message?.flags?.has?.(MessageFlags.Ephemeral)) await interaction.update(withoutReplyFlags(payload));
       else await interaction.reply(payload);
       return true;
     }
     if (interaction.isStringSelectMenu?.() && interaction.customId === 'suggestions:mine:select') {
       const [suggestionId, page = '0'] = String(interaction.values?.[0] || '').split('|');
-      await interaction.update(panel.buildMySuggestionDetail(interaction.guildId, interaction.user.id, suggestionId, Number(page || 0)));
+      await interaction.update(withoutReplyFlags(panel.buildMySuggestionDetail(interaction.guildId, interaction.user.id, suggestionId, Number(page || 0))));
       return true;
     }
     if (interaction.isButton?.() && interaction.customId === 'suggestions:mine:close') {
