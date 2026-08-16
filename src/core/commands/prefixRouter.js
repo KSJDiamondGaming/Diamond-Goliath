@@ -147,7 +147,29 @@ async function handlePrefixCommand(message, client) {
     return true;
   }
 
-  if (['prefix', 'setprefix'].includes(parsed.commandName)) {
+  if (parsed.commandName === 'setprefix') {
+    if (!canManagePrefix(message)) {
+      await reply(message, { content: '❌ You need **Manage Server** or **Administrator** to change the prefix.' });
+      return true;
+    }
+
+    const nextPrefix = parsed.args[0];
+    if (!nextPrefix) {
+      await reply(message, { content: `⚠️ Usage: \`${parsed.guildPrefix}setprefix ?\`` });
+      return true;
+    }
+
+    try {
+      const saved = setGuildPrefix(message.guild.id, nextPrefix, message.guild);
+      await reply(message, { content: `✅ Prefix updated to \`${saved}\`.` });
+    } catch (error) {
+      await reply(message, { content: `❌ ${error.message}` });
+    }
+
+    return true;
+  }
+
+  if (parsed.commandName === 'prefix') {
     const subcommand = String(parsed.args[0] || '').toLowerCase();
 
     if (!subcommand || ['view', 'show', 'current'].includes(subcommand)) {
