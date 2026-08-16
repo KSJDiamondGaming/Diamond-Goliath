@@ -4,8 +4,6 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  ChannelSelectMenuBuilder,
-  ChannelType,
   EmbedBuilder,
   ModalBuilder,
   RoleSelectMenuBuilder,
@@ -179,11 +177,20 @@ async function handleRoleSelectorInteraction(interaction) {
         const previous = byLabel.get(label.toLowerCase()); const existingRoleId = cleanRoleId(roleIdRaw);
         return { ...(previous || {}), id: previous?.id, emoji, label, description, roleId: existingRoleId || previous?.roleId || null, managed: existingRoleId ? false : previous?.managed !== false, enabled: true, order: (index + 1) * 10 };
       });
+      for (const option of options) {
+        if (!option.roleId || option.managed !== false) continue;
+        const role = interaction.guild.roles.cache.get(option.roleId) || await interaction.guild.roles.fetch(option.roleId).catch(() => null);
+        roleSelector.assertSafeSelectorRole(interaction.guild, role);
+      }
       roleSelector.saveGroup(interaction.guildId, { ...group, options }, { ...actor, action: 'role_selector_update_options' }); return interaction.reply({ content: '✅ Selector options saved.', ...buildGroupsPanel(interaction), flags: 64 });
     }
     if (id === 'admin:roleSelector:toggleMode') { const group = roleSelector.getGroup(interaction.guildId, getState(interaction).groupId); if (!group) throw new Error('Select a group first.'); roleSelector.saveGroup(interaction.guildId, { ...group, selectionMode: group.selectionMode === 'multiple' ? 'single' : 'multiple' }, { ...actor, action: 'role_selector_toggle_mode' }); return respond(interaction, buildGroupsPanel(interaction)); }
     if (id === 'admin:roleSelector:toggleRemove') { const group = roleSelector.getGroup(interaction.guildId, getState(interaction).groupId); if (!group) throw new Error('Select a group first.'); roleSelector.saveGroup(interaction.guildId, { ...group, allowRemove: !group.allowRemove }, { ...actor, action: 'role_selector_toggle_remove' }); return respond(interaction, buildGroupsPanel(interaction)); }
-    if (id === 'admin:roleSelector:deleteGroup') { const group = roleSelector.getGroup(interaction.guildId, getState(interaction).groupId); if (!group) throw new Error('Select a group first.'); roleSelector.removeGroup(interaction.guildId, group.id, { ...actor, action: 'role_selector_delete_group' }); getState(interaction).groupId = null; return respond(interaction, buildGroupsPanel(interaction)); }
+    if (id === 'admin:roleSelector:deleteGroup') {
+      const group = roleSelector.getGroup(interaction.guildId, getState(interaction).groupId); if (!group) throw new Error('Select a group first.');
+      await roleSelector.deleteManagedGroupRoles(interaction.guild, group.id);
+      roleSelector.removeGroup(interaction.guildId, group.id, { ...actor, action: 'role_selector_delete_group' }); getState(interaction).groupId = null; return respond(interaction, buildGroupsPanel(interaction));
+    }
     if (id === 'admin:roleSelector:palette') { const group = roleSelector.getGroup(interaction.guildId, roleSelector.COLOUR_GROUP_ID); const selected = new Set(interaction.values || []); roleSelector.saveGroup(interaction.guildId, { ...group, palette: group.palette.map((item) => ({ ...item, enabled: selected.has(item.id) })) }, { ...actor, action: 'role_selector_palette' }); return respond(interaction, buildColoursPanel(interaction.guild)); }
     if (id === 'admin:roleSelector:toggleHex') { const group = roleSelector.getGroup(interaction.guildId, roleSelector.COLOUR_GROUP_ID); roleSelector.saveGroup(interaction.guildId, { ...group, customHexEnabled: !group.customHexEnabled }, { ...actor, action: 'role_selector_hex_toggle' }); return respond(interaction, buildColoursPanel(interaction.guild)); }
     if (id === 'admin:roleSelector:styleOpen') { await interaction.showModal(styleModal(roleSelector.getSection(interaction.guildId))); return true; }
