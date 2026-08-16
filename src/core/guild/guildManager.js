@@ -314,6 +314,7 @@ function normalizeSubscription(source = {}) {
 
 function buildModules(source = {}) {
   const modules = mergeDeep(DEFAULT_MODULES, isPlainObject(source.modules) ? source.modules : {});
+  delete modules.roles;
   modules.generalSettings = normalizeGeneralSettings(source);
   modules.logs = normalizeLogs(source);
   modules.security = normalizeSecurity(source);
@@ -369,6 +370,7 @@ function getGuildData(guildId, options = {}) {
   const needsRewrite =
     !exists ||
     !isPlainObject(rawData.modules) ||
+    isPlainObject(rawData.modules?.roles) ||
     !isPlainObject(rawData.subscription) ||
     hasMissingDefaultModules(rawData);
 
@@ -697,7 +699,6 @@ function listGuildFiles() {
 
 module.exports = {
   GUILDS_DIR,
-
   DEFAULT_GUILD_DATA,
   DEFAULT_SUBSCRIPTION,
   DEFAULT_LOGS,
