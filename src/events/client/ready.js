@@ -2,6 +2,7 @@ const { Events } = require('discord.js');
 const terminal = require('../../core/logging/terminalLogger').createLogger('bot');
 const levelingTracking = require('../../modules/communityStudio/leveling/levelingTracking');
 const { startupTranslation } = require('../../modules/utilityStudio/translation/translationStartup');
+const scheduleStartup = require('../../modules/utilityStudio/schedule/scheduleStartup');
 const auditStore = require('../../owner/auditIntelligence/auditStore');
 const auditRouter = require('../../owner/auditIntelligence/auditRouter');
 
@@ -267,6 +268,13 @@ module.exports = {
       await startupTranslation(client);
     } catch (error) {
       terminal.error(`Failed to recover Translation threads: ${error?.message || error}`);
+    }
+
+    try {
+      await scheduleStartup.startup(client);
+      terminal.info('Schedule processor started: startup recovery + 60-second processing interval.');
+    } catch (error) {
+      terminal.error(`Failed to start Schedule processor: ${error?.message || error}`);
     }
 
     try {
