@@ -101,7 +101,7 @@ function buildMySuggestionsPayload(guildId, userId, page = 0) {
         label: `${statusEmoji(item.status)} ${item.status.toUpperCase()} · ${item.suggestionId}`.slice(0, 100),
         description: String(item.content || '').replace(/\s+/g, ' ').slice(0, 100) || 'No content',
         value: `${item.suggestionId}|${safePage}`,
-      }))));
+      })))));
   }
   components.push(row(
     button(`suggestions:mine:page:${Math.max(0, safePage - 1)}`, 'Previous', ButtonStyle.Secondary).setDisabled(safePage === 0),
