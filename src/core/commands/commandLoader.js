@@ -3,6 +3,8 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
+const ALLOWED_COMMAND_NAMES = new Set(['admin', 'mod', 'user']);
+
 function getAllJsFiles(dir) {
   if (!fs.existsSync(dir)) return [];
 
@@ -51,6 +53,11 @@ function loadCommands(client, options = {}) {
         continue;
       }
 
+      if (!ALLOWED_COMMAND_NAMES.has(name)) {
+        skipped.push({ filePath, reason: `Command is not part of the canonical /admin, /mod, /user surface: ${name}` });
+        continue;
+      }
+
       if (client.commands.has(name)) {
         skipped.push({ filePath, reason: `Duplicate command name: ${name}` });
         continue;
@@ -69,7 +76,7 @@ function loadCommands(client, options = {}) {
     }
   }
 
-  console.log(`✅ commands loaded (${loaded.length})`);
+  console.log(`✅ commands loaded (${loaded.length}): ${loaded.join(', ')}`);
 
   return {
     loaded,
@@ -80,6 +87,7 @@ function loadCommands(client, options = {}) {
 }
 
 module.exports = {
+  ALLOWED_COMMAND_NAMES,
   getAllJsFiles,
   loadCommands,
 };
