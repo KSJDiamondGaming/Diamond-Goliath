@@ -64,4 +64,4 @@ function resetTemplate(templates, type) {
   return normalized;
 }
 
-module.exports = { ALERT_TYPES, DEFAULT_TEMPLATES, TEMPLATE_SOURCE, TEMPLATE_VERSION, normalizeTemplates, resolveTemplate, resetTemplate };
+module.exports = { ALERT_TYPES, normalizeTemplates, resolveTemplate, resetTemplate };
