@@ -25,6 +25,11 @@ function cleanDiscordId(value) {
   return /^\d{15,25}$/.test(id) ? id : null;
 }
 
+function cleanDiscordIds(value, max = 10) {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.map(cleanDiscordId).filter(Boolean))].slice(0, max);
+}
+
 function cleanString(value, fallback = '', maxLength = 1000) {
   return String(value ?? fallback).trim().slice(0, maxLength);
 }
@@ -60,6 +65,8 @@ function defaultWelcomeSection() {
     dmEnabled: false,
     dmTemplateId: null,
     allowUserPing: true,
+    allowRolePings: false,
+    mentionRoleIds: [],
     ignoreBots: true,
     analytics: defaultAnalytics(),
     createdAt: now(),
@@ -98,6 +105,8 @@ function normalizeWelcomeSection(section = {}) {
       ? cleanString(legacyDmTemplate, '', 120)
       : null,
     allowUserPing: source.allowUserPing !== false,
+    allowRolePings: source.allowRolePings === true,
+    mentionRoleIds: cleanDiscordIds(source.mentionRoleIds),
     ignoreBots: source.ignoreBots !== false,
     analytics: normalizeAnalytics(source.analytics),
     createdAt: source.createdAt || base.createdAt,
@@ -142,6 +151,8 @@ function updateConfig(guildId, patch = {}, meta = {}) {
       : (configPatch.dmTemplateId ? cleanString(configPatch.dmTemplateId, '', 120) : null),
     dmEnabled: typeof configPatch.dmEnabled === 'boolean' ? configPatch.dmEnabled : section.dmEnabled,
     allowUserPing: typeof configPatch.allowUserPing === 'boolean' ? configPatch.allowUserPing : section.allowUserPing,
+    allowRolePings: typeof configPatch.allowRolePings === 'boolean' ? configPatch.allowRolePings : section.allowRolePings,
+    mentionRoleIds: configPatch.mentionRoleIds === undefined ? section.mentionRoleIds : cleanDiscordIds(configPatch.mentionRoleIds),
     ignoreBots: typeof configPatch.ignoreBots === 'boolean' ? configPatch.ignoreBots : section.ignoreBots,
     updatedAt: now(),
   }), meta);
@@ -211,10 +222,21 @@ function getMemberJoinNumber(member, ignoreBots = true) {
   return index >= 0 ? index + 1 : Math.max(1, candidates.length);
 }
 
+function getWelcomeRoleState(guild, config) {
+  const roleIds = cleanDiscordIds(config?.mentionRoleIds).filter((roleId) => roleId !== guild.id);
+  const roles = roleIds.map((roleId) => guild.roles?.cache?.get(roleId)).filter(Boolean);
+  return {
+    roleIds: roles.map((role) => role.id),
+    mentions: roles.map((role) => `<@&${role.id}>`).join(' '),
+    display: roles.map((role) => `@${role.name}`).join(' '),
+  };
+}
+
 function buildTemplateVariables(member, config = getWelcomeSection(member.guild.id)) {
   const guild = member.guild;
   const totalMembers = getMemberCount(guild, config.ignoreBots);
   const joinNumber = getMemberJoinNumber(member, config.ignoreBots);
+  const welcomeRoles = getWelcomeRoleState(guild, config);
   return {
     guild: guild.name,
     guildName: guild.name,
@@ -234,6 +256,9 @@ function buildTemplateVariables(member, config = getWelcomeSection(member.guild.
     userId: member.user.id,
     userAvatar: getAvatar(member),
     memberAvatar: getAvatar(member),
+    welcomeRoles: welcomeRoles.mentions,
+    welcomeRoleMentions: welcomeRoles.mentions,
+    welcomeRolesNoPing: welcomeRoles.display,
     createdAt: formatTimestamp(member.user.createdTimestamp, 'F'),
     joinedAt: formatTimestamp(member.joinedTimestamp, 'F'),
     timestamp: formatTimestamp(Date.now(), 'F'),
@@ -375,6 +400,8 @@ function displayOnlyMentionState(state, variables) {
     userMention: variables.userNoPing,
     usermention: variables.userNoPing,
     user: variables.userDisplay,
+    welcomeRoles: variables.welcomeRolesNoPing,
+    welcomeRoleMentions: variables.welcomeRolesNoPing,
   };
   cleaned.panels = cleaned.panels.map((panel) => ({
     ...panel,
@@ -404,29 +431,38 @@ function buildDiscordPayload(member, type, config = getWelcomeSection(member.gui
     member,
   };
 
-  const pingEnabled = !isDm && config.allowUserPing !== false && options.suppressPing !== true;
+  const userPingEnabled = !isDm && config.allowUserPing !== false && options.suppressPing !== true;
+  const rolePingEnabled = !isDm && config.allowRolePings === true && options.suppressPing !== true;
+  const welcomeRoles = getWelcomeRoleState(member.guild, config);
+  const roleIds = rolePingEnabled ? welcomeRoles.roleIds : [];
   let state = templateToPreviewState(template);
-  if (pingEnabled) state = displayOnlyMentionState(state, variables);
+  if (userPingEnabled || rolePingEnabled) state = displayOnlyMentionState(state, variables);
 
   let content = replaceTemplateText(template.content || '', variables, {
     guild: variables.guildName,
     username: variables.username,
-    userMention: isDm ? variables.userNoPing : (pingEnabled ? `<@${member.user.id}>` : variables.userNoPing),
+    userMention: isDm ? variables.userNoPing : (userPingEnabled ? `<@${member.user.id}>` : variables.userNoPing),
+    welcomeRoles: rolePingEnabled ? welcomeRoles.mentions : welcomeRoles.display,
+    welcomeRoleMentions: rolePingEnabled ? welcomeRoles.mentions : welcomeRoles.display,
   }).trim();
 
-  const mention = `<@${member.user.id}>`;
-  if (pingEnabled && !content.includes(mention)) {
-    content = content ? `${mention}\n${content}` : mention;
-  }
-  if (options.suppressPing === true && content === mention) content = '';
+  const requiredMentions = [];
+  if (userPingEnabled) requiredMentions.push(`<@${member.user.id}>`);
+  if (rolePingEnabled) requiredMentions.push(...roleIds.map((roleId) => `<@&${roleId}>`));
+  const missingMentions = requiredMentions.filter((mention) => !content.includes(mention));
+  if (missingMentions.length) content = content ? `${missingMentions.join(' ')}\n${content}` : missingMentions.join(' ');
+  if (options.suppressPing === true && requiredMentions.includes(content)) content = '';
 
   return {
     content,
     embeds: buildPreviewEmbeds(state, renderInteraction),
     components: options.includeComponents === false ? [] : undefined,
-    allowedMentions: pingEnabled
-      ? { users: [member.user.id], roles: [], repliedUser: false }
-      : { parse: [], repliedUser: false },
+    allowedMentions: {
+      parse: [],
+      users: userPingEnabled ? [member.user.id] : [],
+      roles: roleIds,
+      repliedUser: false,
+    },
   };
 }
 
@@ -513,8 +549,15 @@ async function buildHealthReport(guild) {
   const canView = Boolean(permissions?.has(PermissionFlagsBits.ViewChannel));
   const canSend = Boolean(permissions?.has(PermissionFlagsBits.SendMessages));
   const canEmbed = Boolean(permissions?.has(PermissionFlagsBits.EmbedLinks));
+  const canMentionEveryone = Boolean(permissions?.has(PermissionFlagsBits.MentionEveryone));
   const publicTemplate = getAssignedTemplate(guild.id, 'welcome', config);
   const dmTemplate = config.dmEnabled ? getAssignedTemplate(guild.id, 'dmWelcome', config) : null;
+  const mentionRoles = cleanDiscordIds(config.mentionRoleIds).map((roleId) => ({
+    roleId,
+    role: guild.roles.cache.get(roleId) || null,
+  }));
+  const missingMentionRoles = mentionRoles.filter(({ role }) => !role);
+  const blockedMentionRoles = mentionRoles.filter(({ role }) => role && !role.mentionable && !canMentionEveryone);
   const warnings = [
     !moduleEnabled ? 'Welcome is disabled.' : null,
     moduleEnabled && !config.channelId && !config.dmEnabled ? 'No welcome channel or welcome DM is configured.' : null,
@@ -524,6 +567,9 @@ async function buildHealthReport(guild) {
     channel && !canEmbed ? 'Goliath cannot embed links in the welcome channel.' : null,
     config.channelId && !publicTemplate ? `Welcome template ${config.templateId} could not be found.` : null,
     config.dmEnabled && !dmTemplate ? 'Welcome DM is enabled, but no usable template is assigned.' : null,
+    config.allowRolePings && !config.mentionRoleIds.length ? 'Role notifications are enabled but no roles are selected.' : null,
+    ...missingMentionRoles.map(({ roleId }) => `Welcome notification role ${roleId} no longer exists.`),
+    ...blockedMentionRoles.map(({ role }) => `${role.name}: role is not mentionable and Goliath lacks Mention Everyone in the welcome channel.`),
   ].filter(Boolean);
   return {
     enabled: moduleEnabled,
@@ -531,9 +577,13 @@ async function buildHealthReport(guild) {
     channelExists: Boolean(channel),
     channelName: channel?.name || null,
     dmEnabled: config.dmEnabled === true,
+    allowRolePings: config.allowRolePings === true,
+    mentionRoleIds: config.mentionRoleIds,
+    mentionRoles: mentionRoles.filter(({ role }) => role).map(({ role }) => ({ id: role.id, name: role.name, mentionable: role.mentionable })),
     canView,
     canSend,
     canEmbed,
+    canMentionEveryone,
     templateId: publicTemplate?.templateId || config.templateId,
     templateName: publicTemplate?.name || null,
     templateBound: Boolean(getWelcomeBinding(guild.id, 'welcome')),
@@ -551,10 +601,13 @@ async function repairConfiguration(guild, meta = {}) {
   const channel = config.channelId ? await resolveWelcomeChannel(guild, config.channelId) : null;
   const publicTemplate = getAssignedTemplate(guild.id, 'welcome', config);
   const dmTemplate = config.dmTemplateId ? embedTemplateManager.getTemplate(guild.id, config.dmTemplateId) : null;
+  const mentionRoleIds = cleanDiscordIds(config.mentionRoleIds).filter((roleId) => roleId !== guild.id && guild.roles.cache.has(roleId));
   return updateConfig(guild.id, {
     channelId: channel ? config.channelId : null,
     templateId: publicTemplate?.templateId || config.templateId,
     dmTemplateId: dmTemplate?.templateId || null,
+    mentionRoleIds,
+    allowRolePings: config.allowRolePings && mentionRoleIds.length > 0,
   }, { action: 'welcome_repair', ...meta });
 }
 
@@ -602,6 +655,7 @@ async function startupWelcome(client) {
 module.exports = {
   MODULE,
   cleanDiscordId,
+  cleanDiscordIds,
   defaultAnalytics,
   defaultWelcomeSection,
   normalizeAnalytics,
@@ -615,6 +669,7 @@ module.exports = {
   formatTimestamp,
   getMemberCount,
   getMemberJoinNumber,
+  getWelcomeRoleState,
   buildTemplateVariables,
   getWelcomeTemplates,
   getWelcomeBinding,
