@@ -62,6 +62,7 @@ export default function Welcome({ theme, selectedGuild, selectedGuildData }) {
   const [templates, setTemplates] = useState([]);
   const [binding, setBinding] = useState(null);
   const [channels, setChannels] = useState([]);
+  const [roles, setRoles] = useState([]);
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -79,21 +80,25 @@ export default function Welcome({ theme, selectedGuild, selectedGuildData }) {
   const health = overview.health || null;
   const activeTemplateId = binding?.templateId || overview.templateId || config?.templateId || 'welcome_default';
   const activeTemplate = templates.find((template) => String(template.templateId) === String(activeTemplateId)) || binding || null;
+  const selectedRoleIds = Array.isArray(config?.mentionRoleIds) ? config.mentionRoleIds : [];
+  const selectableRoles = roles.filter((role) => String(role.id) !== String(guildId) && role.managed !== true);
 
   async function load() {
     if (!guildId) return;
     setBusy('load');
     setError('');
     try {
-      const [welcomePayload, channelPayload] = await Promise.all([
+      const [welcomePayload, channelPayload, rolePayload] = await Promise.all([
         api.request(`/api/welcome/${guildId}/overview`),
         api.getGuildChannels(guildId),
+        api.getGuildRoles(guildId),
       ]);
       setConfig(welcomePayload.config || {});
       setOverview(welcomePayload.overview || {});
       setTemplates(Array.isArray(welcomePayload.templates) ? welcomePayload.templates : []);
       setBinding(welcomePayload.binding || null);
       setChannels(normalizeList(channelPayload, 'channels'));
+      setRoles(normalizeList(rolePayload, 'roles'));
     } catch (loadError) {
       setError(loadError.message || 'Failed to load Welcome.');
     } finally {
@@ -158,6 +163,7 @@ export default function Welcome({ theme, selectedGuild, selectedGuildData }) {
       <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(min(100%,170px),1fr))', gap: 12 }}>
         <Stat theme={theme} label="Status" value={overview.enabled || config?.enabled ? 'Enabled' : 'Disabled'} />
         <Stat theme={theme} label="Template" value={overview.templateBound ? 'Bound' : 'Fallback'} hint={overview.templateName || activeTemplateId} />
+        <Stat theme={theme} label="Role Notify" value={config?.allowRolePings ? 'Enabled' : 'Disabled'} hint={`${selectedRoleIds.length} role(s)`} />
         <Stat theme={theme} label="Public Sent" value={analytics.publicSent || 0} />
         <Stat theme={theme} label="DM Sent" value={analytics.dmSent || 0} />
         <Stat theme={theme} label="Failed" value={(analytics.publicFailed || 0) + (analytics.dmFailed || 0)} />
@@ -196,7 +202,34 @@ export default function Welcome({ theme, selectedGuild, selectedGuildData }) {
         <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap' }}>
           <label style={{ color: theme.mutedText, fontWeight: 850 }}><input type="checkbox" checked={config?.dmEnabled === true} onChange={(event) => savePatch({ dmEnabled: event.target.checked })} /> Send welcome DM</label>
           <label style={{ color: theme.mutedText, fontWeight: 850 }}><input type="checkbox" checked={config?.allowUserPing !== false} onChange={(event) => savePatch({ allowUserPing: event.target.checked })} /> Ping new member</label>
+          <label style={{ color: theme.mutedText, fontWeight: 850 }}><input type="checkbox" checked={config?.allowRolePings === true} disabled={selectedRoleIds.length === 0} onChange={(event) => savePatch({ allowRolePings: event.target.checked })} /> Ping selected roles</label>
           <label style={{ color: theme.mutedText, fontWeight: 850 }}><input type="checkbox" checked={config?.ignoreBots !== false} onChange={(event) => savePatch({ ignoreBots: event.target.checked })} /> Ignore bots</label>
+        </div>
+
+        <label style={{ display: 'grid', gap: 8 }}>
+          <span style={{ color: theme.mutedText, fontSize: 12, fontWeight: 900, textTransform: 'uppercase' }}>Welcome Notification Roles</span>
+          <select
+            multiple
+            size={Math.min(8, Math.max(4, selectableRoles.length))}
+            value={selectedRoleIds}
+            onChange={(event) => {
+              const mentionRoleIds = Array.from(event.target.selectedOptions).map((option) => option.value).slice(0, 10);
+              savePatch({
+                mentionRoleIds,
+                ...(mentionRoleIds.length === 0 ? { allowRolePings: false } : {}),
+              }, 'Welcome notification roles saved.');
+            }}
+            disabled={busy || selectableRoles.length === 0}
+            style={{ ...fieldStyle(theme), minHeight: 120 }}
+          >
+            {selectableRoles.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}
+          </select>
+          <span style={{ color: theme.mutedText, fontSize: 12 }}>Select up to 10 roles. Hold Ctrl/Cmd to select more than one. Only these roles can be pinged by Welcome.</span>
+        </label>
+
+        <div style={{ border: `1px solid ${theme.cardBorder}`, background: 'rgba(15,23,42,0.28)', borderRadius: 16, padding: 15, color: theme.mutedText, lineHeight: 1.6 }}>
+          <strong style={{ color: theme.cardText }}>Timed Roles workflow</strong><br />
+          Auto Roles can give a member an initial join role before Welcome runs. Welcome can then notify the selected role(s), while Timed Roles later promotes the member and removes that initial role through its normal cleanup-role setting. No duplicate role timer is stored in Welcome.
         </div>
 
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
@@ -214,7 +247,8 @@ export default function Welcome({ theme, selectedGuild, selectedGuildData }) {
           : <div style={{ color: '#86efac', fontWeight: 900 }}>✅ Welcome configuration is healthy.</div>}
         <div style={{ color: theme.mutedText }}>Channel: {health?.channelName || health?.channelId || 'Not configured'}</div>
         <div style={{ color: theme.mutedText }}>Template: {health?.templateName || health?.templateId || 'Not configured'} · Bound: {health?.templateBound ? 'Yes' : 'No'}</div>
-        <div style={{ color: theme.mutedText }}>View: {health?.canView ? 'Yes' : 'No'} · Send: {health?.canSend ? 'Yes' : 'No'} · Embed: {health?.canEmbed ? 'Yes' : 'No'}</div>
+        <div style={{ color: theme.mutedText }}>Role notifications: {health?.allowRolePings ? 'Enabled' : 'Disabled'} · Roles: {health?.mentionRoles?.length || 0}</div>
+        <div style={{ color: theme.mutedText }}>View: {health?.canView ? 'Yes' : 'No'} · Send: {health?.canSend ? 'Yes' : 'No'} · Embed: {health?.canEmbed ? 'Yes' : 'No'} · Mention Everyone: {health?.canMentionEveryone ? 'Yes' : 'No'}</div>
         <button type="button" disabled={busy === 'load'} onClick={load} style={{ ...buttonStyle(theme), justifySelf: 'start' }}>{busy === 'load' ? 'Refreshing...' : 'Refresh Health'}</button>
       </section>
     </div>
