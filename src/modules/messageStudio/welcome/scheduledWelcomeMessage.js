@@ -23,7 +23,8 @@ function renderMessage(template, guild, members, config = {}) {
 }
 
 function buildBatchPayload(guild, members, config = {}) {
-  const content = renderMessage(config.message, guild, members, config).slice(0, 2000);
+  const content = renderMessage(config.message, guild, members, config);
+  if (content.length > 2000) throw new Error('Scheduled Welcome message exceeds Discord’s 2,000 character limit for this batch.');
   const userIds = config.pingMembers === false ? [] : members.map((member) => member.id);
   return {
     content,
@@ -33,11 +34,24 @@ function buildBatchPayload(guild, members, config = {}) {
   };
 }
 
-function splitIntoBatches(members, config = {}) {
+function splitIntoBatches(members, config = {}, guild = null) {
   const requested = Number(config.batchSize || 20);
-  const batchSize = Number.isFinite(requested) ? Math.min(50, Math.max(1, Math.floor(requested))) : 20;
+  const maxBatchSize = Number.isFinite(requested) ? Math.min(50, Math.max(1, Math.floor(requested))) : 20;
   const batches = [];
-  for (let index = 0; index < members.length; index += batchSize) batches.push(members.slice(index, index + batchSize));
+  let current = [];
+
+  for (const member of members) {
+    const candidate = [...current, member];
+    const tooMany = candidate.length > maxBatchSize;
+    const tooLong = guild ? renderMessage(config.message, guild, candidate, config).length > 2000 : false;
+    if ((tooMany || tooLong) && current.length) {
+      batches.push(current);
+      current = [member];
+    } else {
+      current = candidate;
+    }
+  }
+  if (current.length) batches.push(current);
   return batches;
 }
 
