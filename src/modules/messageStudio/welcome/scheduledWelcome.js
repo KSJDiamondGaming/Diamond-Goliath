@@ -153,7 +153,7 @@ async function runScheduledWelcome(guild, options = {}) {
     return { skipped: false, empty: true, welcomed: 0, messagesSent: 0, roleRemovalFailed: 0, errors: [] };
   }
 
-  const batches = messages.splitIntoBatches(waiting, config);
+  const batches = messages.splitIntoBatches(waiting, config, guild);
   let welcomed = 0;
   let messagesSent = 0;
   let sendFailed = 0;
