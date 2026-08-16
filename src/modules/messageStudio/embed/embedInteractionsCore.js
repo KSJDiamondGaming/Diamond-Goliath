@@ -2,7 +2,7 @@
 
 const { MessageFlags, PermissionFlagsBits } = require('discord.js');
 const original = require('./embedInteractionsLegacy');
-const panel = require('./embedPreviewCompat');
+const panel = require('./embedPanel');
 const mediaUi = require('./embedMedia');
 const guildManager = require('../../../core/guild/guildManager');
 const { validateChannelAccess } = require('../../../core/security/goliathPermissionGuard');
@@ -10,6 +10,8 @@ const { ensureAssetCached } = require('./embedAssetStore');
 const { saveEmbedDeployment, getEmbedDeployment, getDeploymentKeyFromState } = require('./embedDeployments');
 const { buildEmbedPayload } = require('./embedRenderer');
 
+mediaUi.installStateCompatibility(panel);
+mediaUi.installPersistentMediaCompatibility(panel);
 mediaUi.installStorageNormalization(panel);
 mediaUi.installUploadModals(panel);
 mediaUi.installMediaOptionsUi(panel);
