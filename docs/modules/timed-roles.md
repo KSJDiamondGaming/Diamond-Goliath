@@ -168,19 +168,23 @@ modules.timedRoles
 
 Module enabled state is managed through the same guild source of truth. Timed Roles must not introduce a separate JSON store or database-backed configuration source.
 
-## Legacy role migration
+## Legacy Role Studio compatibility
 
-At startup, `src/core/guild/legacyRolesMigration.js` performs a one-time migration of the removed generic `roles` configuration section:
+The old standalone migration runner has been retired. Compatibility for an older guild JSON that still contains `modules.roles` now lives in:
 
-- Legacy timed rules are converted into canonical Timed Roles rules.
-- Legacy join-role rules are merged into Auto Roles.
-- Previously deployed button panels are preserved under Reaction Roles compatibility storage.
-- The obsolete `modules.roles` section is deleted only after the conversion completes.
-- Completion and item counts are recorded at `modules._migrations.legacyRolesV1`.
+```text
+src/core/guild/moduleSectionManager.js
+```
 
-Invalid timed rules without a usable role ID are skipped and counted in the migration report.
+When a canonical Role Studio module is first loaded, the manager can absorb the matching legacy payload:
 
-The retired generic `modules.roles` section is not seeded by guild defaults and must not be reintroduced.
+- `modules.roles.timedRoles` → `modules.timedRoles.rules`
+- `modules.roles.joinRoles` → `modules.autoRoles.joinRoles`
+- `modules.roles.reactionPanels` → `modules.reactionRoles.panels`
+
+The legacy `modules.roles` object is removed only after every non-empty legacy payload has a corresponding canonical module section. This preserves compatibility for old guild data while ensuring the retired generic role section does not remain after absorption.
+
+The retired generic `modules.roles` section is no longer seeded by guild defaults and must not be reintroduced as an active source of truth.
 
 ## Startup
 
