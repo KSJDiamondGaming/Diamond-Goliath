@@ -26,6 +26,13 @@ const PANEL_BG = { r: 19, g: 20, b: 22, alpha: 1 };
 const STATIC_RASTER_TYPES = new Set(['image/png', 'image/jpeg', 'image/jpg']);
 const NATIVE_IMAGE_TYPES = new Set(['image/gif', 'image/webp', 'image/avif', 'image/svg+xml']);
 
+// Legacy embed media layout constants retained here while the old interaction
+// path remains supported. Keeping them in the canonical renderer prevents a
+// second renderer/media-layout implementation from surviving beside V2.
+const LEGACY_TARGET_WIDTH = 299;
+const LEGACY_PORTRAIT_VISIBLE_WIDTH = 212;
+const LEGACY_PORTRAIT_RIGHT_INSET = 0;
+
 function isHttpsUrl(value) {
   try { return new URL(String(value || '')).protocol === 'https:'; } catch { return false; }
 }
@@ -86,11 +93,11 @@ async function fetchImage(url) {
     return { buffer, contentType };
   } finally { clearTimeout(timer); }
 }
-async function sourceImage(url) {
-  const cached = getCachedAsset('global', url);
+async function sourceImage(url, guildId = 'global') {
+  const cached = getCachedAsset(guildId, url);
   if (cached?.buffer) return { buffer: cached.buffer, contentType: cached.meta?.contentType || '' };
   const remote = await fetchImage(url);
-  saveCachedAsset('global', url, remote.buffer, { contentType: remote.contentType });
+  saveCachedAsset(guildId, url, remote.buffer, { contentType: remote.contentType });
   return remote;
 }
 function circleMaskSvg(size) {
@@ -266,11 +273,75 @@ async function buildEmbedPayload(options = {}) {
   return { components, files, flags };
 }
 
+async function centerOnLegacyEmbedCanvas(buffer) {
+  const input = sharp(buffer, { failOn: 'warning' });
+  const metadata = await input.metadata();
+  const width = Number(metadata.width || 0);
+  const height = Number(metadata.height || 0);
+  if (!width || !height) return null;
+
+  const aspect = width / height;
+  if (aspect > 1.25) {
+    return sharp(buffer, { failOn: 'warning' })
+      .resize({ width: LEGACY_TARGET_WIDTH, withoutEnlargement: false })
+      .png()
+      .toBuffer();
+  }
+
+  const visibleWidth = Math.min(LEGACY_PORTRAIT_VISIBLE_WIDTH, LEGACY_TARGET_WIDTH);
+  const resized = await sharp(buffer, { failOn: 'warning' })
+    .resize({ width: visibleWidth, withoutEnlargement: false })
+    .ensureAlpha()
+    .png()
+    .toBuffer();
+
+  const resizedMeta = await sharp(resized).metadata();
+  const renderedWidth = Number(resizedMeta.width || visibleWidth);
+  const right = Math.min(LEGACY_PORTRAIT_RIGHT_INSET, Math.max(0, LEGACY_TARGET_WIDTH - renderedWidth));
+  const left = Math.max(0, LEGACY_TARGET_WIDTH - renderedWidth - right);
+
+  return sharp(resized)
+    .extend({ top: 0, bottom: 0, left, right, background: { r: 0, g: 0, b: 0, alpha: 0 } })
+    .png()
+    .toBuffer();
+}
+
+async function prepareEmbedMedia(embeds = [], options = {}) {
+  const files = [];
+  const output = Array.isArray(embeds) ? embeds : [];
+  const guildId = options.guildId || 'global';
+
+  for (let index = 0; index < output.length; index += 1) {
+    const embed = output[index];
+    if (!embed || typeof embed.toJSON !== 'function' || typeof embed.setImage !== 'function') continue;
+
+    const imageUrl = embed.toJSON()?.image?.url;
+    if (!imageUrl || !isHttpsUrl(imageUrl)) continue;
+
+    try {
+      const source = await sourceImage(imageUrl, guildId);
+      const processed = await centerOnLegacyEmbedCanvas(source.buffer);
+      if (!processed) continue;
+
+      const name = `embed-panel-${index + 1}-large.png`;
+      files.push(new AttachmentBuilder(processed, { name }));
+      embed.setImage(`attachment://${name}`);
+    } catch (error) {
+      console.warn(`[EmbedMedia] panel ${index + 1}: media normalization failed:`, error?.message || error);
+    }
+  }
+
+  return { embeds: output, files };
+}
+
 module.exports = {
   CANVAS_WIDTH,
   PORTRAIT_WIDTH,
   PORTRAIT_SHIFT_RIGHT,
   PANEL_BG,
+  LEGACY_TARGET_WIDTH,
+  LEGACY_PORTRAIT_VISIBLE_WIDTH,
   buildEmbedPayload,
+  prepareEmbedMedia,
   probeRemoteSource,
 };
