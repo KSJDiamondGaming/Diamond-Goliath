@@ -437,7 +437,6 @@ module.exports = {
   getCreator,
   findCreatorByOwner,
   getCreatorAccounts,
-  createCreatorForMember,
   completeCreatorProfile,
   updateCreator,
   markCreatorActive,
