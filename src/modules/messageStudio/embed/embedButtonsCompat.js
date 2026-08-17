@@ -15,7 +15,7 @@ const {
 } = require('discord.js');
 const guildManager = require('../../../core/guild/guildManager');
 const { getAllEmbedDeployments } = require('./embedDeployments');
-const { getReadinessReport, getReadinessFixTarget, MAX_PANELS } = require('./embedValidation');
+const { getReadinessReport, getReadinessFixTarget, buildReadinessModel } = require('./embedValidation');
 const panel = require('./embedPanel');
 
 const MAX_FIELDS = 25;
@@ -273,27 +273,28 @@ panel.parseButtonActionIndex = parseButtonIndex;
 panel.resolveButtonAction = resolveButton;
 panel.supportedButtonActions = BUILT_IN_ACTIONS;
 
-// Canonical navigation/readiness UI. Validation comes from embedValidation.js.
+// Canonical navigation/readiness UI. Validation and view-model data come from embedValidation.js.
 (() => {
   const { mediaModel } = require('./embedMedia');
   function requestedBy(interaction) { return panel.memberName?.(interaction) || interaction.member?.displayName || interaction.user?.username || 'Unknown User'; }
   function compactPreviewPayload(payload, interaction) { if (!payload || !Array.isArray(payload.embeds) || payload.embeds.length <= 2) return payload; const state = panel.getSession(interaction); const selectedIndex = Math.max(0, Number(state?.selectedPanelIndex) || 0); const selectedPreview = payload.embeds[selectedIndex + 1] || payload.embeds[1]; return { ...payload, embeds: selectedPreview ? [payload.embeds[0], selectedPreview] : [payload.embeds[0]] }; }
-  function readinessReport(interaction, state = panel.getSession(interaction)) {
-    return getReadinessReport(interaction, state, {
+  function readinessOptions() {
+    return {
       mediaForPanel: mediaModel.mediaForPanel,
       maxGalleryItems: mediaModel.MAX_GALLERY_ITEMS,
       maxFiles: mediaModel.MAX_FILES,
       helpers: panel.HELPERS,
-    });
+    };
+  }
+  function readinessReport(interaction, state = panel.getSession(interaction)) {
+    return getReadinessReport(interaction, state, readinessOptions());
   }
   panel.getReadinessReport = readinessReport;
   panel.getReadinessFixTarget = getReadinessFixTarget;
   panel.buildReadinessPanel = (interaction) => {
-    const state = panel.getSession(interaction), report = readinessReport(interaction, state), fix = getReadinessFixTarget(report);
-    const status = report.ready ? (report.warnings.length ? '🟡 Ready with warnings' : '🟢 Ready to Send') : '🔴 Not Ready';
-    const lines = [`**Status:** ${status}`, `**Channel:** ${state.channelId ? `<#${state.channelId}>` : 'Not selected'}`, `**Panels:** ${state.panels?.length || 0}/${MAX_PANELS}`, `**Buttons:** ${state.buttons?.length || 0}/${MAX_BUTTONS}`, '', report.errors.length ? `### ❌ Fix before sending\n${report.errors.slice(0, 12).map((item) => `• ${item}`).join('\n')}${report.errors.length > 12 ? `\n• And ${report.errors.length - 12} more...` : ''}` : '### ✅ Required checks passed'];
-    if (report.warnings.length) lines.push('', `### ⚠️ Warnings\n${report.warnings.slice(0, 8).map((item) => `• ${item}`).join('\n')}${report.warnings.length > 8 ? `\n• And ${report.warnings.length - 8} more...` : ''}`);
-    if (report.checks.length) lines.push('', `### 🔎 Checked\n${report.checks.slice(0, 8).map((item) => `• ${item}`).join('\n')}`);
+    const state = panel.getSession(interaction);
+    const model = buildReadinessModel(interaction, state, readinessOptions());
+    const { report, fix, lines } = model;
     const first = report.ready ? new ButtonBuilder().setCustomId('embed:readiness-refresh').setLabel('🔄 Recheck').setStyle(ButtonStyle.Secondary) : new ButtonBuilder().setCustomId('embed:readiness-fix').setLabel(fix.label).setStyle(ButtonStyle.Primary);
     const row1 = new ActionRowBuilder().addComponents(first, new ButtonBuilder().setCustomId('embed:use').setLabel('✅ Use Embed').setStyle(ButtonStyle.Success).setDisabled(!report.ready));
     const row2 = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('embed:update-existing').setLabel('♻️ Update Existing').setStyle(ButtonStyle.Secondary).setDisabled(!report.ready), new ButtonBuilder().setCustomId('embed:test-send').setLabel('🧪 Test').setStyle(ButtonStyle.Secondary).setDisabled(!report.ready));
