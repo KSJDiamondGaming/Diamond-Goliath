@@ -41,10 +41,6 @@ function getAccountsForCreator(guildId, creator) {
   return store.getCreatorAccounts(guildId, creator);
 }
 
-function createForMember(member) {
-  return store.createCreatorForMember(member, { actorId: member.user.id });
-}
-
 function completeCreatorProfile(member, values) {
   return store.completeCreatorProfile(member, values, { actorId: member.user.id });
 }
@@ -498,6 +494,5 @@ module.exports = {
   user,
   findByOwnerDiscordId,
   getAccountsForCreator,
-  createForMember,
   completeCreatorProfile,
 };
