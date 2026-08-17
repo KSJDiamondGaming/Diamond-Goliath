@@ -686,6 +686,54 @@ function buildHelpersPanel(i) {
   const s = getSession(i);
   return { embeds: [simplePanel("📖 Embed Variables", HELPERS.map((h) => `\`${h}\``).join("\n"), s, memberName(i))], components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("embed:builder").setLabel("⬅️ Builder").setStyle(ButtonStyle.Secondary))] };
 }
+function readinessOptions() {
+  const { mediaModel } = require("./embedMedia");
+  return {
+    mediaForPanel: mediaModel.mediaForPanel,
+    maxGalleryItems: mediaModel.MAX_GALLERY_ITEMS,
+    maxFiles: mediaModel.MAX_FILES,
+    helpers: HELPERS,
+  };
+}
+function getReadinessReportCanonical(interaction, state = getSession(interaction)) {
+  const { getReadinessReport } = require("./embedValidation");
+  return getReadinessReport(interaction, state, readinessOptions());
+}
+function getReadinessFixTargetCanonical(report) {
+  const { getReadinessFixTarget } = require("./embedValidation");
+  return getReadinessFixTarget(report);
+}
+function buildReadinessPanel(interaction) {
+  const state = getSession(interaction);
+  const { buildReadinessModel } = require("./embedValidation");
+  const model = buildReadinessModel(interaction, state, readinessOptions());
+  const { report, fix, lines } = model;
+  const first = report.ready
+    ? new ButtonBuilder().setCustomId("embed:readiness-refresh").setLabel("🔄 Recheck").setStyle(ButtonStyle.Secondary)
+    : new ButtonBuilder().setCustomId("embed:readiness-fix").setLabel(fix.label).setStyle(ButtonStyle.Primary);
+  const row1 = new ActionRowBuilder().addComponents(
+    first,
+    new ButtonBuilder().setCustomId("embed:use").setLabel("✅ Use Embed").setStyle(ButtonStyle.Success).setDisabled(!report.ready),
+  );
+  const row2 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId("embed:update-existing").setLabel("♻️ Update Existing").setStyle(ButtonStyle.Secondary).setDisabled(!report.ready),
+    new ButtonBuilder().setCustomId("embed:test-send").setLabel("🧪 Test").setStyle(ButtonStyle.Secondary).setDisabled(!report.ready),
+  );
+  const row3 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId("embed:builder").setLabel("⬅️ Back").setStyle(ButtonStyle.Secondary),
+  );
+  return {
+    embeds: [
+      new EmbedBuilder()
+        .setColor(report.ready ? (report.warnings.length ? 0xFEE75C : 0x57F287) : 0xED4245)
+        .setTitle("✅ Embed Readiness")
+        .setDescription(lines.join("\n").slice(0, 4096))
+        .setFooter({ text: `Requested by ${memberName(interaction)}` })
+        .setTimestamp(),
+    ],
+    components: [row1, row2, row3],
+  };
+}
 function modal(id, title, inputs) {
   return new ModalBuilder().setCustomId(id).setTitle(title).addComponents(...inputs.map((input) => new ActionRowBuilder().addComponents(input)));
 }
@@ -891,6 +939,9 @@ module.exports = {
   buildButtonsPanel,
   buildPresetsPanel,
   buildHelpersPanel,
+  buildReadinessPanel,
+  getReadinessReport: getReadinessReportCanonical,
+  getReadinessFixTarget: getReadinessFixTargetCanonical,
   modal,
   input,
   contentModal,
