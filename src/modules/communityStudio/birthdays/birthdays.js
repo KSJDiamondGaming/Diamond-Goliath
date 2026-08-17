@@ -219,12 +219,24 @@ function renderMessage(template, guild, member, year) {
     .replaceAll('{age}', age == null ? '' : String(age));
 }
 
+function canManageBirthdayRole(guild, role) {
+  const me = guild.members.me;
+  return Boolean(
+    me
+    && role
+    && role.id !== guild.id
+    && !role.managed
+    && me.permissions.has(PermissionFlagsBits.ManageRoles)
+    && role.position < me.roles.highest.position
+  );
+}
+
 async function assignBirthdayRole(guild, section, member, meta = {}) {
   const roleId = section.settings.birthdayRoleId;
   if (!roleId) return false;
   const discordMember = await guild.members.fetch(member.userId).catch(() => null);
   const role = guild.roles.cache.get(roleId) || await guild.roles.fetch(roleId).catch(() => null);
-  if (!discordMember || !role || role.managed || !guild.members.me?.permissions.has(PermissionFlagsBits.ManageRoles) || role.position >= guild.members.me.roles.highest.position) return false;
+  if (!discordMember || !canManageBirthdayRole(guild, role)) return false;
   if (!discordMember.roles.cache.has(roleId)) await discordMember.roles.add(roleId, 'Goliath birthday role').catch(() => null);
   setBirthday(guild.id, member.userId, { roleAssignedAt: now() }, { ...meta, action: 'birthday_role_assigned' });
   incrementAnalytics(guild.id, { rolesAssigned: 1 }, meta);
@@ -287,15 +299,20 @@ async function buildHealth(guild) {
   const section = getSection(guild.id);
   const issues = [];
   const warnings = [];
+  const me = guild.members.me;
   if (!section.settings.announcementChannelId) warnings.push({ code: 'announcement_channel_missing' });
   else {
     const channel = guild.channels.cache.get(section.settings.announcementChannelId) || await guild.channels.fetch(section.settings.announcementChannelId).catch(() => null);
     if (!channel?.send) issues.push({ code: 'announcement_channel_unavailable', channelId: section.settings.announcementChannelId });
+    else {
+      const permissions = channel.permissionsFor?.(me);
+      if (permissions && !permissions.has(PermissionFlagsBits.SendMessages)) issues.push({ code: 'announcement_send_messages_missing', channelId: channel.id });
+    }
   }
   if (section.settings.birthdayRoleId) {
     const role = guild.roles.cache.get(section.settings.birthdayRoleId) || await guild.roles.fetch(section.settings.birthdayRoleId).catch(() => null);
     if (!role) warnings.push({ code: 'birthday_role_missing' });
-    else if (role.managed || role.position >= guild.members.me.roles.highest.position) warnings.push({ code: 'birthday_role_unmanageable' });
+    else if (!canManageBirthdayRole(guild, role)) warnings.push({ code: 'birthday_role_unmanageable' });
   }
   return { module: SECTION, guildId: guild.id, enabled: guildManager.isModuleEnabled(guild.id, SECTION), healthy: issues.length === 0, memberCount: Object.keys(section.members).length, issues, warnings, checkedAt: now() };
 }
