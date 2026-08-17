@@ -492,6 +492,7 @@ const user = {
 module.exports = {
   admin: adminPanel,
   user,
+  getAccess,
   findByOwnerDiscordId,
   getAccountsForCreator,
   completeCreatorProfile,
