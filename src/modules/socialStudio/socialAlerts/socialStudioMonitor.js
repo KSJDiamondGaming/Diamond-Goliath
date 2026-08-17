@@ -1,10 +1,13 @@
 'use strict';
 
 const guildManager = require('../../../core/guild/guildManager');
+const sentinelScheduler = require('../../../owner/sentinel/schedulerRegistry.js');
 const core = require('./socialStudioMonitorCore');
 const { projectEffectiveAccounts } = require('./socialStudioRoutingResolver');
 
 let timer = null;
+let schedulerTickMs = 60_000;
+const GLOBAL_SCHEDULER = 'social:monitor:global';
 
 function projectGuildConfig(guildConfig) {
   if (!guildConfig || typeof guildConfig !== 'object') return guildConfig;
@@ -48,24 +51,59 @@ function forcePostCreatorLive(...args) {
   return invokeWithProjectedRouting(core.forcePostCreatorLive, args);
 }
 
+function guildScheduler(guild) {
+  return sentinelScheduler.register({
+    module: 'social',
+    component: 'automatic-monitor',
+    guildId: guild.id,
+    guildName: guild.name,
+    intervalMs: schedulerTickMs,
+    staleAfterMs: Math.max(schedulerTickMs * 3, 180_000),
+  });
+}
+
 async function sweep(client) {
+  let checked = 0;
+  let failed = 0;
   for (const guild of client?.guilds?.cache?.values?.() || []) {
+    const schedulerId = guildScheduler(guild);
     try {
       await checkGuildAccounts(client, guild.id);
+      checked += 1;
+      sentinelScheduler.beat(schedulerId, { guildsChecked: checked, lastSweepGuildId: guild.id });
     } catch (error) {
+      failed += 1;
+      sentinelScheduler.fail(schedulerId, error, { guildId: guild.id });
       console.error(`[Social Studio] automatic check failed for guild ${guild.id}:`, error?.message || error);
     }
   }
+  sentinelScheduler.beat(GLOBAL_SCHEDULER, { guildsChecked: checked, guildFailures: failed });
+  return { checked, failed };
+}
+
+function runSweep(client, label) {
+  return sweep(client).catch((error) => {
+    sentinelScheduler.fail(GLOBAL_SCHEDULER, error, { phase: label });
+    console.error(`[Social Studio] ${label} sweep failed:`, error);
+  });
 }
 
 function startupSocialStudio(client) {
   if (timer) return timer;
-  const tickMs = Math.max(30000, Number(process.env.SOCIAL_STUDIO_TICK_MS || 60000));
-  const initial = setTimeout(() => sweep(client).catch((error) => console.error('[Social Studio] initial sweep failed:', error)), 5000);
+  schedulerTickMs = Math.max(30000, Number(process.env.SOCIAL_STUDIO_TICK_MS || 60000));
+  sentinelScheduler.register({
+    id: GLOBAL_SCHEDULER,
+    module: 'social',
+    component: 'automatic-monitor',
+    intervalMs: schedulerTickMs,
+    staleAfterMs: Math.max(schedulerTickMs * 3, 180_000),
+    details: { scope: 'all-guilds' },
+  });
+  const initial = setTimeout(() => runSweep(client, 'initial'), 5000);
   initial.unref?.();
-  timer = setInterval(() => sweep(client).catch((error) => console.error('[Social Studio] sweep failed:', error)), tickMs);
+  timer = setInterval(() => runSweep(client, 'scheduled'), schedulerTickMs);
   timer.unref?.();
-  console.log(`✅ Social Studio monitor started (${tickMs}ms scheduler tick)`);
+  console.log(`✅ Social Studio monitor started (${schedulerTickMs}ms scheduler tick)`);
   return timer;
 }
 
