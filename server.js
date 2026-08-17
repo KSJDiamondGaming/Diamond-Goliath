@@ -168,6 +168,21 @@ async function startConfiguredModules(client) {
       return require('./src/modules/roleStudio/reactionRoles/reactionRoles').startup({ guilds: { cache: enabledGuilds } });
     }),
     runStartupTask('Verification', () => require('./src/modules/securityStudio/verification').startupVerification(client)),
+    runStartupTask('Birthdays', async () => {
+      const birthdays = require('./src/modules/communityStudio/birthdays/birthdays');
+      const runSweep = async () => {
+        const enabledGuilds = client.guilds.cache.filter((guild) => guildManager.isModuleEnabled(guild.id, 'birthdays'));
+        for (const guild of enabledGuilds.values()) {
+          await birthdays.processGuild(guild, { action: 'birthday_scheduler_tick' }).catch((error) => {
+            console.warn(`[Birthdays] ${guild.id}: ${error?.message || error}`);
+          });
+        }
+      };
+      await runSweep();
+      const timer = setInterval(runSweep, birthdays.TICK_MS);
+      timer.unref?.();
+      return timer;
+    }),
   ]);
 }
 
