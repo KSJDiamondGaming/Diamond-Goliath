@@ -9,19 +9,48 @@ const birthdays = require('./birthdays');
 
 const row = (...items) => new ActionRowBuilder().addComponents(...items.filter(Boolean));
 const button = (id, label, style = ButtonStyle.Secondary, disabled = false) => new ButtonBuilder().setCustomId(id).setLabel(label).setStyle(style).setDisabled(disabled);
+const UPCOMING_DAYS = 60;
+
+function birthdayWindow(guildId) {
+  const list = birthdays.listUpcoming(guildId, 100, UPCOMING_DAYS);
+  return {
+    today: list.filter((item) => item.daysUntil === 0),
+    upcoming: list.filter((item) => item.daysUntil > 0),
+  };
+}
+
+function birthdayLine(item, todayLabel = false) {
+  const { member, next } = item;
+  const date = todayLabel ? 'TODAY' : `${String(next.day).padStart(2, '0')}/${String(next.month).padStart(2, '0')}`;
+  return `• <@${member.userId}> — **${date}**`;
+}
+
+function birthdayListContent(guildId) {
+  const { today, upcoming } = birthdayWindow(guildId);
+  const todayLines = today.length ? today.map((item) => birthdayLine(item, true)).join('\n') : 'No birthdays today.';
+  const upcomingLines = upcoming.length ? upcoming.map((item) => birthdayLine(item)).join('\n') : 'No birthdays in the next 2 months.';
+  return `**🎂 Today’s Birthdays**\n${todayLines}\n\n**📅 Upcoming Birthdays — Next 2 Months**\n${upcomingLines}`;
+}
 
 function adminPayload(interaction) {
   const section = birthdays.getSection(interaction.guildId);
   const enabled = guildManager.isModuleEnabled(interaction.guildId, 'birthdays');
-  const upcoming = birthdays.listUpcoming(interaction.guildId, 5);
-  const lines = upcoming.length ? upcoming.map(({ member, next }) => `• <@${member.userId}> — **${String(next.day).padStart(2, '0')}/${String(next.month).padStart(2, '0')}**`).join('\n') : 'No birthdays stored yet.';
+  const { today, upcoming } = birthdayWindow(interaction.guildId);
+  const todayLines = today.length ? today.map((item) => birthdayLine(item, true)).join('\n') : 'No birthdays today.';
+  const upcomingLines = upcoming.length ? upcoming.slice(0, 5).map((item) => birthdayLine(item)).join('\n') : 'No birthdays in the next 2 months.';
   return {
     embeds: [new EmbedBuilder().setColor(enabled ? 0x5865F2 : 0x747F8D).setTitle('🎂 Birthdays').setDescription([
       `Module: **${enabled ? 'Enabled' : 'Disabled'}**`,
       `Announcement channel: ${section.settings.announcementChannelId ? `<#${section.settings.announcementChannelId}>` : '**Not set**'}`,
       `Time: **${section.settings.announcementTime} ${section.settings.timezone}**`,
       `Birthday role: ${section.settings.birthdayRoleId ? `<@&${section.settings.birthdayRoleId}>` : '**None**'}`,
-      `Stored birthdays: **${Object.keys(section.members).length}**`, '', '**Upcoming**', lines,
+      `Stored birthdays: **${Object.keys(section.members).length}**`,
+      '',
+      '**🎂 Today’s Birthdays**',
+      todayLines,
+      '',
+      '**📅 Upcoming — Next 2 Months**',
+      upcomingLines,
     ].join('\n')).setFooter({ text: 'Goliath Birthdays · /admin' }).setTimestamp()],
     components: [
       row(new ChannelSelectMenuBuilder().setCustomId('admin:birthdays:channel').setPlaceholder('Birthday announcement channel').setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setMinValues(0).setMaxValues(1).setDefaultChannels(section.settings.announcementChannelId ? [section.settings.announcementChannelId] : [])),
@@ -83,7 +112,7 @@ async function handleAdmin(interaction) {
     birthdays.updateSettings(interaction.guildId, { announcementTime: time, timezone, messageTemplate: interaction.fields.getTextInputValue('message'), roleDurationHours: Number(interaction.fields.getTextInputValue('roleHours') || 24) }, { ...actor, action: 'birthdays_settings_update' });
     await interaction.reply({ content: '✅ Birthday settings updated.', flags: 64 }); return true;
   } else if (id === 'admin:birthdays:upcoming') {
-    const list = birthdays.listUpcoming(interaction.guildId, 20); await interaction.reply({ content: list.length ? list.map(({ member, next }) => `<@${member.userId}> — **${String(next.day).padStart(2, '0')}/${String(next.month).padStart(2, '0')}**`).join('\n') : 'No birthdays stored.', flags: 64, allowedMentions: { parse: [] } }); return true;
+    await interaction.reply({ content: birthdayListContent(interaction.guildId), flags: 64, allowedMentions: { parse: [] } }); return true;
   } else if (id === 'admin:birthdays:health') {
     const health = await birthdays.buildHealth(interaction.guild); await interaction.reply({ content: `Birthdays health: **${health.healthy ? 'Healthy' : 'Needs attention'}**\nIssues: ${health.issues.length}\nWarnings: ${health.warnings.length}`, flags: 64 }); return true;
   }
@@ -106,7 +135,7 @@ async function handleUser(interaction) {
   if (id === 'birthdays:user:announce') birthdays.setBirthday(interaction.guildId, interaction.user.id, { announce: !record.announce }, { actorId: interaction.user.id, action: 'birthday_user_announce' });
   else if (id === 'birthdays:user:age') birthdays.setBirthday(interaction.guildId, interaction.user.id, { showAge: !record.showAge }, { actorId: interaction.user.id, action: 'birthday_user_age' });
   else if (id === 'birthdays:user:remove') { birthdays.removeBirthday(interaction.guildId, interaction.user.id, { actorId: interaction.user.id, action: 'birthday_user_remove' }); await respond(interaction, userPayload(interaction)); return true; }
-  else if (id === 'birthdays:user:upcoming') { const list = birthdays.listUpcoming(interaction.guildId, 20); await interaction.reply({ content: list.length ? list.map(({ member, next }) => `<@${member.userId}> — **${String(next.day).padStart(2, '0')}/${String(next.month).padStart(2, '0')}**`).join('\n') : 'No upcoming birthdays are public.', flags: 64, allowedMentions: { parse: [] } }); return true; }
+  else if (id === 'birthdays:user:upcoming') { await interaction.reply({ content: birthdayListContent(interaction.guildId), flags: 64, allowedMentions: { parse: [] } }); return true; }
   await respond(interaction, userPayload(interaction)); return true;
 }
 
