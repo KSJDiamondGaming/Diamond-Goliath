@@ -190,7 +190,10 @@ async function applyKick({ guild, member, moderator, escalation, finalReason }) 
 }
 
 async function applyBan({ guild, member, moderator, escalation, finalReason }) {
-  const deleteDays = Number(escalation.deleteDays || 0);
+  const rawDeleteDays = Number(escalation.deleteDays);
+  const deleteDays = Number.isFinite(rawDeleteDays)
+    ? Math.min(7, Math.max(0, Math.trunc(rawDeleteDays)))
+    : 0;
 
   await member.ban({
     deleteMessageSeconds: deleteDays * 24 * 60 * 60,
