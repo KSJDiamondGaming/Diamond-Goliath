@@ -310,11 +310,6 @@ async function processGuild(guild, meta = {}) {
   result.rolesRemoved = await cleanupBirthdayRoles(guild, section, meta);
   section = getSection(guild.id);
 
-  if (currentTime < section.settings.announcementTime) {
-    incrementAnalytics(guild.id, { lastProcessedAt: now() }, meta);
-    return result;
-  }
-
   for (const member of Object.values(section.members)) {
     if (birthdayKey(member, year, section.settings) !== today) continue;
     let currentMember = getBirthday(guild.id, member.userId);
@@ -347,6 +342,11 @@ async function processGuild(guild, meta = {}) {
       incrementAnalytics(guild.id, { failures: 1 }, meta);
       console.warn(`[Birthdays] ${guild.id}/${member.userId} role: ${error.message}`);
     }
+  }
+
+  if (currentTime < section.settings.announcementTime) {
+    incrementAnalytics(guild.id, { lastProcessedAt: now() }, meta);
+    return result;
   }
 
   const channelId = section.settings.announcementChannelId;
