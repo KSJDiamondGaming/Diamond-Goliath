@@ -19,6 +19,7 @@ const TimedRoles = lazy(() => import('../pages/modules/TimedRoles'));
 const TemporaryRoles = lazy(() => import('../pages/modules/TemporaryRoles'));
 const Birthdays = lazy(() => import('../pages/modules/Birthdays'));
 const PrivateRooms = lazy(() => import('../pages/modules/PrivateRooms'));
+const Suggestions = lazy(() => import('../pages/modules/Suggestions'));
 const RoleSelector = lazy(() => import('../pages/modules/RoleSelector'));
 const Welcome = lazy(() => import('../pages/modules/Welcome'));
 const Goodbye = lazy(() => import('../pages/modules/Goodbye'));
@@ -101,6 +102,7 @@ export const ROUTES = [
   { key: 'temporaryRoles', label: 'Temporary Roles', icon: 'modules', path: '/temporary-roles', component: TemporaryRoles, hidden: true },
   { key: 'birthdays', label: 'Birthdays', icon: 'modules', path: '/birthdays', component: Birthdays, hidden: true },
   { key: 'privateRooms', label: 'Private Rooms', icon: 'modules', path: '/private-rooms', component: PrivateRooms, hidden: true },
+  { key: 'suggestions', label: 'Suggestions', icon: 'modules', path: '/suggestions', component: Suggestions, hidden: true },
   { key: 'roleSelector', label: 'Role Selector', icon: 'modules', path: '/role-selector', component: RoleSelector, hidden: true },
   { key: 'welcome', label: 'Welcome', icon: 'modules', path: '/welcome', component: Welcome, hidden: true },
   { key: 'goodbye', label: 'Goodbye', icon: 'modules', path: '/goodbye', component: Goodbye, hidden: true },
