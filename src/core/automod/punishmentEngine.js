@@ -107,8 +107,13 @@ async function safeBan(member, reason, deleteDays = 0) {
   try {
     if (!member?.bannable) return false;
 
+    const rawDeleteDays = Number(deleteDays);
+    const safeDeleteDays = Number.isFinite(rawDeleteDays)
+      ? Math.min(7, Math.max(0, Math.trunc(rawDeleteDays)))
+      : 0;
+
     await member.ban({
-      deleteMessageSeconds: Number(deleteDays || 0) * 24 * 60 * 60,
+      deleteMessageSeconds: safeDeleteDays * 24 * 60 * 60,
       reason,
     });
 

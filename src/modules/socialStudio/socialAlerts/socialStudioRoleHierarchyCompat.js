@@ -90,7 +90,7 @@ function roleSelect(interaction, customId, placeholder, selectedIds, page) {
     }).setMinValues(1).setMaxValues(1).setDisabled(true);
   }
 
-  return { row: row(menu), page: safePage, pageCount, pageRoleIds: new Set(pageRoles.map((role) => role.id)) };
+  return { row: row(menu), page: safePage };
 }
 
 function notificationSelect(interaction, config) {
@@ -214,12 +214,14 @@ async function handle(interaction) {
     const roleId = value.startsWith('role:') ? value.slice(5) : null;
     config.notificationMentionMode = roleId ? 'role' : ['none', 'everyone', 'here'].includes(value) ? value : 'none';
     config.notificationRoleId = roleId || null;
-    for (const account of Object.values(config.accounts || {})) {
-      if (!account || typeof account !== 'object') continue;
-      account.mentionMode = config.notificationMentionMode;
-      account.mentionRoleId = config.notificationMentionMode === 'role' ? config.notificationRoleId : null;
-      account.updatedAt = new Date().toISOString();
-    }
+    save(interaction, config);
+    return update(interaction);
+  }
+
+  if (id === `${P}notification:role`) {
+    const config = store.getConfig(interaction.guildId);
+    config.notificationRoleId = interaction.values?.[0] || null;
+    config.notificationMentionMode = config.notificationRoleId ? 'role' : 'none';
     save(interaction, config);
     return update(interaction);
   }

@@ -237,7 +237,6 @@ function diagnosticsPayload(interaction) {
   const panel = require('./socialStudioPanel');
   return panel.buildSectionPanel(interaction, 'diagnostics');
 }
-
 async function updatePanel(interaction, payload) {
   if (interaction.deferred || interaction.replied) await interaction.editReply(payload);
   else await interaction.update(payload);
@@ -412,6 +411,9 @@ async function handleDiagnosticsAction(interaction, id) {
 }
 
 async function handle(interaction) {
+  const compatibility = require('../../../events/client/socialStudioCreatorRoutingCompat');
+  if (await compatibility.handle(interaction)) return true;
+
   const id = String(interaction?.customId || '');
   capture(interaction);
 

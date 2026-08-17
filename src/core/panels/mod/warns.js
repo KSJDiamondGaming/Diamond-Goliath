@@ -26,7 +26,7 @@ const {
 const {
   handleEscalation,
   getRepeatReasonInfo,
-} = require('../../../features/moderation/functions/escalationSystem');
+} = require('./escalationSystem');
 
 const NO_EXPIRY_VALUES = new Set(['', 'never', 'none']);
 
@@ -44,12 +44,13 @@ function parseWarningExpiry(value) {
   if (match[2] === 'm') {
     const expiry = new Date(now);
     expiry.setUTCMonth(expiry.getUTCMonth() + amount);
-    return expiry.toISOString();
+    return Number.isFinite(expiry.getTime()) ? expiry.toISOString() : null;
   }
 
   const dayMs = 24 * 60 * 60 * 1000;
   const multiplier = match[2] === 'w' ? 7 * dayMs : dayMs;
-  return new Date(now.getTime() + (amount * multiplier)).toISOString();
+  const expiry = new Date(now.getTime() + (amount * multiplier));
+  return Number.isFinite(expiry.getTime()) ? expiry.toISOString() : null;
 }
 
 async function syncExpiredWarningsToCases(guildId) {

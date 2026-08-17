@@ -17,7 +17,7 @@ const temporaryRoles = require('./temporaryRoles');
 const temporaryRolesHealth = require('./temporaryRolesHealth');
 const { isModuleEnabled, setModuleEnabled } = require('../../../core/guild/guildManager');
 
-const PREFIX = 'admin:reactionRoles:temporary';
+const PREFIX = 'admin:temporaryRoles';
 const selections = new Map();
 const keyFor = (guildId, userId) => `${guildId}:${userId}`;
 const row = (...components) => new ActionRowBuilder().addComponents(...components.filter(Boolean));
@@ -63,6 +63,7 @@ function buildTemporaryRolesPanel(guild, userId, memberDisplayName = 'Unknown Us
       ...lines,
       '',
       `Assigned: \`${section.analytics.assigned || 0}\` • Expired: \`${section.analytics.expired || 0}\` • Removed early: \`${section.analytics.removed || 0}\` • Failed: \`${section.analytics.failed || 0}\``,
+      `Last expiry scan: ${section.analytics.lastScanAt ? formatExpiry(section.analytics.lastScanAt) : 'Never'}`,
     ].join('\n').slice(0, 4096))
     .setFooter({ text: `Requested by ${memberDisplayName}` })
     .setTimestamp();
@@ -82,13 +83,13 @@ function buildTemporaryRolesPanel(guild, userId, memberDisplayName = 'Unknown Us
       row(new UserSelectMenuBuilder().setCustomId(`${PREFIX}:member`).setPlaceholder('Choose a member').setMinValues(1).setMaxValues(1)),
       row(new RoleSelectMenuBuilder().setCustomId(`${PREFIX}:role`).setPlaceholder('Choose a temporary role').setMinValues(1).setMaxValues(1)),
       row(
-        button(`${PREFIX}:assign`, 'Assign Temporary Role', ButtonStyle.Success, !(selection.memberId && selection.roleId)),
+        button(`${PREFIX}:assign`, 'Assign Temporary Role', ButtonStyle.Success, !enabled || !(selection.memberId && selection.roleId)),
         button(`${PREFIX}:scan`, 'Scan Expired Now', ButtonStyle.Primary),
         button(`${PREFIX}:repair`, 'Repair', ButtonStyle.Secondary),
         button(enabled ? `${PREFIX}:disable` : `${PREFIX}:enable`, enabled ? 'Disable' : 'Enable'),
       ),
       row(manage),
-      row(button('admin:reactionRoles', 'Back to Role Studio')),
+      row(button('admin:studio:roleStudio', 'Back to Role Studio')),
     ],
   };
 }
@@ -99,7 +100,7 @@ function buildDurationModal() {
     .setTitle('Assign Temporary Role')
     .addComponents(
       row(new TextInputBuilder().setCustomId('value').setLabel('Duration value').setPlaceholder('Example: 24').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(6)),
-      row(new TextInputBuilder().setCustomId('unit').setLabel('Unit: minutes, hours, days, weeks, months').setPlaceholder('hours').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(10)),
+      row(new TextInputBuilder().setCustomId('unit').setLabel('Unit: minutes, hours, days, weeks, months, years').setPlaceholder('hours').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(10)),
       row(new TextInputBuilder().setCustomId('reason').setLabel('Reason').setPlaceholder('Optional reason').setStyle(TextInputStyle.Paragraph).setRequired(false).setMaxLength(300)),
     );
 }
@@ -121,7 +122,7 @@ function buildAssignmentPanel(guildId, assignmentId) {
     components: [row(
       button(`${PREFIX}:remove:${assignment.assignmentId}`, 'Remove Role Now', ButtonStyle.Danger),
       button(PREFIX, 'Back'),
-      button('admin:reactionRoles', 'Role Studio'),
+      button('admin:studio:roleStudio', 'Role Studio'),
     )],
   };
 }

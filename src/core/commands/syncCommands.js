@@ -30,6 +30,11 @@ function configuredGuildIds() {
     .flatMap((value) => String(value || '').split(',')));
 }
 
+function restTimeoutMs() {
+  const value = Number(process.env.DISCORD_REST_TIMEOUT_MS);
+  return Number.isFinite(value) && value >= 1000 ? value : 30000;
+}
+
 async function cleanupCommandCenterScope() {
   const commandCenterGuildId = String(auditStore.getConfig()?.commandCenter?.guildId || process.env.COMMAND_CENTER_GUILD_ID || '').trim();
   const mode = String(process.env.BOT_MODE || 'dev').trim().toUpperCase();
@@ -37,7 +42,7 @@ async function cleanupCommandCenterScope() {
   const clientId = String(process.env.DISCORD_CLIENT_ID || process.env.CLIENT_ID || process.env.APPLICATION_ID || '').trim();
   if (!token || !clientId) return;
 
-  const rest = new REST({ version: '10', timeout: Number(process.env.DISCORD_REST_TIMEOUT_MS || 30000) }).setToken(token);
+  const rest = new REST({ version: '10', timeout: restTimeoutMs() }).setToken(token);
   for (const guildId of configuredGuildIds()) {
     if (!guildId || guildId === commandCenterGuildId) continue;
     const commands = await rest.get(Routes.applicationGuildCommands(clientId, guildId)).catch((error) => {
@@ -46,14 +51,19 @@ async function cleanupCommandCenterScope() {
     });
     for (const command of commands || []) {
       if (command?.name !== 'commandcenter') continue;
-      await rest.delete(Routes.applicationGuildCommand(clientId, guildId, command.id));
-      console.log(`[CommandSync] Removed stale private /commandcenter from non-Command-Center guild ${guildId}.`);
+      try {
+        await rest.delete(Routes.applicationGuildCommand(clientId, guildId, command.id));
+        console.log(`[CommandSync] Removed stale private /commandcenter from non-Command-Center guild ${guildId}.`);
+      } catch (error) {
+        console.warn(`[CommandSync] Could not remove stale private /commandcenter from ${guildId}:`, error.message);
+      }
     }
   }
 }
 
 async function syncCommands(...args) {
   const result = await core.syncCommands(...args);
+  if (result?.dryRun) return result;
   await cleanupCommandCenterScope();
   return result;
 }

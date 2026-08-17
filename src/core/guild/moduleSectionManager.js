@@ -32,10 +32,55 @@ function getModules(guildId) {
   return isPlainObject(modules) ? modules : {};
 }
 
+function hasLegacyPayload(value) {
+  return isPlainObject(value) && Object.keys(value).length > 0;
+}
+
+function migrateColourRolesToRoleSelector(colourRoles = {}) {
+  if (!isPlainObject(colourRoles)) return {};
+  const legacySelections = isPlainObject(colourRoles.memberSelections) ? clone(colourRoles.memberSelections) : {};
+  const memberSelections = Object.fromEntries(Object.entries(legacySelections).map(([userId, selection]) => {
+    const value = Array.isArray(selection)
+      ? selection
+      : selection && typeof selection === 'object'
+        ? [selection.hex || selection.value || selection.roleHex].filter(Boolean)
+        : selection ? [selection] : [];
+    return [userId, { colours: value }];
+  }));
+  const colourGroup = {
+    id: 'colours',
+    key: 'colours',
+    name: 'Colours',
+    emoji: '🌈',
+    description: 'Choose a cosmetic Discord name colour.',
+    type: 'colour',
+    builtIn: true,
+    enabled: true,
+    selectionMode: 'single',
+    allowRemove: colourRoles.allowRemoveColour !== false,
+    palette: clone(colourRoles.palette || []),
+    customHexEnabled: colourRoles.customHexEnabled !== false,
+    managedRoles: clone(colourRoles.managedRoles || {}),
+  };
+
+  return {
+    enabled: colourRoles.enabled !== false,
+    groups: { colours: colourGroup },
+    groupOrder: ['colours'],
+    memberSelections,
+    style: clone(colourRoles.style || {}),
+    deployment: clone(colourRoles.deployment || {}),
+    cleanup: clone(colourRoles.cleanup || {}),
+    analytics: clone(colourRoles.analytics || {}),
+    createdAt: colourRoles.createdAt,
+    migratedFrom: 'colourRoles',
+    migratedAt: new Date().toISOString(),
+  };
+}
+
 /**
  * Known legacy Role Studio locations. These are copied into the modern module
- * section the first time that module is loaded. The legacy data is retained so
- * migration is non-destructive and can be removed by a dedicated cleanup later.
+ * section the first time that module is loaded.
  */
 function getLegacyModuleSection(modules, moduleName) {
   const roles = isPlainObject(modules.roles) ? modules.roles : {};
@@ -67,7 +112,57 @@ function getLegacyModuleSection(modules, moduleName) {
     };
   }
 
+  if (moduleName === 'roleSelector' && isPlainObject(modules.colourRoles)) {
+    return migrateColourRolesToRoleSelector(modules.colourRoles);
+  }
+
   return {};
+}
+
+function canRemoveLegacyRoles(modules) {
+  const roles = isPlainObject(modules.roles) ? modules.roles : null;
+  if (!roles) return false;
+
+  const legacyTargets = [
+    ['joinRoles', 'autoRoles'],
+    ['reactionPanels', 'reactionRoles'],
+    ['timedRoles', 'timedRoles'],
+  ];
+
+  return legacyTargets.every(([legacyKey, canonicalKey]) => (
+    !hasLegacyPayload(roles[legacyKey]) || isPlainObject(modules[canonicalKey])
+  ));
+}
+
+function cleanupLegacyRolesIfSafe(guildId, modules, guildOrMeta = {}) {
+  if (!canRemoveLegacyRoles(modules)) return modules;
+
+  return updateGuildSection(
+    guildId,
+    'modules',
+    (existingModules = {}) => {
+      const nextModules = isPlainObject(existingModules) ? clone(existingModules) : {};
+      delete nextModules.roles;
+      return nextModules;
+    },
+    {},
+    guildOrMeta
+  );
+}
+
+function cleanupLegacyColourRolesIfSafe(guildId, modules, guildOrMeta = {}) {
+  if (!isPlainObject(modules.roleSelector) || !isPlainObject(modules.colourRoles)) return modules;
+  return updateGuildSection(
+    guildId,
+    'modules',
+    (existingModules = {}) => {
+      const nextModules = isPlainObject(existingModules) ? clone(existingModules) : {};
+      if (isPlainObject(nextModules.roleSelector)) delete nextModules.colourRoles;
+      return nextModules;
+    },
+    {},
+    guildOrMeta
+  );
 }
 
 /**
@@ -84,6 +179,8 @@ function ensureModuleSection(guildId, moduleName, fallback = {}, guildOrMeta = {
   const current = modules[safeModuleName];
 
   if (isPlainObject(current)) {
+    cleanupLegacyRolesIfSafe(guildId, modules, guildOrMeta);
+    if (safeModuleName === 'roleSelector') cleanupLegacyColourRolesIfSafe(guildId, modules, guildOrMeta);
     return {
       ...clone(fallback),
       ...clone(current),
@@ -114,6 +211,9 @@ function ensureModuleSection(guildId, moduleName, fallback = {}, guildOrMeta = {
     guildOrMeta
   );
 
+  const refreshedModules = getModules(guildId);
+  cleanupLegacyRolesIfSafe(guildId, refreshedModules, guildOrMeta);
+  if (safeModuleName === 'roleSelector') cleanupLegacyColourRolesIfSafe(guildId, refreshedModules, guildOrMeta);
   return clone(initialSection);
 }
 

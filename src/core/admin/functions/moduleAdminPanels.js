@@ -22,7 +22,7 @@ const ADMIN_FIELD_KEYS = new Set(['logChannel', 'managerRoles', 'reviewerRoles',
 const CUSTOM_PANEL_KEYS = new Set([
   'autoRoles', 'embed', 'forms', 'giveaways', 'goodbye', 'invites', 'leveling',
   'polls', 'reactionRoles', 'schedule', 'social', 'starboard', 'stats', 'sticky',
-  'suggestions', 'tempVoice', 'tickets', 'timedRoles', 'verification', 'welcome',
+  'suggestions', 'tempVoice', 'temporaryRoles', 'tickets', 'timedRoles', 'verification', 'welcome',
 ]);
 
 const MODULE_CATALOG = [

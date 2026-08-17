@@ -197,21 +197,6 @@ const DEFAULT_MODULES = Object.freeze({
       deleteWhenEmpty: true,
     },
   },
-  roles: {
-    enabled: true,
-    settings: {
-      allowSelfRemove: true,
-      auditLog: true,
-      dailyTimedRoleCheck: true,
-    },
-    reactionPanels: {},
-    timedRoles: {},
-    joinRoles: {},
-    analytics: {
-      assigned: 0,
-      removed: 0,
-    },
-  },
   suggestions: {
     enabled: true,
     items: {},

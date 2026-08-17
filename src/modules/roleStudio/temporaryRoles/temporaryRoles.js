@@ -89,20 +89,30 @@ function durationToMs(value, unit) {
     days: 86_400_000,
     weeks: 604_800_000,
     months: 2_629_746_000,
+    years: 31_556_952_000,
   };
   const multiplier = units[String(unit || '').toLowerCase()];
-  if (!multiplier) throw new Error('Use minutes, hours, days, weeks or months.');
+  if (!multiplier) throw new Error('Use minutes, hours, days, weeks, months or years.');
   return amount * multiplier;
 }
 
 function validateRole(guild, roleId) {
   const role = guild.roles.cache.get(roleId);
   if (!role) throw new Error('The selected role no longer exists.');
+  if (role.id === guild.id) throw new Error('The @everyone role cannot be assigned as a temporary role.');
   if (role.managed) throw new Error('Managed integration roles cannot be assigned.');
   const me = guild.members.me;
   if (!me?.permissions.has('ManageRoles')) throw new Error('Goliath requires Manage Roles.');
   if (role.position >= me.roles.highest.position) throw new Error(`${role.name} is above Goliath's highest role.`);
   return role;
+}
+
+function findActiveAssignment(guildId, memberId, roleId, excludeAssignmentId = null) {
+  return listAssignments(guildId, { activeOnly: true }).find((assignment) => (
+    assignment.assignmentId !== excludeAssignmentId
+    && assignment.memberId === memberId
+    && assignment.roleId === roleId
+  )) || null;
 }
 
 async function assignTemporaryRole({ guild, memberId, roleId, value, unit, reason, assignedBy }) {
@@ -111,7 +121,34 @@ async function assignTemporaryRole({ guild, memberId, roleId, value, unit, reaso
   const member = guild.members.cache.get(memberId) || await guild.members.fetch(memberId).catch(() => null);
   if (!member) throw new Error('The selected member could not be found.');
   if (member.user?.bot && member.id === guild.members.me?.id) throw new Error('Goliath cannot assign a temporary role to itself.');
+
   const expiresAt = new Date(Date.now() + durationToMs(value, unit)).toISOString();
+  const existing = findActiveAssignment(guild.id, memberId, roleId);
+
+  if (existing) {
+    if (!member.roles.cache.has(role.id)) {
+      await member.roles.add(role, reason || 'Temporary role restored while renewing assignment');
+    }
+    const renewed = normalizeAssignment({
+      ...existing,
+      reason: reason || existing.reason,
+      assignedBy: assignedBy || existing.assignedBy,
+      expiresAt,
+      status: 'active',
+      lastError: null,
+    });
+    return updateSection(guild.id, (section) => ({
+      ...section,
+      assignments: { ...section.assignments, [existing.assignmentId]: renewed },
+      analytics: { ...section.analytics, assigned: Number(section.analytics.assigned || 0) + 1 },
+      updatedAt: now(),
+    }), { actorId: assignedBy }).assignments[existing.assignmentId];
+  }
+
+  if (member.roles.cache.has(role.id)) {
+    throw new Error(`${member.displayName || member.user?.username || 'This member'} already has ${role.name}. Goliath will not convert an existing permanent role into a temporary assignment.`);
+  }
+
   await member.roles.add(role, reason || 'Temporary role assigned through Role Studio');
   const assignment = normalizeAssignment({ memberId, roleId, reason, assignedBy, expiresAt, status: 'active' });
   updateSection(guild.id, (section) => ({
@@ -127,9 +164,14 @@ async function removeAssignment(guild, assignmentId, { actorId = null, expired =
   const section = getSection(guild.id);
   const assignment = section.assignments[assignmentId];
   if (!assignment) throw new Error('Temporary role assignment not found.');
+
+  const replacement = findActiveAssignment(guild.id, assignment.memberId, assignment.roleId, assignmentId);
   const member = guild.members.cache.get(assignment.memberId) || await guild.members.fetch(assignment.memberId).catch(() => null);
   const role = guild.roles.cache.get(assignment.roleId);
-  if (member && role && member.roles.cache.has(role.id)) await member.roles.remove(role, expired ? 'Temporary role expired' : 'Temporary role removed through Role Studio');
+  if (!replacement && member && role && member.roles.cache.has(role.id)) {
+    await member.roles.remove(role, expired ? 'Temporary role expired' : 'Temporary role removed through Role Studio');
+  }
+
   const status = expired ? 'expired' : 'removed';
   return updateSection(guild.id, (current) => ({
     ...current,
@@ -145,7 +187,9 @@ async function removeAssignment(guild, assignmentId, { actorId = null, expired =
 async function scanExpired(guild, meta = {}) {
   if (!isModuleEnabled(guild.id, SECTION)) return { checked: 0, expired: 0, failed: 0 };
   const section = getSection(guild.id);
-  const due = Object.values(section.assignments).filter((item) => item.status === 'active' && new Date(item.expiresAt).getTime() <= Date.now());
+  const due = Object.values(section.assignments)
+    .filter((item) => item.status === 'active' && new Date(item.expiresAt).getTime() <= Date.now())
+    .sort((a, b) => new Date(a.expiresAt || 0) - new Date(b.expiresAt || 0));
   let expired = 0;
   let failed = 0;
   for (const assignment of due) {
@@ -183,6 +227,7 @@ module.exports = {
   getSection,
   saveSection,
   listAssignments,
+  findActiveAssignment,
   assignTemporaryRole,
   removeAssignment,
   scanExpired,

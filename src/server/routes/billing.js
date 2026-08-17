@@ -106,10 +106,14 @@ router.get('/settings', requireOwner, (req, res) => {
 
 router.patch('/settings', requireOwner, (req, res) => {
   try {
-    const settings = billingSettingsManager.updateBillingSettings({
-      publicLifetimeEnabled: req.body?.publicLifetimeEnabled === true,
+    const updates = {
       pricing: req.body?.pricing || {},
-    }, actor(req));
+    };
+    if (Object.prototype.hasOwnProperty.call(req.body || {}, 'publicLifetimeEnabled')) {
+      updates.publicLifetimeEnabled = req.body.publicLifetimeEnabled === true;
+    }
+
+    const settings = billingSettingsManager.updateBillingSettings(updates, actor(req));
 
     return success(res, { settings });
   } catch (error) {

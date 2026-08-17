@@ -41,10 +41,15 @@ const UPLOAD_LIMITS = {
   },
 };
 
+function positiveMs(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 const RETENTION = {
-  uploadMaxAgeMs: Number(process.env.GOLIATH_MEDIA_UPLOAD_MAX_AGE_MS || 1000 * 60 * 60 * 24),
-  orphanOutputMaxAgeMs: Number(process.env.GOLIATH_MEDIA_ORPHAN_OUTPUT_MAX_AGE_MS || 1000 * 60 * 60 * 24 * 7),
-  cleanupIntervalMs: Number(process.env.GOLIATH_MEDIA_CLEANUP_INTERVAL_MS || 1000 * 60 * 60 * 6),
+  uploadMaxAgeMs: positiveMs(process.env.GOLIATH_MEDIA_UPLOAD_MAX_AGE_MS, 1000 * 60 * 60 * 24),
+  orphanOutputMaxAgeMs: positiveMs(process.env.GOLIATH_MEDIA_ORPHAN_OUTPUT_MAX_AGE_MS, 1000 * 60 * 60 * 24 * 7),
+  cleanupIntervalMs: positiveMs(process.env.GOLIATH_MEDIA_CLEANUP_INTERVAL_MS, 1000 * 60 * 60 * 6),
 };
 
 const TOOL_PRESETS = {

@@ -12,14 +12,12 @@ async function safeUpdate(interaction, payload) {
   else await interaction.update(payload);
   return true;
 }
-function updateSection(guild, updater, actorId = null) {
-  return polls.updateSection(guild.id, updater, { actorId });
-}
+function updateSection(guild, updater, actorId = null) { return polls.updateSection(guild.id, updater, { actorId }); }
 
 async function handlePollsInteraction(interaction) {
   const customId = String(interaction.customId || '');
-  if (!customId.startsWith('admin:polls') && !customId.startsWith('poll_vote:')) return false;
-  if (customId.startsWith('poll_vote:')) return tracking.vote(interaction);
+  if (!customId.startsWith('admin:polls') && !customId.startsWith('poll_vote:') && !customId.startsWith('poll_select:')) return false;
+  if (customId.startsWith('poll_vote:') || customId.startsWith('poll_select:')) return tracking.vote(interaction);
 
   const memberDisplayName = getMemberDisplayName(interaction);
   const actorId = interaction.user?.id || null;

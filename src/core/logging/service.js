@@ -175,7 +175,7 @@ function buildEmbed(type, data = {}) {
 
   fields.push(...normalizeFields(data.fields));
 
-  if (fields.length) embed.addFields(fields);
+  if (fields.length) embed.addFields(fields.slice(0, 25));
   if (data.description) embed.setDescription(String(data.description).slice(0, 4096));
   if (data.url) embed.setURL(data.url);
 

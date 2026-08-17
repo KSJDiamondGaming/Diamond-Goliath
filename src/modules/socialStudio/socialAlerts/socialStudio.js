@@ -1,15 +1,13 @@
 'use strict';
 
 const { PermissionFlagsBits } = require('discord.js');
-const crypto = require('crypto');
+const crypto = require('node:crypto');
 const security = require('../../../core/security/securityCore');
 const { normalizeAccountInput, migrateAccount } = require('./accountNormalizer');
 const { providerInfo } = require('./socialStudioProviders');
 const store = require('./socialStudioStore');
 const adminPanel = require('./socialStudioPanel');
 
-const ACTIVE = 'active';
-const LEFT_SERVER = 'left_server';
 const PLATFORMS = ['twitch', 'youtube', 'tiktok', 'kick', 'facebook', 'instagram', 'x'];
 const ALERT_TYPES = ['live', 'ended', 'vod', 'clip', 'upload', 'short', 'post'];
 const LABEL = { twitch: 'Twitch', youtube: 'YouTube', tiktok: 'TikTok', kick: 'Kick', facebook: 'Facebook', instagram: 'Instagram', x: 'X' };
@@ -43,28 +41,8 @@ function getAccountsForCreator(guildId, creator) {
   return store.getCreatorAccounts(guildId, creator);
 }
 
-function createForMember(member) {
-  return store.createCreatorForMember(member, { actorId: member.user.id });
-}
-
 function completeCreatorProfile(member, values) {
   return store.completeCreatorProfile(member, values, { actorId: member.user.id });
-}
-
-function markMemberActive(guildId, ownerDiscordId) {
-  return store.markCreatorActive(guildId, ownerDiscordId, { actorId: ownerDiscordId });
-}
-
-function markMemberLeft(guildId, ownerDiscordId) {
-  return store.markCreatorDeparted(guildId, ownerDiscordId, 'left', {
-    actorId: 'system:social-studio-lifecycle',
-  });
-}
-
-function deleteCreatorOwnedData(guildId, ownerDiscordId) {
-  return store.deleteCreatorByOwner(guildId, ownerDiscordId, {
-    actorId: 'system:social-studio-delete',
-  });
 }
 
 const userCreatorModal =
@@ -136,8 +114,6 @@ function upsertUserAccount(guildId, creator, platform, rawValue, actorId) {
     alertTypes: Array.isArray(primary?.alertTypes) ? primary.alertTypes : supportedAlerts(platform),
     alertChannelId: primary?.alertChannelId || null,
     alertChannels: primary?.alertChannels && typeof primary.alertChannels === 'object' ? primary.alertChannels : {},
-    mentionMode: primary?.mentionMode || section.notificationMentionMode || 'none',
-    mentionRoleId: primary?.mentionRoleId || (section.notificationMentionMode === 'role' ? section.notificationRoleId || null : null),
     createdAt: primary?.createdAt || new Date().toISOString(),
   };
 
@@ -514,19 +490,10 @@ const user = {
 };
 
 module.exports = {
-  startup() {},
-  shutdown() {},
   admin: adminPanel,
   user,
-  ACTIVE,
-  LEFT_SERVER,
-  getConfiguredRoleIds,
   getAccess,
   findByOwnerDiscordId,
   getAccountsForCreator,
-  createForMember,
   completeCreatorProfile,
-  markMemberActive,
-  markMemberLeft,
-  deleteCreatorOwnedData,
 };

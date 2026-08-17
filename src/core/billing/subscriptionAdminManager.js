@@ -35,10 +35,17 @@ function normalizeDurationDays(value, plan) {
 }
 
 function addDaysFrom(startValue, days) {
-  if (!days) return null;
+  const numericDays = Number(days);
+  if (!Number.isFinite(numericDays) || numericDays <= 0) return null;
+
   const start = startValue ? new Date(startValue) : new Date();
   const base = Number.isFinite(start.getTime()) && start.getTime() > Date.now() ? start : new Date();
-  base.setUTCDate(base.getUTCDate() + Number(days));
+  base.setUTCDate(base.getUTCDate() + Math.trunc(numericDays));
+
+  if (!Number.isFinite(base.getTime())) {
+    throw new Error('Subscription duration exceeds the supported date range.');
+  }
+
   return base.toISOString();
 }
 
@@ -71,7 +78,11 @@ function addHistory(entry = {}) {
 }
 
 function listHistory(limit = 100) {
-  return readHistory().history.slice(0, Math.min(Math.max(Number(limit || 100), 1), 500));
+  const numericLimit = Number(limit);
+  const safeLimit = Number.isFinite(numericLimit)
+    ? Math.min(Math.max(Math.trunc(numericLimit), 1), 500)
+    : 100;
+  return readHistory().history.slice(0, safeLimit);
 }
 
 function listSubscriptions() {
@@ -103,7 +114,11 @@ function listSubscriptions() {
 
 function grantSubscription({ guildId, plan = PLAN_IDS.PLUS, duration = 30, actor = 'owner' } = {}) {
   const safeGuildId = cleanGuildId(guildId);
-  const normalizedPlan = normalizePlanId(plan);
+  const requestedPlan = String(plan || '').trim().toLowerCase();
+  if (!Object.values(PLAN_IDS).includes(requestedPlan)) {
+    throw new Error('Invalid subscription plan.');
+  }
+  const normalizedPlan = normalizePlanId(requestedPlan);
   const durationDays = normalizeDurationDays(duration, normalizedPlan);
   const expiresAt = normalizedPlan === PLAN_IDS.LIFETIME ? null : addDaysFrom(null, durationDays);
 

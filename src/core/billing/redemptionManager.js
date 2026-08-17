@@ -85,8 +85,17 @@ function generateCodeValue(plan, durationDays, existingCodes = new Set()) {
 }
 
 function addDays(days) {
+  const numericDays = Number(days);
+  if (!Number.isFinite(numericDays) || numericDays <= 0) {
+    throw new Error('Redeem code duration is invalid.');
+  }
+
   const date = new Date();
-  date.setUTCDate(date.getUTCDate() + Number(days || 0));
+  date.setUTCDate(date.getUTCDate() + Math.trunc(numericDays));
+  if (!Number.isFinite(date.getTime())) {
+    throw new Error('Redeem code duration exceeds the supported date range.');
+  }
+
   return date.toISOString();
 }
 
@@ -96,7 +105,10 @@ function generateCodes({ plan = PLAN_IDS.PLUS, duration = '1m', quantity = 1, cr
     throw new Error('Redeem codes can only grant Plus, Pro or Lifetime.');
   }
 
-  const safeQuantity = Math.min(Math.max(Number(quantity || 1), 1), 100);
+  const numericQuantity = Number(quantity);
+  const safeQuantity = Number.isFinite(numericQuantity)
+    ? Math.min(Math.max(Math.trunc(numericQuantity), 1), 100)
+    : 1;
   const durationDays = normalizeDuration(duration, normalizedPlan);
   const data = readCodes();
   const existing = new Set(data.codes.map((item) => cleanCode(item.code)));

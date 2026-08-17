@@ -10,6 +10,8 @@ const {
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
+  FileUploadBuilder,
+  LabelBuilder,
 } = require("discord.js");
 
 const {
@@ -17,17 +19,44 @@ const {
   getEmbedDeployment,
   getDeploymentKeyFromState,
 } = require("./embedDeployments");
+const embedState = require("./embedState");
 
 const guildManager = require("../../../core/guild/guildManager");
 const {
   validateChannelAccess,
 } = require("../../../core/security/goliathPermissionGuard");
 
+const {
+  HELPERS,
+  clone,
+  trim,
+  fmtDate,
+  fmtTs,
+  avatar,
+  guildIcon,
+  guildBanner,
+  memberName,
+  displayName,
+  refreshGuild,
+  sessionKey,
+  replaceVars,
+  getSession,
+  saveSession,
+  saveSelected,
+  markUnsaved,
+  clearUnsaved,
+  resetSession,
+  applyTemplate,
+  applyPreset,
+  setDefault,
+  allowedMentions,
+  presetData,
+} = embedState;
+
 const PANEL_COLOR = "#5865F2";
 const CUSTOM_HEX_VALUE = "__custom_hex__";
 const MAX_PANELS = 10;
 const MAX_BUTTONS = 20;
-const sessions = new Map();
 
 const COLORS = [
   ["Deep Blue", "#2F80ED", "🔷"],
@@ -172,60 +201,6 @@ const TEMPLATES = {
   },
 };
 
-const HELPERS = [
-  "{userId}",
-  "{userTag}",
-  "{userName}",
-  "{userGlobalName}",
-  "{userMention}",
-  "{userNoPing}",
-  "{userAvatar}",
-  "{userServerAvatar}",
-  "{userNickname}",
-  "{userDisplay}",
-  "{userCreatedAt}",
-  "{userCreatedTimestamp}",
-  "{userJoinedAt}",
-  "{userJoinedTimestamp}",
-  "{createdAt}",
-  "{joinedAt}",
-  "{leftAt}",
-  "{timestamp}",
-  "{accountAge}",
-  "{membershipDuration}",
-  "{departureIcon}",
-  "{departureType}",
-  "{departureLabel}",
-  "{departureReason}",
-  "{departureModerator}",
-  "{departureModeratorId}",
-  "{nowTimestamp}",
-  "{successEmoji}",
-  "{warningEmoji}",
-  "{errorEmoji}",
-  "{proofVerifiedEmoji}",
-  "{successColor}",
-  "{warningColor}",
-  "{errorColor}",
-  "{proofVerifiedColor}",
-  "{guildId}",
-  "{guildName}",
-  "{server}",
-  "{guildIcon}",
-  "{serverIcon}",
-  "{guildBanner}",
-  "{guildMemberCount}",
-  "{memberCount}",
-  "{guildVanityCode}",
-];
-
-function clone(v) {
-  return JSON.parse(JSON.stringify(v || {}));
-}
-function trim(v, max = 4096) {
-  v = String(v || "");
-  return v.length > max ? `${v.slice(0, max - 3)}...` : v;
-}
 function discordErrorCode(error) {
   return Number(error?.code || error?.rawError?.code || error?.data?.code || 0);
 }
@@ -269,94 +244,6 @@ function normHex(v, fallback = PANEL_COLOR) {
   const text = String(v || "").trim();
   return validHex(text) ? text.toUpperCase() : fallback;
 }
-function fmtDate(v) {
-  if (!v) return "Unknown";
-  const date = v instanceof Date ? v : new Date(v);
-  return Number.isNaN(date.getTime()) ? "Unknown" : date.toISOString();
-}
-function fmtTs(v) {
-  if (!v) return "Unknown";
-  const date = v instanceof Date ? v : new Date(v);
-  if (Number.isNaN(date.getTime())) return "Unknown";
-  return `<t:${Math.floor(date.getTime() / 1000)}:F>`;
-}
-function avatar(member) {
-  return member?.displayAvatarURL?.({ size: 1024 }) || member?.user?.displayAvatarURL?.({ size: 1024 }) || undefined;
-}
-function guildIcon(guild) {
-  return guild?.iconURL?.({ size: 1024 }) || undefined;
-}
-function guildBanner(guild) {
-  return guild?.bannerURL?.({ size: 2048 }) || undefined;
-}
-function memberName(i) {
-  return i?.member?.displayName || i?.user?.globalName || i?.user?.username || "Unknown User";
-}
-function displayName(member) {
-  return member?.displayName || member?.user?.globalName || member?.user?.username || "Unknown User";
-}
-function refreshGuild(i) {
-  return i?.guild || null;
-}
-function sessionKey(i) {
-  return `${i?.guildId || i?.guild?.id || "global"}:${i?.user?.id || "system"}`;
-}
-function replaceVars(text, i, allowUserPing = false) {
-  let out = String(text ?? "");
-  const guild = i?.guild;
-  const user = i?.user || i?.member?.user;
-  const member = i?.member;
-  const memberCount = guild?.memberCount ?? 0;
-  const vars = {
-    "{userId}": user?.id || "",
-    "{userTag}": user?.tag || user?.username || "",
-    "{userName}": user?.username || "",
-    "{userGlobalName}": user?.globalName || "",
-    "{userMention}": user?.id ? (allowUserPing ? `<@${user.id}>` : `@${displayName(member)}`) : "",
-    "{userNoPing}": user?.id ? `@${displayName(member)}` : "",
-    "{userAvatar}": avatar(member) || user?.displayAvatarURL?.({ size: 1024 }) || "",
-    "{userServerAvatar}": avatar(member) || "",
-    "{userNickname}": member?.nickname || "",
-    "{userDisplay}": displayName(member),
-    "{userCreatedAt}": fmtDate(user?.createdAt),
-    "{userCreatedTimestamp}": fmtTs(user?.createdAt),
-    "{userJoinedAt}": fmtDate(member?.joinedAt),
-    "{userJoinedTimestamp}": fmtTs(member?.joinedAt),
-    "{createdAt}": fmtDate(user?.createdAt),
-    "{joinedAt}": fmtDate(member?.joinedAt),
-    "{leftAt}": fmtDate(new Date()),
-    "{timestamp}": fmtTs(new Date()),
-    "{accountAge}": "",
-    "{membershipDuration}": "",
-    "{departureIcon}": "",
-    "{departureType}": "",
-    "{departureLabel}": "",
-    "{departureReason}": "",
-    "{departureModerator}": "",
-    "{departureModeratorId}": "",
-    "{nowTimestamp}": fmtTs(new Date()),
-    "{successEmoji}": "✅",
-    "{warningEmoji}": "⚠️",
-    "{errorEmoji}": "❌",
-    "{proofVerifiedEmoji}": "✅",
-    "{successColor}": "#57F287",
-    "{warningColor}": "#FEE75C",
-    "{errorColor}": "#ED4245",
-    "{proofVerifiedColor}": "#57F287",
-    "{guildId}": guild?.id || "",
-    "{guildName}": guild?.name || "",
-    "{server}": guild?.name || "",
-    "{guildIcon}": guildIcon(guild) || "",
-    "{serverIcon}": guildIcon(guild) || "",
-    "{guildBanner}": guildBanner(guild) || "",
-    "{guildMemberCount}": String(memberCount),
-    "{memberCount}": String(memberCount),
-    "{guildVanityCode}": guild?.vanityURLCode || "",
-  };
-  for (const [key, value] of Object.entries(vars)) out = out.split(key).join(String(value ?? ""));
-  return out;
-}
-
 function isIconUrl(v) {
   return safeUrl(v);
 }
@@ -401,11 +288,6 @@ function sync(s) {
     buttons: p.buttons || [],
   };
 }
-function saveSelected(s, patch = {}) {
-  const panels = clone(s.panels);
-  panels[s.selectedPanelIndex] = { ...panels[s.selectedPanelIndex], ...clone(patch) };
-  return sync({ ...s, panels });
-}
 function defaultState() {
   const p = basePanel("custom");
   return sync({
@@ -423,62 +305,9 @@ function defaultState() {
     deploymentKey: null,
   });
 }
-function getSession(i) {
-  const key = sessionKey(i);
-  if (!sessions.has(key)) sessions.set(key, defaultState());
-  return sessions.get(key);
-}
-function saveSession(i, state) {
-  const synced = sync(state);
-  sessions.set(sessionKey(i), synced);
-  return synced;
-}
-function markUnsaved(i, state) {
-  return saveSession(i, { ...state, hasUnsavedChanges: true });
-}
-function clearUnsaved(i, state) {
-  return saveSession(i, { ...state, hasUnsavedChanges: false });
-}
-function resetSession(i) {
-  const next = defaultState();
-  sessions.set(sessionKey(i), next);
-  return next;
-}
-function allowedMentions(s) {
-  return s.allowUserPing ? { parse: ["users", "roles"] } : { parse: [] };
-}
-function presetData(s) {
-  return {
-    template: s.template,
-    panels: clone(s.panels),
-    allowUserPing: !!s.allowUserPing,
-    showTimestamp: !!s.showTimestamp,
-    fieldLayout: s.fieldLayout || "auto",
-  };
-}
-function applyTemplate(i, name) {
-  const s = getSession(i);
-  const p = basePanel(name);
-  return markUnsaved(i, sync({ ...s, template: name, selectedPanelIndex: 0, panels: [p], selectedPreset: null }));
-}
-function applyPreset(i, name, preset) {
-  const s = getSession(i);
-  const panels = Array.isArray(preset?.panels) && preset.panels.length ? clone(preset.panels) : [basePanel("custom")];
-  return markUnsaved(i, sync({
-    ...s,
-    template: preset?.template || "custom",
-    selectedPreset: name || null,
-    panels,
-    selectedPanelIndex: 0,
-    allowUserPing: !!preset?.allowUserPing,
-    showTimestamp: preset?.showTimestamp !== false,
-    fieldLayout: preset?.fieldLayout || "auto",
-  }));
-}
-function setDefault(i, name) {
-  const s = getSession(i);
-  return saveSession(i, { ...s, selectedPreset: name || null });
-}
+
+embedState.configure({ defaultState, sync, basePanel });
+
 function normalizeInlineFields(fields = []) {
   return fields.map((field) => ({ ...field, inline: !!field.inline }));
 }
@@ -571,7 +400,7 @@ function mainEmbed(s, who) {
 function buildEditorPanel(i, who = "Unknown User") {
   const s = getSession(i);
   return {
-    embeds: [mainEmbed(s, who), ...buildPreviewEmbeds(s, i)],
+    embeds: [mainEmbed(s, who), buildPreviewEmbed(s, i)],
     components: [
       new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder().setCustomId("embed:template").setPlaceholder("🎨 Choose template").addOptions(Object.entries(TEMPLATES).map(([value, t]) => ({ label: t.label, value, emoji: t.emoji, default: s.template === value }))),
@@ -586,17 +415,12 @@ function buildEditorPanel(i, who = "Unknown User") {
         ]),
       ),
       new ActionRowBuilder().addComponents(
-        new StringSelectMenuBuilder().setCustomId("embed:panel-select").setPlaceholder("🧩 Select content panel").addOptions(s.panels.map((p, n) => ({
-          label: `${n + 1}. ${trim(p.title || p.authorName || "Content Panel", 80)}`,
-          value: String(n),
-          description: trim(p.description || p.color, 100),
-          default: s.selectedPanelIndex === n,
-        }))),
-      ),
-      new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId("embed:builder").setLabel("🛠️ Builder").setStyle(ButtonStyle.Primary),
         new ButtonBuilder().setCustomId("embed:presets").setLabel("💾 Presets").setStyle(ButtonStyle.Primary),
         new ButtonBuilder().setCustomId("embed:use").setLabel("✅ Use Embed").setStyle(ButtonStyle.Success),
+      ),
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId("admin:modules").setLabel("⬅️ Back").setStyle(ButtonStyle.Secondary),
       ),
     ],
   };
@@ -606,25 +430,38 @@ function simplePanel(title, desc, state, who) {
 }
 function buildBuilderPanel(i, who = "Unknown User") {
   const s = getSession(i);
+  const panels = Array.isArray(s.panels) && s.panels.length ? s.panels : [{}];
   return {
-    embeds: [simplePanel("🛠️ Embed Builder", `Editing panel **${s.selectedPanelIndex + 1}/${s.panels.length}**.`, s, who), ...buildPreviewEmbeds(s, i)],
+    embeds: [simplePanel("🛠️ Embed Builder", `Editing panel **${s.selectedPanelIndex + 1}/${s.panels.length}**.`, s, who), buildPreviewEmbed(s, i)],
     components: [
       new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder().setCustomId("embed:builder-panel-select").setPlaceholder("🧩 Select content panel").setMinValues(1).setMaxValues(1).addOptions(panels.slice(0, 25).map((entry, index) => ({
+          label: `${index + 1}. ${trim(entry?.title || entry?.authorName || "Content Panel", 80)}`,
+          value: String(index),
+          description: trim(entry?.description || entry?.color || "Content panel", 100),
+          default: Number(s.selectedPanelIndex || 0) === index,
+        }))),
+      ),
+      new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId("embed:edit-content").setLabel("✏️ Content").setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId("embed:edit-media").setLabel("🖼️ Media").setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId("embed:panels").setLabel(`🧩 Panels (${s.panels?.length || 1})`).setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId("embed:edit-media").setLabel("🎨 Appearance").setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId("embed:edit-images").setLabel("🖼️ Media").setStyle(ButtonStyle.Primary),
+      ),
+      new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId("embed:fields").setLabel(`📋 Fields (${(s.fields || []).length})`).setStyle(ButtonStyle.Primary),
         new ButtonBuilder().setCustomId("embed:buttons").setLabel(`🔘 Buttons (${(s.buttons || []).length})`).setStyle(ButtonStyle.Primary),
-      ),
-      new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId("embed:toggle-ping").setLabel(s.allowUserPing ? "🔔 Ping ON" : "🔕 Ping OFF").setStyle(s.allowUserPing ? ButtonStyle.Success : ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId("embed:toggle-timestamp").setLabel(s.showTimestamp ? "🕒 Timestamp ON" : "🕒 Timestamp OFF").setStyle(s.showTimestamp ? ButtonStyle.Success : ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId("embed:helpers").setLabel("📖 Variables").setStyle(ButtonStyle.Secondary),
-      ),
-      new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId("embed:test-send").setLabel("🧪 Test").setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId("embed:update-existing").setLabel("♻️ Update Existing").setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId("embed:reset").setLabel("♻️ Reset").setStyle(ButtonStyle.Danger),
+      ),
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId("embed:readiness").setLabel("✅ Review").setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId("embed:test-send").setLabel("🧪 Test").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId("embed:toggle-timestamp").setLabel(s.showTimestamp ? "🕒 Timestamp ON" : "🕒 Timestamp OFF").setStyle(s.showTimestamp ? ButtonStyle.Success : ButtonStyle.Secondary),
+      ),
+      new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId("embed:back").setLabel("⬅️ Back").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId("embed:helpers").setLabel("📖 Variables").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId("embed:reset").setLabel("♻️ Reset").setStyle(ButtonStyle.Danger),
       ),
     ],
   };
@@ -632,7 +469,7 @@ function buildBuilderPanel(i, who = "Unknown User") {
 function buildPanelsPanel(i, who) {
   const s = getSession(i);
   return {
-    embeds: [simplePanel("🧩 Content Panels", `Selected **${s.selectedPanelIndex + 1}/${s.panels.length}**.`, s, who), ...buildPreviewEmbeds(s, i)],
+    embeds: [simplePanel("🧩 Content Panels", `Selected **${s.selectedPanelIndex + 1}/${s.panels.length}**.`, s, who), buildPreviewEmbed(s, i)],
     components: [
       new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder().setCustomId("embed:panel-select").setPlaceholder("🧩 Select panel").addOptions(s.panels.map((p, n) => ({
@@ -650,7 +487,9 @@ function buildPanelsPanel(i, who) {
       new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId("embed:panel-up").setLabel("⬆️ Up").setStyle(ButtonStyle.Secondary).setDisabled(s.selectedPanelIndex <= 0),
         new ButtonBuilder().setCustomId("embed:panel-down").setLabel("⬇️ Down").setStyle(ButtonStyle.Secondary).setDisabled(s.selectedPanelIndex >= s.panels.length - 1),
-        new ButtonBuilder().setCustomId("embed:builder").setLabel("⬅️ Builder").setStyle(ButtonStyle.Secondary),
+      ),
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId("embed:builder").setLabel("⬅️ Back").setStyle(ButtonStyle.Secondary),
       ),
     ],
   };
@@ -769,6 +608,108 @@ function colorModal(s) {
 function presetModal(s) {
   return modal("embed:preset-save-modal", "Save Embed Preset", [input("name", "Preset name", TextInputStyle.Short, s.selectedPreset || "", true, 50)]);
 }
+function resolveAppearanceSource(source, interaction) {
+  const raw = String(source || "").trim();
+  if (!raw) return "";
+  try {
+    const resolved = replaceVars(raw, interaction);
+    const url = new URL(String(resolved || "").trim());
+    return url.protocol === "https:" ? url.toString() : "";
+  } catch {
+    return "";
+  }
+}
+function appearanceDetailsModal(state) {
+  return new ModalBuilder()
+    .setCustomId(`embed:appearance-details-save:${Date.now()}`)
+    .setTitle("Edit Appearance Details")
+    .addComponents(
+      new ActionRowBuilder().addComponents(input("authorName", "Author name", TextInputStyle.Short, state.authorName, false, 256)),
+      new ActionRowBuilder().addComponents(input("authorUrl", "Author clickable URL", TextInputStyle.Short, state.authorUrl, false, 4000)),
+      new ActionRowBuilder().addComponents(input("footer", "Footer text", TextInputStyle.Short, state.footer, false, 2048)),
+    );
+}
+function appearanceIconUrlModal(kind, state) {
+  const isAuthor = kind === "author";
+  const value = isAuthor ? state.authorIcon : state.footerIcon;
+  return new ModalBuilder()
+    .setCustomId(`embed:appearance-icon-url-save:${kind}:${Date.now()}`)
+    .setTitle(isAuthor ? "Author Icon URL" : "Footer Icon URL")
+    .addComponents(new ActionRowBuilder().addComponents(
+      input("source", `${isAuthor ? "Author" : "Footer"} icon URL / variable`, TextInputStyle.Short, value, false, 4000),
+    ));
+}
+function appearanceIconUploadModal(kind) {
+  const isAuthor = kind === "author";
+  return new ModalBuilder()
+    .setCustomId(`embed:appearance-icon-upload-save:${kind}`)
+    .setTitle(isAuthor ? "Upload Author Icon" : "Upload Footer Icon")
+    .addLabelComponents(
+      new LabelBuilder()
+        .setLabel(isAuthor ? "Author icon image" : "Footer icon image")
+        .setDescription("Upload one image. Discord-supported image formats are preserved.")
+        .setFileUploadComponent(new FileUploadBuilder().setCustomId("icon_file").setMinValues(1).setMaxValues(1).setRequired(true)),
+    );
+}
+function buildAppearancePanel(interaction) {
+  const state = getSession(interaction);
+  const authorIcon = resolveAppearanceSource(state.authorIcon, interaction);
+  const footerIcon = resolveAppearanceSource(state.footerIcon, interaction);
+  const lines = [
+    `**Author name:** ${state.authorName ? trim(state.authorName, 300) : "Not set"}`,
+    `**Author link:** ${state.authorUrl ? trim(state.authorUrl, 500) : "Not set"}`,
+    `**Author icon:** ${state.authorIcon ? trim(state.authorIcon, 500) : "Not set"}`,
+    "",
+    `**Footer text:** ${state.footer ? trim(state.footer, 700) : "Not set"}`,
+    `**Footer icon:** ${state.footerIcon ? trim(state.footerIcon, 500) : "Not set"}`,
+    "",
+    "Icon sources can use direct HTTPS image links, Embed Studio variables, or direct uploads.",
+  ];
+  const embeds = [new EmbedBuilder().setColor(0x5865F2).setTitle("🎨 Appearance").setDescription(lines.join("\n").slice(0, 4096))];
+  if (authorIcon) embeds.push(new EmbedBuilder().setColor(0x5865F2).setTitle("👤 Author Icon Preview").setThumbnail(authorIcon));
+  if (footerIcon) embeds.push(new EmbedBuilder().setColor(0x5865F2).setTitle("🏷️ Footer Icon Preview").setThumbnail(footerIcon));
+  return {
+    embeds,
+    components: [
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId("embed:appearance-details").setLabel("✏️ Edit Details").setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId("embed:appearance-author-icon").setLabel("👤 Author Icon").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId("embed:appearance-footer-icon").setLabel("🏷️ Footer Icon").setStyle(ButtonStyle.Secondary),
+      ),
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId("embed:builder").setLabel("⬅️ Back").setStyle(ButtonStyle.Secondary),
+      ),
+    ],
+  };
+}
+function buildAppearanceIconPanel(interaction, kind) {
+  const state = getSession(interaction);
+  const isAuthor = kind === "author";
+  const raw = isAuthor ? state.authorIcon : state.footerIcon;
+  const resolved = resolveAppearanceSource(raw, interaction);
+  const embed = new EmbedBuilder()
+    .setColor(0x5865F2)
+    .setTitle(isAuthor ? "👤 Author Icon" : "🏷️ Footer Icon")
+    .setDescription([
+      `**Source:** ${raw ? trim(raw, 1000) : "Not set"}`,
+      "",
+      "Use a direct HTTPS image URL, an Embed Studio variable, or upload an image directly.",
+    ].join("\n"));
+  if (resolved) embed.setThumbnail(resolved);
+  return {
+    embeds: [embed],
+    components: [
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`embed:appearance-icon-url:${kind}`).setLabel("✏️ Edit URL").setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId(`embed:appearance-icon-upload:${kind}`).setLabel("📤 Upload").setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId(`embed:appearance-icon-clear:${kind}`).setLabel("🗑️ Clear").setStyle(ButtonStyle.Danger).setDisabled(!raw),
+      ),
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId("embed:appearance-back").setLabel("⬅️ Back").setStyle(ButtonStyle.Secondary),
+      ),
+    ],
+  };
+}
 
 module.exports = {
   clone,
@@ -830,6 +771,11 @@ module.exports = {
   buttonModal,
   colorModal,
   presetModal,
+  appearanceDetailsModal,
+  appearanceIconUrlModal,
+  appearanceIconUploadModal,
+  buildAppearancePanel,
+  buildAppearanceIconPanel,
   PANEL_COLOR,
   CUSTOM_HEX_VALUE,
   MAX_PANELS,

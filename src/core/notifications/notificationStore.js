@@ -2,7 +2,7 @@
 
 const crypto = require('node:crypto');
 const { getGuildSection, updateGuildSection } = require('../guild/guildManager');
-const activity = require('../../features/activity/activityStore');
+const activity = require('../activity/activityStore');
 
 function now() { return new Date().toISOString(); }
 function obj(value) { return value && typeof value === 'object' && !Array.isArray(value) ? value : {}; }
@@ -20,7 +20,7 @@ function normalise(input = {}) {
     route: text(input.route || '', 200),
     read: Boolean(input.read),
     createdAt: input.createdAt || now(),
-    updatedAt: now(),
+    updatedAt: input.updatedAt || now(),
     metadata: obj(input.metadata),
   };
 }

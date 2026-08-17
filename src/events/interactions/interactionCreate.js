@@ -23,8 +23,10 @@ const testSecurityCommand = optionalRequire('test security', '../../commands/adm
 const embedPanel = optionalRequire('embed interactions', '../../modules/messageStudio/embed/embedInteractions');
 const duplicator = optionalRequire('duplicator', '../../owner/dev/duplicator');
 const adminPanel = optionalRequire('admin panel', '../../core/admin/functions/adminPanel');
+const restoreRequestManager = optionalRequire('restore requests', '../../core/security/restoreRequestManager');
 const statsAdminPanel = optionalRequire('stats admin', '../../modules/utilityStudio/stats/statsPanel');
 const reactionRolesAdminPanel = optionalRequire('reaction roles admin', '../../modules/roleStudio/reactionRoles/reactionRolesPanel');
+const temporaryRolesPanel = optionalRequire('temporary roles', '../../modules/roleStudio/temporaryRoles/temporaryRolesPanel');
 const giveawaysAdminPanel = optionalRequire('giveaways admin', '../../modules/communityStudio/giveaways/giveawaysAdminPanel');
 const starboardPanel = optionalRequire('starboard admin', '../../modules/messageStudio/starboard/starboardPanel');
 const stickyAdminPanel = optionalRequire('sticky admin', '../../modules/messageStudio/sticky/stickyAdminPanel');
@@ -339,6 +341,10 @@ module.exports = {
         await interaction.reply({ content: '❌ Tickets is currently disabled for this server.', flags: MessageFlags.Ephemeral });
         return;
       }
+      if (customId.startsWith('restore_request_')) {
+        if (!await callHandler(restoreRequestManager, 'handleRestoreButton', interaction)) throw new Error(`Restore request handler did not handle ${customId}.`);
+        return;
+      }
       if (customId.startsWith('admin:automod')) {
         if (!await callHandler(adminPanel, 'handleAdminNavigation', interaction)) throw new Error(`AutoMod admin did not handle ${customId}.`);
         return;
@@ -389,6 +395,7 @@ module.exports = {
       }
       if (startsWith(interaction, 'admin:verification')) { await callHandler(verificationAdminPanel, 'handleVerificationAdminInteraction', interaction); return; }
       if (startsWith(interaction, 'admin:autoRoles')) { await callHandler(autorolesPanel, 'handleAutoRolesInteraction', interaction); return; }
+      if (startsWith(interaction, 'admin:temporaryRoles')) { await callHandler(temporaryRolesPanel, 'handleTemporaryRolesInteraction', interaction); return; }
       if (startsWith(interaction, 'admin:timedRoles')) { await callHandler(timedRolesPanel, 'handleTimedRolesInteraction', interaction); return; }
       if (startsWith(interaction, 'admin:welcome')) { await callHandler(welcomePanel, 'handleWelcomeInteraction', interaction); return; }
       if (startsWith(interaction, 'admin:goodbye')) { await callHandler(goodbyePanel, 'handleGoodbyeInteraction', interaction); return; }

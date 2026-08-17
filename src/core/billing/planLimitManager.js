@@ -49,7 +49,10 @@ function hasUnlimitedLimit(guildId, limitKey) {
 
 function canCreateResource(guildId, limitKey, currentCount = 0) {
   const summary = getPlanLimitSummary(guildId, limitKey);
-  const count = Math.max(Number(currentCount || 0), 0);
+  const requestedCount = Number(currentCount);
+  const count = Number.isFinite(requestedCount)
+    ? Math.max(Math.trunc(requestedCount), 0)
+    : 0;
   const allowed = summary.unlimited || count < Number(summary.limit || 0);
 
   return {

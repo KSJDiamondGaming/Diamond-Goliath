@@ -13,7 +13,7 @@ let ticketManagerApi;
 // ticketManager
 // ============================================================================
 {
-  const crypto = require('crypto');
+  const crypto = require('node:crypto');
 
   const {
     TICKET_STATUS,

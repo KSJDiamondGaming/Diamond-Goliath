@@ -306,8 +306,7 @@ module.exports = {
   name: Events.MessageCreate,
 
   async execute(message, client) {
-    if (!message.guild || !message.member) return;
-    if (!message.content || message.author?.bot) return;
+    if (!message.guild || !message.member || message.author?.bot) return;
 
     const autoModHandled = await runHandler('AutoMod', handleAutoMod, message);
     if (autoModHandled) return;
@@ -315,21 +314,23 @@ module.exports = {
     await runHandler('Stats', statsManager.handleMessageCreate, message);
     await runHandler('Leveling', levelingTracking.handleMessageCreate, message);
 
-    const handledPrefixCommand = await runHandler(
-      'Prefix Command',
-      handlePrefixCommand,
-      message,
-      client
-    );
-    if (handledPrefixCommand) return;
-
-    if (guildManager.isModuleEnabled(message.guild.id, 'translation')) {
-      await runHandler(
-        'Translation',
-        translationThreadManager.handleMessageCreate,
+    if (message.content) {
+      const handledPrefixCommand = await runHandler(
+        'Prefix Command',
+        handlePrefixCommand,
         message,
         client
       );
+      if (handledPrefixCommand) return;
+
+      if (guildManager.isModuleEnabled(message.guild.id, 'translation')) {
+        await runHandler(
+          'Translation',
+          translationThreadManager.handleMessageCreate,
+          message,
+          client
+        );
+      }
     }
 
     await runHandler('Sticky', handleStickyMessage, message, client);

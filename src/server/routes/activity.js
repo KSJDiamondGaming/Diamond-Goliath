@@ -1,7 +1,7 @@
 'use strict';
 
 const express = require('express');
-const activity = require('../../features/activity/activityStore');
+const activity = require('../../core/activity/activityStore');
 const guildManager = require('../../core/guild/guildManager');
 
 const router = express.Router();

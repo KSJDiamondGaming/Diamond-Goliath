@@ -21,16 +21,16 @@ async function safeReply(interaction, payload = {}) {
 // ✅ Generic safe update
 async function safeUpdate(interaction, payload = {}) {
   try {
+    if (interaction.replied || interaction.deferred) {
+      return await interaction.editReply(payload);
+    }
+
     if (
       interaction.isButton?.() ||
       interaction.isStringSelectMenu?.() ||
       interaction.isUserSelectMenu?.()
     ) {
       return await interaction.update(payload);
-    }
-
-    if (interaction.replied || interaction.deferred) {
-      return await interaction.editReply(payload);
     }
 
     return await safeReply(interaction, {

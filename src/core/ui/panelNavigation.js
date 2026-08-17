@@ -37,10 +37,10 @@ function cleanHistory(history) {
     .filter(Boolean);
 
   if (!cleaned.length) return ['admin:home'];
-  if (cleaned[0] !== 'admin:home') cleaned.unshift('admin:home');
+  const childRoutes = cleaned.filter((route) => route !== 'admin:home');
 
   // More than six levels is unnecessary for the Discord panels and risks custom ID overflow.
-  return cleaned.slice(-6);
+  return ['admin:home', ...childRoutes.slice(-5)];
 }
 
 function encodeState(state) {

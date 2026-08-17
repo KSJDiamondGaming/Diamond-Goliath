@@ -62,17 +62,22 @@ const securityRoutes = route('security routes', './src/server/routes/discord/sec
 const ticketRoutes = route('ticket routes', './src/server/routes/modules/feedbackStudio/tickets');
 const formsRoutes = route('forms routes', './src/server/routes/modules/feedbackStudio/forms');
 const transcriptRoutes = route('transcript routes', './src/server/routes/modules/feedbackStudio/transcripts');
+const suggestionsRoutes = route('suggestions routes', './src/server/routes/modules/feedbackStudio/suggestions');
 const translationRoutes = route('translation routes', './src/server/routes/modules/utilityStudio/translation');
 const permissionHealthRoutes = route('permission health routes', './src/server/routes/discord/permissionHealth');
 const socialRoutes = route('social routes', './src/server/routes/modules/socialStudio/social');
 const scheduleRoutes = route('schedule routes', './src/server/routes/modules/utilityStudio/schedule');
 const invitesRoutes = route('invite routes', './src/server/routes/modules/communityStudio/invites');
+const birthdaysRoutes = route('birthdays routes', './src/server/routes/modules/communityStudio/birthdays');
+const privateRoomsRoutes = route('private rooms routes', './src/server/routes/modules/utilityStudio/privateRooms');
 const verificationRoutes = route('verification routes', './src/server/routes/modules/securityStudio/verification');
 const autoRolesRoutes = route('auto roles routes', './src/server/routes/modules/roleStudio/autoRoles');
 const welcomeRoutes = route('welcome routes', './src/server/routes/modules/messageStudio/welcome');
 const goodbyeRoutes = route('goodbye routes', './src/server/routes/modules/messageStudio/goodbye');
 const reactionRolesRoutes = route('reaction roles routes', './src/server/routes/modules/roleStudio/reactionRoles');
 const timedRolesRoutes = route('timed roles routes', './src/server/routes/modules/roleStudio/timedRoles');
+const temporaryRolesRoutes = route('temporary roles routes', './src/server/routes/modules/roleStudio/temporaryRoles');
+const roleSelectorRoutes = route('role selector routes', './src/server/routes/modules/roleStudio/roleSelector');
 const modulesRoutes = route('modules routes', './src/server/routes/modules');
 const automationRoutes = route('automation routes', './src/server/routes/automation');
 const notificationRoutes = route('notification routes', './src/server/routes/notifications');
@@ -136,7 +141,7 @@ app.use(session({ secret: SESSION_SECRET, resave: false, saveUninitialized: fals
 app.use((req, _res, next) => { req.client = client; req.io = io; next(); });
 
 const mounts = [
-  ['/auth', authRoutes], ['/api/auth', authRoutes], ['/api/discord', discordRoutes], ['/api/discord', discordRoleEditorRoutes], ['/api/discord', discordResourceRoutes], ['/api/status', statusRoutes], ['/api/public/community', publicCommunityRoutes], ['/api/owner', ownerRoutes], ['/api/owner/diagnostics', ownerDiagnosticsRoutes], ['/api/owner/translation', ownerTranslationRoutes], ['/api/config/automod', automodRoutes], ['/api/config/general', generalSettingsRoutes], ['/api/config/logs', logsRoutes], ['/api/config/messages', messagesRoutes], ['/api/config/embeds', embedsRoutes], ['/api/billing', billingRoutes], ['/api/moderation', moderationRoutes], ['/api/cases', moderationRoutes], ['/api/restore', serverRestoreRoutes], ['/api/security', securityRoutes], ['/api/tickets', ticketRoutes], ['/api/forms', formsRoutes], ['/api/transcripts', transcriptRoutes], ['/api/translation', translationRoutes], ['/api/permissions', permissionHealthRoutes], ['/api/social', socialRoutes], ['/api/schedule', scheduleRoutes], ['/api/invites', invitesRoutes], ['/api/verification', verificationRoutes], ['/api/auto-roles', autoRolesRoutes], ['/api/welcome', welcomeRoutes], ['/api/goodbye', goodbyeRoutes], ['/api/reaction-roles', reactionRolesRoutes], ['/api/timed-roles', timedRolesRoutes], ['/api/modules', modulesRoutes], ['/api/automation', automationRoutes], ['/api/notifications', notificationRoutes], ['/api/activity', activityRoutes], ['/api/polls', pollsRoutes], ['/api/stats', statsRoutes], ['/api/temp-voice', tempVoiceRoutes], ['/api/starboard', starboardRoutes], ['/api/media', mediaRoutes], ['/api/owner/deployments', ownerDeploymentRoutes], ['/api/resources', discordResourceRoutes],
+  ['/auth', authRoutes], ['/api/auth', authRoutes], ['/api/discord', discordRoutes], ['/api/discord', discordRoleEditorRoutes], ['/api/discord', discordResourceRoutes], ['/api/status', statusRoutes], ['/api/public/community', publicCommunityRoutes], ['/api/owner', ownerRoutes], ['/api/owner/diagnostics', ownerDiagnosticsRoutes], ['/api/owner/translation', ownerTranslationRoutes], ['/api/config/automod', automodRoutes], ['/api/config/general', generalSettingsRoutes], ['/api/config/logs', logsRoutes], ['/api/config/messages', messagesRoutes], ['/api/config/embeds', embedsRoutes], ['/api/billing', billingRoutes], ['/api/moderation', moderationRoutes], ['/api/cases', moderationRoutes], ['/api/restore', serverRestoreRoutes], ['/api/security', securityRoutes], ['/api/tickets', ticketRoutes], ['/api/forms', formsRoutes], ['/api/transcripts', transcriptRoutes], ['/api/suggestions', suggestionsRoutes], ['/api/translation', translationRoutes], ['/api/permissions', permissionHealthRoutes], ['/api/social', socialRoutes], ['/api/schedule', scheduleRoutes], ['/api/invites', invitesRoutes], ['/api/birthdays', birthdaysRoutes], ['/api/private-rooms', privateRoomsRoutes], ['/api/verification', verificationRoutes], ['/api/auto-roles', autoRolesRoutes], ['/api/welcome', welcomeRoutes], ['/api/goodbye', goodbyeRoutes], ['/api/reaction-roles', reactionRolesRoutes], ['/api/timed-roles', timedRolesRoutes], ['/api/temporary-roles', temporaryRolesRoutes], ['/api/role-selector', roleSelectorRoutes], ['/api/colour-roles', roleSelectorRoutes], ['/api/modules', modulesRoutes], ['/api/automation', automationRoutes], ['/api/notifications', notificationRoutes], ['/api/activity', activityRoutes], ['/api/polls', pollsRoutes], ['/api/stats', statsRoutes], ['/api/temp-voice', tempVoiceRoutes], ['/api/starboard', starboardRoutes], ['/api/media', mediaRoutes], ['/api/owner/deployments', ownerDeploymentRoutes], ['/api/resources', discordResourceRoutes],
 ];
 for (const [base, router] of mounts) app.use(base, router);
 
@@ -167,6 +172,21 @@ async function startConfiguredModules(client) {
       return require('./src/modules/roleStudio/reactionRoles/reactionRoles').startup({ guilds: { cache: enabledGuilds } });
     }),
     runStartupTask('Verification', () => require('./src/modules/securityStudio/verification').startupVerification(client)),
+    runStartupTask('Birthdays', async () => {
+      const birthdays = require('./src/modules/communityStudio/birthdays/birthdays');
+      const runSweep = async () => {
+        const enabledGuilds = client.guilds.cache.filter((guild) => guildManager.isModuleEnabled(guild.id, 'birthdays'));
+        for (const guild of enabledGuilds.values()) {
+          await birthdays.processGuild(guild, { action: 'birthday_scheduler_tick' }).catch((error) => {
+            console.warn(`[Birthdays] ${guild.id}: ${error?.message || error}`);
+          });
+        }
+      };
+      await runSweep();
+      const timer = setInterval(runSweep, birthdays.TICK_MS);
+      timer.unref?.();
+      return timer;
+    }),
   ]);
 }
 

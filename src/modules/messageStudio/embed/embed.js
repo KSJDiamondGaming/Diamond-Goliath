@@ -2,11 +2,11 @@
 
 const templates = require('./embedTemplates');
 const deployments = require('./embedDeployments');
-const panel = require('./embedNavigationCompat');
-const interactions = require('./embedInteractionsNavigationCompat');
-const tracking = require('./embedTracking');
+const panel = require('./embedPanel');
+// Load the remaining button/field augmentation after the canonical panel is initialized.
+require('./embedButtonsCompat');
+const interactions = require('./embedInteractions');
 const validation = require('./embedValidation');
-const health = require('./embedHealth');
 
 function getOverview(guildId) {
   const allTemplates = templates.listTemplates(guildId) || {};
@@ -24,14 +24,14 @@ function getOverview(guildId) {
 
 module.exports = {
   getOverview,
-  buildHealthReport: health.buildHealthReport,
-  repairAll: health.repairAll,
+  buildHealthReport: validation.buildHealthReport,
+  repairAll: validation.repairAll,
   handleInteraction: interactions.handleInteraction,
   templates,
   deployments,
   panel,
   interactions,
-  tracking,
+  tracking: deployments,
   validation,
-  health,
+  health: validation,
 };

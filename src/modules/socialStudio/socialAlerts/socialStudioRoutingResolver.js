@@ -57,8 +57,21 @@ function resolveSocialRoute(config, account, eventType, creatorInput = null) {
 
 function projectEffectiveAccounts(config) {
   const projected = {};
+  const notificationMentionMode = ['role', 'everyone', 'here'].includes(config?.notificationMentionMode)
+    ? config.notificationMentionMode
+    : 'none';
+  const notificationRoleId = notificationMentionMode === 'role'
+    ? String(config?.notificationRoleId || '') || null
+    : null;
+
   for (const [accountId, accountValue] of Object.entries(object(config?.accounts))) {
-    const account = { ...accountValue, accountId, alertChannels: { ...object(accountValue?.alertChannels) } };
+    const account = {
+      ...accountValue,
+      accountId,
+      alertChannels: { ...object(accountValue?.alertChannels) },
+      mentionMode: notificationMentionMode,
+      mentionRoleId: notificationRoleId,
+    };
     const creator = creatorFor(config, accountId);
     for (const eventType of ALERT_TYPES) {
       const resolved = resolveSocialRoute(config, account, eventType, creator);
@@ -71,9 +84,5 @@ function projectEffectiveAccounts(config) {
 }
 
 module.exports = {
-  creatorFor,
-  linkedUserId,
-  explicitAccountRoutes,
-  resolveSocialRoute,
   projectEffectiveAccounts,
 };

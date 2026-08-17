@@ -1,6 +1,6 @@
 'use strict';
 
-const subscriptionAdminManager = require('./subscriptionAdminManager');
+const subscriptionAdminManager = require('../../core/billing/subscriptionAdminManager');
 
 const DEFAULT_INTERVAL_MS = 60 * 60 * 1000;
 let workerTimer = null;

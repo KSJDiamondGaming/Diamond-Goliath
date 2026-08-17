@@ -158,9 +158,6 @@ function migrateAccount(account = {}) {
 }
 
 module.exports = {
-  PLATFORM_HOSTS,
   normalizeAccountInput,
   migrateAccount,
-  buildProfileUrl,
-  classifyInput,
 };

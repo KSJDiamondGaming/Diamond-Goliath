@@ -10,8 +10,7 @@ const {
   TextInputBuilder,
   TextInputStyle,
 } = require('discord.js');
-const crypto = require('crypto');
-const creatorCompat = require('../../modules/socialStudio/socialAlerts/socialStudioCreatorActionCompat');
+const crypto = require('node:crypto');
 const store = require('../../modules/socialStudio/socialAlerts/socialStudioStore');
 const socialPanel = require('../../modules/socialStudio/socialAlerts/socialStudioPanel');
 const { normalizeAccountInput } = require('../../modules/socialStudio/socialAlerts/accountNormalizer');
@@ -394,19 +393,4 @@ async function handle(interaction) {
   return false;
 }
 
-if (!creatorCompat.__accountManagementCompatPatched) {
-  const originalHandle = typeof creatorCompat.handle === 'function' ? creatorCompat.handle.bind(creatorCompat) : async () => false;
-  creatorCompat.handle = async function handleWithAccountManagement(interaction) {
-    if (await handle(interaction)) return true;
-    return originalHandle(interaction);
-  };
-  creatorCompat.__accountManagementCompatPatched = true;
-}
-
-module.exports = {
-  name: 'clientReady',
-  once: true,
-  async execute() {
-    // Loading this file installs the account-management compatibility wrapper.
-  },
-};
+module.exports = { handle };

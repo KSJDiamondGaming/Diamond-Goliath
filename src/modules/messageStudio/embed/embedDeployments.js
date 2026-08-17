@@ -1,11 +1,14 @@
 'use strict';
 
 const guildManager = require('../../../core/guild/guildManager');
-const {
-  emitEmbedUpdated,
-  emitEmbedStatusUpdated,
-  emitEmbedDeleted,
-} = require('./embedTracking');
+const { emitGuildUpdate } = require('../../../server/sockets/socketHub');
+
+const EVENTS = Object.freeze({
+  EMBED_CREATED: 'embed.created',
+  EMBED_UPDATED: 'embed.updated',
+  EMBED_DELETED: 'embed.deleted',
+  EMBED_STATUS_UPDATED: 'embed.status.updated',
+});
 
 const EMBED_DEPLOYMENTS_SECTION = 'embedDeployments';
 const LEGACY_EMBED_BUILDER_SECTION = 'embedBuilder';
@@ -21,6 +24,52 @@ const DEPLOYMENT_STATUS = Object.freeze({
 const VALID_STATUSES = new Set(Object.values(DEPLOYMENT_STATUS));
 const now = () => new Date().toISOString();
 const isPlainObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+
+function createTrackingPayload(event, guildId, data = {}) {
+  const timestamp = now();
+  return {
+    module: 'embeds',
+    event,
+    guildId: String(guildId),
+    timestamp,
+    updatedAt: timestamp,
+    data,
+  };
+}
+
+function emit(event, guildId, data = {}) {
+  const payload = createTrackingPayload(event, guildId, data);
+  return emitGuildUpdate(guildId, payload) || payload;
+}
+
+function deploymentPayload(deployment = {}) {
+  return {
+    key: deployment.key || null,
+    channelId: deployment.channelId || null,
+    messageId: deployment.messageId || null,
+    template: deployment.template || null,
+    preset: deployment.preset || null,
+    status: deployment.status || null,
+    createdAt: deployment.createdAt || null,
+    createdBy: deployment.createdBy || null,
+    lastUpdatedAt: deployment.lastUpdatedAt || null,
+    lastUpdatedBy: deployment.lastUpdatedBy || null,
+    lastCheckedAt: deployment.lastCheckedAt || null,
+    missingReason: deployment.missingReason || null,
+  };
+}
+
+function emitEmbedUpdated(guildId, deployment) {
+  return emit(EVENTS.EMBED_UPDATED, guildId, deploymentPayload(deployment));
+}
+
+function emitEmbedStatusUpdated(guildId, deployment) {
+  return emit(EVENTS.EMBED_STATUS_UPDATED, guildId, deploymentPayload(deployment));
+}
+
+function emitEmbedDeleted(guildId, key) {
+  return emit(EVENTS.EMBED_DELETED, guildId, { key });
+}
 
 function clone(value, fallback = {}) {
   try {
@@ -342,6 +391,11 @@ async function resolveEmbedDeployment(guild, key) {
 }
 
 module.exports = {
+  EVENTS,
+  emit,
+  emitEmbedUpdated,
+  emitEmbedStatusUpdated,
+  emitEmbedDeleted,
   EMBED_DEPLOYMENTS_SECTION,
   DEPLOYMENT_STATUS,
   getAllEmbedDeployments,

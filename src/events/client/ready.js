@@ -1,6 +1,8 @@
 const { Events } = require('discord.js');
 const terminal = require('../../core/logging/terminalLogger').createLogger('bot');
 const levelingTracking = require('../../modules/communityStudio/leveling/levelingTracking');
+const { startupTranslation } = require('../../modules/utilityStudio/translation/translationStartup');
+const scheduleStartup = require('../../modules/utilityStudio/schedule/scheduleStartup');
 const auditStore = require('../../owner/auditIntelligence/auditStore');
 const auditRouter = require('../../owner/auditIntelligence/auditRouter');
 
@@ -14,7 +16,7 @@ const {
 
 const {
   startStatusRotation,
-} = require('../../features/status/statusRotation');
+} = require('../../runtime/statusRotation');
 
 const AUDIT_REGISTRY_REFRESH_MS = 5 * 60 * 1000;
 const AUDIT_LIVE_PROBE_POLL_MS = 1000;
@@ -261,6 +263,19 @@ module.exports = {
     restoreLockdownReminders(client);
     startBackupWorker();
     startStatusRotation(client);
+
+    try {
+      await startupTranslation(client);
+    } catch (error) {
+      terminal.error(`Failed to recover Translation threads: ${error?.message || error}`);
+    }
+
+    try {
+      await scheduleStartup.startup(client);
+      terminal.info('Schedule processor started: startup recovery + 60-second processing interval.');
+    } catch (error) {
+      terminal.error(`Failed to start Schedule processor: ${error?.message || error}`);
+    }
 
     try {
       const voiceSessions = levelingTracking.bootstrapVoiceSessions(client);
