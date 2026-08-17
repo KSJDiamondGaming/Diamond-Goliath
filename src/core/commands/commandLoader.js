@@ -54,7 +54,11 @@ function loadCommands(client, options = {}) {
       }
 
       if (!ALLOWED_COMMAND_NAMES.has(name)) {
-        skipped.push({ filePath, reason: `Command is not part of the canonical /admin, /mod, /user surface: ${name}` });
+        skipped.push({
+          filePath,
+          reason: `Command is not part of the canonical /admin, /mod, /user surface: ${name}`,
+          intentional: true,
+        });
         continue;
       }
 
@@ -70,10 +74,9 @@ function loadCommands(client, options = {}) {
     }
   }
 
-  if (skipped.length) {
-    for (const item of skipped) {
-      console.warn(`⚠️ Skipped command: ${item.filePath} — ${item.reason}`);
-    }
+  const unexpectedSkips = skipped.filter((item) => item.intentional !== true);
+  for (const item of unexpectedSkips) {
+    console.warn(`⚠️ Skipped command: ${item.filePath} — ${item.reason}`);
   }
 
   console.log(`✅ commands loaded (${loaded.length}): ${loaded.join(', ')}`);

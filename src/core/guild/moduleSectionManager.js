@@ -130,7 +130,7 @@ function canRemoveLegacyRoles(modules) {
   ];
 
   return legacyTargets.every(([legacyKey, canonicalKey]) => (
-    !hasLegacyPayload(roles[legacyKey]) || isPlainObject(modules[canonicalKey])
+    !hasLegacyPayload(roles[legacyKey]) || hasLegacyPayload(modules[canonicalKey])
   ));
 }
 
@@ -151,13 +151,13 @@ function cleanupLegacyRolesIfSafe(guildId, modules, guildOrMeta = {}) {
 }
 
 function cleanupLegacyColourRolesIfSafe(guildId, modules, guildOrMeta = {}) {
-  if (!isPlainObject(modules.roleSelector) || !isPlainObject(modules.colourRoles)) return modules;
+  if (!hasLegacyPayload(modules.roleSelector) || !hasLegacyPayload(modules.colourRoles)) return modules;
   return updateGuildSection(
     guildId,
     'modules',
     (existingModules = {}) => {
       const nextModules = isPlainObject(existingModules) ? clone(existingModules) : {};
-      if (isPlainObject(nextModules.roleSelector)) delete nextModules.colourRoles;
+      if (hasLegacyPayload(nextModules.roleSelector)) delete nextModules.colourRoles;
       return nextModules;
     },
     {},
