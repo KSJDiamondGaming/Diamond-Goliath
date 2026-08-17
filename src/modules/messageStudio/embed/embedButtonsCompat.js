@@ -69,7 +69,7 @@ function layoutButtons(buttons = []) {
 }
 function deployedRowFor(buttons, index) { const rows = layoutButtons(buttons); const row = rows.findIndex((entries) => entries.some((entry) => entry.index === index)); return row >= 0 ? row : null; }
 
-panel.buttonRows = (state, interaction = null) => {
+function buildButtonRows(state, interaction = null) {
   const output = [];
   for (const entries of layoutButtons(Array.isArray(state?.buttons) ? state.buttons : [])) {
     if (!entries.length) continue;
@@ -86,7 +86,8 @@ panel.buttonRows = (state, interaction = null) => {
     output.push(row);
   }
   return output.slice(0, MAX_DEPLOYED_BUTTON_ROWS);
-};
+}
+panel.buttonRows = buildButtonRows;
 
 panel.buttonEditorModal = (state, index = null) => {
   const buttons = Array.isArray(state.buttons) ? state.buttons : [];
