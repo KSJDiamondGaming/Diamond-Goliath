@@ -279,13 +279,13 @@ async function cleanupBirthdayRoles(guild, section, meta = {}) {
 }
 
 async function processGuild(guild, meta = {}) {
-  if (!guildManager.isModuleEnabled(guild.id, SECTION)) return { disabled: true, announced: 0, rolesRemoved: 0, failures: 0 };
+  if (!guildManager.isModuleEnabled(guild.id, SECTION)) return { disabled: true, announced: 0, rolesAssigned: 0, rolesRemoved: 0, failures: 0 };
   let section = getSection(guild.id);
   const local = zonedParts(new Date(), section.settings.timezone);
   const year = Number(local.year);
   const currentTime = `${local.hour}:${local.minute}`;
   const today = `${local.year}-${local.month}-${local.day}`;
-  const result = { announced: 0, rolesRemoved: 0, failures: 0 };
+  const result = { announced: 0, rolesAssigned: 0, rolesRemoved: 0, failures: 0 };
   result.rolesRemoved = await cleanupBirthdayRoles(guild, section, meta);
   section = getSection(guild.id);
   if (currentTime < section.settings.announcementTime) {
@@ -295,19 +295,34 @@ async function processGuild(guild, meta = {}) {
   const channelId = section.settings.announcementChannelId;
   const channel = channelId ? (guild.channels.cache.get(channelId) || await guild.channels.fetch(channelId).catch(() => null)) : null;
   for (const member of Object.values(section.members)) {
-    try {
-      if (member.announce === false || birthdayKey(member, year, section.settings) !== today || member.lastAnnouncedKey === today) continue;
-      if (!channel?.send) throw new Error('Birthday announcement channel is unavailable.');
-      const content = renderMessage(section.settings.messageTemplate, guild, member, year);
-      await channel.send({ content, allowedMentions: { users: [member.userId] } });
-      setBirthday(guild.id, member.userId, { lastAnnouncedKey: today }, { ...meta, action: 'birthday_announced' });
-      await assignBirthdayRole(guild, getSection(guild.id), getBirthday(guild.id, member.userId), meta);
-      incrementAnalytics(guild.id, { announcementsSent: 1 }, meta);
-      result.announced += 1;
-    } catch (error) {
-      result.failures += 1;
-      incrementAnalytics(guild.id, { failures: 1 }, meta);
-      console.warn(`[Birthdays] ${guild.id}/${member.userId}: ${error.message}`);
+    if (birthdayKey(member, year, section.settings) !== today) continue;
+
+    if (member.announce !== false && member.lastAnnouncedKey !== today) {
+      try {
+        if (!channel?.send) throw new Error('Birthday announcement channel is unavailable.');
+        const content = renderMessage(section.settings.messageTemplate, guild, member, year);
+        await channel.send({ content, allowedMentions: { users: [member.userId] } });
+        setBirthday(guild.id, member.userId, { lastAnnouncedKey: today }, { ...meta, action: 'birthday_announced' });
+        incrementAnalytics(guild.id, { announcementsSent: 1 }, meta);
+        result.announced += 1;
+      } catch (error) {
+        result.failures += 1;
+        incrementAnalytics(guild.id, { failures: 1 }, meta);
+        console.warn(`[Birthdays] ${guild.id}/${member.userId} announcement: ${error.message}`);
+      }
+    }
+
+    const currentMember = getBirthday(guild.id, member.userId);
+    const currentSection = getSection(guild.id);
+    if (currentSection.settings.birthdayRoleId && !currentMember?.roleAssignedAt) {
+      try {
+        const assigned = await assignBirthdayRole(guild, currentSection, currentMember, meta);
+        if (assigned) result.rolesAssigned += 1;
+      } catch (error) {
+        result.failures += 1;
+        incrementAnalytics(guild.id, { failures: 1 }, meta);
+        console.warn(`[Birthdays] ${guild.id}/${member.userId} role: ${error.message}`);
+      }
     }
   }
   incrementAnalytics(guild.id, { lastProcessedAt: now() }, meta);
