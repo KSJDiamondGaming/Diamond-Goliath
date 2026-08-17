@@ -35,10 +35,17 @@ function normalizeDurationDays(value, plan) {
 }
 
 function addDaysFrom(startValue, days) {
-  if (!days) return null;
+  const numericDays = Number(days);
+  if (!Number.isFinite(numericDays) || numericDays <= 0) return null;
+
   const start = startValue ? new Date(startValue) : new Date();
   const base = Number.isFinite(start.getTime()) && start.getTime() > Date.now() ? start : new Date();
-  base.setUTCDate(base.getUTCDate() + Number(days));
+  base.setUTCDate(base.getUTCDate() + Math.trunc(numericDays));
+
+  if (!Number.isFinite(base.getTime())) {
+    throw new Error('Subscription duration exceeds the supported date range.');
+  }
+
   return base.toISOString();
 }
 
