@@ -280,15 +280,17 @@ async function assignBirthdayRole(guild, section, member, meta = {}) {
 }
 
 async function cleanupBirthdayRoles(guild, section, meta = {}) {
+  const local = zonedParts(new Date(), section.settings.timezone);
+  const year = Number(local.year);
+  const today = `${local.year}-${local.month}-${local.day}`;
   const configuredRoleId = section.settings.birthdayRoleId;
-  const maxAgeMs = section.settings.roleDurationHours * 3600000;
   let removed = 0;
   for (const member of Object.values(section.members)) {
-    if (!member.roleAssignedAt || Date.now() - new Date(member.roleAssignedAt).getTime() < maxAgeMs) continue;
+    if (!member.roleAssignedAt || birthdayKey(member, year, section.settings) === today) continue;
     const trackedRoleId = member.roleAssignedRoleId || configuredRoleId;
     if (trackedRoleId) {
       try {
-        if (await removeTrackedBirthdayRole(guild, member, trackedRoleId, meta, 'Goliath birthday role expired')) removed += 1;
+        if (await removeTrackedBirthdayRole(guild, member, trackedRoleId, meta, 'Goliath birthday role ended')) removed += 1;
       } catch (error) {
         console.warn(`[Birthdays] ${guild.id}/${member.userId} role cleanup: ${error.message}`);
         continue;
