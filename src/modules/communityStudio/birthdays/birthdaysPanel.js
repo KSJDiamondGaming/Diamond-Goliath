@@ -41,9 +41,16 @@ function adminPayload(interaction) {
   return {
     embeds: [new EmbedBuilder().setColor(enabled ? 0x5865F2 : 0x747F8D).setTitle('🎂 Birthdays').setDescription([
       `Module: **${enabled ? 'Enabled' : 'Disabled'}**`,
-      `Announcement channel: ${section.settings.announcementChannelId ? `<#${section.settings.announcementChannelId}>` : '**Not set**'}`,
-      `Time: **${section.settings.announcementTime} ${section.settings.timezone}**`,
+      '',
+      '**🎉 Birthday Day**',
       `Birthday role: ${section.settings.birthdayRoleId ? `<@&${section.settings.birthdayRoleId}>` : '**None**'}`,
+      'Role lifecycle: **Birthday day only · midnight to midnight**',
+      '',
+      '**📣 Public Announcement**',
+      `Channel: ${section.settings.announcementChannelId ? `<#${section.settings.announcementChannelId}>` : '**Not set**'}`,
+      `Announcement time: **${section.settings.announcementTime} ${section.settings.timezone}**`,
+      'The time above controls the **announcement/ping only**.',
+      '',
       `Stored birthdays: **${Object.keys(section.members).length}**`,
       '',
       '**🎂 Today’s Birthdays**',
@@ -53,35 +60,56 @@ function adminPayload(interaction) {
       upcomingLines,
     ].join('\n')).setFooter({ text: 'Goliath Birthdays · /admin' }).setTimestamp()],
     components: [
-      row(new ChannelSelectMenuBuilder().setCustomId('admin:birthdays:channel').setPlaceholder('Birthday announcement channel').setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setMinValues(0).setMaxValues(1).setDefaultChannels(section.settings.announcementChannelId ? [section.settings.announcementChannelId] : [])),
-      row(new RoleSelectMenuBuilder().setCustomId('admin:birthdays:role').setPlaceholder('Optional birthday role').setMinValues(0).setMaxValues(1).setDefaultRoles(section.settings.birthdayRoleId ? [section.settings.birthdayRoleId] : [])),
-      row(button('admin:birthdays:settings', '⚙️ Message / Time', ButtonStyle.Primary), button('admin:birthdays:toggle', enabled ? '⏸ Disable' : '▶ Enable', enabled ? ButtonStyle.Danger : ButtonStyle.Success), button('admin:birthdays:upcoming', '📅 Upcoming'), button('admin:birthdays:health', '🩺 Health')),
+      row(new ChannelSelectMenuBuilder().setCustomId('admin:birthdays:channel').setPlaceholder('Public birthday announcement channel').setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setMinValues(0).setMaxValues(1).setDefaultChannels(section.settings.announcementChannelId ? [section.settings.announcementChannelId] : [])),
+      row(new RoleSelectMenuBuilder().setCustomId('admin:birthdays:role').setPlaceholder('Optional all-day birthday role').setMinValues(0).setMaxValues(1).setDefaultRoles(section.settings.birthdayRoleId ? [section.settings.birthdayRoleId] : [])),
+      row(button('admin:birthdays:settings', '⚙️ Announcement Settings', ButtonStyle.Primary), button('admin:birthdays:toggle', enabled ? '⏸ Disable' : '▶ Enable', enabled ? ButtonStyle.Danger : ButtonStyle.Success), button('admin:birthdays:upcoming', '📅 Upcoming'), button('admin:birthdays:health', '🩺 Health')),
       row(button('admin:studio:communityStudio', '⬅️ Back to Community Studio')),
     ],
   };
 }
 
 function settingsModal(section) {
-  return new ModalBuilder().setCustomId('admin:birthdays:settings:submit').setTitle('Birthday Settings').addComponents(
+  return new ModalBuilder().setCustomId('admin:birthdays:settings:submit').setTitle('Birthday Announcement Settings').addComponents(
     row(new TextInputBuilder().setCustomId('time').setLabel('Announcement time (HH:MM)').setStyle(TextInputStyle.Short).setRequired(true).setValue(section.settings.announcementTime)),
-    row(new TextInputBuilder().setCustomId('timezone').setLabel('Timezone').setStyle(TextInputStyle.Short).setRequired(true).setValue(section.settings.timezone).setPlaceholder('Europe/London')),
-    row(new TextInputBuilder().setCustomId('message').setLabel('Birthday message').setStyle(TextInputStyle.Paragraph).setRequired(true).setMaxLength(1800).setValue(section.settings.messageTemplate)),
-    row(new TextInputBuilder().setCustomId('roleHours').setLabel('Birthday role duration (hours)').setStyle(TextInputStyle.Short).setRequired(true).setValue(String(section.settings.roleDurationHours))),
+    row(new TextInputBuilder().setCustomId('timezone').setLabel('Server birthday timezone').setStyle(TextInputStyle.Short).setRequired(true).setValue(section.settings.timezone).setPlaceholder('Europe/London')),
+    row(new TextInputBuilder().setCustomId('message').setLabel('Public birthday message').setStyle(TextInputStyle.Paragraph).setRequired(true).setMaxLength(1800).setValue(section.settings.messageTemplate)),
   );
 }
 
 function userPayload(interaction) {
   const record = birthdays.getBirthday(interaction.guildId, interaction.user.id);
   const section = birthdays.getSection(interaction.guildId);
+  const { today } = birthdayWindow(interaction.guildId);
+  const isToday = today.some((item) => item.member.userId === interaction.user.id);
+  const birthdayRole = section.settings.birthdayRoleId ? `<@&${section.settings.birthdayRoleId}>` : 'Not configured';
   const desc = record ? [
-    `Birthday: **${String(record.day).padStart(2, '0')}/${String(record.month).padStart(2, '0')}${record.year ? `/${record.year}` : ''}**`,
-    `Birthday announcement: **${record.announce ? 'On' : 'Off'}**`,
+    '**🎂 Your Birthday**',
+    `Date: **${String(record.day).padStart(2, '0')}/${String(record.month).padStart(2, '0')}${record.year ? `/${record.year}` : ''}**${isToday ? ' — **TODAY**' : ''}`,
+    `Public birthday announcement: **${record.announce ? 'On' : 'Off'}**`,
     `Show age when announced: **${record.showAge && record.year ? 'On' : 'Off'}**`,
-    '', `Server announcement time: **${section.settings.announcementTime} ${section.settings.timezone}**`,
-  ].join('\n') : 'You have not added a birthday yet. Your birth year is optional.';
+    '',
+    '**🎉 On Your Birthday**',
+    `Birthday role: ${birthdayRole}`,
+    'If configured, the birthday role is for your **birthday day only — midnight to midnight**.',
+    '',
+    '**📣 Server Announcement**',
+    `Scheduled for: **${section.settings.announcementTime} ${section.settings.timezone}**`,
+    section.settings.announcementChannelId ? `Posted in: <#${section.settings.announcementChannelId}>` : 'Announcement channel: **Not configured**',
+    'This scheduled time controls the **public birthday message/ping only**.',
+  ].join('\n') : [
+    '**🎂 Add Your Birthday**',
+    'You have not added a birthday yet.',
+    'Your birth year is optional. Add it only if you want the server to be able to show your age when announced.',
+    '',
+    `Server birthday timezone: **${section.settings.timezone}**`,
+  ].join('\n');
   return {
-    embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('🎂 My Birthday').setDescription(desc).setFooter({ text: 'Your birthday settings' }).setTimestamp()],
-    components: [row(button('birthdays:user:set', record ? '✏️ Edit Birthday' : '➕ Add Birthday', ButtonStyle.Primary), record ? button('birthdays:user:announce', record.announce ? '📣 Announce: On' : '📣 Announce: Off', record.announce ? ButtonStyle.Success : ButtonStyle.Secondary) : null, record?.year ? button('birthdays:user:age', record.showAge ? '🎈 Age: On' : '🎈 Age: Off', record.showAge ? ButtonStyle.Success : ButtonStyle.Secondary) : null), row(button('birthdays:user:upcoming', '📅 Upcoming Birthdays'), record ? button('birthdays:user:remove', '🗑️ Remove', ButtonStyle.Danger) : null, button('user:category:community', '⬅️ Back'))],
+    embeds: [new EmbedBuilder().setColor(isToday ? 0xF1C40F : 0x5865F2).setTitle(isToday ? '🎉 Happy Birthday!' : '🎂 My Birthday').setDescription(desc).setFooter({ text: 'Goliath Birthdays · /user' }).setTimestamp()],
+    components: [
+      row(button('birthdays:user:set', record ? '✏️ Edit Birthday' : '➕ Add Birthday', ButtonStyle.Primary), record ? button('birthdays:user:announce', record.announce ? '📣 Announcement: On' : '📣 Announcement: Off', record.announce ? ButtonStyle.Success : ButtonStyle.Secondary) : null, record?.year ? button('birthdays:user:age', record.showAge ? '🎈 Show Age: On' : '🎈 Show Age: Off', record.showAge ? ButtonStyle.Success : ButtonStyle.Secondary) : null),
+      row(button('birthdays:user:upcoming', '📅 Today & Upcoming'), record ? button('birthdays:user:remove', '🗑️ Remove Birthday', ButtonStyle.Danger) : null),
+      row(button('user:category:community', '⬅️ Back to Community')),
+    ],
   };
 }
 
@@ -109,8 +137,8 @@ async function handleAdmin(interaction) {
     const time = interaction.fields.getTextInputValue('time').trim(); const timezone = interaction.fields.getTextInputValue('timezone').trim();
     if (!birthdays.validTime(time)) throw new Error('Time must use HH:MM in 24-hour format.');
     if (!birthdays.validTimezone(timezone)) throw new Error('Timezone must be a valid IANA timezone such as Europe/London.');
-    birthdays.updateSettings(interaction.guildId, { announcementTime: time, timezone, messageTemplate: interaction.fields.getTextInputValue('message'), roleDurationHours: Number(interaction.fields.getTextInputValue('roleHours') || 24) }, { ...actor, action: 'birthdays_settings_update' });
-    await interaction.reply({ content: '✅ Birthday settings updated.', flags: 64 }); return true;
+    birthdays.updateSettings(interaction.guildId, { announcementTime: time, timezone, messageTemplate: interaction.fields.getTextInputValue('message') }, { ...actor, action: 'birthdays_settings_update' });
+    await interaction.reply({ content: '✅ Birthday announcement settings updated. The time controls the public announcement only; the birthday role follows the birthday day.', flags: 64 }); return true;
   } else if (id === 'admin:birthdays:upcoming') {
     await interaction.reply({ content: birthdayListContent(interaction.guildId), flags: 64, allowedMentions: { parse: [] } }); return true;
   } else if (id === 'admin:birthdays:health') {
