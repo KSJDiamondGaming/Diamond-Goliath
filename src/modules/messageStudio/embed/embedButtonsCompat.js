@@ -15,6 +15,7 @@ const {
 } = require('discord.js');
 const guildManager = require('../../../core/guild/guildManager');
 const { getAllEmbedDeployments } = require('./embedDeployments');
+const { getReadinessReport, getReadinessFixTarget, MAX_PANELS } = require('./embedValidation');
 const panel = require('./embedPanel');
 
 const MAX_FIELDS = 25;
@@ -272,77 +273,23 @@ panel.parseButtonActionIndex = parseButtonIndex;
 panel.resolveButtonAction = resolveButton;
 panel.supportedButtonActions = BUILT_IN_ACTIONS;
 
-// Canonical navigation/readiness UI. Kept on the button/panel surface so there is
-// no separate navigation compatibility module to maintain.
+// Canonical navigation/readiness UI. Validation comes from embedValidation.js.
 (() => {
   const { mediaModel } = require('./embedMedia');
-  const KNOWN_ACTIONS = new Set(BUILT_IN_ACTIONS);
-  const MAX_PANELS = 10;
-  const MAX_BUTTON_ROWS = MAX_DEPLOYED_BUTTON_ROWS;
-  function navText(value) { return String(value ?? '').trim(); }
-  function hasVariable(value) { return /\{[a-zA-Z0-9_]+\}/.test(String(value || '')); }
-  function usableUrl(value) { const raw = navText(value); if (!raw) return true; if (hasVariable(raw)) return true; try { const url = new URL(raw); return ['http:', 'https:'].includes(url.protocol); } catch { return false; } }
-  function navRoleId(value) { const id = navText(value).replace(/[<@&>]/g, ''); return /^\d{15,25}$/.test(id) ? id : null; }
   function requestedBy(interaction) { return panel.memberName?.(interaction) || interaction.member?.displayName || interaction.user?.username || 'Unknown User'; }
   function compactPreviewPayload(payload, interaction) { if (!payload || !Array.isArray(payload.embeds) || payload.embeds.length <= 2) return payload; const state = panel.getSession(interaction); const selectedIndex = Math.max(0, Number(state?.selectedPanelIndex) || 0); const selectedPreview = payload.embeds[selectedIndex + 1] || payload.embeds[1]; return { ...payload, embeds: selectedPreview ? [payload.embeds[0], selectedPreview] : [payload.embeds[0]] }; }
-  function push(list, message) { if (!list.includes(message)) list.push(message); }
-  function fieldText(panelData = {}) { return [panelData.title, panelData.description, panelData.authorName, panelData.authorIcon, panelData.authorUrl, panelData.footer, panelData.footerIcon, panelData.image, panelData.thumbnail, ...(Array.isArray(panelData.fields) ? panelData.fields.flatMap((field) => [field?.name, field?.value]) : [])].filter(Boolean).join('\n'); }
-  function unknownVariables(state) { const source = [...(Array.isArray(state.panels) ? state.panels.map(fieldText) : []), ...(Array.isArray(state.buttons) ? state.buttons.flatMap((button) => [button?.label, button?.url, button?.actionValue]) : [])].join('\n'); const found = [...source.matchAll(/\{([a-zA-Z0-9_]+)\}/g)].map((match) => match[1]); const known = new Set((Array.isArray(panel.HELPERS) ? panel.HELPERS : []).map((item) => String(item).replace(/[{}]/g, '').toLowerCase())); if (!known.size) return []; return [...new Set(found.filter((name) => !known.has(name.toLowerCase())))]; }
-  function getReadinessReport(interaction, state = panel.getSession(interaction)) {
-    const errors = [], warnings = [], checks = [], panels = Array.isArray(state.panels) ? state.panels : [], buttons = Array.isArray(state.buttons) ? state.buttons : [];
-    if (!state.channelId) push(errors, 'Choose a destination channel.'); else checks.push('Destination channel selected');
-    if (!panels.length) push(errors, 'At least one content panel is required.');
-    if (panels.length > MAX_PANELS) push(errors, `Only ${MAX_PANELS} panels can be used.`);
-    panels.forEach((item, index) => {
-      const number = index + 1, fields = Array.isArray(item?.fields) ? item.fields : [];
-      const hasContent = [item?.title, item?.description, item?.authorName, item?.footer, item?.image, item?.thumbnail].some((value) => navText(value)) || fields.some((field) => navText(field?.name) || navText(field?.value));
-      if (!hasContent) push(warnings, `Panel ${number} is empty.`);
-      if (fields.length > MAX_FIELDS) push(errors, `Panel ${number} exceeds the ${MAX_FIELDS}-field limit.`);
-      fields.forEach((field, fieldIndex) => { if (!navText(field?.name)) push(errors, `Panel ${number}, field ${fieldIndex + 1} is missing a name.`); if (!navText(field?.value)) push(errors, `Panel ${number}, field ${fieldIndex + 1} is missing content.`); });
-      [['Author icon', item?.authorIcon], ['Author URL', item?.authorUrl], ['Footer icon', item?.footerIcon], ['Thumbnail', item?.thumbnail], ['Image', item?.image]].forEach(([label, value]) => { if (navText(value) && !usableUrl(value)) push(errors, `Panel ${number} ${label.toLowerCase()} is not a valid URL or variable.`); });
-      const media = mediaModel.mediaForPanel(state, index);
-      if (media.gallery.length > mediaModel.MAX_GALLERY_ITEMS) push(errors, `Panel ${number} exceeds the gallery limit.`);
-      if (media.files.length > mediaModel.MAX_FILES) push(errors, `Panel ${number} exceeds the attached-file limit.`);
-      if (navText(media.thumbnail?.source) && !usableUrl(media.thumbnail.source)) push(errors, `Panel ${number} thumbnail media source is invalid.`);
-      media.gallery.forEach((entry, mediaIndex) => { if (!usableUrl(entry?.source)) push(errors, `Panel ${number}, media ${mediaIndex + 1} has an invalid source.`); });
-      media.files.forEach((entry, fileIndex) => { if (!usableUrl(entry?.source)) push(errors, `Panel ${number}, file ${fileIndex + 1} has an invalid source.`); });
+  function readinessReport(interaction, state = panel.getSession(interaction)) {
+    return getReadinessReport(interaction, state, {
+      mediaForPanel: mediaModel.mediaForPanel,
+      maxGalleryItems: mediaModel.MAX_GALLERY_ITEMS,
+      maxFiles: mediaModel.MAX_FILES,
+      helpers: panel.HELPERS,
     });
-    checks.push(`${panels.length}/${MAX_PANELS} panels`, `${panels.reduce((sum, item) => sum + (Array.isArray(item?.fields) ? item.fields.length : 0), 0)} fields`);
-    if (buttons.length > MAX_BUTTONS) push(errors, `Only ${MAX_BUTTONS} buttons can be deployed.`);
-    const rowCounts = Array.from({ length: MAX_BUTTON_ROWS }, () => 0);
-    buttons.forEach((button, index) => {
-      const number = index + 1, url = navText(button?.url), action = navText(button?.action).toLowerCase();
-      if (!navText(button?.label)) push(errors, `Button ${number} is missing a label.`);
-      if (url && action) push(errors, `Button ${number} cannot have both a link and a bot action.`);
-      if (url && !usableUrl(url)) push(errors, `Button ${number} has an invalid link.`);
-      if (action && !KNOWN_ACTIONS.has(action)) push(errors, `Button ${number} uses unsupported action \`${action}\`.`);
-      if (!url && !action) push(warnings, `Button ${number} has no link or action configured.`);
-      if (action === 'reply' && !navText(button?.actionValue)) push(errors, `Button ${number} Reply action has no reply text.`);
-      if (ROLE_ACTIONS.has(action)) { const id = navRoleId(button?.actionValue); if (!id) push(errors, `Button ${number} role action has no valid role selected.`); else { const role = interaction.guild?.roles?.cache?.get?.(id); if (!role) push(errors, `Button ${number} selected role no longer exists.`); else if (role.id === interaction.guildId || role.managed) push(errors, `Button ${number} selected role cannot be managed by a self-service button.`); else if (!role.editable) push(errors, `Button ${number} selected role is above Goliath or otherwise not editable.`); } }
-      const configuredRow = Number(button?.row); if (Number.isInteger(configuredRow) && configuredRow >= 1 && configuredRow <= MAX_BUTTON_ROWS) rowCounts[configuredRow - 1] += 1;
-    });
-    rowCounts.forEach((count, index) => { if (count > MAX_COMPONENTS_PER_ROW) push(errors, `Button row ${index + 1} has ${count} buttons; Discord allows ${MAX_COMPONENTS_PER_ROW}.`); });
-    checks.push(`${buttons.length}/${MAX_BUTTONS} buttons`);
-    const unknown = unknownVariables(state); unknown.forEach((name) => push(warnings, `Variable \`{${name}}\` is not in the current helper list.`)); if (!unknown.length) checks.push('Variables recognised');
-    if (state.hasUnsavedChanges) push(warnings, 'There are unsaved changes in the current builder session.');
-    return { ready: errors.length === 0, errors, warnings, checks };
   }
-  function getReadinessFixTarget(report) {
-    const issue = String(report?.errors?.[0] || report?.warnings?.[0] || '');
-    if (!issue) return { type: 'builder', label: '🛠️ Builder' };
-    if (/destination channel/i.test(issue)) return { type: 'channel', label: '📢 Fix Channel' };
-    const panelMatch = issue.match(/Panel\s+(\d+)/i), fieldMatch = issue.match(/field\s+(\d+)/i), buttonMatch = issue.match(/Button\s+(\d+)/i);
-    if (buttonMatch || /button row/i.test(issue)) return { type: 'button', index: buttonMatch ? Math.max(0, Number(buttonMatch[1]) - 1) : null, label: '🔘 Fix Button' };
-    if (panelMatch && /media|thumbnail|gallery|file|image|author icon|footer icon|author url/i.test(issue)) return { type: 'media', panelIndex: Math.max(0, Number(panelMatch[1]) - 1), label: '🖼️ Fix Media' };
-    if (panelMatch && fieldMatch) return { type: 'field', panelIndex: Math.max(0, Number(panelMatch[1]) - 1), fieldIndex: Math.max(0, Number(fieldMatch[1]) - 1), label: '📋 Fix Field' };
-    if (panelMatch) return { type: 'panel', panelIndex: Math.max(0, Number(panelMatch[1]) - 1), label: '🧩 Fix Panel' };
-    if (/Variable/i.test(issue)) return { type: 'variables', label: '📖 Variables' };
-    return { type: 'builder', label: '🛠️ Builder' };
-  }
-  panel.getReadinessReport = getReadinessReport;
+  panel.getReadinessReport = readinessReport;
   panel.getReadinessFixTarget = getReadinessFixTarget;
   panel.buildReadinessPanel = (interaction) => {
-    const state = panel.getSession(interaction), report = getReadinessReport(interaction, state), fix = getReadinessFixTarget(report);
+    const state = panel.getSession(interaction), report = readinessReport(interaction, state), fix = getReadinessFixTarget(report);
     const status = report.ready ? (report.warnings.length ? '🟡 Ready with warnings' : '🟢 Ready to Send') : '🔴 Not Ready';
     const lines = [`**Status:** ${status}`, `**Channel:** ${state.channelId ? `<#${state.channelId}>` : 'Not selected'}`, `**Panels:** ${state.panels?.length || 0}/${MAX_PANELS}`, `**Buttons:** ${state.buttons?.length || 0}/${MAX_BUTTONS}`, '', report.errors.length ? `### ❌ Fix before sending\n${report.errors.slice(0, 12).map((item) => `• ${item}`).join('\n')}${report.errors.length > 12 ? `\n• And ${report.errors.length - 12} more...` : ''}` : '### ✅ Required checks passed'];
     if (report.warnings.length) lines.push('', `### ⚠️ Warnings\n${report.warnings.slice(0, 8).map((item) => `• ${item}`).join('\n')}${report.warnings.length > 8 ? `\n• And ${report.warnings.length - 8} more...` : ''}`);
