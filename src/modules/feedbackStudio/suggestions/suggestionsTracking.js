@@ -112,6 +112,10 @@ async function review(interaction, suggestionId, action, panel, reason = '') {
     if (!current) throw new Error('Suggestion not found.');
     if (current.status !== 'pending') throw new Error(`Suggestion is already ${current.status}.`);
     const status = action === 'approve' ? 'approved' : 'denied';
+    const targetId = status === 'approved' ? section.approvedChannelId : section.deniedChannelId;
+    const target = targetId
+      ? await resolveSendableChannel(interaction.guild, targetId, `${status} suggestions channel`)
+      : null;
     const reviewReason = String(reason || '').trim().slice(0, 500);
     const updated = suggestions.updateSuggestion(guildId, suggestionId, {
       status,
@@ -121,11 +125,7 @@ async function review(interaction, suggestionId, action, panel, reason = '') {
     }, interaction.guild);
     suggestions.incrementAnalytics(guildId, status === 'approved' ? { approved: 1 } : { denied: 1 }, interaction.guild);
     await refreshSuggestionMessage(interaction.guild, suggestionId, panel);
-    const targetId = status === 'approved' ? section.approvedChannelId : section.deniedChannelId;
-    if (targetId) {
-      const target = await resolveSendableChannel(interaction.guild, targetId, `${status} suggestions channel`);
-      await target.send({ embeds: [panel.buildSuggestionEmbed(interaction.guild, updated, section)] });
-    }
+    if (target) await target.send({ embeds: [panel.buildSuggestionEmbed(interaction.guild, updated, section)] });
     await notifyAuthor(interaction.guild, updated);
     return updated;
   });
