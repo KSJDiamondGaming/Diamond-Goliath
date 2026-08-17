@@ -1,12 +1,12 @@
 'use strict';
 
 const { Events } = require('discord.js');
-const healthWatch = require('../../owner/healthWatch/index');
+const sentinel = require('../../owner/sentinel/index.js');
 
 module.exports = {
   name: Events.ClientReady,
   once: true,
   async execute(client) {
-    await healthWatch.start(client);
+    await sentinel.start(client);
   },
 };

@@ -35,19 +35,19 @@ function classify(text) {
   return { module: 'runtime', component: 'console-error', severity: 'error' };
 }
 
-function install(client, healthWatch) {
-  if (installed || !client || typeof healthWatch?.report !== 'function') return false;
+function install(client, sentinel) {
+  if (installed || !client || typeof sentinel?.report !== 'function') return false;
   installed = true;
   originalError = console.error.bind(console);
   console.error = (...args) => {
     originalError(...args);
     try {
       const text = textOf(args);
-      if (!text || text.includes('Goliath Health Watch console bridge')) return;
+      if (!text || text.includes('Goliath Sentinel console bridge')) return;
       const fingerprint = normalizedFingerprint(text);
       const code = `console-${crypto.createHash('sha1').update(fingerprint).digest('hex').slice(0, 12)}`;
       const classification = classify(text);
-      healthWatch.report(client, {
+      sentinel.report(client, {
         ...classification,
         code,
         message: text.split('\n')[0].slice(0, 1000),
