@@ -4,9 +4,14 @@ const { PermissionFlagsBits } = require('discord.js');
 const { getAllEmbedDeployments, markEmbedDeploymentStatus, DEPLOYMENT_STATUS } = require('./embedDeployments');
 const { listTemplates } = require('./embedTemplates');
 
+const MAX_PANELS = 10;
+const MAX_FIELDS = 25;
 const MAX_BUTTONS = 20;
 const MAX_BUTTONS_PER_ROW = 5;
 const MAX_COMPONENT_ROWS = 5;
+const MAX_DEPLOYED_BUTTON_ROWS = 4;
+const KNOWN_BUTTON_ACTIONS = new Set(['reply', 'toggle-role', 'add-role', 'remove-role', 'user-info', 'server-info']);
+const ROLE_BUTTON_ACTIONS = new Set(['toggle-role', 'add-role', 'remove-role']);
 
 const IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif']);
 const VIDEO_EXTENSIONS = new Set(['mp4', 'webm', 'mov', 'm4v']);
@@ -33,7 +38,7 @@ function isHttpUrl(value) {
 
 function isVariableUrl(value) {
   const text = toCleanString(value);
-  return /^\{[a-zA-Z0-9]+\}$/.test(text);
+  return /^\{[a-zA-Z0-9_]+\}$/.test(text);
 }
 
 function isUsableUrl(value) {
@@ -71,16 +76,11 @@ function getButtonValidationErrors(buttons = []) {
     const style = normaliseButtonStyle(button?.style);
     const url = toCleanString(button?.url);
 
-    if (!label) {
-      errors.push(`Button ${number} is missing a label.`);
-    }
+    if (!label) errors.push(`Button ${number} is missing a label.`);
 
     if (style === 'Link' || url) {
-      if (!url) {
-        errors.push(`Button ${number} is a Link button but has no URL.`);
-      } else if (!isUsableUrl(url)) {
-        errors.push(`Button ${number} has an invalid URL.`);
-      }
+      if (!url) errors.push(`Button ${number} is a Link button but has no URL.`);
+      else if (!isUsableUrl(url)) errors.push(`Button ${number} has an invalid URL.`);
     }
   });
 
@@ -89,7 +89,6 @@ function getButtonValidationErrors(buttons = []) {
 
 function getUrlValidationErrors(state = {}) {
   const errors = [];
-
   const urlFields = [
     ['Author icon', state.authorIcon],
     ['Author URL', state.authorUrl],
@@ -100,11 +99,7 @@ function getUrlValidationErrors(state = {}) {
 
   urlFields.forEach(([label, value]) => {
     const text = toCleanString(value);
-    if (!text) return;
-
-    if (!isUsableUrl(text)) {
-      errors.push(`${label} must be a valid http(s) URL or supported variable.`);
-    }
+    if (text && !isUsableUrl(text)) errors.push(`${label} must be a valid http(s) URL or supported variable.`);
   });
 
   return errors;
@@ -122,7 +117,7 @@ function sourceExtension(source = '') {
 }
 
 function isVariableSource(source = '') {
-  return /\{\{[^{}]+\}\}|\$\{[^{}]+\}/.test(String(source).trim());
+  return /\{\{[^{}]+\}\}|\$\{[^{}]+\}|\{[a-zA-Z0-9_]+\}/.test(String(source).trim());
 }
 
 function detectKind(source = '', declaredType = 'auto') {
@@ -184,17 +179,146 @@ function validateEmbedState(state = {}) {
   ];
 }
 
+function pushUnique(list, message) {
+  if (!list.includes(message)) list.push(message);
+}
+
+function panelVariableText(panel = {}) {
+  return [
+    panel.title,
+    panel.description,
+    panel.authorName,
+    panel.authorIcon,
+    panel.authorUrl,
+    panel.footer,
+    panel.footerIcon,
+    panel.image,
+    panel.thumbnail,
+    ...(Array.isArray(panel.fields) ? panel.fields.flatMap((field) => [field?.name, field?.value]) : []),
+  ].filter(Boolean).join('\n');
+}
+
+function unknownVariables(state = {}, helpers = []) {
+  const source = [
+    ...(Array.isArray(state.panels) ? state.panels.map(panelVariableText) : []),
+    ...(Array.isArray(state.buttons) ? state.buttons.flatMap((button) => [button?.label, button?.url, button?.actionValue]) : []),
+  ].join('\n');
+  const found = [...source.matchAll(/\{([a-zA-Z0-9_]+)\}/g)].map((match) => match[1]);
+  const known = new Set((Array.isArray(helpers) ? helpers : []).map((item) => String(item).replace(/[{}]/g, '').toLowerCase()));
+  if (!known.size) return [];
+  return [...new Set(found.filter((name) => !known.has(name.toLowerCase())))];
+}
+
+function cleanRoleId(value) {
+  const id = toCleanString(value).replace(/[<@&>]/g, '');
+  return /^\d{15,25}$/.test(id) ? id : null;
+}
+
+function getReadinessReport(interaction, state = {}, options = {}) {
+  const errors = [];
+  const warnings = [];
+  const checks = [];
+  const panels = Array.isArray(state.panels) ? state.panels : [];
+  const buttons = Array.isArray(state.buttons) ? state.buttons : [];
+  const mediaForPanel = typeof options.mediaForPanel === 'function' ? options.mediaForPanel : () => ({ thumbnail: {}, gallery: [], files: [] });
+  const maxGalleryItems = Number(options.maxGalleryItems) || 10;
+  const maxFiles = Number(options.maxFiles) || 10;
+
+  if (!state.channelId) pushUnique(errors, 'Choose a destination channel.');
+  else checks.push('Destination channel selected');
+  if (!panels.length) pushUnique(errors, 'At least one content panel is required.');
+  if (panels.length > MAX_PANELS) pushUnique(errors, `Only ${MAX_PANELS} panels can be used.`);
+
+  panels.forEach((item, index) => {
+    const number = index + 1;
+    const fields = Array.isArray(item?.fields) ? item.fields : [];
+    const hasContent = [item?.title, item?.description, item?.authorName, item?.footer, item?.image, item?.thumbnail].some((value) => toCleanString(value))
+      || fields.some((field) => toCleanString(field?.name) || toCleanString(field?.value));
+    if (!hasContent) pushUnique(warnings, `Panel ${number} is empty.`);
+    if (fields.length > MAX_FIELDS) pushUnique(errors, `Panel ${number} exceeds the ${MAX_FIELDS}-field limit.`);
+    fields.forEach((field, fieldIndex) => {
+      if (!toCleanString(field?.name)) pushUnique(errors, `Panel ${number}, field ${fieldIndex + 1} is missing a name.`);
+      if (!toCleanString(field?.value)) pushUnique(errors, `Panel ${number}, field ${fieldIndex + 1} is missing content.`);
+    });
+    [['Author icon', item?.authorIcon], ['Author URL', item?.authorUrl], ['Footer icon', item?.footerIcon], ['Thumbnail', item?.thumbnail], ['Image', item?.image]].forEach(([label, value]) => {
+      if (toCleanString(value) && !isUsableUrl(value)) pushUnique(errors, `Panel ${number} ${label.toLowerCase()} is not a valid URL or variable.`);
+    });
+
+    const media = mediaForPanel(state, index) || { thumbnail: {}, gallery: [], files: [] };
+    const gallery = Array.isArray(media.gallery) ? media.gallery : [];
+    const files = Array.isArray(media.files) ? media.files : [];
+    if (gallery.length > maxGalleryItems) pushUnique(errors, `Panel ${number} exceeds the gallery limit.`);
+    if (files.length > maxFiles) pushUnique(errors, `Panel ${number} exceeds the attached-file limit.`);
+    if (toCleanString(media.thumbnail?.source) && !isUsableUrl(media.thumbnail.source)) pushUnique(errors, `Panel ${number} thumbnail media source is invalid.`);
+    gallery.forEach((entry, mediaIndex) => { if (!isUsableUrl(entry?.source)) pushUnique(errors, `Panel ${number}, media ${mediaIndex + 1} has an invalid source.`); });
+    files.forEach((entry, fileIndex) => { if (!isUsableUrl(entry?.source)) pushUnique(errors, `Panel ${number}, file ${fileIndex + 1} has an invalid source.`); });
+  });
+
+  checks.push(`${panels.length}/${MAX_PANELS} panels`);
+  checks.push(`${panels.reduce((sum, item) => sum + (Array.isArray(item?.fields) ? item.fields.length : 0), 0)} fields`);
+  if (buttons.length > MAX_BUTTONS) pushUnique(errors, `Only ${MAX_BUTTONS} buttons can be deployed.`);
+
+  const rowCounts = Array.from({ length: MAX_DEPLOYED_BUTTON_ROWS }, () => 0);
+  buttons.forEach((button, index) => {
+    const number = index + 1;
+    const label = toCleanString(button?.label);
+    const url = toCleanString(button?.url);
+    const action = toCleanString(button?.action).toLowerCase();
+    if (!label) pushUnique(errors, `Button ${number} is missing a label.`);
+    if (url && action) pushUnique(errors, `Button ${number} cannot have both a link and a bot action.`);
+    if (url && !isUsableUrl(url)) pushUnique(errors, `Button ${number} has an invalid link.`);
+    if (action && !KNOWN_BUTTON_ACTIONS.has(action)) pushUnique(errors, `Button ${number} uses unsupported action \`${action}\`.`);
+    if (!url && !action) pushUnique(warnings, `Button ${number} has no link or action configured.`);
+    if (action === 'reply' && !toCleanString(button?.actionValue)) pushUnique(errors, `Button ${number} Reply action has no reply text.`);
+    if (ROLE_BUTTON_ACTIONS.has(action)) {
+      const id = cleanRoleId(button?.actionValue);
+      if (!id) pushUnique(errors, `Button ${number} role action has no valid role selected.`);
+      else {
+        const role = interaction?.guild?.roles?.cache?.get?.(id);
+        if (!role) pushUnique(errors, `Button ${number} selected role no longer exists.`);
+        else if (role.id === interaction.guildId || role.managed) pushUnique(errors, `Button ${number} selected role cannot be managed by a self-service button.`);
+        else if (!role.editable) pushUnique(errors, `Button ${number} selected role is above Goliath or otherwise not editable.`);
+      }
+    }
+    const configuredRow = Number(button?.row);
+    if (Number.isInteger(configuredRow) && configuredRow >= 0 && configuredRow < MAX_DEPLOYED_BUTTON_ROWS) rowCounts[configuredRow] += 1;
+  });
+  rowCounts.forEach((count, index) => {
+    if (count > MAX_BUTTONS_PER_ROW) pushUnique(errors, `Button row ${index + 1} has ${count} buttons; Discord allows ${MAX_BUTTONS_PER_ROW}.`);
+  });
+  checks.push(`${buttons.length}/${MAX_BUTTONS} buttons`);
+
+  const unknown = unknownVariables(state, options.helpers);
+  unknown.forEach((name) => pushUnique(warnings, `Variable \`{${name}}\` is not in the current helper list.`));
+  if (!unknown.length) checks.push('Variables recognised');
+  if (state.hasUnsavedChanges) pushUnique(warnings, 'There are unsaved changes in the current builder session.');
+
+  return { ready: errors.length === 0, errors, warnings, checks };
+}
+
+function getReadinessFixTarget(report) {
+  const issue = String(report?.errors?.[0] || report?.warnings?.[0] || '');
+  if (!issue) return { type: 'builder', label: '🛠️ Builder' };
+  if (/destination channel/i.test(issue)) return { type: 'channel', label: '📢 Fix Channel' };
+  const panelMatch = issue.match(/Panel\s+(\d+)/i);
+  const fieldMatch = issue.match(/field\s+(\d+)/i);
+  const buttonMatch = issue.match(/Button\s+(\d+)/i);
+  if (buttonMatch || /button row/i.test(issue)) return { type: 'button', index: buttonMatch ? Math.max(0, Number(buttonMatch[1]) - 1) : null, label: '🔘 Fix Button' };
+  if (panelMatch && /media|thumbnail|gallery|file|image|author icon|footer icon|author url/i.test(issue)) return { type: 'media', panelIndex: Math.max(0, Number(panelMatch[1]) - 1), label: '🖼️ Fix Media' };
+  if (panelMatch && fieldMatch) return { type: 'field', panelIndex: Math.max(0, Number(panelMatch[1]) - 1), fieldIndex: Math.max(0, Number(fieldMatch[1]) - 1), label: '📋 Fix Field' };
+  if (panelMatch) return { type: 'panel', panelIndex: Math.max(0, Number(panelMatch[1]) - 1), label: '🧩 Fix Panel' };
+  if (/Variable/i.test(issue)) return { type: 'variables', label: '📖 Variables' };
+  return { type: 'builder', label: '🛠️ Builder' };
+}
+
 function formatValidationErrors(errors = []) {
   if (!errors.length) return '';
-
   return [
     '⚠️ Embed Studio validation failed:',
     '',
     ...errors.slice(0, 10).map((error) => `• ${error}`),
     errors.length > 10 ? `• And ${errors.length - 10} more issue(s).` : null,
-  ]
-    .filter(Boolean)
-    .join('\n');
+  ].filter(Boolean).join('\n');
 }
 
 function now() {
@@ -258,9 +382,14 @@ async function repairAll(guild, actorId = null) {
 }
 
 module.exports = {
+  MAX_PANELS,
+  MAX_FIELDS,
   MAX_BUTTONS,
   MAX_BUTTONS_PER_ROW,
   MAX_COMPONENT_ROWS,
+  MAX_DEPLOYED_BUTTON_ROWS,
+  KNOWN_BUTTON_ACTIONS,
+  ROLE_BUTTON_ACTIONS,
   toCleanString,
   isHttpUrl,
   isVariableUrl,
@@ -275,6 +404,8 @@ module.exports = {
   validatePanelMedia,
   statusIcon,
   validateEmbedState,
+  getReadinessReport,
+  getReadinessFixTarget,
   formatValidationErrors,
   buildHealthReport,
   repairAll,
