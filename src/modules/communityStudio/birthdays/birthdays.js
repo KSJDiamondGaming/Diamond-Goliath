@@ -244,20 +244,25 @@ function canManageBirthdayRole(guild, role) {
   );
 }
 
+async function getBirthdayRoleState(guild, section, member) {
+  const roleId = section.settings.birthdayRoleId;
+  if (!roleId) return { role: null, discordMember: null, hasRole: false };
+  const discordMember = await guild.members.fetch(member.userId).catch(() => null);
+  const role = guild.roles.cache.get(roleId) || await guild.roles.fetch(roleId).catch(() => null);
+  return { role, discordMember, hasRole: Boolean(discordMember?.roles?.cache?.has(roleId)) };
+}
+
 async function assignBirthdayRole(guild, section, member, meta = {}) {
   const roleId = section.settings.birthdayRoleId;
   if (!roleId) return false;
-  const discordMember = await guild.members.fetch(member.userId).catch(() => null);
-  const role = guild.roles.cache.get(roleId) || await guild.roles.fetch(roleId).catch(() => null);
+  const { discordMember, role, hasRole } = await getBirthdayRoleState(guild, section, member);
   if (!discordMember) throw new Error('Birthday member is unavailable.');
   if (!role) throw new Error('Birthday role is unavailable.');
   if (!canManageBirthdayRole(guild, role)) throw new Error('Birthday role cannot be managed. Check Manage Roles permission and role hierarchy.');
-  if (!discordMember.roles.cache.has(roleId)) {
-    await discordMember.roles.add(roleId, 'Goliath birthday role');
-  }
-  setBirthday(guild.id, member.userId, { roleAssignedAt: now() }, { ...meta, action: 'birthday_role_assigned' });
-  incrementAnalytics(guild.id, { rolesAssigned: 1 }, meta);
-  return true;
+  if (!hasRole) await discordMember.roles.add(roleId, 'Goliath birthday role');
+  setBirthday(guild.id, member.userId, { roleAssignedAt: member.roleAssignedAt || now() }, { ...meta, action: 'birthday_role_assigned' });
+  if (!hasRole) incrementAnalytics(guild.id, { rolesAssigned: 1 }, meta);
+  return !hasRole;
 }
 
 async function cleanupBirthdayRoles(guild, section, meta = {}) {
@@ -293,15 +298,26 @@ async function processGuild(guild, meta = {}) {
     if (birthdayKey(member, year, section.settings) !== today) continue;
     const currentMember = getBirthday(guild.id, member.userId);
     const currentSection = getSection(guild.id);
-    if (currentSection.settings.birthdayRoleId && !currentMember?.roleAssignedAt) {
-      try {
-        const assigned = await assignBirthdayRole(guild, currentSection, currentMember, meta);
-        if (assigned) result.rolesAssigned += 1;
-      } catch (error) {
-        result.failures += 1;
-        incrementAnalytics(guild.id, { failures: 1 }, meta);
-        console.warn(`[Birthdays] ${guild.id}/${member.userId} role: ${error.message}`);
+    if (!currentSection.settings.birthdayRoleId || !currentMember) continue;
+    try {
+      const state = await getBirthdayRoleState(guild, currentSection, currentMember);
+      if (!state.discordMember) throw new Error('Birthday member is unavailable.');
+      if (!state.role) throw new Error('Birthday role is unavailable.');
+      if (!canManageBirthdayRole(guild, state.role)) throw new Error('Birthday role cannot be managed. Check Manage Roles permission and role hierarchy.');
+
+      if (currentMember.roleAssignedAt && !state.hasRole) {
+        setBirthday(guild.id, member.userId, { roleAssignedAt: null }, { ...meta, action: 'birthday_role_state_repaired' });
       }
+
+      const refreshed = getBirthday(guild.id, member.userId);
+      if (!state.hasRole || !refreshed?.roleAssignedAt) {
+        const assigned = await assignBirthdayRole(guild, currentSection, refreshed, meta);
+        if (assigned) result.rolesAssigned += 1;
+      }
+    } catch (error) {
+      result.failures += 1;
+      incrementAnalytics(guild.id, { failures: 1 }, meta);
+      console.warn(`[Birthdays] ${guild.id}/${member.userId} role: ${error.message}`);
     }
   }
 
