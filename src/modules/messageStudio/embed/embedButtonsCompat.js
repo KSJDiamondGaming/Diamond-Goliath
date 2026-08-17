@@ -218,7 +218,9 @@ panel.buildButtonsManagerPanel = (interaction) => {
     new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId('embed:button-manager-up').setLabel('⬆️ Up').setStyle(ButtonStyle.Secondary).setDisabled(index == null || index <= 0),
       new ButtonBuilder().setCustomId('embed:button-manager-down').setLabel('⬇️ Down').setStyle(ButtonStyle.Secondary).setDisabled(index == null || index >= buttons.length - 1),
-      new ButtonBuilder().setCustomId('embed:builder').setLabel('⬅️ Builder').setStyle(ButtonStyle.Secondary),
+    ),
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('embed:builder').setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary),
     ),
   );
   return { embeds, components: enforceLimits(rows) };
@@ -302,16 +304,9 @@ panel.supportedButtonActions = BUILT_IN_ACTIONS;
   };
   const NAVIGATION_IDS = new Set(['admin:modules', 'embed:back', 'embed:appearance-back', 'embed:thumbnail-back', 'embed:media-options-back', 'embed:file-options-back', 'embed:button-options-back']);
   function componentId(component) { return component?.data?.custom_id || component?.customId || null; }
-  function findRow(rows, id) { return rows.find((row) => Array.isArray(row?.components) && row.components.some((component) => componentId(component) === id)); }
-  function findComponent(rows, id) { for (const row of rows) { const component = Array.isArray(row?.components) ? row.components.find((entry) => componentId(entry) === id) : null; if (component) return component; } return null; }
-  function rowFromComponents(...components) { const safe = components.filter(Boolean).slice(0, 5); return safe.length ? new ActionRowBuilder().addComponents(...safe) : null; }
   function normalizeNavigationLabels(payload) { const rows = Array.isArray(payload?.components) ? payload.components : [], lastRowIndex = rows.length - 1; rows.forEach((row, rowIndex) => { if (!Array.isArray(row?.components)) return; for (const component of row.components) { const id = componentId(component), isExplicitNavigation = NAVIGATION_IDS.has(id), isLastRowBuilderNavigation = id === 'embed:builder' && rowIndex === lastRowIndex; if (!isExplicitNavigation && !isLastRowBuilderNavigation) continue; if (typeof component?.setLabel === 'function') component.setLabel('⬅️ Back'); else if (component?.data) component.data.label = '⬅️ Back'; } }); return payload; }
   function wrapNavigationLabels(methodName) { if (typeof panel[methodName] !== 'function') return; const original = panel[methodName].bind(panel); panel[methodName] = (...args) => normalizeNavigationLabels(original(...args)); }
   if (!panel.__embedNavigationPatched) {
-    if (typeof panel.buildButtonsManagerPanel === 'function') {
-      const originalButtonsManager = panel.buildButtonsManagerPanel.bind(panel);
-      panel.buildButtonsManagerPanel = (interaction, ...args) => { const payload = originalButtonsManager(interaction, ...args), rows = Array.isArray(payload?.components) ? payload.components : [], selector = findRow(rows, 'embed:button-manager-select'), controls = findRow(rows, 'embed:button-manager-add'), reorder = rowFromComponents(findComponent(rows, 'embed:button-manager-up'), findComponent(rows, 'embed:button-manager-down')), back = rowFromComponents(findComponent(rows, 'embed:builder')); payload.components = [selector, controls, reorder, back].filter(Boolean).slice(0, 5); return normalizeNavigationLabels(payload); };
-    }
     ['buildAppearancePanel', 'buildAppearanceIconPanel', 'buildThumbnailOptionsPanel', 'buildMediaManagerPanel', 'buildMediaManager', 'buildMediaOptionsPanel', 'buildFileOptionsPanel', 'buildFieldsManagerPanel', 'buildButtonOptionsPanel', 'buildReadinessPanel'].forEach(wrapNavigationLabels);
     panel.__embedNavigationPatched = true;
   }
