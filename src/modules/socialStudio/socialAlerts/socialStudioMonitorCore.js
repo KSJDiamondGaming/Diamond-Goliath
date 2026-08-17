@@ -74,8 +74,8 @@ function embedActionBlock(lines = []) {
   return actions.length ? `\n\n${actions.join('\n')}\n${EMBED_WIDTH_DIVIDER}` : '';
 }
 
-function configFor(guildId) {
-  const guild = guildManager.reloadGuild(guildId);
+function configFor(guildId, guildConfig = null) {
+  const guild = guildConfig && typeof guildConfig === 'object' ? guildConfig : guildManager.reloadGuild(guildId);
   const social = guild?.modules?.social && typeof guild.modules.social === 'object' ? guild.modules.social : {};
   return {
     ...social,
@@ -507,7 +507,7 @@ function liveMessageUpdateDue(previous, checked) {
 }
 
 async function forcePostCreatorLive(client, guildId, creatorId, options = {}) {
-  const config = configFor(guildId);
+  const config = configFor(guildId, options.guildConfig);
   const creator = config.creators?.[creatorId];
   if (!creator) throw new Error('Select a creator profile first.');
   if (creator.enabled === false) throw new Error('This creator profile is paused.');
@@ -766,7 +766,7 @@ async function checkGuildAccounts(client, guildId, options = {}) {
   if (runningGuilds.has(guildId)) return { guildId, skipped: true, reason: 'check_already_running', results: [] };
   runningGuilds.add(guildId);
   try {
-    const config = configFor(guildId);
+    const config = configFor(guildId, options.guildConfig);
     if (!config.enabled && !options.manual) return { guildId, skipped: true, reason: 'module_disabled', results: [] };
     const interval = Math.max(60000, Number(config.settings?.checkIntervalMs || 300000));
     const accountFilter = new Set((options.accountIds || []).map(String));
