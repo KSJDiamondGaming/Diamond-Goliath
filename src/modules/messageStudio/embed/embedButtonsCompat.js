@@ -15,7 +15,6 @@ const {
 } = require('discord.js');
 const guildManager = require('../../../core/guild/guildManager');
 const { getAllEmbedDeployments } = require('./embedDeployments');
-const { getReadinessReport, getReadinessFixTarget, buildReadinessModel } = require('./embedValidation');
 const panel = require('./embedPanel');
 
 const MAX_FIELDS = 25;
@@ -274,34 +273,5 @@ panel.handleButtonAction = handleButtonAction;
 panel.parseButtonActionIndex = parseButtonIndex;
 panel.resolveButtonAction = resolveButton;
 panel.supportedButtonActions = BUILT_IN_ACTIONS;
-
-// Remaining readiness compatibility. Canonical navigation labels live on their owning panels.
-(() => {
-  const { mediaModel } = require('./embedMedia');
-  function requestedBy(interaction) { return panel.memberName?.(interaction) || interaction.member?.displayName || interaction.user?.username || 'Unknown User'; }
-  function readinessOptions() {
-    return {
-      mediaForPanel: mediaModel.mediaForPanel,
-      maxGalleryItems: mediaModel.MAX_GALLERY_ITEMS,
-      maxFiles: mediaModel.MAX_FILES,
-      helpers: panel.HELPERS,
-    };
-  }
-  function readinessReport(interaction, state = panel.getSession(interaction)) {
-    return getReadinessReport(interaction, state, readinessOptions());
-  }
-  panel.getReadinessReport = readinessReport;
-  panel.getReadinessFixTarget = getReadinessFixTarget;
-  panel.buildReadinessPanel = (interaction) => {
-    const state = panel.getSession(interaction);
-    const model = buildReadinessModel(interaction, state, readinessOptions());
-    const { report, fix, lines } = model;
-    const first = report.ready ? new ButtonBuilder().setCustomId('embed:readiness-refresh').setLabel('🔄 Recheck').setStyle(ButtonStyle.Secondary) : new ButtonBuilder().setCustomId('embed:readiness-fix').setLabel(fix.label).setStyle(ButtonStyle.Primary);
-    const row1 = new ActionRowBuilder().addComponents(first, new ButtonBuilder().setCustomId('embed:use').setLabel('✅ Use Embed').setStyle(ButtonStyle.Success).setDisabled(!report.ready));
-    const row2 = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('embed:update-existing').setLabel('♻️ Update Existing').setStyle(ButtonStyle.Secondary).setDisabled(!report.ready), new ButtonBuilder().setCustomId('embed:test-send').setLabel('🧪 Test').setStyle(ButtonStyle.Secondary).setDisabled(!report.ready));
-    const row3 = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('embed:builder').setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary));
-    return { embeds: [new EmbedBuilder().setColor(report.ready ? (report.warnings.length ? 0xFEE75C : 0x57F287) : 0xED4245).setTitle('✅ Embed Readiness').setDescription(lines.join('\n').slice(0, 4096)).setFooter({ text: `Requested by ${requestedBy(interaction)}` }).setTimestamp()], components: [row1, row2, row3] };
-  };
-})();
 
 module.exports = panel;
