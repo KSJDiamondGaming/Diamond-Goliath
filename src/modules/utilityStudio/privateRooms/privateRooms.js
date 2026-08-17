@@ -396,7 +396,6 @@ async function createRoom(guild, input = {}, meta = {}) {
 }
 
 function createRequest(guildId, input = {}, meta = {}) {
-  const section = getSection(guildId);
   const requesterId = cleanId(input.requesterId || meta.actorId);
   if (!requesterId) throw new Error('A valid requester is required.');
   const request = normalizeRequest({
@@ -428,7 +427,7 @@ async function reviewRequest(guild, requestId, decision, actorId, reason = '', m
   if (!request) throw new Error('Private Room request not found.');
   if (request.status !== 'pending') throw new Error(`This request is already ${request.status}.`);
   const status = decision === 'approve' ? 'approved' : 'denied';
-  let updated = updateRequest(guild.id, requestId, {
+  const updated = updateRequest(guild.id, requestId, {
     status,
     reviewedBy: actorId,
     reviewedAt: now(),
@@ -567,15 +566,40 @@ async function createTranscript(guild, room, meta = {}) {
 }
 
 async function closeRoom(guild, roomId, actorId = null, reason = '', meta = {}) {
-  let room = getRoom(guild.id, roomId);
+  const room = getRoom(guild.id, roomId);
   if (!room) throw new Error('Private Room not found.');
   if (room.status === 'closed') return room;
-  room = saveRoom(guild.id, { ...room, status: 'closed', closedAt: now(), closedBy: cleanId(actorId), closeReason: clean(reason, 1000), updatedAt: now() }, meta);
-  room = await appendRoomAudit(guild, roomId, { type: 'room_closed', actorId, reason }, meta) || room;
-  const transcript = await createTranscript(guild, room, meta);
-  if (transcript.message) room = saveRoom(guild.id, { ...room, transcriptMessageId: transcript.message.id, transcriptChannelId: transcript.message.channelId }, meta);
-  const channel = await resolveTextChannel(guild, room.channelId);
-  if (channel) await channel.delete(`Goliath Private Room closed: ${reason || 'completed'}`).catch(() => null);
+
+  const closedAt = now();
+  const closeReason = clean(reason, 1000);
+  const closeEvent = normalizeAuditEvent({ type: 'room_closed', actorId, reason: closeReason, createdAt: closedAt });
+  let closingRoom = normalizeRoom({
+    ...room,
+    status: 'closed',
+    closedAt,
+    closedBy: cleanId(actorId),
+    closeReason,
+    updatedAt: closedAt,
+    audit: [...room.audit, closeEvent].slice(-500),
+  });
+
+  // Transcript first. If this fails, canonical room state remains open/locked so close can be retried safely.
+  const transcript = await createTranscript(guild, closingRoom, meta);
+  if (transcript.message) {
+    closingRoom = normalizeRoom({
+      ...closingRoom,
+      transcriptMessageId: transcript.message.id,
+      transcriptChannelId: transcript.message.channelId,
+    });
+  }
+
+  closingRoom = saveRoom(guild.id, closingRoom, { ...meta, action: meta.action || 'private_room_closed' });
+  await sendAuditLog(guild, closeEvent, closingRoom);
+
+  const channel = await resolveTextChannel(guild, closingRoom.channelId);
+  if (channel) {
+    await channel.delete(`Goliath Private Room closed: ${closeReason || 'completed'}`);
+  }
   incrementAnalytics(guild.id, { roomsClosed: 1 }, meta);
   return getRoom(guild.id, roomId);
 }
@@ -613,18 +637,65 @@ async function buildHealth(guild) {
   const section = getSection(guild.id);
   const issues = [];
   const warnings = [];
-  const checkChannel = async (key, required = false) => {
+  const me = guild.members.me;
+
+  const checkTextChannel = async (key, required, requiredPermissions = []) => {
     const id = section.settings[key];
-    if (!id) { if (required) warnings.push({ code: `${key}_missing` }); return; }
+    if (!id) {
+      if (required) warnings.push({ code: `${key}_missing` });
+      return;
+    }
     const channel = guild.channels.cache.get(id) || await guild.channels.fetch(id).catch(() => null);
-    if (!channel) issues.push({ code: `${key}_unavailable`, channelId: id });
+    if (!channel?.send) {
+      issues.push({ code: `${key}_unavailable`, channelId: id });
+      return;
+    }
+    const permissions = me && channel.permissionsFor?.(me);
+    for (const permission of requiredPermissions) {
+      if (!permissions?.has(permission)) issues.push({ code: `${key}_permission_missing`, channelId: id, permission: String(permission) });
+    }
   };
-  await checkChannel('requestChannelId', section.settings.allowUserRoomRequests);
-  await checkChannel('transcriptChannelId', section.settings.transcriptsEnabled);
-  await checkChannel('auditChannelId', false);
-  await checkChannel('categoryId', false);
-  if (!guild.members.me?.permissions.has(PermissionFlagsBits.ManageChannels)) issues.push({ code: 'manage_channels_missing' });
-  if (!guild.members.me?.permissions.has(PermissionFlagsBits.ViewChannel)) issues.push({ code: 'view_channel_missing' });
+
+  await checkTextChannel('requestChannelId', section.settings.allowUserRoomRequests, [
+    PermissionFlagsBits.ViewChannel,
+    PermissionFlagsBits.SendMessages,
+    PermissionFlagsBits.EmbedLinks,
+  ]);
+  await checkTextChannel('transcriptChannelId', section.settings.transcriptsEnabled, [
+    PermissionFlagsBits.ViewChannel,
+    PermissionFlagsBits.SendMessages,
+    PermissionFlagsBits.AttachFiles,
+  ]);
+  await checkTextChannel('auditChannelId', section.settings.auditEnabled && Boolean(section.settings.auditChannelId), [
+    PermissionFlagsBits.ViewChannel,
+    PermissionFlagsBits.SendMessages,
+    PermissionFlagsBits.EmbedLinks,
+  ]);
+
+  if (section.settings.categoryId) {
+    const category = guild.channels.cache.get(section.settings.categoryId) || await guild.channels.fetch(section.settings.categoryId).catch(() => null);
+    if (!category || category.type !== ChannelType.GuildCategory) {
+      issues.push({ code: 'categoryId_unavailable', channelId: section.settings.categoryId });
+    } else {
+      const permissions = me && category.permissionsFor?.(me);
+      if (!permissions?.has(PermissionFlagsBits.ViewChannel)) issues.push({ code: 'category_view_channel_missing', channelId: category.id });
+      if (!permissions?.has(PermissionFlagsBits.ManageChannels)) issues.push({ code: 'category_manage_channels_missing', channelId: category.id });
+    }
+  }
+
+  if (!me?.permissions.has(PermissionFlagsBits.ManageChannels)) issues.push({ code: 'manage_channels_missing' });
+  if (!me?.permissions.has(PermissionFlagsBits.ViewChannel)) issues.push({ code: 'view_channel_missing' });
+
+  for (const roleId of [...new Set([...(section.settings.managerRoleIds || []), ...(section.settings.approverRoleIds || [])])]) {
+    const role = guild.roles.cache.get(roleId) || await guild.roles.fetch(roleId).catch(() => null);
+    if (!role) warnings.push({ code: 'configured_role_missing', roleId });
+  }
+
+  for (const room of listRooms(guild.id).filter((item) => item.status !== 'closed')) {
+    const channel = room.channelId ? (guild.channels.cache.get(room.channelId) || await guild.channels.fetch(room.channelId).catch(() => null)) : null;
+    if (!channel) issues.push({ code: 'active_room_channel_missing', roomId: room.roomId, channelId: room.channelId });
+  }
+
   return {
     module: SECTION,
     guildId: guild.id,
