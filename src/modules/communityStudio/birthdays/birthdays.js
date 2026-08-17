@@ -286,17 +286,23 @@ async function cleanupBirthdayRoles(guild, section, meta = {}) {
   const configuredRoleId = section.settings.birthdayRoleId;
   let removed = 0;
   for (const member of Object.values(section.members)) {
-    if (!member.roleAssignedAt || birthdayKey(member, year, section.settings) === today) continue;
+    if (birthdayKey(member, year, section.settings) === today) continue;
     const trackedRoleId = member.roleAssignedRoleId || configuredRoleId;
-    if (trackedRoleId) {
-      try {
-        if (await removeTrackedBirthdayRole(guild, member, trackedRoleId, meta, 'Goliath birthday role ended')) removed += 1;
-      } catch (error) {
-        console.warn(`[Birthdays] ${guild.id}/${member.userId} role cleanup: ${error.message}`);
-        continue;
+    if (!trackedRoleId) {
+      if (member.roleAssignedAt || member.roleAssignedRoleId) {
+        setBirthday(guild.id, member.userId, { roleAssignedAt: null, roleAssignedRoleId: null }, { ...meta, action: 'birthday_role_state_cleared' });
       }
+      continue;
     }
-    setBirthday(guild.id, member.userId, { roleAssignedAt: null, roleAssignedRoleId: null }, { ...meta, action: 'birthday_role_removed' });
+    try {
+      if (await removeTrackedBirthdayRole(guild, member, trackedRoleId, meta, 'Goliath birthday role ended')) removed += 1;
+    } catch (error) {
+      console.warn(`[Birthdays] ${guild.id}/${member.userId} role cleanup: ${error.message}`);
+      continue;
+    }
+    if (member.roleAssignedAt || member.roleAssignedRoleId) {
+      setBirthday(guild.id, member.userId, { roleAssignedAt: null, roleAssignedRoleId: null }, { ...meta, action: 'birthday_role_removed' });
+    }
   }
   return removed;
 }
