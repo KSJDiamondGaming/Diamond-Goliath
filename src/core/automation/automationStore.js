@@ -9,10 +9,16 @@ function obj(value) { return value && typeof value === 'object' && !Array.isArra
 function key(value = '') { return String(value || '').trim().toLowerCase().replace(/[^a-z0-9_.:-]/g, '_').slice(0, 100); }
 function text(value = '', max = 1000) { return String(value || '').trim().slice(0, max); }
 function base() { return { rules: {}, executions: [], updatedAt: now() }; }
+function objectEntries(value, limit = 20) {
+  return Array.isArray(value)
+    ? value.filter((entry) => entry && typeof entry === 'object' && !Array.isArray(entry)).slice(0, limit)
+    : [];
+}
 
 function normalizeRule(input = {}) {
   const trigger = key(input.trigger || 'form.submitted');
   const id = key(input.ruleId || input.id || input.name || `rule_${crypto.randomUUID()}`);
+  const actions = objectEntries(input.actions);
   return {
     id,
     ruleId: id,
@@ -20,8 +26,8 @@ function normalizeRule(input = {}) {
     description: text(input.description || '', 500),
     trigger,
     enabled: input.enabled !== false,
-    conditions: Array.isArray(input.conditions) ? input.conditions.slice(0, 20) : [],
-    actions: Array.isArray(input.actions) && input.actions.length ? input.actions.slice(0, 20) : [{ action: 'log.event', config: {} }],
+    conditions: objectEntries(input.conditions),
+    actions: actions.length ? actions : [{ action: 'log.event', config: {} }],
     createdAt: input.createdAt || now(),
     updatedAt: input.updatedAt || now(),
   };

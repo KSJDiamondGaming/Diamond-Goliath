@@ -2,6 +2,7 @@ const { sendAutoModDM } = require('./automodDm');
 const { shouldBlockOwnerDestructiveAction } = require('../../owner/dev/DevOverrideManager');
 
 const VALID_PUNISHMENTS = ['dm', 'delete', 'warn', 'timeout', 'kick', 'ban'];
+const MAX_TIMEOUT_MS = 28 * 24 * 60 * 60 * 1000;
 
 const ACTION_LABELS = {
   dm: 'DM user',
@@ -52,9 +53,15 @@ function buildActionReason(source, reason, moderator) {
 }
 
 function resolveTimeoutDuration(durationMs, timeoutMinutes) {
-  return Number(durationMs || 0) > 0
-    ? Number(durationMs)
-    : Number(timeoutMinutes || 10) * 60 * 1000;
+  const requestedMs = Number(durationMs);
+  const requestedMinutes = Number(timeoutMinutes);
+  const rawDuration = Number.isFinite(requestedMs) && requestedMs > 0
+    ? requestedMs
+    : Number.isFinite(requestedMinutes) && requestedMinutes > 0
+      ? requestedMinutes * 60 * 1000
+      : 10 * 60 * 1000;
+
+  return Math.min(MAX_TIMEOUT_MS, Math.max(1, Math.trunc(rawDuration)));
 }
 
 function shouldBlockDestructiveAction(context, punishment) {
