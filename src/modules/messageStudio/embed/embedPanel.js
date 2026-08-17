@@ -400,7 +400,7 @@ function mainEmbed(s, who) {
 function buildEditorPanel(i, who = "Unknown User") {
   const s = getSession(i);
   return {
-    embeds: [mainEmbed(s, who), ...buildPreviewEmbeds(s, i)],
+    embeds: [mainEmbed(s, who), buildPreviewEmbed(s, i)],
     components: [
       new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder().setCustomId("embed:template").setPlaceholder("🎨 Choose template").addOptions(Object.entries(TEMPLATES).map(([value, t]) => ({ label: t.label, value, emoji: t.emoji, default: s.template === value }))),
@@ -415,17 +415,12 @@ function buildEditorPanel(i, who = "Unknown User") {
         ]),
       ),
       new ActionRowBuilder().addComponents(
-        new StringSelectMenuBuilder().setCustomId("embed:panel-select").setPlaceholder("🧩 Select content panel").addOptions(s.panels.map((p, n) => ({
-          label: `${n + 1}. ${trim(p.title || p.authorName || "Content Panel", 80)}`,
-          value: String(n),
-          description: trim(p.description || p.color, 100),
-          default: s.selectedPanelIndex === n,
-        }))),
-      ),
-      new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId("embed:builder").setLabel("🛠️ Builder").setStyle(ButtonStyle.Primary),
         new ButtonBuilder().setCustomId("embed:presets").setLabel("💾 Presets").setStyle(ButtonStyle.Primary),
         new ButtonBuilder().setCustomId("embed:use").setLabel("✅ Use Embed").setStyle(ButtonStyle.Success),
+      ),
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId("admin:modules").setLabel("⬅️ Back").setStyle(ButtonStyle.Secondary),
       ),
     ],
   };
@@ -474,7 +469,7 @@ function buildBuilderPanel(i, who = "Unknown User") {
 function buildPanelsPanel(i, who) {
   const s = getSession(i);
   return {
-    embeds: [simplePanel("🧩 Content Panels", `Selected **${s.selectedPanelIndex + 1}/${s.panels.length}**.`, s, who), ...buildPreviewEmbeds(s, i)],
+    embeds: [simplePanel("🧩 Content Panels", `Selected **${s.selectedPanelIndex + 1}/${s.panels.length}**.`, s, who), buildPreviewEmbed(s, i)],
     components: [
       new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder().setCustomId("embed:panel-select").setPlaceholder("🧩 Select panel").addOptions(s.panels.map((p, n) => ({
@@ -492,7 +487,9 @@ function buildPanelsPanel(i, who) {
       new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId("embed:panel-up").setLabel("⬆️ Up").setStyle(ButtonStyle.Secondary).setDisabled(s.selectedPanelIndex <= 0),
         new ButtonBuilder().setCustomId("embed:panel-down").setLabel("⬇️ Down").setStyle(ButtonStyle.Secondary).setDisabled(s.selectedPanelIndex >= s.panels.length - 1),
-        new ButtonBuilder().setCustomId("embed:builder").setLabel("⬅️ Builder").setStyle(ButtonStyle.Secondary),
+      ),
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId("embed:builder").setLabel("⬅️ Back").setStyle(ButtonStyle.Secondary),
       ),
     ],
   };
