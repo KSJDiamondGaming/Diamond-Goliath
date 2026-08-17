@@ -19,6 +19,7 @@ function canManageRole(guild, role) {
   return Boolean(
     me
     && role
+    && role.id !== guild.id
     && !role.managed
     && me.permissions.has(PermissionFlagsBits.ManageRoles)
     && role.position < me.roles.highest.position
