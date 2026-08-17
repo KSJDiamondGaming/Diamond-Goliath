@@ -8,6 +8,7 @@ const MODULE_ROOT = path.join(PROJECT_ROOT, 'src', 'modules');
 const CURRENT_MODULES = Object.freeze([
   'autoRoles', 'birthdays', 'embed', 'forms', 'giveaways', 'goodbye', 'invites', 'leveling', 'notes', 'polls', 'privateRooms', 'reactionRoles', 'roleSelector', 'schedule', 'social', 'starboard', 'stats', 'sticky', 'suggestions', 'temporaryRoles', 'tempVoice', 'tickets', 'timedRoles', 'translation', 'verification', 'welcome',
 ]);
+const FOLDER_ALIASES = Object.freeze({ socialAlerts: 'social' });
 
 function walk(dir, predicate, output = []) {
   if (!fs.existsSync(dir)) return output;
@@ -25,7 +26,9 @@ function discoveredModuleFolders() {
   for (const studio of fs.readdirSync(MODULE_ROOT, { withFileTypes: true })) {
     if (!studio.isDirectory()) continue;
     const studioPath = path.join(MODULE_ROOT, studio.name);
-    for (const entry of fs.readdirSync(studioPath, { withFileTypes: true })) if (entry.isDirectory()) names.add(entry.name);
+    for (const entry of fs.readdirSync(studioPath, { withFileTypes: true })) {
+      if (entry.isDirectory()) names.add(FOLDER_ALIASES[entry.name] || entry.name);
+    }
   }
   if (fs.existsSync(path.join(MODULE_ROOT, 'securityStudio', 'verification.js'))) names.add('verification');
   return [...names].sort();
