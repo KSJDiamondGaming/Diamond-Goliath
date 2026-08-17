@@ -17,10 +17,10 @@ const guildManager = require('../../../core/guild/guildManager');
 const { getAllEmbedDeployments } = require('./embedDeployments');
 const panel = require('./embedPanel');
 
-const MAX_BUTTONS = panel.MAX_BUTTONS;
+const MAX_BUTTONS = panel.MAX_BUTTONS || 20;
 const MAX_COMPONENTS_PER_ROW = panel.EMBED_COMPONENT_LIMITS?.maxComponentsPerRow || 5;
 const MAX_ACTION_ROWS = panel.EMBED_COMPONENT_LIMITS?.maxActionRows || 5;
-const MAX_DEPLOYED_BUTTON_ROWS = Math.max(1, MAX_ACTION_ROWS - 1);
+const MAX_DEPLOYED_BUTTON_ROWS = Math.max(1, Math.min(4, MAX_ACTION_ROWS - 1));
 const BUILT_IN_ACTIONS = Object.freeze(['reply', 'toggle-role', 'add-role', 'remove-role', 'user-info', 'server-info']);
 const ROLE_ACTIONS = new Set(['toggle-role', 'add-role', 'remove-role']);
 const DANGEROUS_ROLE_PERMISSIONS = [
@@ -210,9 +210,6 @@ async function handleButtonAction(interaction) {
   await ephemeral(interaction, `⚠️ The action \`${action}\` is not registered.`); return true;
 }
 
-panel.MAX_EMBED_BUTTONS = MAX_BUTTONS;
-panel.MAX_BUTTONS_PER_ROW = MAX_COMPONENTS_PER_ROW;
-panel.MAX_DEPLOYED_BUTTON_ROWS = MAX_DEPLOYED_BUTTON_ROWS;
 panel.EMBED_BUTTON_ACTIONS = BUILT_IN_ACTIONS;
 panel.EMBED_ROLE_BUTTON_ACTIONS = ROLE_ACTIONS;
 panel.layoutEmbedButtons = layoutButtons;
