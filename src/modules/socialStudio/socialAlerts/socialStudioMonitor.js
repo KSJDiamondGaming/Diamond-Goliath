@@ -9,14 +9,43 @@ let timer = null;
 let schedulerTickMs = 60_000;
 const GLOBAL_SCHEDULER = 'social:monitor:global';
 
+function projectLiveRefreshState(account) {
+  if (!account || typeof account !== 'object') return account;
+  const state = account.state && typeof account.state === 'object' ? account.state : null;
+  if (!state) return account;
+
+  const raw = state.lastLiveMessageUpdateAt || state.lastLiveMessageUpdatedAt;
+  if (!raw || typeof raw !== 'string') return account;
+  const parsed = Date.parse(raw);
+  if (!Number.isFinite(parsed)) return account;
+
+  // MonitorCore historically calls Number() on this value, while persisted
+  // runtime state stores it as an ISO timestamp. A Date preserves both
+  // behaviours: Number(Date) is epoch milliseconds and JSON.stringify(Date)
+  // writes the original ISO-compatible representation back to runtime.
+  return {
+    ...account,
+    state: {
+      ...state,
+      ...(state.lastLiveMessageUpdateAt === raw ? { lastLiveMessageUpdateAt: new Date(parsed) } : {}),
+      ...(state.lastLiveMessageUpdatedAt === raw ? { lastLiveMessageUpdatedAt: new Date(parsed) } : {}),
+    },
+  };
+}
+
 function projectGuildConfig(guildConfig) {
   if (!guildConfig || typeof guildConfig !== 'object') return guildConfig;
   const modules = guildConfig.modules && typeof guildConfig.modules === 'object' ? guildConfig.modules : {};
   const social = modules.social && typeof modules.social === 'object' ? modules.social : null;
   if (!social) return guildConfig;
+  const effectiveAccounts = projectEffectiveAccounts(social);
+  const projectedAccounts = Object.fromEntries(
+    Object.entries(effectiveAccounts && typeof effectiveAccounts === 'object' ? effectiveAccounts : {})
+      .map(([accountId, account]) => [accountId, projectLiveRefreshState(account)])
+  );
   const projectedSocial = {
     ...social,
-    accounts: projectEffectiveAccounts(social),
+    accounts: projectedAccounts,
   };
   return {
     ...guildConfig,
