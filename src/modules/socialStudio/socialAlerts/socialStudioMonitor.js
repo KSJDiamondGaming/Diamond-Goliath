@@ -27,28 +27,22 @@ function projectGuildConfig(guildConfig) {
   };
 }
 
-function invokeWithProjectedRouting(fn, args) {
-  const originalReloadGuild = guildManager.reloadGuild;
-  guildManager.reloadGuild = function projectedReloadGuild(...reloadArgs) {
-    return projectGuildConfig(originalReloadGuild.apply(guildManager, reloadArgs));
+function projectedOptions(guildId, options = {}) {
+  const sourceGuildConfig = options.guildConfig && typeof options.guildConfig === 'object'
+    ? options.guildConfig
+    : guildManager.reloadGuild(guildId);
+  return {
+    ...options,
+    guildConfig: projectGuildConfig(sourceGuildConfig),
   };
-  try {
-    // Async functions execute synchronously through their first await. The
-    // monitor loads its guild config at the start, so we can restore the
-    // shared manager immediately after the invocation without leaking the
-    // projection into unrelated runtime consumers.
-    return fn(...args);
-  } finally {
-    guildManager.reloadGuild = originalReloadGuild;
-  }
 }
 
-function checkGuildAccounts(...args) {
-  return invokeWithProjectedRouting(core.checkGuildAccounts, args);
+function checkGuildAccounts(client, guildId, options = {}) {
+  return core.checkGuildAccounts(client, guildId, projectedOptions(guildId, options));
 }
 
-function forcePostCreatorLive(...args) {
-  return invokeWithProjectedRouting(core.forcePostCreatorLive, args);
+function forcePostCreatorLive(client, guildId, creatorId, options = {}) {
+  return core.forcePostCreatorLive(client, guildId, creatorId, projectedOptions(guildId, options));
 }
 
 function guildScheduler(guild) {
