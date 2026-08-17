@@ -49,22 +49,6 @@ function completeCreatorProfile(member, values) {
   return store.completeCreatorProfile(member, values, { actorId: member.user.id });
 }
 
-function markMemberActive(guildId, ownerDiscordId) {
-  return store.markCreatorActive(guildId, ownerDiscordId, { actorId: ownerDiscordId });
-}
-
-function markMemberLeft(guildId, ownerDiscordId) {
-  return store.markCreatorDeparted(guildId, ownerDiscordId, 'left', {
-    actorId: 'system:social-studio-lifecycle',
-  });
-}
-
-function deleteCreatorOwnedData(guildId, ownerDiscordId) {
-  return store.deleteCreatorByOwner(guildId, ownerDiscordId, {
-    actorId: 'system:social-studio-delete',
-  });
-}
-
 const userCreatorModal =
   adminPanel.user.buildCreatorModal;
 
@@ -516,7 +500,4 @@ module.exports = {
   getAccountsForCreator,
   createForMember,
   completeCreatorProfile,
-  markMemberActive,
-  markMemberLeft,
-  deleteCreatorOwnedData,
 };
