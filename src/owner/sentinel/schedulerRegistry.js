@@ -9,6 +9,7 @@ function positiveMs(value, fallback) {
 
 function schedulerId(input = {}) {
   if (typeof input === 'string') return String(input).trim();
+  if (input?.id) return String(input.id).trim();
   const moduleKey = String(input.module || 'runtime').trim();
   const component = String(input.component || input.name || 'scheduler').trim();
   const guildId = input.guildId ? String(input.guildId).trim() : 'global';
@@ -48,14 +49,22 @@ function register(input = {}) {
   return id;
 }
 
-function beat(idOrInput, details = {}) {
+function ensureEntry(idOrInput) {
   const id = schedulerId(idOrInput);
-  const existing = registry.get(id);
-  if (!existing) {
-    register(typeof idOrInput === 'object' ? idOrInput : { component: id });
+  if (!id) throw new Error('Sentinel scheduler update requires an id or module/component.');
+  if (!registry.has(id)) {
+    const registration = typeof idOrInput === 'object'
+      ? { ...idOrInput, id }
+      : { id, component: id };
+    register(registration);
   }
-
   const entry = registry.get(id);
+  if (!entry) throw new Error(`Sentinel scheduler registry failed to initialise ${id}.`);
+  return { id, entry };
+}
+
+function beat(idOrInput, details = {}) {
+  const { id, entry } = ensureEntry(idOrInput);
   const now = new Date().toISOString();
   entry.lastBeatAt = now;
   entry.lastSuccessAt = now;
@@ -68,13 +77,7 @@ function beat(idOrInput, details = {}) {
 }
 
 function fail(idOrInput, error, details = {}) {
-  const id = schedulerId(idOrInput);
-  const existing = registry.get(id);
-  if (!existing) {
-    register(typeof idOrInput === 'object' ? idOrInput : { component: id });
-  }
-
-  const entry = registry.get(id);
+  const { id, entry } = ensureEntry(idOrInput);
   const now = new Date().toISOString();
   entry.lastBeatAt = now;
   entry.lastFailureAt = now;
