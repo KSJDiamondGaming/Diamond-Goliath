@@ -14,16 +14,10 @@ function projectLiveRefreshState(account) {
   if (!account || typeof account !== 'object') return account;
   const state = account.state && typeof account.state === 'object' ? account.state : null;
   if (!state) return account;
-
   const raw = state.lastLiveMessageUpdateAt || state.lastLiveMessageUpdatedAt;
   if (!raw || typeof raw !== 'string') return account;
   const parsed = Date.parse(raw);
   if (!Number.isFinite(parsed)) return account;
-
-  // MonitorCore historically calls Number() on this value, while persisted
-  // runtime state stores it as an ISO timestamp. A Date preserves both
-  // behaviours: Number(Date) is epoch milliseconds and JSON.stringify(Date)
-  // writes the original ISO-compatible representation back to runtime.
   return {
     ...account,
     state: {
@@ -44,16 +38,9 @@ function projectGuildConfig(guildConfig) {
     Object.entries(effectiveAccounts && typeof effectiveAccounts === 'object' ? effectiveAccounts : {})
       .map(([accountId, account]) => [accountId, projectLiveRefreshState(account)])
   );
-  const projectedSocial = {
-    ...social,
-    accounts: projectedAccounts,
-  };
   return {
     ...guildConfig,
-    modules: {
-      ...modules,
-      social: projectedSocial,
-    },
+    modules: { ...modules, social: { ...social, accounts: projectedAccounts } },
   };
 }
 
@@ -61,10 +48,7 @@ function projectedOptions(guildId, options = {}) {
   const sourceGuildConfig = options.guildConfig && typeof options.guildConfig === 'object'
     ? options.guildConfig
     : guildManager.reloadGuild(guildId);
-  return {
-    ...options,
-    guildConfig: projectGuildConfig(sourceGuildConfig),
-  };
+  return { ...options, guildConfig: projectGuildConfig(sourceGuildConfig) };
 }
 
 function rolloverIncident(guild, account) {
@@ -107,9 +91,7 @@ async function repairLiveRollovers(client, guildId, beforeConfig, result) {
     const previousEventId = previous.liveEventId ? String(previous.liveEventId) : '';
     const currentEventId = current.liveEventId ? String(current.liveEventId) : '';
     if (previous.isLive !== true || !previousEventId || !currentEventId || previousEventId === currentEventId) continue;
-
-    const expectedKey = `live:${currentEventId}`;
-    if (String(current.lastAlertKey || '') === expectedKey) continue;
+    if (String(current.lastAlertKey || '') === `live:${currentEventId}`) continue;
 
     const incident = rolloverIncident(guild || { id: guildId }, currentAccount || beforeAccount);
     await sentinel.report(client, {
@@ -126,7 +108,6 @@ async function repairLiveRollovers(client, guildId, beforeConfig, result) {
     });
 
     try {
-      const stalePostRemoved = await removeStaleLivePost(client, guildId, previous).catch(() => false);
       const repairGuild = guildManager.reloadGuild(guildId) || latestGuild;
       const repairSocial = repairGuild?.modules?.social || {};
       const repairAccount = repairSocial.accounts?.[item.accountId];
@@ -164,17 +145,18 @@ async function repairLiveRollovers(client, guildId, beforeConfig, result) {
       }));
       const repairedItem = (repaired.results || []).find((entry) => String(entry.accountId) === String(item.accountId));
       const delivered = repairedItem?.delivered || [];
-      if (!delivered.some((entry) => entry.type === 'live' && String(entry.id || '') === currentEventId)) {
-        throw new Error('Rollover repair completed without delivering the new LIVE event.');
-      }
+      const liveDelivery = delivered.find((entry) => entry.type === 'live' && String(entry.id || '') === currentEventId);
+      if (!liveDelivery) throw new Error('Rollover repair completed without delivering the new LIVE event.');
 
+      // Only remove the stale post after the replacement LIVE alert is safely delivered.
+      const stalePostRemoved = await removeStaleLivePost(client, guildId, previous).catch(() => false);
       repairs.push({ accountId: item.accountId, previousEventId, currentEventId, stalePostRemoved, repaired: true });
       await sentinel.recover(client, incident, {
         accountId: item.accountId,
         previousEventId,
         currentEventId,
         stalePostRemoved,
-        deliveredMessageId: delivered.find((entry) => entry.type === 'live')?.messageId || null,
+        deliveredMessageId: liveDelivery.messageId || null,
       });
     } catch (error) {
       repairs.push({ accountId: item.accountId, previousEventId, currentEventId, repaired: false, error: error?.message || String(error) });
