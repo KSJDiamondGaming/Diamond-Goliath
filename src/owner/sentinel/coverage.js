@@ -3,11 +3,10 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { PROJECT_ROOT } = require('../../config/runtimePaths');
+const { MODULE_CONTRACTS, moduleKeys } = require('./moduleContracts.js');
 
 const MODULE_ROOT = path.join(PROJECT_ROOT, 'src', 'modules');
-const CURRENT_MODULES = Object.freeze([
-  'autoRoles', 'birthdays', 'embed', 'forms', 'giveaways', 'goodbye', 'invites', 'leveling', 'notes', 'polls', 'privateRooms', 'reactionRoles', 'roleSelector', 'schedule', 'social', 'starboard', 'stats', 'sticky', 'suggestions', 'temporaryRoles', 'tempVoice', 'tickets', 'timedRoles', 'translation', 'verification', 'welcome',
-]);
+const CURRENT_MODULES = Object.freeze(moduleKeys());
 const FOLDER_ALIASES = Object.freeze({ socialAlerts: 'social' });
 
 function walk(dir, predicate, output = []) {
@@ -19,7 +18,14 @@ function walk(dir, predicate, output = []) {
   }
   return output;
 }
-function healthAdapters() { return walk(MODULE_ROOT, (_full, name) => /Health\.js$/i.test(name)).map((file) => ({ file, relative: path.relative(PROJECT_ROOT, file).replace(/\\/g, '/') })); }
+
+function healthAdapters() {
+  return walk(MODULE_ROOT, (_full, name) => /Health\.js$/i.test(name)).map((file) => ({
+    file,
+    relative: path.relative(PROJECT_ROOT, file).replace(/\\/g, '/'),
+  }));
+}
+
 function discoveredModuleFolders() {
   if (!fs.existsSync(MODULE_ROOT)) return [];
   const names = new Set();
@@ -33,11 +39,36 @@ function discoveredModuleFolders() {
   if (fs.existsSync(path.join(MODULE_ROOT, 'securityStudio', 'verification.js'))) names.add('verification');
   return [...names].sort();
 }
+
 function coverageReport() {
   const discovered = discoveredModuleFolders();
   const adapters = healthAdapters();
-  const known = new Set(CURRENT_MODULES);
-  const futureUnregistered = discovered.filter((name) => !known.has(name));
-  return { generatedAt: new Date().toISOString(), currentModules: [...CURRENT_MODULES], discovered, adapterFiles: adapters.map((item) => item.relative), futureUnregistered, complete: futureUnregistered.length === 0 };
+  const contracts = moduleKeys();
+  const contractSet = new Set(contracts);
+  const discoveredSet = new Set(discovered);
+  const futureUnregistered = discovered.filter((name) => !contractSet.has(name));
+  const contractWithoutDiscoveredFolder = contracts.filter((name) => !discoveredSet.has(name));
+  const contractSummary = contracts.map((moduleKey) => ({
+    module: moduleKey,
+    class: MODULE_CONTRACTS[moduleKey].class,
+    signals: [...MODULE_CONTRACTS[moduleKey].signals],
+  }));
+
+  return {
+    generatedAt: new Date().toISOString(),
+    currentModules: contracts,
+    discovered,
+    contractSummary,
+    adapterFiles: adapters.map((item) => item.relative),
+    futureUnregistered,
+    contractWithoutDiscoveredFolder,
+    complete: futureUnregistered.length === 0,
+  };
 }
-module.exports = { CURRENT_MODULES, healthAdapters, discoveredModuleFolders, coverageReport };
+
+module.exports = {
+  CURRENT_MODULES,
+  healthAdapters,
+  discoveredModuleFolders,
+  coverageReport,
+};
