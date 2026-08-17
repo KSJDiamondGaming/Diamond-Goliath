@@ -288,10 +288,28 @@ async function processGuild(guild, meta = {}) {
   const result = { announced: 0, rolesAssigned: 0, rolesRemoved: 0, failures: 0 };
   result.rolesRemoved = await cleanupBirthdayRoles(guild, section, meta);
   section = getSection(guild.id);
+
+  for (const member of Object.values(section.members)) {
+    if (birthdayKey(member, year, section.settings) !== today) continue;
+    const currentMember = getBirthday(guild.id, member.userId);
+    const currentSection = getSection(guild.id);
+    if (currentSection.settings.birthdayRoleId && !currentMember?.roleAssignedAt) {
+      try {
+        const assigned = await assignBirthdayRole(guild, currentSection, currentMember, meta);
+        if (assigned) result.rolesAssigned += 1;
+      } catch (error) {
+        result.failures += 1;
+        incrementAnalytics(guild.id, { failures: 1 }, meta);
+        console.warn(`[Birthdays] ${guild.id}/${member.userId} role: ${error.message}`);
+      }
+    }
+  }
+
   if (currentTime < section.settings.announcementTime) {
     incrementAnalytics(guild.id, { lastProcessedAt: now() }, meta);
     return result;
   }
+
   const channelId = section.settings.announcementChannelId;
   const channel = channelId ? (guild.channels.cache.get(channelId) || await guild.channels.fetch(channelId).catch(() => null)) : null;
   for (const member of Object.values(section.members)) {
@@ -309,19 +327,6 @@ async function processGuild(guild, meta = {}) {
         result.failures += 1;
         incrementAnalytics(guild.id, { failures: 1 }, meta);
         console.warn(`[Birthdays] ${guild.id}/${member.userId} announcement: ${error.message}`);
-      }
-    }
-
-    const currentMember = getBirthday(guild.id, member.userId);
-    const currentSection = getSection(guild.id);
-    if (currentSection.settings.birthdayRoleId && !currentMember?.roleAssignedAt) {
-      try {
-        const assigned = await assignBirthdayRole(guild, currentSection, currentMember, meta);
-        if (assigned) result.rolesAssigned += 1;
-      } catch (error) {
-        result.failures += 1;
-        incrementAnalytics(guild.id, { failures: 1 }, meta);
-        console.warn(`[Birthdays] ${guild.id}/${member.userId} role: ${error.message}`);
       }
     }
   }
