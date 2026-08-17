@@ -85,8 +85,17 @@ function generateCodeValue(plan, durationDays, existingCodes = new Set()) {
 }
 
 function addDays(days) {
+  const numericDays = Number(days);
+  if (!Number.isFinite(numericDays) || numericDays <= 0) {
+    throw new Error('Redeem code duration is invalid.');
+  }
+
   const date = new Date();
-  date.setUTCDate(date.getUTCDate() + Number(days || 0));
+  date.setUTCDate(date.getUTCDate() + Math.trunc(numericDays));
+  if (!Number.isFinite(date.getTime())) {
+    throw new Error('Redeem code duration exceeds the supported date range.');
+  }
+
   return date.toISOString();
 }
 
