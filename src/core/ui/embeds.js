@@ -38,7 +38,8 @@ function safeFields(fields = []) {
       name: trim(field.name, 256),
       value: trim(field.value, 1024),
       inline: Boolean(field.inline),
-    }));
+    }))
+    .slice(0, 25);
 }
 
 /* ---------------- EMBEDS ---------------- */
