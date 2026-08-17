@@ -435,25 +435,38 @@ function simplePanel(title, desc, state, who) {
 }
 function buildBuilderPanel(i, who = "Unknown User") {
   const s = getSession(i);
+  const panels = Array.isArray(s.panels) && s.panels.length ? s.panels : [{}];
   return {
-    embeds: [simplePanel("🛠️ Embed Builder", `Editing panel **${s.selectedPanelIndex + 1}/${s.panels.length}**.`, s, who), ...buildPreviewEmbeds(s, i)],
+    embeds: [simplePanel("🛠️ Embed Builder", `Editing panel **${s.selectedPanelIndex + 1}/${s.panels.length}**.`, s, who), buildPreviewEmbed(s, i)],
     components: [
       new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder().setCustomId("embed:builder-panel-select").setPlaceholder("🧩 Select content panel").setMinValues(1).setMaxValues(1).addOptions(panels.slice(0, 25).map((entry, index) => ({
+          label: `${index + 1}. ${trim(entry?.title || entry?.authorName || "Content Panel", 80)}`,
+          value: String(index),
+          description: trim(entry?.description || entry?.color || "Content panel", 100),
+          default: Number(s.selectedPanelIndex || 0) === index,
+        }))),
+      ),
+      new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId("embed:edit-content").setLabel("✏️ Content").setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId("embed:edit-media").setLabel("🖼️ Media").setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId("embed:panels").setLabel(`🧩 Panels (${s.panels?.length || 1})`).setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId("embed:edit-media").setLabel("🎨 Appearance").setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId("embed:edit-images").setLabel("🖼️ Media").setStyle(ButtonStyle.Primary),
+      ),
+      new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId("embed:fields").setLabel(`📋 Fields (${(s.fields || []).length})`).setStyle(ButtonStyle.Primary),
         new ButtonBuilder().setCustomId("embed:buttons").setLabel(`🔘 Buttons (${(s.buttons || []).length})`).setStyle(ButtonStyle.Primary),
-      ),
-      new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId("embed:toggle-ping").setLabel(s.allowUserPing ? "🔔 Ping ON" : "🔕 Ping OFF").setStyle(s.allowUserPing ? ButtonStyle.Success : ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId("embed:toggle-timestamp").setLabel(s.showTimestamp ? "🕒 Timestamp ON" : "🕒 Timestamp OFF").setStyle(s.showTimestamp ? ButtonStyle.Success : ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId("embed:helpers").setLabel("📖 Variables").setStyle(ButtonStyle.Secondary),
-      ),
-      new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId("embed:test-send").setLabel("🧪 Test").setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId("embed:update-existing").setLabel("♻️ Update Existing").setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId("embed:reset").setLabel("♻️ Reset").setStyle(ButtonStyle.Danger),
+      ),
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId("embed:readiness").setLabel("✅ Review").setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId("embed:test-send").setLabel("🧪 Test").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId("embed:toggle-timestamp").setLabel(s.showTimestamp ? "🕒 Timestamp ON" : "🕒 Timestamp OFF").setStyle(s.showTimestamp ? ButtonStyle.Success : ButtonStyle.Secondary),
+      ),
+      new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId("embed:back").setLabel("⬅️ Back").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId("embed:helpers").setLabel("📖 Variables").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId("embed:reset").setLabel("♻️ Reset").setStyle(ButtonStyle.Danger),
       ),
     ],
   };
