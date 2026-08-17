@@ -273,11 +273,10 @@ panel.parseButtonActionIndex = parseButtonIndex;
 panel.resolveButtonAction = resolveButton;
 panel.supportedButtonActions = BUILT_IN_ACTIONS;
 
-// Remaining dynamic navigation/readiness UI. Canonical Builder layout now lives in embedPanel.js.
+// Remaining dynamic navigation/readiness UI. Canonical Builder, Editor and Panels layouts live in embedPanel.js.
 (() => {
   const { mediaModel } = require('./embedMedia');
   function requestedBy(interaction) { return panel.memberName?.(interaction) || interaction.member?.displayName || interaction.user?.username || 'Unknown User'; }
-  function compactPreviewPayload(payload, interaction) { if (!payload || !Array.isArray(payload.embeds) || payload.embeds.length <= 2) return payload; const state = panel.getSession(interaction); const selectedIndex = Math.max(0, Number(state?.selectedPanelIndex) || 0); const selectedPreview = payload.embeds[selectedIndex + 1] || payload.embeds[1]; return { ...payload, embeds: selectedPreview ? [payload.embeds[0], selectedPreview] : [payload.embeds[0]] }; }
   function readinessOptions() {
     return {
       mediaForPanel: mediaModel.mediaForPanel,
@@ -306,15 +305,9 @@ panel.supportedButtonActions = BUILT_IN_ACTIONS;
   function findRow(rows, id) { return rows.find((row) => Array.isArray(row?.components) && row.components.some((component) => componentId(component) === id)); }
   function findComponent(rows, id) { for (const row of rows) { const component = Array.isArray(row?.components) ? row.components.find((entry) => componentId(entry) === id) : null; if (component) return component; } return null; }
   function rowFromComponents(...components) { const safe = components.filter(Boolean).slice(0, 5); return safe.length ? new ActionRowBuilder().addComponents(...safe) : null; }
-  function cloneRowWithout(row, ids = []) { if (!row || !Array.isArray(row.components)) return null; return rowFromComponents(...row.components.filter((component) => !ids.includes(componentId(component)))); }
   function normalizeNavigationLabels(payload) { const rows = Array.isArray(payload?.components) ? payload.components : [], lastRowIndex = rows.length - 1; rows.forEach((row, rowIndex) => { if (!Array.isArray(row?.components)) return; for (const component of row.components) { const id = componentId(component), isExplicitNavigation = NAVIGATION_IDS.has(id), isLastRowBuilderNavigation = id === 'embed:builder' && rowIndex === lastRowIndex; if (!isExplicitNavigation && !isLastRowBuilderNavigation) continue; if (typeof component?.setLabel === 'function') component.setLabel('⬅️ Back'); else if (component?.data) component.data.label = '⬅️ Back'; } }); return payload; }
   function wrapNavigationLabels(methodName) { if (typeof panel[methodName] !== 'function') return; const original = panel[methodName].bind(panel); panel[methodName] = (...args) => normalizeNavigationLabels(original(...args)); }
-  function mainNavigationRow() { return rowFromComponents(new ButtonBuilder().setCustomId('admin:modules').setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary)); }
   if (!panel.__embedNavigationPatched) {
-    const originalEditor = panel.buildEditorPanel.bind(panel);
-    panel.buildEditorPanel = (interaction, ...args) => { const payload = compactPreviewPayload(originalEditor(interaction, ...args), interaction), rows = Array.isArray(payload?.components) ? payload.components : [], templateRow = findRow(rows, 'embed:template'), channelRow = findRow(rows, 'embed:channel'), colorRow = findRow(rows, 'embed:color'), actionSource = findRow(rows, 'embed:builder'), actions = cloneRowWithout(actionSource, ['embed:panels']); payload.components = [templateRow, channelRow, colorRow, actions, mainNavigationRow()].filter(Boolean).slice(0, 5); return normalizeNavigationLabels(payload); };
-    const originalPanels = panel.buildPanelsPanel.bind(panel);
-    panel.buildPanelsPanel = (interaction, ...args) => { const payload = compactPreviewPayload(originalPanels(interaction, ...args), interaction), rows = Array.isArray(payload?.components) ? payload.components : []; payload.components = [findRow(rows, 'embed:panel-select'), rowFromComponents(findComponent(rows, 'embed:panel-add'), findComponent(rows, 'embed:panel-duplicate'), findComponent(rows, 'embed:panel-remove')), rowFromComponents(findComponent(rows, 'embed:panel-up'), findComponent(rows, 'embed:panel-down')), rowFromComponents(findComponent(rows, 'embed:builder'))].filter(Boolean); return normalizeNavigationLabels(payload); };
     if (typeof panel.buildButtonsManagerPanel === 'function') {
       const originalButtonsManager = panel.buildButtonsManagerPanel.bind(panel);
       panel.buildButtonsManagerPanel = (interaction, ...args) => { const payload = originalButtonsManager(interaction, ...args), rows = Array.isArray(payload?.components) ? payload.components : [], selector = findRow(rows, 'embed:button-manager-select'), controls = findRow(rows, 'embed:button-manager-add'), reorder = rowFromComponents(findComponent(rows, 'embed:button-manager-up'), findComponent(rows, 'embed:button-manager-down')), back = rowFromComponents(findComponent(rows, 'embed:builder')); payload.components = [selector, controls, reorder, back].filter(Boolean).slice(0, 5); return normalizeNavigationLabels(payload); };
