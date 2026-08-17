@@ -71,6 +71,7 @@ function normalizeMember(input = {}, userId = null, settings = defaultSection().
     showAge: input.showAge == null ? settings.showAgeByDefault === true : input.showAge === true,
     lastAnnouncedKey: clean(input.lastAnnouncedKey, 20) || null,
     roleAssignedAt: input.roleAssignedAt || null,
+    roleAssignedRoleId: cleanId(input.roleAssignedRoleId),
     createdAt: input.createdAt || now(),
     updatedAt: now(),
   };
@@ -252,6 +253,19 @@ async function getBirthdayRoleState(guild, section, member) {
   return { role, discordMember, hasRole: Boolean(discordMember?.roles?.cache?.has(roleId)) };
 }
 
+async function removeTrackedBirthdayRole(guild, member, roleId, meta = {}, reason = 'Goliath birthday role replaced') {
+  if (!roleId) return false;
+  const discordMember = await guild.members.fetch(member.userId).catch(() => null);
+  const role = guild.roles.cache.get(roleId) || await guild.roles.fetch(roleId).catch(() => null);
+  if (!discordMember) throw new Error('Birthday member is unavailable.');
+  if (!role) return false;
+  if (!discordMember.roles.cache.has(roleId)) return false;
+  if (!canManageBirthdayRole(guild, role)) throw new Error('Previous birthday role cannot be managed. Check Manage Roles permission and role hierarchy.');
+  await discordMember.roles.remove(roleId, reason);
+  incrementAnalytics(guild.id, { rolesRemoved: 1 }, meta);
+  return true;
+}
+
 async function assignBirthdayRole(guild, section, member, meta = {}) {
   const roleId = section.settings.birthdayRoleId;
   if (!roleId) return false;
@@ -260,26 +274,28 @@ async function assignBirthdayRole(guild, section, member, meta = {}) {
   if (!role) throw new Error('Birthday role is unavailable.');
   if (!canManageBirthdayRole(guild, role)) throw new Error('Birthday role cannot be managed. Check Manage Roles permission and role hierarchy.');
   if (!hasRole) await discordMember.roles.add(roleId, 'Goliath birthday role');
-  setBirthday(guild.id, member.userId, { roleAssignedAt: member.roleAssignedAt || now() }, { ...meta, action: 'birthday_role_assigned' });
+  setBirthday(guild.id, member.userId, { roleAssignedAt: member.roleAssignedAt || now(), roleAssignedRoleId: roleId }, { ...meta, action: 'birthday_role_assigned' });
   if (!hasRole) incrementAnalytics(guild.id, { rolesAssigned: 1 }, meta);
   return !hasRole;
 }
 
 async function cleanupBirthdayRoles(guild, section, meta = {}) {
-  const roleId = section.settings.birthdayRoleId;
-  if (!roleId) return 0;
+  const configuredRoleId = section.settings.birthdayRoleId;
   const maxAgeMs = section.settings.roleDurationHours * 3600000;
   let removed = 0;
   for (const member of Object.values(section.members)) {
     if (!member.roleAssignedAt || Date.now() - new Date(member.roleAssignedAt).getTime() < maxAgeMs) continue;
-    const discordMember = await guild.members.fetch(member.userId).catch(() => null);
-    if (discordMember?.roles?.cache?.has(roleId)) {
-      await discordMember.roles.remove(roleId, 'Goliath birthday role expired');
+    const trackedRoleId = member.roleAssignedRoleId || configuredRoleId;
+    if (trackedRoleId) {
+      try {
+        if (await removeTrackedBirthdayRole(guild, member, trackedRoleId, meta, 'Goliath birthday role expired')) removed += 1;
+      } catch (error) {
+        console.warn(`[Birthdays] ${guild.id}/${member.userId} role cleanup: ${error.message}`);
+        continue;
+      }
     }
-    setBirthday(guild.id, member.userId, { roleAssignedAt: null }, { ...meta, action: 'birthday_role_removed' });
-    removed += 1;
+    setBirthday(guild.id, member.userId, { roleAssignedAt: null, roleAssignedRoleId: null }, { ...meta, action: 'birthday_role_removed' });
   }
-  if (removed) incrementAnalytics(guild.id, { rolesRemoved: removed }, meta);
   return removed;
 }
 
@@ -296,21 +312,28 @@ async function processGuild(guild, meta = {}) {
 
   for (const member of Object.values(section.members)) {
     if (birthdayKey(member, year, section.settings) !== today) continue;
-    const currentMember = getBirthday(guild.id, member.userId);
+    let currentMember = getBirthday(guild.id, member.userId);
     const currentSection = getSection(guild.id);
-    if (!currentSection.settings.birthdayRoleId || !currentMember) continue;
+    const desiredRoleId = currentSection.settings.birthdayRoleId;
+    if (!desiredRoleId || !currentMember) continue;
     try {
+      if (currentMember.roleAssignedRoleId && currentMember.roleAssignedRoleId !== desiredRoleId) {
+        if (await removeTrackedBirthdayRole(guild, currentMember, currentMember.roleAssignedRoleId, meta)) result.rolesRemoved += 1;
+        setBirthday(guild.id, member.userId, { roleAssignedAt: null, roleAssignedRoleId: null }, { ...meta, action: 'birthday_role_replaced' });
+        currentMember = getBirthday(guild.id, member.userId);
+      }
+
       const state = await getBirthdayRoleState(guild, currentSection, currentMember);
       if (!state.discordMember) throw new Error('Birthday member is unavailable.');
       if (!state.role) throw new Error('Birthday role is unavailable.');
       if (!canManageBirthdayRole(guild, state.role)) throw new Error('Birthday role cannot be managed. Check Manage Roles permission and role hierarchy.');
 
-      if (currentMember.roleAssignedAt && !state.hasRole) {
-        setBirthday(guild.id, member.userId, { roleAssignedAt: null }, { ...meta, action: 'birthday_role_state_repaired' });
+      if (currentMember.roleAssignedAt && !state.hasRole && (!currentMember.roleAssignedRoleId || currentMember.roleAssignedRoleId === desiredRoleId)) {
+        setBirthday(guild.id, member.userId, { roleAssignedAt: null, roleAssignedRoleId: null }, { ...meta, action: 'birthday_role_state_repaired' });
       }
 
       const refreshed = getBirthday(guild.id, member.userId);
-      if (!state.hasRole || !refreshed?.roleAssignedAt) {
+      if (!state.hasRole || !refreshed?.roleAssignedAt || refreshed.roleAssignedRoleId !== desiredRoleId) {
         const assigned = await assignBirthdayRole(guild, currentSection, refreshed, meta);
         if (assigned) result.rolesAssigned += 1;
       }
