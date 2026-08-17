@@ -185,7 +185,7 @@ panel.buildButtonOptionsPanel = (interaction) => {
   ];
   if (ROLE_ACTIONS.has(action)) rows.push(new ActionRowBuilder().addComponents(new RoleSelectMenuBuilder().setCustomId('embed:button-action-role').setPlaceholder('Select role for this button').setMinValues(1).setMaxValues(1)));
   else if (action === 'reply') rows.push(new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('embed:button-reply-edit').setLabel('✏️ Reply Text').setStyle(ButtonStyle.Primary)));
-  rows.push(new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('embed:button-options-back').setLabel('⬅️ Buttons').setStyle(ButtonStyle.Secondary)));
+  rows.push(new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('embed:button-options-back').setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary)));
   return { embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('⚙️ Button Options').setDescription(details.join('\n').slice(0, 4096))], components: enforceLimits(rows) };
 };
 
@@ -275,7 +275,7 @@ panel.parseButtonActionIndex = parseButtonIndex;
 panel.resolveButtonAction = resolveButton;
 panel.supportedButtonActions = BUILT_IN_ACTIONS;
 
-// Remaining dynamic navigation/readiness UI. Canonical Builder, Editor and Panels layouts live in embedPanel.js.
+// Remaining readiness compatibility. Canonical navigation labels live on their owning panels.
 (() => {
   const { mediaModel } = require('./embedMedia');
   function requestedBy(interaction) { return panel.memberName?.(interaction) || interaction.member?.displayName || interaction.user?.username || 'Unknown User'; }
@@ -302,14 +302,6 @@ panel.supportedButtonActions = BUILT_IN_ACTIONS;
     const row3 = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('embed:builder').setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary));
     return { embeds: [new EmbedBuilder().setColor(report.ready ? (report.warnings.length ? 0xFEE75C : 0x57F287) : 0xED4245).setTitle('✅ Embed Readiness').setDescription(lines.join('\n').slice(0, 4096)).setFooter({ text: `Requested by ${requestedBy(interaction)}` }).setTimestamp()], components: [row1, row2, row3] };
   };
-  const NAVIGATION_IDS = new Set(['admin:modules', 'embed:back', 'embed:appearance-back', 'embed:thumbnail-back', 'embed:media-options-back', 'embed:file-options-back', 'embed:button-options-back']);
-  function componentId(component) { return component?.data?.custom_id || component?.customId || null; }
-  function normalizeNavigationLabels(payload) { const rows = Array.isArray(payload?.components) ? payload.components : [], lastRowIndex = rows.length - 1; rows.forEach((row, rowIndex) => { if (!Array.isArray(row?.components)) return; for (const component of row.components) { const id = componentId(component), isExplicitNavigation = NAVIGATION_IDS.has(id), isLastRowBuilderNavigation = id === 'embed:builder' && rowIndex === lastRowIndex; if (!isExplicitNavigation && !isLastRowBuilderNavigation) continue; if (typeof component?.setLabel === 'function') component.setLabel('⬅️ Back'); else if (component?.data) component.data.label = '⬅️ Back'; } }); return payload; }
-  function wrapNavigationLabels(methodName) { if (typeof panel[methodName] !== 'function') return; const original = panel[methodName].bind(panel); panel[methodName] = (...args) => normalizeNavigationLabels(original(...args)); }
-  if (!panel.__embedNavigationPatched) {
-    ['buildAppearancePanel', 'buildAppearanceIconPanel', 'buildThumbnailOptionsPanel', 'buildMediaManagerPanel', 'buildMediaManager', 'buildMediaOptionsPanel', 'buildFileOptionsPanel', 'buildFieldsManagerPanel', 'buildButtonOptionsPanel', 'buildReadinessPanel'].forEach(wrapNavigationLabels);
-    panel.__embedNavigationPatched = true;
-  }
 })();
 
 module.exports = panel;
