@@ -40,7 +40,9 @@ function read(filePath, fallback = {}) {
     if (!raw || !raw.trim()) return clone(fallback);
 
     const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' ? parsed : clone(fallback);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed
+      : clone(fallback);
   } catch (error) {
     console.error(`[fileStore] Failed to read file: ${filePath}`, error);
     throw error;
@@ -51,7 +53,9 @@ function validateJsonFile(filePath) {
   const raw = fs.readFileSync(filePath, 'utf8');
   if (!raw || !raw.trim()) throw new Error('JSON file is empty after write.');
   const parsed = JSON.parse(raw);
-  if (!parsed || typeof parsed !== 'object') throw new Error('JSON root is not an object.');
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('JSON root is not an object.');
+  }
   return true;
 }
 
