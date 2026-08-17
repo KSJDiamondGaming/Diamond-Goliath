@@ -311,6 +311,29 @@ function getReadinessFixTarget(report) {
   return { type: 'builder', label: '🛠️ Builder' };
 }
 
+function buildReadinessModel(interaction, state = {}, options = {}) {
+  const report = getReadinessReport(interaction, state, options);
+  const fix = getReadinessFixTarget(report);
+  const status = report.ready
+    ? (report.warnings.length ? '🟡 Ready with warnings' : '🟢 Ready to Send')
+    : '🔴 Not Ready';
+  const lines = [
+    `**Status:** ${status}`,
+    `**Channel:** ${state.channelId ? `<#${state.channelId}>` : 'Not selected'}`,
+    `**Panels:** ${Array.isArray(state.panels) ? state.panels.length : 0}/${MAX_PANELS}`,
+    `**Buttons:** ${Array.isArray(state.buttons) ? state.buttons.length : 0}/${MAX_BUTTONS}`,
+    '',
+    report.errors.length
+      ? `### ❌ Fix before sending\n${report.errors.slice(0, 12).map((item) => `• ${item}`).join('\n')}${report.errors.length > 12 ? `\n• And ${report.errors.length - 12} more...` : ''}`
+      : '### ✅ Required checks passed',
+  ];
+  if (report.warnings.length) {
+    lines.push('', `### ⚠️ Warnings\n${report.warnings.slice(0, 8).map((item) => `• ${item}`).join('\n')}${report.warnings.length > 8 ? `\n• And ${report.warnings.length - 8} more...` : ''}`);
+  }
+  if (report.checks.length) lines.push('', `### 🔎 Checked\n${report.checks.slice(0, 8).map((item) => `• ${item}`).join('\n')}`);
+  return { report, fix, status, lines };
+}
+
 function formatValidationErrors(errors = []) {
   if (!errors.length) return '';
   return [
@@ -406,6 +429,7 @@ module.exports = {
   validateEmbedState,
   getReadinessReport,
   getReadinessFixTarget,
+  buildReadinessModel,
   formatValidationErrors,
   buildHealthReport,
   repairAll,
