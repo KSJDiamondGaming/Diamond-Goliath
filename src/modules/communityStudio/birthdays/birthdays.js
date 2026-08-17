@@ -6,6 +6,7 @@ const { getModuleSection, saveModuleSection, updateModuleSection } = require('..
 
 const SECTION = 'birthdays';
 const TICK_MS = 60 * 1000;
+const UPCOMING_WINDOW_DAYS = 30;
 const now = () => new Date().toISOString();
 const clone = (value) => value == null ? value : JSON.parse(JSON.stringify(value));
 const clean = (value, max = 1000) => String(value ?? '').trim().slice(0, max);
@@ -198,12 +199,24 @@ function nextBirthday(member, settings, from = new Date()) {
   return null;
 }
 
-function listUpcoming(guildId, limit = 20) {
+function dateKeyToUtcMs(key) {
+  const match = String(key || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return NaN;
+  return Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+}
+
+function listUpcoming(guildId, limit = 20, withinDays = UPCOMING_WINDOW_DAYS) {
   const section = getSection(guildId);
+  const local = zonedParts(new Date(), section.settings.timezone);
+  const todayKey = `${local.year}-${local.month}-${local.day}`;
+  const todayMs = dateKeyToUtcMs(todayKey);
+  const maxDays = Math.max(0, Math.min(366, Number(withinDays) || UPCOMING_WINDOW_DAYS));
   return Object.values(section.members)
     .filter((member) => member.announce !== false)
     .map((member) => ({ member, next: nextBirthday(member, section.settings) }))
     .filter((item) => item.next)
+    .map((item) => ({ ...item, daysUntil: Math.round((dateKeyToUtcMs(item.next.key) - todayMs) / 86400000) }))
+    .filter((item) => item.daysUntil >= 0 && item.daysUntil <= maxDays)
     .sort((a, b) => a.next.key.localeCompare(b.next.key))
     .slice(0, Math.max(1, Math.min(100, Number(limit) || 20)));
 }
@@ -318,7 +331,7 @@ async function buildHealth(guild) {
 }
 
 module.exports = {
-  SECTION, TICK_MS, defaultSection, normalizeSection, normalizeMember,
+  SECTION, TICK_MS, UPCOMING_WINDOW_DAYS, defaultSection, normalizeSection, normalizeMember,
   getSection, saveSection, updateSection, updateSettings, incrementAnalytics,
   getBirthday, setBirthday, removeBirthday, listUpcoming, nextBirthday, ageFor,
   processGuild, buildHealth, validTimezone, validTime,
