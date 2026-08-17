@@ -85,11 +85,16 @@ function getLimit(guildId, limitKey, fallback = null) {
   return Object.prototype.hasOwnProperty.call(limits, limitKey) ? limits[limitKey] : fallback;
 }
 
+function normalizeCount(value) {
+  const count = Number(value);
+  return Number.isFinite(count) ? Math.max(Math.trunc(count), 0) : 0;
+}
+
 function isWithinLimit(guildId, limitKey, currentValue) {
   if (testDevOverride.shouldBypassPaywall()) return true;
   const limit = getLimit(guildId, limitKey, null);
   if (limit == null) return true;
-  return Number(currentValue || 0) < Number(limit);
+  return normalizeCount(currentValue) < Number(limit);
 }
 
 function requireWithinLimit(guildId, limitKey, currentValue) {
@@ -99,7 +104,7 @@ function requireWithinLimit(guildId, limitKey, currentValue) {
   error.code = 'PLAN_LIMIT_REACHED';
   error.limitKey = limitKey;
   error.limit = getLimit(guildId, limitKey, null);
-  error.currentValue = Number(currentValue || 0);
+  error.currentValue = normalizeCount(currentValue);
   error.currentPlan = getPlan(guildId);
   throw error;
 }
