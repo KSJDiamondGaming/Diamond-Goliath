@@ -17,10 +17,10 @@ const guildManager = require('../../../core/guild/guildManager');
 const { getAllEmbedDeployments } = require('./embedDeployments');
 const panel = require('./embedPanel');
 
-const MAX_BUTTONS = panel.MAX_BUTTONS || 20;
+const MAX_BUTTONS = panel.MAX_BUTTONS;
 const MAX_COMPONENTS_PER_ROW = panel.EMBED_COMPONENT_LIMITS?.maxComponentsPerRow || 5;
 const MAX_ACTION_ROWS = panel.EMBED_COMPONENT_LIMITS?.maxActionRows || 5;
-const MAX_DEPLOYED_BUTTON_ROWS = 4;
+const MAX_DEPLOYED_BUTTON_ROWS = Math.max(1, MAX_ACTION_ROWS - 1);
 const BUILT_IN_ACTIONS = Object.freeze(['reply', 'toggle-role', 'add-role', 'remove-role', 'user-info', 'server-info']);
 const ROLE_ACTIONS = new Set(['toggle-role', 'add-role', 'remove-role']);
 const DANGEROUS_ROLE_PERMISSIONS = [
