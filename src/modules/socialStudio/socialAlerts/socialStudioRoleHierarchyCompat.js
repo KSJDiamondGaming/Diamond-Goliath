@@ -218,6 +218,14 @@ async function handle(interaction) {
     return update(interaction);
   }
 
+  if (id === `${P}notification:role`) {
+    const config = store.getConfig(interaction.guildId);
+    config.notificationRoleId = interaction.values?.[0] || null;
+    config.notificationMentionMode = config.notificationRoleId ? 'role' : 'none';
+    save(interaction, config);
+    return update(interaction);
+  }
+
   return false;
 }
 
