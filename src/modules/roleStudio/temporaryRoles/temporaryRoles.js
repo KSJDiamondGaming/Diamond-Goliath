@@ -99,6 +99,7 @@ function durationToMs(value, unit) {
 function validateRole(guild, roleId) {
   const role = guild.roles.cache.get(roleId);
   if (!role) throw new Error('The selected role no longer exists.');
+  if (role.id === guild.id) throw new Error('The @everyone role cannot be assigned as a temporary role.');
   if (role.managed) throw new Error('Managed integration roles cannot be assigned.');
   const me = guild.members.me;
   if (!me?.permissions.has('ManageRoles')) throw new Error('Goliath requires Manage Roles.');
