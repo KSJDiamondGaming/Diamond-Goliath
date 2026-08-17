@@ -249,8 +249,12 @@ async function assignBirthdayRole(guild, section, member, meta = {}) {
   if (!roleId) return false;
   const discordMember = await guild.members.fetch(member.userId).catch(() => null);
   const role = guild.roles.cache.get(roleId) || await guild.roles.fetch(roleId).catch(() => null);
-  if (!discordMember || !canManageBirthdayRole(guild, role)) return false;
-  if (!discordMember.roles.cache.has(roleId)) await discordMember.roles.add(roleId, 'Goliath birthday role').catch(() => null);
+  if (!discordMember) throw new Error('Birthday member is unavailable.');
+  if (!role) throw new Error('Birthday role is unavailable.');
+  if (!canManageBirthdayRole(guild, role)) throw new Error('Birthday role cannot be managed. Check Manage Roles permission and role hierarchy.');
+  if (!discordMember.roles.cache.has(roleId)) {
+    await discordMember.roles.add(roleId, 'Goliath birthday role');
+  }
   setBirthday(guild.id, member.userId, { roleAssignedAt: now() }, { ...meta, action: 'birthday_role_assigned' });
   incrementAnalytics(guild.id, { rolesAssigned: 1 }, meta);
   return true;
@@ -264,7 +268,9 @@ async function cleanupBirthdayRoles(guild, section, meta = {}) {
   for (const member of Object.values(section.members)) {
     if (!member.roleAssignedAt || Date.now() - new Date(member.roleAssignedAt).getTime() < maxAgeMs) continue;
     const discordMember = await guild.members.fetch(member.userId).catch(() => null);
-    if (discordMember?.roles?.cache?.has(roleId)) await discordMember.roles.remove(roleId, 'Goliath birthday role expired').catch(() => null);
+    if (discordMember?.roles?.cache?.has(roleId)) {
+      await discordMember.roles.remove(roleId, 'Goliath birthday role expired');
+    }
     setBirthday(guild.id, member.userId, { roleAssignedAt: null }, { ...meta, action: 'birthday_role_removed' });
     removed += 1;
   }
@@ -331,7 +337,7 @@ async function buildHealth(guild) {
 }
 
 module.exports = {
-  SECTION, TICK_MS, UPCOMING_WINDOW_DAYS, defaultSection, normalizeSection, normalizeMember,
+  SECTION, TICK_MS, defaultSection, normalizeSection, normalizeMember,
   getSection, saveSection, updateSection, updateSettings, incrementAnalytics,
   getBirthday, setBirthday, removeBirthday, listUpcoming, nextBirthday, ageFor,
   processGuild, buildHealth, validTimezone, validTime,
