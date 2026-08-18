@@ -9,7 +9,6 @@ const {
   PermissionsBitField,
   RoleSelectMenuBuilder,
   StringSelectMenuBuilder,
-  TextInputStyle,
 } = require('discord.js');
 const guildManager = require('../../../core/guild/guildManager');
 const { getAllEmbedDeployments } = require('./embedDeployments');
@@ -50,30 +49,6 @@ function actionLabel(action) { return { reply: 'Reply', 'toggle-role': 'Toggle R
 function rowLabel(value) { const row = panel.embedButtonRow(value); return row == null ? 'Auto' : `Row ${row + 1}`; }
 function roleDisplay(interaction, roleId) { const role = interaction?.guild?.roles?.cache?.get?.(String(roleId || '').replace(/\D/g, '')); return role ? `<@&${role.id}>` : roleId ? `Role ${roleId}` : 'Not selected'; }
 function deployedRowFor(buttons, index) { const rows = panel.layoutEmbedButtons(buttons); const row = rows.findIndex((entries) => entries.some((entry) => entry.index === index)); return row >= 0 ? row : null; }
-
-function buildButtonEditorModal(state, index = null) {
-  const buttons = Array.isArray(state.buttons) ? state.buttons : [];
-  const item = Number.isInteger(index) ? (buttons[index] || {}) : {};
-  return panel.modal(
-    Number.isInteger(index) ? `embed:button-manager-save:${index}` : 'embed:button-manager-save-new',
-    Number.isInteger(index) ? 'Edit Button' : 'Add Button',
-    [
-      panel.input('label', 'Button label', TextInputStyle.Short, item.label || '', true, 80),
-      panel.input('emoji', 'Emoji (optional)', TextInputStyle.Short, item.emoji || '', false, 100),
-      panel.input('url', 'Link URL / variable (optional)', TextInputStyle.Short, item.url || '', false, 4000),
-    ],
-  );
-}
-function buildButtonReplyModal(state) {
-  const buttons = Array.isArray(state.buttons) ? state.buttons : [];
-  const index = selectedIndex(state);
-  const item = index == null ? {} : (buttons[index] || {});
-  return panel.modal('embed:button-reply-save', 'Button Reply Text', [
-    panel.input('replyText', 'Reply text / variables', TextInputStyle.Paragraph, item.actionValue || '', true, 1000),
-  ]);
-}
-panel.buttonEditorModal = buildButtonEditorModal;
-panel.buttonReplyModal = buildButtonReplyModal;
 
 function buildButtonOptionsPanel(interaction) {
   const state = panel.getSession(interaction), buttons = Array.isArray(state.buttons) ? state.buttons : [], index = selectedIndex(state);
