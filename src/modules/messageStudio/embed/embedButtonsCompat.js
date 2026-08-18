@@ -16,9 +16,7 @@ const { getAllEmbedDeployments } = require('./embedDeployments');
 const panel = require('./embedPanel');
 
 const MAX_BUTTONS = panel.MAX_BUTTONS || 20;
-const MAX_COMPONENTS_PER_ROW = panel.EMBED_COMPONENT_LIMITS?.maxComponentsPerRow || 5;
-const MAX_ACTION_ROWS = panel.EMBED_COMPONENT_LIMITS?.maxActionRows || 5;
-const MAX_DEPLOYED_BUTTON_ROWS = panel.MAX_DEPLOYED_BUTTON_ROWS || Math.max(1, Math.min(4, MAX_ACTION_ROWS - 1));
+const MAX_DEPLOYED_BUTTON_ROWS = panel.MAX_DEPLOYED_BUTTON_ROWS || Math.max(1, Math.min(4, (panel.EMBED_COMPONENT_LIMITS?.maxActionRows || 5) - 1));
 const BUILT_IN_ACTIONS = Object.freeze(['reply', 'toggle-role', 'add-role', 'remove-role', 'user-info', 'server-info']);
 const ROLE_ACTIONS = new Set(['toggle-role', 'add-role', 'remove-role']);
 const DANGEROUS_ROLE_PERMISSIONS = [
@@ -33,9 +31,11 @@ const DANGEROUS_ROLE_PERMISSIONS = [
 ];
 
 function enforceLimits(rows = []) {
-  return rows.filter(Boolean).slice(0, MAX_ACTION_ROWS).map((row) => {
-    if (!Array.isArray(row?.components) || row.components.length <= MAX_COMPONENTS_PER_ROW) return row;
-    row.components = row.components.slice(0, MAX_COMPONENTS_PER_ROW);
+  const maxActionRows = panel.EMBED_COMPONENT_LIMITS?.maxActionRows || 5;
+  const maxComponentsPerRow = panel.EMBED_COMPONENT_LIMITS?.maxComponentsPerRow || 5;
+  return rows.filter(Boolean).slice(0, maxActionRows).map((row) => {
+    if (!Array.isArray(row?.components) || row.components.length <= maxComponentsPerRow) return row;
+    row.components = row.components.slice(0, maxComponentsPerRow);
     return row;
   });
 }
