@@ -87,16 +87,20 @@ function timezoneMenu(currentTimezone) {
 
 function celebrationPayload(interaction) {
   const section = birthdays.getSection(interaction.guildId);
+  const imageLabel = section.settings.cardImageMode === 'none'
+    ? 'None'
+    : section.settings.cardImageMode === 'custom' ? 'Custom' : 'Goliath Default';
   const desc = [
     '**📣 Public Celebration**',
     `Channel: ${section.settings.announcementChannelId ? `<#${section.settings.announcementChannelId}>` : '**Not set**'}`,
-    `Celebration time: **${section.settings.announcementTime}**`,
-    `Timezone: **${section.settings.timezone}**`,
+    `Time: **${section.settings.announcementTime} · ${section.settings.timezone}**`,
     `Same-day birthdays: **${section.settings.combineSameDay ? 'Combined' : 'Individual'}**`,
-    `Individual messages: **${section.settings.messageTemplates.length} ready**`,
-    `Combined messages: **${section.settings.groupMessageTemplates.length} ready**`,
+    '', '**💬 Messages**',
+    `Individual: **${section.settings.messageTemplates.length} ready**`,
+    `Group: **${section.settings.groupMessageTemplates.length} ready**`,
+    '', '**🎨 Birthday Card**',
     `Style: **${section.settings.useBirthdayEmbed ? 'Birthday Card' : 'Plain Message'}**`,
-    '', 'Messages rotate automatically. Use {mention}, {server}, {user} and {age} for individual messages; {mentions}, {count} and {server} for combined messages.',
+    `Image: **${imageLabel}**`,
   ].join('\n');
   return {
     embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('🎉 Birthday Celebration').setDescription(desc).setFooter({ text: 'Goliath Birthdays · Celebration' }).setTimestamp()],
@@ -104,14 +108,14 @@ function celebrationPayload(interaction) {
       row(new ChannelSelectMenuBuilder().setCustomId('admin:birthdays:channel').setPlaceholder('Public birthday celebration channel').setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setMinValues(0).setMaxValues(1).setDefaultChannels(section.settings.announcementChannelId ? [section.settings.announcementChannelId] : [])),
       row(timezoneMenu(section.settings.timezone)),
       row(
-        button('admin:birthdays:settings', '🕐 Set Time', ButtonStyle.Primary),
+        button('admin:birthdays:settings', '🕐 Time', ButtonStyle.Primary),
         button('admin:birthdays:combine', section.settings.combineSameDay ? '👥 Combined: On' : '👤 Combined: Off', section.settings.combineSameDay ? ButtonStyle.Success : ButtonStyle.Secondary),
         button('admin:birthdays:card', '🎨 Birthday Card'),
-        button('admin:birthdays:timezone:custom', '🌍 Custom TZ'),
       ),
       row(
         button('admin:birthdays:messages:individual', '💬 Individual Messages'),
         button('admin:birthdays:messages:group', '🎉 Group Messages'),
+        button('admin:birthdays:timezone:custom', '✏️ Custom Timezone'),
       ),
       row(button('admin:birthdays', '⬅️ Back')),
     ],
@@ -137,6 +141,60 @@ function messagePoolPayload(interaction, type) {
         button(`admin:birthdays:messages:${type}:defaults`, '♻️ Restore Defaults'),
       ),
       row(button('admin:birthdays:celebration', '⬅️ Back')),
+    ],
+  };
+}
+
+function cardImageLabel(section) {
+  if (section.settings.cardImageMode === 'none') return 'None';
+  if (section.settings.cardImageMode === 'custom') return section.settings.cardImageUrl ? 'Custom Image/GIF' : 'Custom — URL missing';
+  return 'Goliath Default GIF';
+}
+
+function cardPayload(interaction) {
+  const section = birthdays.getSection(interaction.guildId);
+  const desc = [
+    `Status: **${section.settings.useBirthdayEmbed ? 'Enabled' : 'Disabled'}**`,
+    `Title: **${section.settings.cardTitle}**`,
+    `Colour: **${section.settings.cardColor}**`,
+    `Thumbnail: **${section.settings.cardUseServerIcon ? 'Server Icon' : 'Off'}**`,
+    `Image: **${cardImageLabel(section)}**`,
+    `Footer: **${section.settings.cardFooter || 'None'}**`,
+  ].join('\n');
+  return {
+    embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('🎨 Birthday Card').setDescription(desc).setFooter({ text: 'Goliath Birthdays · Birthday Card' }).setTimestamp()],
+    components: [
+      row(
+        button('admin:birthdays:card:toggle', section.settings.useBirthdayEmbed ? '🟢 Card: On' : '⚪ Card: Off', section.settings.useBirthdayEmbed ? ButtonStyle.Success : ButtonStyle.Secondary),
+        button('admin:birthdays:card:text', '✏️ Card Text', ButtonStyle.Primary),
+        button('admin:birthdays:card:color', '🎨 Colour'),
+        button('admin:birthdays:card:image', '🖼️ Image / GIF'),
+      ),
+      row(
+        button('admin:birthdays:card:preview', '👁️ Preview'),
+        button('admin:birthdays:card:defaults', '♻️ Restore Defaults'),
+      ),
+      row(button('admin:birthdays:celebration', '⬅️ Back')),
+    ],
+  };
+}
+
+function cardImagePayload(interaction) {
+  const section = birthdays.getSection(interaction.guildId);
+  const desc = [
+    `Current image: **${cardImageLabel(section)}**`,
+    '', 'Choose the built-in birthday GIF, use your own image/GIF URL, or disable the large card image.',
+    section.settings.cardImageMode === 'custom' && section.settings.cardImageUrl ? `\nCustom URL: ${section.settings.cardImageUrl}` : '',
+  ].join('\n');
+  return {
+    embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('🖼️ Birthday Card Image / GIF').setDescription(desc).setFooter({ text: 'Goliath Birthdays · Birthday Card' }).setTimestamp()],
+    components: [
+      row(
+        button('admin:birthdays:card:image:default', '🎉 Goliath Default', section.settings.cardImageMode === 'default' ? ButtonStyle.Success : ButtonStyle.Secondary),
+        button('admin:birthdays:card:image:custom', '🔗 Custom URL', section.settings.cardImageMode === 'custom' ? ButtonStyle.Success : ButtonStyle.Secondary),
+        button('admin:birthdays:card:image:none', '🚫 No Image', section.settings.cardImageMode === 'none' ? ButtonStyle.Success : ButtonStyle.Secondary),
+      ),
+      row(button('admin:birthdays:card', '⬅️ Back')),
     ],
   };
 }
@@ -201,13 +259,20 @@ function messagesModal(section, type) {
       .setValue(values.join('\n'))),
   );
 }
-function cardModal(section) {
-  return new ModalBuilder().setCustomId('admin:birthdays:card:submit').setTitle('Birthday Card').addComponents(
+function cardTextModal(section) {
+  return new ModalBuilder().setCustomId('admin:birthdays:card:text:submit').setTitle('Birthday Card Text').addComponents(
     row(new TextInputBuilder().setCustomId('title').setLabel('Card title').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(256).setValue(section.settings.cardTitle)),
     row(new TextInputBuilder().setCustomId('footer').setLabel('Footer — {server} supported').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(1000).setValue(section.settings.cardFooter || '')),
-    row(new TextInputBuilder().setCustomId('color').setLabel('Embed colour hex').setStyle(TextInputStyle.Short).setRequired(true).setValue(section.settings.cardColor)),
-    row(new TextInputBuilder().setCustomId('image').setLabel('Optional image / GIF URL').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(2000).setValue(section.settings.cardImageUrl || '').setPlaceholder('https://...')),
-    row(new TextInputBuilder().setCustomId('mode').setLabel('Use embed card? on / off').setStyle(TextInputStyle.Short).setRequired(true).setValue(section.settings.useBirthdayEmbed ? 'on' : 'off')),
+  );
+}
+function cardColorModal(section) {
+  return new ModalBuilder().setCustomId('admin:birthdays:card:color:submit').setTitle('Birthday Card Colour').addComponents(
+    row(new TextInputBuilder().setCustomId('color').setLabel('Embed colour hex').setStyle(TextInputStyle.Short).setRequired(true).setValue(section.settings.cardColor).setPlaceholder('#5865F2')),
+  );
+}
+function cardImageModal(section) {
+  return new ModalBuilder().setCustomId('admin:birthdays:card:image:custom:submit').setTitle('Custom Birthday Card Image').addComponents(
+    row(new TextInputBuilder().setCustomId('image').setLabel('Image / GIF URL').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(2000).setValue(section.settings.cardImageUrl || '').setPlaceholder('https://...')),
   );
 }
 function monthlySettingsModal(section) {
@@ -279,7 +344,6 @@ function parsePrivacy(raw) {
   const bool = (v, fallback) => !v ? fallback : ['on', 'true', 'yes', '1'].includes(v);
   return { listPublic: bool(values[0], true), announce: bool(values[1], true), showAge: bool(values[2], false) };
 }
-function onOff(raw) { return ['on', 'true', 'yes', '1'].includes(String(raw || '').trim().toLowerCase()); }
 
 async function handleAdmin(interaction) {
   const id = String(interaction.customId || ''); if (!id.startsWith('admin:birthdays')) return false;
@@ -290,6 +354,8 @@ async function handleAdmin(interaction) {
   if (id === 'admin:birthdays:tools') { await respond(interaction, toolsPayload()); return true; }
   if (id === 'admin:birthdays:messages:individual') { await respond(interaction, messagePoolPayload(interaction, 'individual')); return true; }
   if (id === 'admin:birthdays:messages:group') { await respond(interaction, messagePoolPayload(interaction, 'group')); return true; }
+  if (id === 'admin:birthdays:card') { await respond(interaction, cardPayload(interaction)); return true; }
+  if (id === 'admin:birthdays:card:image') { await respond(interaction, cardImagePayload(interaction)); return true; }
   if (id === 'admin:birthdays:channel' && interaction.isChannelSelectMenu?.()) birthdays.updateSettings(interaction.guildId, { announcementChannelId: interaction.values[0] || null }, { ...actor, action: 'birthdays_channel_update' });
   else if (id === 'admin:birthdays:timezone' && interaction.isStringSelectMenu?.()) {
     const timezone = interaction.values[0];
@@ -300,7 +366,6 @@ async function handleAdmin(interaction) {
   else if (id === 'admin:birthdays:role' && interaction.isRoleSelectMenu?.()) birthdays.updateSettings(interaction.guildId, { birthdayRoleId: interaction.values[0] || null }, { ...actor, action: 'birthdays_role_update' });
   else if (id === 'admin:birthdays:monthly:channel' && interaction.isChannelSelectMenu?.()) birthdays.updateSettings(interaction.guildId, { monthlyBoardChannelId: interaction.values[0] || null }, { ...actor, action: 'birthdays_monthly_channel_update' });
   else if (id === 'admin:birthdays:settings') { await interaction.showModal(settingsModal(birthdays.getSection(interaction.guildId))); return true; }
-  else if (id === 'admin:birthdays:card') { await interaction.showModal(cardModal(birthdays.getSection(interaction.guildId))); return true; }
   else if (id === 'admin:birthdays:monthly:settings') { await interaction.showModal(monthlySettingsModal(birthdays.getSection(interaction.guildId))); return true; }
   else if (id === 'admin:birthdays:manage') { await interaction.showModal(manageModal()); return true; }
   else if (id === 'admin:birthdays:import') { await interaction.showModal(importModal()); return true; }
@@ -314,6 +379,42 @@ async function handleAdmin(interaction) {
   else if (id === 'admin:birthdays:messages:group:defaults') {
     birthdays.updateSettings(interaction.guildId, { groupMessageTemplates: birthdays.DEFAULT_GROUP_TEMPLATES }, { ...actor, action: 'birthdays_group_messages_defaults' });
     await respond(interaction, messagePoolPayload(interaction, 'group')); return true;
+  }
+  else if (id === 'admin:birthdays:card:toggle') {
+    const section = birthdays.getSection(interaction.guildId);
+    birthdays.updateSettings(interaction.guildId, { useBirthdayEmbed: !section.settings.useBirthdayEmbed }, { ...actor, action: 'birthdays_card_toggle' });
+    await respond(interaction, cardPayload(interaction)); return true;
+  }
+  else if (id === 'admin:birthdays:card:text') { await interaction.showModal(cardTextModal(birthdays.getSection(interaction.guildId))); return true; }
+  else if (id === 'admin:birthdays:card:color') { await interaction.showModal(cardColorModal(birthdays.getSection(interaction.guildId))); return true; }
+  else if (id === 'admin:birthdays:card:image:custom') { await interaction.showModal(cardImageModal(birthdays.getSection(interaction.guildId))); return true; }
+  else if (id === 'admin:birthdays:card:image:default') {
+    birthdays.updateSettings(interaction.guildId, { cardImageMode: 'default', cardImageUrl: null }, { ...actor, action: 'birthdays_card_image_default' });
+    await respond(interaction, cardImagePayload(interaction)); return true;
+  }
+  else if (id === 'admin:birthdays:card:image:none') {
+    birthdays.updateSettings(interaction.guildId, { cardImageMode: 'none' }, { ...actor, action: 'birthdays_card_image_none' });
+    await respond(interaction, cardImagePayload(interaction)); return true;
+  }
+  else if (id === 'admin:birthdays:card:defaults') {
+    birthdays.updateSettings(interaction.guildId, {
+      useBirthdayEmbed: true,
+      cardTitle: '🎂 Happy Birthday!',
+      cardFooter: 'From everyone at {server} 🎉',
+      cardColor: '#5865F2',
+      cardImageMode: 'default',
+      cardImageUrl: null,
+      cardUseServerIcon: true,
+    }, { ...actor, action: 'birthdays_card_defaults' });
+    await respond(interaction, cardPayload(interaction)); return true;
+  }
+  else if (id === 'admin:birthdays:card:preview') {
+    const section = birthdays.getSection(interaction.guildId);
+    const member = birthdays.getBirthday(interaction.guildId, interaction.user.id)
+      || birthdays.normalizeMember({ userId: interaction.user.id, month: 1, day: 1 }, interaction.user.id, section.settings);
+    const today = new Date().toISOString().slice(0, 10);
+    const preview = birthdays.birthdayEmbed(interaction.guild, section, [member], new Date().getUTCFullYear(), today, true);
+    await interaction.reply({ content: '👁️ Birthday Card preview', embeds: [preview], flags: 64, allowedMentions: { parse: [] } }); return true;
   }
   else if (id === 'admin:birthdays:testmenu') {
     await interaction.reply({ content: '**🧪 Birthday Test Centre**\nThese tests do not mark live birthdays as announced or change scheduler state.', flags: 64, components: [row(button('admin:birthdays:test:role', '🎭 Test Role'), button('admin:birthdays:test:announcement', '📣 Test Celebration'), button('admin:birthdays:test:monthly', '🗓️ Test Monthly Board'))] }); return true;
@@ -349,11 +450,21 @@ async function handleAdmin(interaction) {
     birthdays.updateSettings(interaction.guildId, { groupMessageTemplates: interaction.fields.getTextInputValue('messages') }, { ...actor, action: 'birthdays_group_messages_update' });
     await interaction.reply({ content: '✅ Group birthday message pool updated.', flags: 64 }); return true;
   }
-  else if (id === 'admin:birthdays:card:submit') {
-    const color = interaction.fields.getTextInputValue('color').trim(); if (!/^#?[0-9a-f]{6}$/i.test(color)) throw new Error('Card colour must be a 6-digit hex colour such as #5865F2.');
-    const image = interaction.fields.getTextInputValue('image').trim(); if (image && !/^https?:\/\//i.test(image)) throw new Error('Card image must be an http/https URL.');
-    birthdays.updateSettings(interaction.guildId, { cardTitle: interaction.fields.getTextInputValue('title'), cardFooter: interaction.fields.getTextInputValue('footer'), cardColor: color, cardImageUrl: image || null, useBirthdayEmbed: onOff(interaction.fields.getTextInputValue('mode')) }, { ...actor, action: 'birthdays_card_update' });
-    await interaction.reply({ content: '✅ Birthday Card settings updated.', flags: 64 }); return true;
+  else if (id === 'admin:birthdays:card:text:submit') {
+    birthdays.updateSettings(interaction.guildId, { cardTitle: interaction.fields.getTextInputValue('title'), cardFooter: interaction.fields.getTextInputValue('footer') }, { ...actor, action: 'birthdays_card_text_update' });
+    await interaction.reply({ content: '✅ Birthday Card text updated.', flags: 64 }); return true;
+  }
+  else if (id === 'admin:birthdays:card:color:submit') {
+    const color = interaction.fields.getTextInputValue('color').trim();
+    if (!/^#?[0-9a-f]{6}$/i.test(color)) throw new Error('Card colour must be a 6-digit hex colour such as #5865F2.');
+    birthdays.updateSettings(interaction.guildId, { cardColor: color }, { ...actor, action: 'birthdays_card_color_update' });
+    await interaction.reply({ content: '✅ Birthday Card colour updated.', flags: 64 }); return true;
+  }
+  else if (id === 'admin:birthdays:card:image:custom:submit') {
+    const image = interaction.fields.getTextInputValue('image').trim();
+    if (!/^https?:\/\//i.test(image)) throw new Error('Card image must be an http/https URL.');
+    birthdays.updateSettings(interaction.guildId, { cardImageMode: 'custom', cardImageUrl: image }, { ...actor, action: 'birthdays_card_image_custom' });
+    await interaction.reply({ content: '✅ Custom Birthday Card image/GIF updated.', flags: 64 }); return true;
   }
   else if (id === 'admin:birthdays:monthly:settings:submit') {
     const time = interaction.fields.getTextInputValue('time').trim(); if (!birthdays.validTime(time)) throw new Error('Monthly board time must use HH:MM.');
