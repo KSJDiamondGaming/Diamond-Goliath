@@ -88,45 +88,6 @@ function buildButtonOptionsPanel(interaction) {
 }
 panel.buildButtonOptionsPanel = buildButtonOptionsPanel;
 
-function buildButtonsManagerPanel(interaction) {
-  const state = panel.getSession(interaction), buttons = Array.isArray(state.buttons) ? state.buttons : [], index = selectedIndex(state), item = index == null ? null : buttons[index];
-  const layout = panel.layoutEmbedButtons(buttons), usedRows = layout.filter((row) => row.length).length;
-  const maxDeployedRows = panel.MAX_DEPLOYED_BUTTON_ROWS;
-  const lines = [`**Buttons:** ${buttons.length}/${MAX_BUTTONS}`, `**Rows used when deployed:** ${usedRows}/${maxDeployedRows}`, ''];
-  if (item) {
-    const destination = item.url ? `Link: ${panel.trim(item.url, 1000)}` : item.action ? `Action: ${actionLabel(item.action)}` : 'No destination configured';
-    const actualRow = deployedRowFor(buttons, index);
-    lines.push(`**Selected button ${index + 1}:** ${item.emoji ? `${item.emoji} ` : ''}${item.label || 'Button'}`, `**Style:** ${styleLabel(item.style)}`, `**Destination:** ${destination}`, `**Row:** ${rowLabel(item.row)}${actualRow != null ? ` → Row ${actualRow + 1}` : ''}`);
-    if (ROLE_ACTIONS.has(String(item.action || '').toLowerCase())) lines.push(`**Role:** ${roleDisplay(interaction, item.actionValue)}`);
-    if (item.action === 'reply' && item.actionValue) lines.push(`**Reply:** ${panel.trim(resolved(item.actionValue, interaction), 900)}`);
-  } else lines.push('**Selected button:** None');
-  lines.push('', 'Buttons support automatic or explicit row placement. Discord limits are enforced: up to 5 buttons per row and up to 20 buttons across 4 button rows.');
-  const embeds = [new EmbedBuilder().setColor(0x5865F2).setTitle('🔘 Buttons').setDescription(lines.join('\n').slice(0, 4096))];
-  if (item) {
-    const previewLabel = panel.trim(resolved(item.label || 'Button', interaction), 80) || 'Button', previewUrl = panel.safeUrl(resolved(item.url, interaction)) || '', actualRow = deployedRowFor(buttons, index);
-    embeds.push(new EmbedBuilder().setColor(0x5865F2).setTitle('👁️ Selected Button Preview').setDescription([`**Label:** ${item.emoji ? `${item.emoji} ` : ''}${previewLabel}`, `**Style:** ${previewUrl ? 'Link' : styleLabel(item.style)}`, `**Destination:** ${previewUrl ? previewUrl : item.action ? `Action: ${actionLabel(item.action)}` : 'Not configured'}`, `**Deploy row:** ${actualRow == null ? 'Not placed' : actualRow + 1}`].join('\n').slice(0, 4096)));
-  }
-  const rows = [];
-  if (buttons.length) rows.push(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('embed:button-manager-select').setPlaceholder('Select button').setMinValues(1).setMaxValues(1).addOptions(buttons.map((button, buttonIndex) => ({ label: `${buttonIndex + 1}. ${panel.trim(button.label || 'Button', 80)}`, value: String(buttonIndex), description: panel.trim(`${rowLabel(button.row)} • ${button.url || actionLabel(button.action) || styleLabel(button.style)}`, 100), default: buttonIndex === index })))));
-  rows.push(
-    new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('embed:button-manager-add').setLabel('➕ Add').setStyle(ButtonStyle.Success).setDisabled(buttons.length >= MAX_BUTTONS),
-      new ButtonBuilder().setCustomId('embed:button-manager-edit').setLabel('✏️ Edit').setStyle(ButtonStyle.Primary).setDisabled(index == null),
-      new ButtonBuilder().setCustomId('embed:button-manager-options').setLabel('⚙️ Options').setStyle(ButtonStyle.Secondary).setDisabled(index == null),
-      new ButtonBuilder().setCustomId('embed:button-manager-remove').setLabel('🗑️ Remove').setStyle(ButtonStyle.Danger).setDisabled(index == null),
-    ),
-    new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('embed:button-manager-up').setLabel('⬆️ Up').setStyle(ButtonStyle.Secondary).setDisabled(index == null || index <= 0),
-      new ButtonBuilder().setCustomId('embed:button-manager-down').setLabel('⬇️ Down').setStyle(ButtonStyle.Secondary).setDisabled(index == null || index >= buttons.length - 1),
-    ),
-    new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('embed:builder').setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary),
-    ),
-  );
-  return { embeds, components: enforceLimits(rows) };
-}
-panel.buildButtonsManagerPanel = buildButtonsManagerPanel;
-
 function cleanAction(value) { return String(value || '').trim().toLowerCase().replace(/_/g, '-'); }
 function parseRoleId(value) { const raw = String(value || '').replace(/[<@&>]/g, '').trim(); return /^\d{15,25}$/.test(raw) ? raw : null; }
 function deploymentForMessage(guildId, messageId) { const deployments = Object.values(getAllEmbedDeployments(guildId) || {}); return deployments.find((item) => String(item?.messageId || '') === String(messageId || '')) || null; }
