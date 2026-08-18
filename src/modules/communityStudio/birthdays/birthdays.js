@@ -15,6 +15,11 @@ const DEFAULT_INDIVIDUAL_TEMPLATES = [
   '🥳 Wishing {mention} a very Happy Birthday from everyone at {server}! Have a brilliant day! 🎉',
   '🎈 It’s {mention}’s birthday! Everyone at {server} wishes you a fantastic day! 🎂',
   '🎁 Happy Birthday {mention}! Here’s to another amazing year from all of us at {server}! 🥳',
+  '🎊 It’s time to celebrate {mention}! Happy Birthday from everyone at {server}! 🎂',
+  '🥳 Another trip around the sun! Happy Birthday {mention}! Have an incredible day! 🎉',
+  '🎂 Today is all about {mention}! Everyone at {server} wishes you the happiest of birthdays! 🎈',
+  '🎉 Sending huge birthday wishes to {mention} from all of us at {server}! Have an amazing one! 🥳',
+  '🎁 Happy Birthday {mention}! We hope your day is packed with laughs, celebrations and cake! 🎂',
 ];
 const DEFAULT_GROUP_TEMPLATES = [
   '🎂 Happy Birthday {mentions}! From everyone at {server}, we hope you all have a fantastic day! 🎉',
@@ -22,9 +27,14 @@ const DEFAULT_GROUP_TEMPLATES = [
   '🎉 Birthday celebrations all round! Happy Birthday {mentions}! Have an amazing day from everyone at {server}! 🎈',
   '🎁 A very Happy Birthday to {mentions}! Everyone at {server} hopes you have a brilliant day! 🥳',
   '🎂 Today we’re celebrating {count} birthdays! Happy Birthday {mentions} from all of us at {server}! 🎉',
+  '🎊 Double the cake, triple the fun — we have {count} birthdays today! Happy Birthday {mentions} from everyone at {server}! 🎂',
+  '🥳 A huge Happy Birthday to {mentions}! All of us at {server} hope you have an incredible celebration! 🎉',
+  '🎈 Today belongs to {mentions}! Happy Birthday from everyone at {server} — enjoy every minute! 🎂',
+  '🎉 We’re celebrating {count} amazing people today! Happy Birthday {mentions} from all of us at {server}! 🥳',
+  '🎁 Birthday wishes are going out to {mentions}! Everyone at {server} hopes your day is full of fun, laughs and cake! 🎂',
 ];
 const DEFAULT_MESSAGE_TEMPLATE = DEFAULT_INDIVIDUAL_TEMPLATES[0];
-const DEFAULT_CARD_IMAGE_URL = 'https://media.giphy.com/media/VyB31XTqZNJhFRZNyl/giphy.gif';
+const DEFAULT_CARD_IMAGE_URL = 'https://static2.klipy.com/ii/bea85337777ad0e23e63683391435543/47/a8/WjSzGEC0.gif';
 const now = () => new Date().toISOString();
 const clone = (value) => value == null ? value : JSON.parse(JSON.stringify(value));
 const clean = (value, max = 1000) => String(value ?? '').trim().slice(0, max);
