@@ -70,7 +70,7 @@ function adminPayload(interaction) {
       row(new RoleSelectMenuBuilder().setCustomId('admin:birthdays:role').setPlaceholder('Optional all-day birthday role').setMinValues(0).setMaxValues(1).setDefaultRoles(section.settings.birthdayRoleId ? [section.settings.birthdayRoleId] : [])),
       row(new ChannelSelectMenuBuilder().setCustomId('admin:birthdays:monthly:channel').setPlaceholder('Optional management birthday board channel').setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setMinValues(0).setMaxValues(1).setDefaultChannels(section.settings.monthlyBoardChannelId ? [section.settings.monthlyBoardChannelId] : [])),
       row(button('admin:birthdays:settings', '⚙️ Announcement Settings', ButtonStyle.Primary), button('admin:birthdays:monthly:settings', '🗓️ Monthly Settings'), button('admin:birthdays:toggle', enabled ? '⏸ Disable' : '▶ Enable', enabled ? ButtonStyle.Danger : ButtonStyle.Success), button('admin:birthdays:upcoming', '📅 Upcoming'), button('admin:birthdays:health', '🩺 Health')),
-      row(button('admin:studio:communityStudio', '⬅️ Back to Community Studio')),
+      row(button('admin:birthdays:monthly:preview', '🧪 Test Monthly Board', ButtonStyle.Secondary, !section.settings.monthlyBoardChannelId), button('admin:studio:communityStudio', '⬅️ Back to Community Studio')),
     ],
   };
 }
@@ -148,6 +148,16 @@ async function handleAdmin(interaction) {
   else if (id === 'admin:birthdays:toggle') guildManager.setModuleEnabled(interaction.guildId, 'birthdays', !guildManager.isModuleEnabled(interaction.guildId, 'birthdays'), { ...actor, action: 'birthdays_toggle' });
   else if (id === 'admin:birthdays:settings') { await interaction.showModal(settingsModal(birthdays.getSection(interaction.guildId))); return true; }
   else if (id === 'admin:birthdays:monthly:settings') { await interaction.showModal(monthlySettingsModal(birthdays.getSection(interaction.guildId))); return true; }
+  else if (id === 'admin:birthdays:monthly:preview') {
+    const section = birthdays.getSection(interaction.guildId);
+    const channelId = section.settings.monthlyBoardChannelId;
+    if (!channelId) throw new Error('Select a management birthday board channel first.');
+    const channel = interaction.guild.channels.cache.get(channelId) || await interaction.guild.channels.fetch(channelId).catch(() => null);
+    if (!channel?.send) throw new Error('Monthly birthday board channel is unavailable.');
+    await channel.send({ embeds: [birthdays.monthlyBoardEmbed(interaction.guild, section)], allowedMentions: { parse: [] } });
+    await interaction.reply({ content: `✅ Test monthly birthday board posted in <#${channelId}>. This test does not mark the real monthly board as sent.`, flags: 64 });
+    return true;
+  }
   else if (id === 'admin:birthdays:settings:submit') {
     const time = interaction.fields.getTextInputValue('time').trim(); const timezone = interaction.fields.getTextInputValue('timezone').trim();
     if (!birthdays.validTime(time)) throw new Error('Time must use HH:MM in 24-hour format.');
