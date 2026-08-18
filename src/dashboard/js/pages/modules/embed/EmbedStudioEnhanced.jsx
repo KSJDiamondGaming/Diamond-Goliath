@@ -60,13 +60,17 @@ function EmojiBankStrip({ theme, emojiBank, onCopied }) {
 
   if (!emojiBank?.enabled) return null;
 
-  async function copyEmoji(emoji) {
+  async function copyEmoji(emoji, target = 'text') {
     const mention = emoji?.mention || `<${emoji?.animated ? 'a' : ''}:${emoji?.name}:${emoji?.id}>`;
     try {
       await navigator.clipboard.writeText(mention);
-      onCopied?.(`${emoji.name} copied. Paste it into message or embed text.`);
+      onCopied?.(
+        target === 'component'
+          ? `${emoji.name} copied for a Discord button/select emoji field.`
+          : `${emoji.name} copied for message/embed text.`
+      );
     } catch {
-      onCopied?.(`Use ${mention} in message or embed text.`);
+      onCopied?.(`Use ${mention} ${target === 'component' ? 'in the component emoji field' : 'in message or embed text'}.`);
     }
   }
 
@@ -76,24 +80,36 @@ function EmojiBankStrip({ theme, emojiBank, onCopied }) {
         <div>
           <div style={{ color: '#93c5fd', fontSize: 12, fontWeight: 950, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Emoji Bank</div>
           <h3 style={{ margin: '5px 0 0' }}>Guild-selected Goliath emojis</h3>
-          <p style={{ margin: '7px 0 0', color: theme.mutedText, lineHeight: 1.5 }}>Click an emoji to copy its Discord application-emoji markup. It can be pasted into message content, embed titles/descriptions/fields, and other Discord-facing template text.</p>
+          <p style={{ margin: '7px 0 0', color: theme.mutedText, lineHeight: 1.5 }}>Use <strong>Text</strong> for message/embed content or <strong>Button / Select</strong> for Discord component emoji fields. Both use the Discord application emoji owned by Goliath; no guild emoji slot is consumed.</p>
         </div>
         <div style={{ color: theme.mutedText, fontSize: 12, fontWeight: 900 }}>{selected.length} / {emojiBank?.guildCapacity?.max || 100}</div>
       </div>
 
       {selected.length ? (
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: 9 }}>
           {selected.map((emoji) => (
-            <button
-              key={emoji.id}
-              type="button"
-              title={`Copy :${emoji.name}:`}
-              onClick={() => copyEmoji(emoji)}
-              style={{ border: `1px solid ${theme.cardBorder}`, background: 'rgba(15,23,42,0.30)', color: theme.cardText, borderRadius: 12, padding: '8px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontWeight: 850 }}
-            >
-              {emoji.url ? <img src={emoji.url} alt="" width="28" height="28" style={{ objectFit: 'contain' }} /> : null}
-              <span>:{emoji.name}:</span>
-            </button>
+            <div key={emoji.id} style={{ border: `1px solid ${theme.cardBorder}`, background: 'rgba(15,23,42,0.30)', borderRadius: 14, padding: 10, display: 'grid', gap: 9 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                {emoji.url ? <img src={emoji.url} alt="" width="30" height="30" style={{ objectFit: 'contain' }} /> : null}
+                <span style={{ fontWeight: 900, overflow: 'hidden', textOverflow: 'ellipsis' }}>:{emoji.name}:</span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7 }}>
+                <button
+                  type="button"
+                  onClick={() => copyEmoji(emoji, 'text')}
+                  style={{ border: `1px solid ${theme.cardBorder}`, background: 'rgba(37,99,235,0.18)', color: theme.cardText, borderRadius: 10, padding: '8px 9px', cursor: 'pointer', fontWeight: 850 }}
+                >
+                  Text
+                </button>
+                <button
+                  type="button"
+                  onClick={() => copyEmoji(emoji, 'component')}
+                  style={{ border: `1px solid ${theme.cardBorder}`, background: 'rgba(168,85,247,0.16)', color: theme.cardText, borderRadius: 10, padding: '8px 9px', cursor: 'pointer', fontWeight: 850 }}
+                >
+                  Button / Select
+                </button>
+              </div>
+            </div>
           ))}
         </div>
       ) : (
