@@ -68,8 +68,6 @@ jobs:
             *) exit 1 ;;
           esac
 
-          # Push-triggered DEV runs validate the exact triggering commit.
-          # Manual promotions validate the current head of the previous environment.
           if [ "${{ github.event_name }}" = "push" ]; then
             SOURCE_REF="${{ github.sha }}"
           else
@@ -188,9 +186,6 @@ jobs:
 
           echo "Promoting validated $SOURCE_BRANCH $SOURCE_SHA into $TARGET_BRANCH (previous $TARGET_SHA)."
 
-          # Create a normal fast-forward promotion commit whose complete tree is exactly
-          # the validated source tree. This avoids risky merges/force-pushes while making
-          # the promoted environment's code byte-for-byte match what passed preflight.
           git config user.name "Goliath Deploy"
           git config user.email "goliath-deploy@users.noreply.github.com"
           PROMOTED_SHA="$(printf 'Promote %s %s to %s\n' "$SOURCE_BRANCH" "$SOURCE_SHA" "$TARGET_BRANCH" | git commit-tree "$SOURCE_TREE" -p "$TARGET_SHA")"
@@ -240,8 +235,6 @@ jobs:
             git fetch origin "$TARGET_BRANCH"
             git cat-file -e "$EXPECTED_SHA^{commit}"
 
-            # A queued DEV run may become stale while a newer push waits behind it.
-            # Validate every commit, but never roll the VPS backwards/sideways to an obsolete SHA.
             if [ "$PUSH_TRIGGERED" = "true" ]; then
               LATEST_REMOTE_SHA="$(git rev-parse "origin/$TARGET_BRANCH")"
               if [ "$EXPECTED_SHA" != "$LATEST_REMOTE_SHA" ]; then
@@ -253,19 +246,23 @@ jobs:
             BACKUP_DIR="/home/goliath/.goliath-${ENVIRONMENT}-runtime-deploy-backup"
             rm -rf "$BACKUP_DIR"; mkdir -p "$BACKUP_DIR"
             if [ -d "$RUNTIME_DIR" ]; then
-              # Runtime stores use atomic *.tmp -> final-file renames. Exclude those
-              # transient files so a writer cannot make the deployment snapshot fail
-              # between directory enumeration and file copy.
-              tar --exclude='*.tmp' -C "$RUNTIME_DIR" -cf - . | tar -C "$BACKUP_DIR" -xf -
+              # Runtime stores are live while deploy runs. Ignore the benign GNU tar
+              # exit caused by files changing during the read, while still excluding
+              # atomic temp files and failing on genuine extraction/archive errors.
+              set +e
+              tar --warning=no-file-changed --ignore-failed-read --exclude='*.tmp' -C "$RUNTIME_DIR" -cf - . | tar -C "$BACKUP_DIR" -xf -
+              SNAPSHOT_STATUS=$?
+              set -e
+              if [ "$SNAPSHOT_STATUS" -ne 0 ]; then
+                echo "Runtime snapshot failed with status $SNAPSHOT_STATUS" >&2
+                exit "$SNAPSHOT_STATUS"
+              fi
             fi
 
             restore_runtime() {
               mkdir -p "$RUNTIME_DIR"
               if [ -d "$BACKUP_DIR" ]; then
                 rm -rf "$RUNTIME_DIR"/* "$RUNTIME_DIR"/.[!.]* "$RUNTIME_DIR"/..?* 2>/dev/null || true
-                # The running bot can recreate log directories between the cleanup above
-                # and the restore. Extracting a tar stream merges into those directories
-                # safely instead of failing like `cp -a BACKUP/. RUNTIME/` can.
                 tar -C "$BACKUP_DIR" -cf - . | tar -C "$RUNTIME_DIR" -xf -
               fi
             }
@@ -352,14 +349,6 @@ jobs:
         run: |
           echo "### 🚀 Goliath deployment" >> "$GITHUB_STEP_SUMMARY"
           echo "- Environment: **${{ needs.resolve.outputs.environment }}**" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Promotion source: **${{ needs.resolve.outputs.source_branch }}**" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Validated source ref: **${{ needs.resolve.outputs.source_ref }}**" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Target branch: **${{ needs.resolve.outputs.target_branch }}**" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Validated source commit: \`${{ needs.preflight.outputs.source_sha }}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Deployed target commit: \`${{ needs.promote.outputs.deploy_sha }}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Promotion model: ✅ dev → beta → production" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Promotion method: ✅ exact validated source tree, fast-forward target commit" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Planner: ✅ scripts/goliath.js with safe full-deploy fallback" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Stale DEV push protection: ✅ obsolete queued commits are validated but not deployed" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Manual command reconciliation: **${{ github.event_name == 'workflow_dispatch' }}**" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Runtime data: ✅ preserved" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Source branch: `${{ needs.resolve.outputs.source_branch }}`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Target branch: `${{ needs.resolve.outputs.target_branch }}`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Deployed SHA: `${{ needs.promote.outputs.deploy_sha }}`" >> "$GITHUB_STEP_SUMMARY"
