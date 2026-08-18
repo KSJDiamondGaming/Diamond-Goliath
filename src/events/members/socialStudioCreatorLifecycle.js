@@ -2,8 +2,10 @@
 
 const { AuditLogEvent } = require('discord.js');
 const socialStore = require('../../modules/socialStudio/socialAlerts/socialStudioStore');
+const schedulerRegistry = require('../../owner/sentinel/schedulerRegistry');
 
 const CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
+const CLEANUP_SCHEDULER_ID = 'social:creator-lifecycle-cleanup:global';
 let cleanupTimer = null;
 
 async function detectKick(member) {
@@ -30,7 +32,23 @@ function cleanupGuild(guildId) {
 }
 
 async function cleanupAllGuilds(client) {
-  for (const guild of client.guilds.cache.values()) cleanupGuild(guild.id);
+  let cleaned = 0;
+  for (const guild of client.guilds.cache.values()) {
+    const result = cleanupGuild(guild.id);
+    cleaned += Number(result?.deleted || result?.removed || 0);
+  }
+  return { guilds: client.guilds.cache.size, cleaned };
+}
+
+async function runCleanup(client, phase = 'scheduled') {
+  try {
+    const result = await cleanupAllGuilds(client);
+    schedulerRegistry.beat(CLEANUP_SCHEDULER_ID, { phase, ...result });
+    return result;
+  } catch (error) {
+    schedulerRegistry.fail(CLEANUP_SCHEDULER_ID, error, { phase });
+    throw error;
+  }
 }
 
 module.exports = [
@@ -38,10 +56,19 @@ module.exports = [
     name: 'clientReady',
     once: true,
     async execute(client) {
-      await cleanupAllGuilds(client);
+      schedulerRegistry.register({
+        id: CLEANUP_SCHEDULER_ID,
+        module: 'social',
+        component: 'creator-lifecycle-cleanup',
+        intervalMs: CLEANUP_INTERVAL_MS,
+        staleAfterMs: CLEANUP_INTERVAL_MS * 3,
+      });
+      await runCleanup(client, 'startup');
       if (cleanupTimer) clearInterval(cleanupTimer);
       cleanupTimer = setInterval(() => {
-        cleanupAllGuilds(client).catch(() => null);
+        runCleanup(client, 'scheduled').catch((error) => {
+          console.error('[Social Studio] Creator lifecycle cleanup failed:', error?.stack || error?.message || error);
+        });
       }, CLEANUP_INTERVAL_MS);
       cleanupTimer.unref?.();
     },
