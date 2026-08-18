@@ -213,8 +213,29 @@ function componentEmojiIds(actionRows = []) {
   return [...ids];
 }
 
-async function validateApplicationEmojiComponents(actionRows = [], interaction = null) {
-  const usedIds = componentEmojiIds(actionRows);
+function textEmojiIds(embeds = []) {
+  const ids = new Set();
+  const scan = (value) => {
+    const text = String(value || '');
+    for (const match of text.matchAll(/<a?:[a-zA-Z0-9_]+:(\d{16,20})>/g)) ids.add(match[1]);
+  };
+  for (const embed of embeds || []) {
+    const data = typeof embed?.toJSON === 'function' ? embed.toJSON() : embed;
+    if (!data || typeof data !== 'object') continue;
+    scan(data.title);
+    scan(data.description);
+    scan(data.author?.name);
+    scan(data.footer?.text);
+    for (const field of Array.isArray(data.fields) ? data.fields : []) {
+      scan(field?.name);
+      scan(field?.value);
+    }
+  }
+  return [...ids];
+}
+
+async function validateApplicationEmojiUsage(embeds = [], actionRows = [], interaction = null) {
+  const usedIds = [...new Set([...componentEmojiIds(actionRows), ...textEmojiIds(embeds)])];
   if (!usedIds.length) return true;
 
   const manager = interaction?.client?.application?.emojis;
@@ -228,7 +249,7 @@ async function validateApplicationEmojiComponents(actionRows = [], interaction =
   if (!usedApplicationIds.length) return true;
 
   const section = emojiStore.getSection(guildId);
-  if (!section.enabled) throw new Error('Emoji Bank must be enabled before a Goliath application emoji can be deployed on a component.');
+  if (!section.enabled) throw new Error('Emoji Bank must be enabled before a Goliath application emoji can be deployed.');
 
   const selected = new Set(section.favourites.map(String));
   const blocked = usedApplicationIds.filter((id) => !selected.has(id));
@@ -243,7 +264,7 @@ async function buildEmbedPayload(options = {}) {
   const mediaState = options.media || options.mediaV2 || null;
   const components = [];
   const files = [];
-  await validateApplicationEmojiComponents(actionRows, interaction);
+  await validateApplicationEmojiUsage(embeds, actionRows, interaction);
   if (allowUserPing && userId) components.push(new TextDisplayBuilder().setContent(`<@${userId}>`));
   for (let index = 0; index < embeds.length; index += 1) {
     const embed = embeds[index];
