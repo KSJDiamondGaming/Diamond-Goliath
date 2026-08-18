@@ -3,7 +3,7 @@
 const templates = require('./embedTemplates');
 const deployments = require('./embedDeployments');
 const panel = require('./embedPanel');
-// Load the remaining button/field augmentation after the canonical panel is initialized.
+// Load the remaining button augmentation after the canonical panel is initialized.
 require('./embedButtonsCompat');
 const interactions = require('./embedInteractions');
 const validation = require('./embedValidation');
