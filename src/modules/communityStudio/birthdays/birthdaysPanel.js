@@ -48,22 +48,68 @@ function adminPayload(interaction) {
   return {
     embeds: [new EmbedBuilder().setColor(enabled ? 0x5865F2 : 0x747F8D).setTitle('🎂 Birthdays').setDescription(desc).setFooter({ text: 'Goliath Birthdays · /admin' }).setTimestamp()],
     components: [
+      row(
+        button('admin:birthdays:celebration', '🎉 Celebration', ButtonStyle.Primary),
+        button('admin:birthdays:management', '🛠️ Birthday Management'),
+      ),
+      row(
+        button('admin:studio:communityStudio', '⬅️ Back'),
+        button('admin:birthdays:tools', '⚙️ Settings'),
+      ),
+    ],
+  };
+}
+
+function celebrationPayload(interaction) {
+  const section = birthdays.getSection(interaction.guildId);
+  const desc = [
+    '**📣 Public Celebration**',
+    `Channel: ${section.settings.announcementChannelId ? `<#${section.settings.announcementChannelId}>` : '**Not set**'}`,
+    `Time: **${section.settings.announcementTime} · ${section.settings.timezone}**`,
+    `Celebrations: **${section.settings.combineSameDay ? 'Combined' : 'Individual'}**`,
+    `Style: **${section.settings.useBirthdayEmbed ? 'Birthday Card' : 'Plain Message'}**`,
+    `Message templates: **${section.settings.messageTemplates.length}**`,
+    '', 'Configure the member-facing birthday celebration here.',
+  ].join('\n');
+  return {
+    embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('🎉 Birthday Celebration').setDescription(desc).setFooter({ text: 'Goliath Birthdays · Celebration' }).setTimestamp()],
+    components: [
       row(new ChannelSelectMenuBuilder().setCustomId('admin:birthdays:channel').setPlaceholder('Public birthday celebration channel').setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setMinValues(0).setMaxValues(1).setDefaultChannels(section.settings.announcementChannelId ? [section.settings.announcementChannelId] : [])),
+      row(button('admin:birthdays:settings', '⚙️ Celebration Settings', ButtonStyle.Primary), button('admin:birthdays:card', '🎨 Birthday Card')),
+      row(button('admin:birthdays', '⬅️ Back')),
+    ],
+  };
+}
+
+function managementPayload(interaction) {
+  const section = birthdays.getSection(interaction.guildId);
+  const desc = [
+    '**🎭 Birthday Day**',
+    `Birthday role: ${section.settings.birthdayRoleId ? `<@&${section.settings.birthdayRoleId}>` : '**Not set**'}`,
+    '', '**📅 Monthly Birthday Board**',
+    `Channel: ${section.settings.monthlyBoardChannelId ? `<#${section.settings.monthlyBoardChannelId}>` : '**Not set**'}`,
+    `Posts: **1st monthly · ${section.settings.monthlyBoardTime} · ${section.settings.timezone}**`,
+    `Leap day: **${section.settings.leapDayMode === 'mar1' ? '1 March' : '28 February'} in non-leap years**`,
+    '', 'Manage server-side birthday roles, the management board and member birthday records here.',
+  ].join('\n');
+  return {
+    embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('🛠️ Birthday Management').setDescription(desc).setFooter({ text: 'Goliath Birthdays · Management' }).setTimestamp()],
+    components: [
       row(new RoleSelectMenuBuilder().setCustomId('admin:birthdays:role').setPlaceholder('Optional all-day birthday role').setMinValues(0).setMaxValues(1).setDefaultRoles(section.settings.birthdayRoleId ? [section.settings.birthdayRoleId] : [])),
       row(new ChannelSelectMenuBuilder().setCustomId('admin:birthdays:monthly:channel').setPlaceholder('Optional management birthday board channel').setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setMinValues(0).setMaxValues(1).setDefaultChannels(section.settings.monthlyBoardChannelId ? [section.settings.monthlyBoardChannelId] : [])),
-      row(
-        button('admin:birthdays:settings', '⚙️ Celebration', ButtonStyle.Primary),
-        button('admin:birthdays:card', '🎨 Birthday Card'),
-        button('admin:birthdays:monthly:settings', '📅 Monthly Board'),
-        button('admin:birthdays:manage', '👤 Members'),
-        button('admin:birthdays:import', '📥 Import'),
-      ),
-      row(
-        button('admin:birthdays:export', '📤 Export'),
-        button('admin:birthdays:testmenu', '🧪 Test Centre'),
-        button('admin:birthdays:health', '🩺 Health'),
-        button('admin:studio:communityStudio', '⬅️ Back'),
-      ),
+      row(button('admin:birthdays:monthly:settings', '📅 Monthly Board'), button('admin:birthdays:manage', '👥 Manage Birthdays')),
+      row(button('admin:birthdays', '⬅️ Back')),
+    ],
+  };
+}
+
+function toolsPayload() {
+  return {
+    embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('⚙️ Birthday Settings').setDescription('Birthday diagnostics, testing and data tools.').setFooter({ text: 'Goliath Birthdays · Settings' }).setTimestamp()],
+    components: [
+      row(button('admin:birthdays:testmenu', '🧪 Test Centre'), button('admin:birthdays:health', '🩺 Health')),
+      row(button('admin:birthdays:import', '📥 Import'), button('admin:birthdays:export', '📤 Export')),
+      row(button('admin:birthdays', '⬅️ Back')),
     ],
   };
 }
@@ -160,6 +206,9 @@ async function handleAdmin(interaction) {
   const id = String(interaction.customId || ''); if (!id.startsWith('admin:birthdays')) return false;
   const actor = { actorId: interaction.user.id };
   if (id === 'admin:birthdays') { await respond(interaction, adminPayload(interaction)); return true; }
+  if (id === 'admin:birthdays:celebration') { await respond(interaction, celebrationPayload(interaction)); return true; }
+  if (id === 'admin:birthdays:management') { await respond(interaction, managementPayload(interaction)); return true; }
+  if (id === 'admin:birthdays:tools') { await respond(interaction, toolsPayload()); return true; }
   if (id === 'admin:birthdays:channel' && interaction.isChannelSelectMenu?.()) birthdays.updateSettings(interaction.guildId, { announcementChannelId: interaction.values[0] || null }, { ...actor, action: 'birthdays_channel_update' });
   else if (id === 'admin:birthdays:role' && interaction.isRoleSelectMenu?.()) birthdays.updateSettings(interaction.guildId, { birthdayRoleId: interaction.values[0] || null }, { ...actor, action: 'birthdays_role_update' });
   else if (id === 'admin:birthdays:monthly:channel' && interaction.isChannelSelectMenu?.()) birthdays.updateSettings(interaction.guildId, { monthlyBoardChannelId: interaction.values[0] || null }, { ...actor, action: 'birthdays_monthly_channel_update' });
@@ -212,6 +261,8 @@ async function handleAdmin(interaction) {
     let parsed; try { parsed = JSON.parse(interaction.fields.getTextInputValue('json')); } catch { throw new Error('Import data is not valid JSON.'); }
     const result = birthdays.importData(interaction.guildId, parsed, { ...actor, action: 'birthday_admin_import' }); await interaction.reply({ content: `✅ Imported **${result.imported}** birthday record(s). Total stored: **${result.total}**.`, flags: 64 }); return true;
   }
+  if (id === 'admin:birthdays:channel') { await respond(interaction, celebrationPayload(interaction)); return true; }
+  if (id === 'admin:birthdays:role' || id === 'admin:birthdays:monthly:channel') { await respond(interaction, managementPayload(interaction)); return true; }
   await respond(interaction, adminPayload(interaction)); return true;
 }
 
