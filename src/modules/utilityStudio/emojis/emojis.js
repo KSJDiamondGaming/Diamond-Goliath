@@ -81,6 +81,45 @@ function render(emoji, fallback = '') {
   return `<${emoji.animated ? 'a' : ''}:${emoji.name}:${emoji.id}>`;
 }
 
+async function resolveGuildEmoji(client, guildId, reference) {
+  const section = emojiStore.getSection(guildId);
+  if (!section.enabled) return null;
+
+  const wanted = String(reference || '').trim();
+  if (!wanted) return null;
+
+  const favourites = new Set(section.favourites);
+  if (!favourites.size) return null;
+
+  const bank = await requireEmojiManager(client).fetch();
+  let emoji = null;
+
+  if (/^\d{16,20}$/.test(wanted)) {
+    emoji = bank.get(wanted) || null;
+  } else {
+    const name = wanted.replace(/^:+|:+$/g, '').toLowerCase();
+    emoji = [...bank.values()].find((entry) => String(entry.name || '').toLowerCase() === name) || null;
+  }
+
+  if (!emoji || !favourites.has(String(emoji.id))) return null;
+  return serialise(emoji);
+}
+
+async function renderForGuild(client, guildId, reference, fallback = '') {
+  const emoji = await resolveGuildEmoji(client, guildId, reference);
+  return render(emoji, fallback);
+}
+
+async function componentEmojiForGuild(client, guildId, reference) {
+  const emoji = await resolveGuildEmoji(client, guildId, reference);
+  if (!emoji) return null;
+  return {
+    id: emoji.id,
+    name: emoji.name,
+    animated: emoji.animated,
+  };
+}
+
 module.exports = {
   MAX_APPLICATION_EMOJIS,
   listBank,
@@ -89,5 +128,8 @@ module.exports = {
   removeFromBank,
   renameInBank,
   render,
+  resolveGuildEmoji,
+  renderForGuild,
+  componentEmojiForGuild,
   serialise,
 };
