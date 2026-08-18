@@ -86,6 +86,7 @@ function defaultSection() {
       listByDefault: true,
       leapDayMode: 'feb28',
       monthlyBoardChannelId: null,
+      monthlyBoardDay: 1,
       monthlyBoardTime: '09:00',
       combineSameDay: false,
       useBirthdayEmbed: true,
@@ -171,8 +172,9 @@ function normalizeSection(section = {}) {
     showAgeByDefault: raw.settings?.showAgeByDefault === true,
     announceByDefault: raw.settings?.announceByDefault !== false,
     listByDefault: raw.settings?.listByDefault !== false,
-    leapDayMode: raw.settings?.leapDayMode === 'mar1' ? 'mar1' : 'feb28',
+    leapDayMode: 'feb28',
     monthlyBoardChannelId: cleanId(raw.settings?.monthlyBoardChannelId),
+    monthlyBoardDay: Math.max(1, Math.min(28, Math.floor(Number(raw.settings?.monthlyBoardDay) || base.settings.monthlyBoardDay))),
     monthlyBoardTime: validTime(raw.settings?.monthlyBoardTime) ? raw.settings.monthlyBoardTime : base.settings.monthlyBoardTime,
     combineSameDay: raw.settings?.combineSameDay === true,
     useBirthdayEmbed: raw.settings?.useBirthdayEmbed !== false,
@@ -257,7 +259,7 @@ function zonedParts(date, timezone) {
 function isLeapYear(year) { return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0); }
 function effectiveBirthday(member, year, settings) {
   if (member.month !== 2 || member.day !== 29 || isLeapYear(year)) return { month: member.month, day: member.day };
-  return settings.leapDayMode === 'mar1' ? { month: 3, day: 1 } : { month: 2, day: 28 };
+  return { month: 2, day: 28 };
 }
 function birthdayKey(member, year, settings) {
   const date = effectiveBirthday(member, year, settings);
@@ -462,7 +464,7 @@ async function processGuild(guild, meta = {}) {
     } catch (error) { result.failures += 1; noteFailure(section); console.warn(`[birthdays] announcement ${guild.id}: ${error.message}`); }
   }
 
-  if (section.settings.monthlyBoardChannelId && Number(parts.day) === 1 && currentTime >= section.settings.monthlyBoardTime) {
+  if (section.settings.monthlyBoardChannelId && Number(parts.day) === section.settings.monthlyBoardDay && currentTime >= section.settings.monthlyBoardTime) {
     const monthKey = `${parts.year}-${parts.month}`;
     if (section.monthlyBoard.lastPostedKey !== monthKey) {
       try {
