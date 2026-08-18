@@ -6,7 +6,6 @@ const {
   ButtonStyle,
   EmbedBuilder,
   MessageFlags,
-  ModalBuilder,
   PermissionsBitField,
   RoleSelectMenuBuilder,
   StringSelectMenuBuilder,
@@ -60,17 +59,23 @@ function deployedRowFor(buttons, index) { const rows = layoutButtons(buttons); c
 function buildButtonEditorModal(state, index = null) {
   const buttons = Array.isArray(state.buttons) ? state.buttons : [];
   const item = Number.isInteger(index) ? (buttons[index] || {}) : {};
-  return new ModalBuilder().setCustomId(Number.isInteger(index) ? `embed:button-manager-save:${index}` : 'embed:button-manager-save-new').setTitle(Number.isInteger(index) ? 'Edit Button' : 'Add Button').addComponents(
-    new ActionRowBuilder().addComponents(panel.input('label', 'Button label', TextInputStyle.Short, item.label || '', true, 80)),
-    new ActionRowBuilder().addComponents(panel.input('emoji', 'Emoji (optional)', TextInputStyle.Short, item.emoji || '', false, 100)),
-    new ActionRowBuilder().addComponents(panel.input('url', 'Link URL / variable (optional)', TextInputStyle.Short, item.url || '', false, 4000)),
+  return panel.modal(
+    Number.isInteger(index) ? `embed:button-manager-save:${index}` : 'embed:button-manager-save-new',
+    Number.isInteger(index) ? 'Edit Button' : 'Add Button',
+    [
+      panel.input('label', 'Button label', TextInputStyle.Short, item.label || '', true, 80),
+      panel.input('emoji', 'Emoji (optional)', TextInputStyle.Short, item.emoji || '', false, 100),
+      panel.input('url', 'Link URL / variable (optional)', TextInputStyle.Short, item.url || '', false, 4000),
+    ],
   );
 }
 function buildButtonReplyModal(state) {
   const buttons = Array.isArray(state.buttons) ? state.buttons : [];
   const index = selectedIndex(state);
   const item = index == null ? {} : (buttons[index] || {});
-  return new ModalBuilder().setCustomId('embed:button-reply-save').setTitle('Button Reply Text').addComponents(new ActionRowBuilder().addComponents(panel.input('replyText', 'Reply text / variables', TextInputStyle.Paragraph, item.actionValue || '', true, 1000)));
+  return panel.modal('embed:button-reply-save', 'Button Reply Text', [
+    panel.input('replyText', 'Reply text / variables', TextInputStyle.Paragraph, item.actionValue || '', true, 1000),
+  ]);
 }
 panel.buttonEditorModal = buildButtonEditorModal;
 panel.buttonReplyModal = buildButtonReplyModal;
