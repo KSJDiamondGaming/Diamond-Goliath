@@ -58,7 +58,7 @@ router.get('/:guildId/search', async (req, res) => {
 router.post('/:guildId/import', async (req, res) => {
   try {
     const id = guildId(req);
-    if (!guildManager.isModuleEnabled(id, 'emojis')) throw new Error('Emoji module is disabled for this server.');
+    if (!emojiStore.getSection(id).enabled) throw new Error('Emoji module is disabled for this server.');
     const result = await emojis.importFromEmojiGG(client(req), req.body?.emojiGgId, req.body?.name || null);
     if (req.body?.selectForGuild !== false) {
       emojiStore.setFavourite(id, result.emoji.id, true, { actorId: actor(req), action: 'emoji_panel_import' });
