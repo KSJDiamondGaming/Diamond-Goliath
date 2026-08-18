@@ -61,7 +61,7 @@ function roleDisplay(interaction, roleId) { const role = interaction?.guild?.rol
 const layoutButtons = panel.layoutEmbedButtons;
 function deployedRowFor(buttons, index) { const rows = layoutButtons(buttons); const row = rows.findIndex((entries) => entries.some((entry) => entry.index === index)); return row >= 0 ? row : null; }
 
-panel.buttonEditorModal = (state, index = null) => {
+function buildButtonEditorModal(state, index = null) {
   const buttons = Array.isArray(state.buttons) ? state.buttons : [];
   const item = Number.isInteger(index) ? (buttons[index] || {}) : {};
   return new ModalBuilder().setCustomId(Number.isInteger(index) ? `embed:button-manager-save:${index}` : 'embed:button-manager-save-new').setTitle(Number.isInteger(index) ? 'Edit Button' : 'Add Button').addComponents(
@@ -69,8 +69,15 @@ panel.buttonEditorModal = (state, index = null) => {
     new ActionRowBuilder().addComponents(input('emoji', 'Emoji (optional)', item.emoji || '', 100, false)),
     new ActionRowBuilder().addComponents(input('url', 'Link URL / variable (optional)', item.url || '', 4000, false)),
   );
-};
-panel.buttonReplyModal = (state) => { const buttons = Array.isArray(state.buttons) ? state.buttons : []; const index = selectedIndex(state); const item = index == null ? {} : (buttons[index] || {}); return new ModalBuilder().setCustomId('embed:button-reply-save').setTitle('Button Reply Text').addComponents(new ActionRowBuilder().addComponents(input('replyText', 'Reply text / variables', item.actionValue || '', 1000, true, TextInputStyle.Paragraph))); };
+}
+function buildButtonReplyModal(state) {
+  const buttons = Array.isArray(state.buttons) ? state.buttons : [];
+  const index = selectedIndex(state);
+  const item = index == null ? {} : (buttons[index] || {});
+  return new ModalBuilder().setCustomId('embed:button-reply-save').setTitle('Button Reply Text').addComponents(new ActionRowBuilder().addComponents(input('replyText', 'Reply text / variables', item.actionValue || '', 1000, true, TextInputStyle.Paragraph)));
+}
+panel.buttonEditorModal = buildButtonEditorModal;
+panel.buttonReplyModal = buildButtonReplyModal;
 
 panel.buildButtonOptionsPanel = (interaction) => {
   const state = panel.getSession(interaction), buttons = Array.isArray(state.buttons) ? state.buttons : [], index = selectedIndex(state);
@@ -127,7 +134,7 @@ panel.buildButtonsManagerPanel = (interaction) => {
     embeds.push(new EmbedBuilder().setColor(0x5865F2).setTitle('👁️ Selected Button Preview').setDescription([`**Label:** ${item.emoji ? `${item.emoji} ` : ''}${previewLabel}`, `**Style:** ${previewUrl ? 'Link' : styleLabel(item.style)}`, `**Destination:** ${previewUrl ? previewUrl : item.action ? `Action: ${actionLabel(item.action)}` : 'Not configured'}`, `**Deploy row:** ${actualRow == null ? 'Not placed' : actualRow + 1}`].join('\n').slice(0, 4096)));
   }
   const rows = [];
-  if (buttons.length) rows.push(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('embed:button-manager-select').setPlaceholder('Select button').setMinValues(1).setMaxValues(1).addOptions(buttons.map((button, buttonIndex) => ({ label: `${buttonIndex + 1}. ${short(button.label || 'Button', 80)}`, value: String(buttonIndex), description: short(`${rowLabel(button.row)} • ${button.url || actionLabel(button.action) || styleLabel(button.style)}`, 100), default: buttonIndex === index })))));
+  if (buttons.length) rows.push(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('embed:button-manager-select').setPlaceholder('Select button').setMinValues(1).setMaxValues(1).addOptions(buttons.map((button, buttonIndex) => ({ label: `${buttonIndex + 1}. ${short(button.label || 'Button', 80)}`, value: String(buttonIndex), description: short(`${rowLabel(button.row)} • ${button.url || actionLabel(button.action) || styleLabel(button.style)}`, 100), default: buttonIndex === index }))));
   rows.push(
     new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId('embed:button-manager-add').setLabel('➕ Add').setStyle(ButtonStyle.Success).setDisabled(buttons.length >= MAX_BUTTONS),
