@@ -18,8 +18,13 @@ async function handleInviteStudioInteraction(interaction) {
   if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) { await interaction.reply({ content: '❌ Manage Server permission is required.', flags: MessageFlags.Ephemeral }); return true; }
   const state = panel.sessionFor(interaction);
   const pages = { 'invites:home': 'overview', 'invites:official-settings': 'official-settings', 'invites:public-config': 'public-config', 'invites:member-settings': 'member-settings', 'invites:admin-config': 'admin-config', 'invites:invite-manager': 'invite-manager' };
-  if (id.startsWith('invites:member-')) return handleMemberInteraction(interaction);
-  if (pages[id]) { state.page = pages[id]; await update(interaction); return true; }
+  if (pages[id]) {
+  state.page = pages[id];
+  await update(interaction);
+  return true;
+}
+
+if (id.startsWith('invites:member-')) return handleMemberInteraction(interaction);
   if (id === 'invites:official-channel' && interaction.isChannelSelectMenu()) { nested(interaction, 'officialInvite', { channelId: interaction.values[0] }); await update(interaction); return true; }
   if (id === 'invites:official-roles' && interaction.isRoleSelectMenu()) { nested(interaction, 'officialInvite', { roleIds: interaction.values }); await update(interaction); return true; }
   if (id === 'invites:official-create') { await interaction.deferReply({ flags: MessageFlags.Ephemeral }); const result = await invites.ensureOfficialInvite(interaction.guild, meta(interaction, 'invite_official_create')); await interaction.editReply(`✅ Official invite ready: ${result.invite.url}`); return true; }
