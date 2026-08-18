@@ -16,7 +16,6 @@ const { getAllEmbedDeployments } = require('./embedDeployments');
 const panel = require('./embedPanel');
 
 const MAX_BUTTONS = panel.MAX_BUTTONS || 20;
-const MAX_DEPLOYED_BUTTON_ROWS = panel.MAX_DEPLOYED_BUTTON_ROWS || Math.max(1, Math.min(4, (panel.EMBED_COMPONENT_LIMITS?.maxActionRows || 5) - 1));
 const BUILT_IN_ACTIONS = Object.freeze(['reply', 'toggle-role', 'add-role', 'remove-role', 'user-info', 'server-info']);
 const ROLE_ACTIONS = new Set(['toggle-role', 'add-role', 'remove-role']);
 const DANGEROUS_ROLE_PERMISSIONS = [
@@ -104,7 +103,7 @@ function buildButtonOptionsPanel(interaction) {
     ])),
     new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('embed:button-row-select').setPlaceholder('Choose button row').setMinValues(1).setMaxValues(1).addOptions([
       { label: 'Auto placement', value: 'auto', description: 'Fill the first available row automatically', default: configuredRow == null },
-      ...Array.from({ length: MAX_DEPLOYED_BUTTON_ROWS }, (_, row) => ({ label: `Row ${row + 1}`, value: String(row), description: `Place this button on Discord button row ${row + 1}`, default: configuredRow === row })),
+      ...Array.from({ length: panel.MAX_DEPLOYED_BUTTON_ROWS || 4 }, (_, row) => ({ label: `Row ${row + 1}`, value: String(row), description: `Place this button on Discord button row ${row + 1}`, default: configuredRow === row })),
     ])),
   ];
   if (ROLE_ACTIONS.has(action)) rows.push(new ActionRowBuilder().addComponents(new RoleSelectMenuBuilder().setCustomId('embed:button-action-role').setPlaceholder('Select role for this button').setMinValues(1).setMaxValues(1)));
@@ -117,7 +116,8 @@ panel.buildButtonOptionsPanel = buildButtonOptionsPanel;
 function buildButtonsManagerPanel(interaction) {
   const state = panel.getSession(interaction), buttons = Array.isArray(state.buttons) ? state.buttons : [], index = selectedIndex(state), item = index == null ? null : buttons[index];
   const layout = panel.layoutEmbedButtons(buttons), usedRows = layout.filter((row) => row.length).length;
-  const lines = [`**Buttons:** ${buttons.length}/${MAX_BUTTONS}`, `**Rows used when deployed:** ${usedRows}/${MAX_DEPLOYED_BUTTON_ROWS}`, ''];
+  const maxDeployedRows = panel.MAX_DEPLOYED_BUTTON_ROWS || 4;
+  const lines = [`**Buttons:** ${buttons.length}/${MAX_BUTTONS}`, `**Rows used when deployed:** ${usedRows}/${maxDeployedRows}`, ''];
   if (item) {
     const destination = item.url ? `Link: ${panel.trim(item.url, 1000)}` : item.action ? `Action: ${actionLabel(item.action)}` : 'No destination configured';
     const actualRow = deployedRowFor(buttons, index);
