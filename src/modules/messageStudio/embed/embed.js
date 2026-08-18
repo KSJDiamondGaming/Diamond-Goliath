@@ -5,6 +5,12 @@ const deployments = require('./embedDeployments');
 const panel = require('./embedPanel');
 const media = require('./embedMedia');
 
+const mediaStateApi = Object.freeze({
+  getPanelMedia: media.getPanelMedia,
+  setPanelMedia: media.setPanelMedia,
+  mediaModel: media.mediaModel,
+});
+
 function installMediaBoundary(targetPanel) {
   media.installStateCompatibility(targetPanel);
   media.installPersistentMediaCompatibility(targetPanel);
@@ -13,9 +19,9 @@ function installMediaBoundary(targetPanel) {
   media.installMediaOptionsUi(targetPanel);
   media.installMediaManagerUi(targetPanel);
   media.installThumbnailUi(targetPanel);
-  targetPanel.getPanelMedia = media.getPanelMedia;
-  targetPanel.setPanelMedia = media.setPanelMedia;
-  targetPanel.mediaModel = media.mediaModel;
+  targetPanel.getPanelMedia = mediaStateApi.getPanelMedia;
+  targetPanel.setPanelMedia = mediaStateApi.setPanelMedia;
+  targetPanel.mediaModel = mediaStateApi.mediaModel;
   return targetPanel;
 }
 
@@ -44,6 +50,7 @@ module.exports = {
   repairAll: validation.repairAll,
   handleInteraction: interactions.handleInteraction,
   installMediaBoundary,
+  mediaStateApi,
   templates,
   deployments,
   panel,
