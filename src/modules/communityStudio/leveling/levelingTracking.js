@@ -4,6 +4,7 @@ const { PermissionFlagsBits } = require('discord.js');
 const leveling = require('./leveling');
 const panel = require('./levelingPanel');
 const { isModuleEnabled } = require('../../../core/guild/guildManager');
+const schedulerRegistry = require('../../../owner/sentinel/schedulerRegistry');
 
 const voiceSessions = new Map();
 
@@ -135,11 +136,19 @@ function voiceSessionKey(guildId, userId) {
   return `${guildId}:${userId}`;
 }
 
+function voiceSchedulerId(guildId, userId) {
+  return `leveling:voice-xp:${guildId}:${userId}`;
+}
+
 function stopVoiceSession(guildId, userId) {
   const key = voiceSessionKey(guildId, userId);
   const session = voiceSessions.get(key);
   if (!session) return false;
   clearInterval(session.timer);
+  schedulerRegistry.stop(session.schedulerId || voiceSchedulerId(guildId, userId), 'voice session ended', {
+    channelId: session.channelId,
+    userId,
+  });
   voiceSessions.delete(key);
   return true;
 }
@@ -150,6 +159,9 @@ function stopGuildVoiceSessions(guildId) {
   for (const [key, session] of voiceSessions.entries()) {
     if (!key.startsWith(prefix)) continue;
     clearInterval(session.timer);
+    schedulerRegistry.stop(session.schedulerId || voiceSchedulerId(guildId, key.slice(prefix.length)), 'guild voice sessions refreshed', {
+      channelId: session.channelId,
+    });
     voiceSessions.delete(key);
     stopped += 1;
   }
@@ -216,12 +228,27 @@ function startVoiceSession(state) {
 
   stopVoiceSession(guildId, userId);
   const intervalMinutes = Math.max(1, Number(source.intervalMinutes || 10));
+  const intervalMs = intervalMinutes * 60 * 1000;
   const channelId = state.channelId;
+  const schedulerId = voiceSchedulerId(guildId, userId);
+  schedulerRegistry.register({
+    id: schedulerId,
+    module: 'leveling',
+    component: 'voice-xp',
+    guildId,
+    guildName: state.guild?.name || null,
+    intervalMs,
+    staleAfterMs: Math.max(intervalMs * 3, 180_000),
+    details: { userId, channelId, intervalMinutes },
+  });
   const timer = setInterval(() => {
-    awardVoiceInterval(guildId, userId, channelId).catch((error) => {
-      console.error('[Leveling] Voice XP interval failed:', error?.stack || error?.message || error);
-    });
-  }, intervalMinutes * 60 * 1000);
+    awardVoiceInterval(guildId, userId, channelId)
+      .then((awarded) => schedulerRegistry.beat(schedulerId, { awarded: awarded === true, channelId, userId }))
+      .catch((error) => {
+        schedulerRegistry.fail(schedulerId, error, { channelId, userId });
+        console.error('[Leveling] Voice XP interval failed:', error?.stack || error?.message || error);
+      });
+  }, intervalMs);
   timer.unref?.();
 
   voiceSessions.set(voiceSessionKey(guildId, userId), {
@@ -229,6 +256,7 @@ function startVoiceSession(state) {
     channelId,
     startedAt: Date.now(),
     intervalMinutes,
+    schedulerId,
     timer,
   });
   return true;
