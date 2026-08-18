@@ -80,7 +80,7 @@ function buildButtonReplyModal(state) {
 panel.buttonEditorModal = buildButtonEditorModal;
 panel.buttonReplyModal = buildButtonReplyModal;
 
-panel.buildButtonOptionsPanel = (interaction) => {
+function buildButtonOptionsPanel(interaction) {
   const state = panel.getSession(interaction), buttons = Array.isArray(state.buttons) ? state.buttons : [], index = selectedIndex(state);
   if (index == null) return panel.buildButtonsManagerPanel(interaction);
   const item = buttons[index], style = normalizedStyle(item.style), action = String(item.action || '').toLowerCase();
@@ -115,9 +115,10 @@ panel.buildButtonOptionsPanel = (interaction) => {
   else if (action === 'reply') rows.push(new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('embed:button-reply-edit').setLabel('✏️ Reply Text').setStyle(ButtonStyle.Primary)));
   rows.push(new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('embed:button-options-back').setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary)));
   return { embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('⚙️ Button Options').setDescription(details.join('\n').slice(0, 4096))], components: enforceLimits(rows) };
-};
+}
+panel.buildButtonOptionsPanel = buildButtonOptionsPanel;
 
-panel.buildButtonsManagerPanel = (interaction) => {
+function buildButtonsManagerPanel(interaction) {
   const state = panel.getSession(interaction), buttons = Array.isArray(state.buttons) ? state.buttons : [], index = selectedIndex(state), item = index == null ? null : buttons[index];
   const layout = layoutButtons(buttons), usedRows = layout.filter((row) => row.length).length;
   const lines = [`**Buttons:** ${buttons.length}/${MAX_BUTTONS}`, `**Rows used when deployed:** ${usedRows}/${MAX_DEPLOYED_BUTTON_ROWS}`, ''];
@@ -152,7 +153,8 @@ panel.buildButtonsManagerPanel = (interaction) => {
     ),
   );
   return { embeds, components: enforceLimits(rows) };
-};
+}
+panel.buildButtonsManagerPanel = buildButtonsManagerPanel;
 
 function cleanAction(value) { return String(value || '').trim().toLowerCase().replace(/_/g, '-'); }
 function parseRoleId(value) { const raw = String(value || '').replace(/[<@&>]/g, '').trim(); return /^\d{15,25}$/.test(raw) ? raw : null; }
