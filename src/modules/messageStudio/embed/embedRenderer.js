@@ -16,6 +16,7 @@ const path = require('node:path');
 const sharp = require('sharp');
 const { getCachedAsset, saveCachedAsset, ensureAssetCached } = require('./embedMedia');
 const { replaceVars } = require('./embedPanel');
+const emojiStore = require('../../utilityStudio/emojis/emojisStore');
 
 const CANVAS_WIDTH = 600;
 const PORTRAIT_WIDTH = 320;
@@ -200,11 +201,49 @@ async function addLegacyImage(container, imageUrl, files, index) {
   }
 }
 
+function componentEmojiIds(actionRows = []) {
+  const ids = new Set();
+  for (const row of actionRows || []) {
+    const data = typeof row?.toJSON === 'function' ? row.toJSON() : row;
+    for (const component of Array.isArray(data?.components) ? data.components : []) {
+      const id = String(component?.emoji?.id || '').trim();
+      if (/^\d{16,20}$/.test(id)) ids.add(id);
+    }
+  }
+  return [...ids];
+}
+
+async function validateApplicationEmojiComponents(actionRows = [], interaction = null) {
+  const usedIds = componentEmojiIds(actionRows);
+  if (!usedIds.length) return true;
+
+  const manager = interaction?.client?.application?.emojis;
+  const guildId = String(interaction?.guildId || interaction?.guild?.id || '').trim();
+  if (!manager || !guildId) return true;
+
+  let bank = manager.cache;
+  if (!bank?.size) bank = await manager.fetch();
+  const applicationIds = new Set([...bank.values()].map((emoji) => String(emoji.id)));
+  const usedApplicationIds = usedIds.filter((id) => applicationIds.has(id));
+  if (!usedApplicationIds.length) return true;
+
+  const section = emojiStore.getSection(guildId);
+  if (!section.enabled) throw new Error('Emoji Bank must be enabled before a Goliath application emoji can be deployed on a component.');
+
+  const selected = new Set(section.favourites.map(String));
+  const blocked = usedApplicationIds.filter((id) => !selected.has(id));
+  if (!blocked.length) return true;
+
+  const names = blocked.map((id) => bank.get(id)?.name ? `:${bank.get(id).name}:` : id);
+  throw new Error(`Goliath application emoji not selected for this guild: ${names.join(', ')}. Select it in Emoji Bank first.`);
+}
+
 async function buildEmbedPayload(options = {}) {
   const { embeds = [], actionRows = [], allowUserPing = false, userId = null, ephemeral = false, interaction = null } = options;
   const mediaState = options.media || options.mediaV2 || null;
   const components = [];
   const files = [];
+  await validateApplicationEmojiComponents(actionRows, interaction);
   if (allowUserPing && userId) components.push(new TextDisplayBuilder().setContent(`<@${userId}>`));
   for (let index = 0; index < embeds.length; index += 1) {
     const embed = embeds[index];
