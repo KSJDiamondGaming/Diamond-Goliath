@@ -11,6 +11,15 @@ function requireEmojiManager(client) {
   return manager;
 }
 
+function componentPayload(emoji) {
+  if (!emoji?.id || !emoji?.name) return null;
+  return {
+    id: String(emoji.id),
+    name: String(emoji.name),
+    animated: Boolean(emoji.animated),
+  };
+}
+
 function serialise(emoji) {
   return {
     id: emoji.id,
@@ -18,6 +27,7 @@ function serialise(emoji) {
     animated: Boolean(emoji.animated),
     url: emoji.imageURL?.({ extension: 'webp', size: 128 }) || emoji.url || null,
     mention: emoji.toString(),
+    component: componentPayload(emoji),
   };
 }
 
@@ -97,8 +107,12 @@ async function resolveGuildEmoji(client, guildId, reference) {
   if (/^\d{16,20}$/.test(wanted)) {
     emoji = bank.get(wanted) || null;
   } else {
-    const name = wanted.replace(/^:+|:+$/g, '').toLowerCase();
-    emoji = [...bank.values()].find((entry) => String(entry.name || '').toLowerCase() === name) || null;
+    const mentionMatch = wanted.match(/^<a?:([^:>]+):(\d{16,20})>$/);
+    if (mentionMatch) emoji = bank.get(mentionMatch[2]) || null;
+    else {
+      const name = wanted.replace(/^:+|:+$/g, '').toLowerCase();
+      emoji = [...bank.values()].find((entry) => String(entry.name || '').toLowerCase() === name) || null;
+    }
   }
 
   if (!emoji || !favourites.has(String(emoji.id))) return null;
@@ -112,12 +126,7 @@ async function renderForGuild(client, guildId, reference, fallback = '') {
 
 async function componentEmojiForGuild(client, guildId, reference) {
   const emoji = await resolveGuildEmoji(client, guildId, reference);
-  if (!emoji) return null;
-  return {
-    id: emoji.id,
-    name: emoji.name,
-    animated: emoji.animated,
-  };
+  return componentPayload(emoji);
 }
 
 module.exports = {
@@ -131,5 +140,6 @@ module.exports = {
   resolveGuildEmoji,
   renderForGuild,
   componentEmojiForGuild,
+  componentPayload,
   serialise,
 };
