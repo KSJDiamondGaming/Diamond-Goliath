@@ -15,8 +15,18 @@ const cleanId = (value) => {
   return /^\d{15,25}$/.test(id) ? id : null;
 };
 
+function normalizeTimezone(value) {
+  const timezone = String(value || '').trim();
+  if (!timezone) return null;
+  // Legacy Birthday panels commonly used "GMT" for UK local time. GMT is fixed UTC
+  // and therefore runs one hour late during British Summer Time. Preserve the
+  // intended UK wall-clock behaviour by migrating that legacy value to London.
+  if (/^(?:GMT|BST)$/i.test(timezone)) return 'Europe/London';
+  return timezone;
+}
+
 function validTimezone(value) {
-  try { new Intl.DateTimeFormat('en-GB', { timeZone: value }).format(new Date()); return true; }
+  try { new Intl.DateTimeFormat('en-GB', { timeZone: normalizeTimezone(value) || value }).format(new Date()); return true; }
   catch { return false; }
 }
 
@@ -29,7 +39,7 @@ function defaultSection() {
     settings: {
       announcementChannelId: null,
       announcementTime: '09:00',
-      timezone: 'UTC',
+      timezone: 'Europe/London',
       messageTemplate: '🎂 Happy Birthday {mention}! We hope you have a fantastic day! 🎉',
       birthdayRoleId: null,
       roleDurationHours: 24,
@@ -80,12 +90,13 @@ function normalizeMember(input = {}, userId = null, settings = defaultSection().
 function normalizeSection(section = {}) {
   const base = defaultSection();
   const raw = section && typeof section === 'object' ? section : {};
+  const rawTimezone = normalizeTimezone(raw.settings?.timezone);
   const settings = {
     ...base.settings,
     ...(raw.settings || {}),
     announcementChannelId: cleanId(raw.settings?.announcementChannelId),
     announcementTime: validTime(raw.settings?.announcementTime) ? raw.settings.announcementTime : base.settings.announcementTime,
-    timezone: validTimezone(raw.settings?.timezone) ? raw.settings.timezone : base.settings.timezone,
+    timezone: rawTimezone && validTimezone(rawTimezone) ? rawTimezone : base.settings.timezone,
     messageTemplate: clean(raw.settings?.messageTemplate || base.settings.messageTemplate, 1800) || base.settings.messageTemplate,
     birthdayRoleId: cleanId(raw.settings?.birthdayRoleId),
     roleDurationHours: Math.max(1, Math.min(168, Math.floor(Number(raw.settings?.roleDurationHours || 24)))),
@@ -132,7 +143,9 @@ function incrementAnalytics(guildId, patch, meta = {}) {
 }
 
 function updateSettings(guildId, patch = {}, meta = {}) {
-  return updateSection(guildId, (section) => ({ ...section, settings: { ...section.settings, ...patch } }), meta).settings;
+  const normalizedPatch = { ...patch };
+  if (Object.prototype.hasOwnProperty.call(normalizedPatch, 'timezone')) normalizedPatch.timezone = normalizeTimezone(normalizedPatch.timezone);
+  return updateSection(guildId, (section) => ({ ...section, settings: { ...section.settings, ...normalizedPatch } }), meta).settings;
 }
 
 function getBirthday(guildId, userId) {
