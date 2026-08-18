@@ -3,6 +3,16 @@
 const templates = require('./embedTemplates');
 const deployments = require('./embedDeployments');
 const panel = require('./embedPanel');
+const media = require('./embedMedia');
+
+media.installStateCompatibility(panel);
+media.installPersistentMediaCompatibility(panel);
+media.installStorageNormalization(panel);
+media.installUploadModals(panel);
+media.installMediaOptionsUi(panel);
+media.installMediaManagerUi(panel);
+media.installThumbnailUi(panel);
+
 const interactions = require('./embedInteractions');
 const validation = require('./embedValidation');
 
