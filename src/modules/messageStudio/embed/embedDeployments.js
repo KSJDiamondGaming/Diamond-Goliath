@@ -227,6 +227,48 @@ function getEmbedDeployment(guildId, key) {
   return findMatchingDeployment(getAllEmbedDeployments(guildId), key);
 }
 
+function getEmbedDeploymentByMessage(guildId, messageId) {
+  const safeGuildId = requireGuildId(guildId);
+  const safeMessageId = cleanDiscordId(messageId);
+  if (!safeMessageId) return null;
+  return Object.values(getAllEmbedDeployments(safeGuildId)).find(
+    (deployment) => String(deployment?.messageId || '') === safeMessageId,
+  ) || null;
+}
+
+function getEmbedPresetForDeployment(guildId, deployment) {
+  const safeGuildId = requireGuildId(guildId);
+  if (!deployment) return null;
+  const presets = typeof guildManager.getEmbedPresets === 'function'
+    ? guildManager.getEmbedPresets(safeGuildId) || {}
+    : {};
+  return presets[deployment.preset] || presets[deployment.key] || null;
+}
+
+function getEmbedButtonsForPreset(preset) {
+  if (!preset || typeof preset !== 'object') return [];
+  if (Array.isArray(preset.buttons) && preset.buttons.length) return preset.buttons;
+  const panels = Array.isArray(preset.panels) ? preset.panels : [];
+  const selectedPanelIndex = Number.isInteger(preset.selectedPanelIndex) ? preset.selectedPanelIndex : null;
+  if (selectedPanelIndex != null && Array.isArray(panels[selectedPanelIndex]?.buttons)) {
+    return panels[selectedPanelIndex].buttons;
+  }
+  const panelsWithButtons = panels.filter((entry) => Array.isArray(entry?.buttons) && entry.buttons.length);
+  if (panelsWithButtons.length === 1) return panelsWithButtons[0].buttons;
+  if (Array.isArray(panels[0]?.buttons)) return panels[0].buttons;
+  return [];
+}
+
+function resolveEmbedButtonDeployment(guildId, messageId) {
+  const deployment = getEmbedDeploymentByMessage(guildId, messageId);
+  const preset = getEmbedPresetForDeployment(guildId, deployment);
+  return {
+    deployment,
+    preset,
+    buttons: getEmbedButtonsForPreset(preset),
+  };
+}
+
 function saveDeployments(guildId, deployments) {
   const safeGuildId = requireGuildId(guildId);
   if (typeof guildManager.saveGuildSection !== 'function') {
@@ -400,6 +442,10 @@ module.exports = {
   DEPLOYMENT_STATUS,
   getAllEmbedDeployments,
   getEmbedDeployment,
+  getEmbedDeploymentByMessage,
+  getEmbedPresetForDeployment,
+  getEmbedButtonsForPreset,
+  resolveEmbedButtonDeployment,
   saveEmbedDeployment,
   markEmbedDeploymentStatus,
   deleteEmbedDeployment,
