@@ -1,6 +1,6 @@
 'use strict';
 
-const { PermissionFlagsBits } = require('discord.js');
+const { PermissionFlagsBits, EmbedBuilder } = require('discord.js');
 const guildManager = require('../../../core/guild/guildManager');
 const { getModuleSection, saveModuleSection, updateModuleSection } = require('../../../core/guild/moduleSectionManager');
 
@@ -20,9 +20,6 @@ const cleanId = (value) => {
 function normalizeTimezone(value) {
   const timezone = String(value || '').trim();
   if (!timezone) return null;
-  // Legacy Birthday panels commonly used "GMT" for UK local time. GMT is fixed UTC
-  // and therefore runs one hour late during British Summer Time. Preserve the
-  // intended UK wall-clock behaviour by migrating that legacy value to London.
   if (/^(?:GMT|BST)$/i.test(timezone)) return 'Europe/London';
   return timezone;
 }
@@ -48,11 +45,17 @@ function defaultSection() {
       showAgeByDefault: false,
       announceByDefault: true,
       leapDayMode: 'feb28',
+      monthlyBoardChannelId: null,
+      monthlyBoardTime: '09:00',
     },
     members: {},
+    monthlyBoard: {
+      lastPostedKey: null,
+    },
     analytics: {
       birthdaysStored: 0,
       announcementsSent: 0,
+      monthlyBoardsSent: 0,
       rolesAssigned: 0,
       rolesRemoved: 0,
       failures: 0,
@@ -106,6 +109,8 @@ function normalizeSection(section = {}) {
     showAgeByDefault: raw.settings?.showAgeByDefault === true,
     announceByDefault: raw.settings?.announceByDefault !== false,
     leapDayMode: raw.settings?.leapDayMode === 'mar1' ? 'mar1' : 'feb28',
+    monthlyBoardChannelId: cleanId(raw.settings?.monthlyBoardChannelId),
+    monthlyBoardTime: validTime(raw.settings?.monthlyBoardTime) ? raw.settings.monthlyBoardTime : base.settings.monthlyBoardTime,
   };
   const members = {};
   for (const [userId, record] of Object.entries(raw.members || {})) {
@@ -116,6 +121,7 @@ function normalizeSection(section = {}) {
     ...clone(raw),
     settings,
     members,
+    monthlyBoard: { ...base.monthlyBoard, ...(raw.monthlyBoard || {}) },
     analytics: { ...base.analytics, ...(raw.analytics || {}) },
     updatedAt: raw.updatedAt || now(),
   };
@@ -238,6 +244,46 @@ function listUpcoming(guildId, limit = 20, withinDays = UPCOMING_WINDOW_DAYS) {
     .slice(0, Math.max(1, Math.min(100, Number(limit) || 20)));
 }
 
+function monthlyWindow(section, from = new Date(), months = 2) {
+  const local = zonedParts(from, section.settings.timezone);
+  const startYear = Number(local.year);
+  const startMonth = Number(local.month);
+  const groups = [];
+  for (let offset = 0; offset < Math.max(1, Math.min(12, Number(months) || 2)); offset += 1) {
+    const zeroBased = (startMonth - 1) + offset;
+    const year = startYear + Math.floor(zeroBased / 12);
+    const month = (zeroBased % 12) + 1;
+    const birthdays = Object.values(section.members)
+      .filter((member) => member.announce !== false)
+      .map((member) => ({ member, effective: effectiveBirthday(member, year, section.settings) }))
+      .filter((item) => item.effective.month === month)
+      .sort((a, b) => a.effective.day - b.effective.day || a.member.userId.localeCompare(b.member.userId));
+    groups.push({ year, month, birthdays });
+  }
+  return groups;
+}
+
+function monthLabel(year, month) {
+  return new Intl.DateTimeFormat('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(Date.UTC(year, month - 1, 1)));
+}
+
+function monthlyBoardEmbed(guild, section) {
+  const groups = monthlyWindow(section, new Date(), 2);
+  const embed = new EmbedBuilder()
+    .setColor(0x5865F2)
+    .setTitle('🎂 Upcoming Birthdays — Next 2 Months')
+    .setDescription('Management birthday overview. The second month will roll forward and become the first month on next month’s board.')
+    .setFooter({ text: `Goliath Birthdays · Monthly Board · ${section.settings.timezone}` })
+    .setTimestamp();
+  for (const group of groups) {
+    const lines = group.birthdays.length
+      ? group.birthdays.map(({ member, effective }) => `**${String(effective.day).padStart(2, '0')} ${monthLabel(group.year, group.month).replace(/ \d{4}$/, '')}** — <@${member.userId}>`).join('\n')
+      : 'No birthdays registered for this month.';
+    embed.addFields({ name: `📅 ${monthLabel(group.year, group.month)}`, value: lines.slice(0, 1024) });
+  }
+  return embed;
+}
+
 function renderMessage(template, guild, member, year) {
   const discordMember = guild.members.cache.get(member.userId);
   const display = discordMember?.displayName || discordMember?.user?.username || 'member';
@@ -323,14 +369,27 @@ async function cleanupBirthdayRoles(guild, section, meta = {}) {
   return removed;
 }
 
+async function processMonthlyBoard(guild, section, local, currentTime, meta = {}) {
+  const channelId = section.settings.monthlyBoardChannelId;
+  if (!channelId || local.day !== '01' || currentTime < section.settings.monthlyBoardTime) return false;
+  const monthKey = `${local.year}-${local.month}`;
+  if (section.monthlyBoard?.lastPostedKey === monthKey) return false;
+  const channel = guild.channels.cache.get(channelId) || await guild.channels.fetch(channelId).catch(() => null);
+  if (!channel?.send) throw new Error('Monthly birthday board channel is unavailable.');
+  await channel.send({ embeds: [monthlyBoardEmbed(guild, section)], allowedMentions: { parse: [] } });
+  updateSection(guild.id, (current) => ({ ...current, monthlyBoard: { ...current.monthlyBoard, lastPostedKey: monthKey } }), { ...meta, action: 'birthday_monthly_board_posted' });
+  incrementAnalytics(guild.id, { monthlyBoardsSent: 1 }, meta);
+  return true;
+}
+
 async function processGuild(guild, meta = {}) {
-  if (!guildManager.isModuleEnabled(guild.id, SECTION)) return { disabled: true, announced: 0, rolesAssigned: 0, rolesRemoved: 0, failures: 0 };
+  if (!guildManager.isModuleEnabled(guild.id, SECTION)) return { disabled: true, announced: 0, monthlyBoards: 0, rolesAssigned: 0, rolesRemoved: 0, failures: 0 };
   let section = getSection(guild.id);
   const local = zonedParts(new Date(), section.settings.timezone);
   const year = Number(local.year);
   const currentTime = `${local.hour}:${local.minute}`;
   const today = `${local.year}-${local.month}-${local.day}`;
-  const result = { announced: 0, rolesAssigned: 0, rolesRemoved: 0, failures: 0 };
+  const result = { announced: 0, monthlyBoards: 0, rolesAssigned: 0, rolesRemoved: 0, failures: 0 };
   result.rolesRemoved = await cleanupBirthdayRoles(guild, section, meta);
   section = getSection(guild.id);
 
@@ -368,6 +427,16 @@ async function processGuild(guild, meta = {}) {
     }
   }
 
+  try {
+    section = getSection(guild.id);
+    if (await processMonthlyBoard(guild, section, local, currentTime, meta)) result.monthlyBoards += 1;
+  } catch (error) {
+    result.failures += 1;
+    incrementAnalytics(guild.id, { failures: 1 }, meta);
+    console.warn(`[Birthdays] ${guild.id} monthly board: ${error.message}`);
+  }
+
+  section = getSection(guild.id);
   if (currentTime < section.settings.announcementTime) {
     incrementAnalytics(guild.id, { lastProcessedAt: now() }, meta);
     return result;
@@ -377,7 +446,6 @@ async function processGuild(guild, meta = {}) {
   const channel = channelId ? (guild.channels.cache.get(channelId) || await guild.channels.fetch(channelId).catch(() => null)) : null;
   for (const member of Object.values(section.members)) {
     if (birthdayKey(member, year, section.settings) !== today) continue;
-
     if (member.announce !== false && member.lastAnnouncedKey !== today) {
       try {
         if (!channel?.send) throw new Error('Birthday announcement channel is unavailable.');
@@ -411,6 +479,14 @@ async function buildHealth(guild) {
       if (permissions && !permissions.has(PermissionFlagsBits.SendMessages)) issues.push({ code: 'announcement_send_messages_missing', channelId: channel.id });
     }
   }
+  if (section.settings.monthlyBoardChannelId) {
+    const channel = guild.channels.cache.get(section.settings.monthlyBoardChannelId) || await guild.channels.fetch(section.settings.monthlyBoardChannelId).catch(() => null);
+    if (!channel?.send) issues.push({ code: 'monthly_board_channel_unavailable', channelId: section.settings.monthlyBoardChannelId });
+    else {
+      const permissions = channel.permissionsFor?.(me);
+      if (permissions && !permissions.has(PermissionFlagsBits.SendMessages)) issues.push({ code: 'monthly_board_send_messages_missing', channelId: channel.id });
+    }
+  }
   if (section.settings.birthdayRoleId) {
     const role = guild.roles.cache.get(section.settings.birthdayRoleId) || await guild.roles.fetch(section.settings.birthdayRoleId).catch(() => null);
     if (!role) warnings.push({ code: 'birthday_role_missing' });
@@ -423,6 +499,6 @@ module.exports = {
   SECTION, TICK_MS, defaultSection, normalizeSection, normalizeMember,
   getSection, saveSection, updateSection, updateSettings, incrementAnalytics,
   getBirthday, setBirthday, removeBirthday, listUpcoming, nextBirthday, ageFor,
-  processGuild, buildHealth, validTimezone, validTime,
+  monthlyWindow, monthlyBoardEmbed, processGuild, buildHealth, validTimezone, validTime,
   reset: (guildId, meta = {}) => saveSection(guildId, defaultSection(), meta),
 };
