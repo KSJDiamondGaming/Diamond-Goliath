@@ -17,9 +17,30 @@ function baseIncident(entry) {
 async function cycle(client, sentinel) {
   const now = Date.now();
   for (const entry of scheduler.entries()) {
+    const base = baseIncident(entry);
+    const failureBase = {
+      ...base,
+      code: `scheduler-failing:${entry.id}`,
+      component: `scheduler:${entry.component || entry.id}:failures`,
+    };
+
+    if (entry.state === 'stopped') {
+      await sentinel.recover(client, base, {
+        schedulerId: entry.id,
+        state: 'stopped',
+        stoppedAt: entry.stoppedAt,
+        stopReason: entry.stopReason,
+      });
+      await sentinel.recover(client, failureBase, {
+        schedulerId: entry.id,
+        state: 'stopped',
+        stoppedAt: entry.stoppedAt,
+      });
+      continue;
+    }
+
     const lastBeat = Date.parse(entry.lastBeatAt || '') || 0;
     const ageMs = lastBeat ? now - lastBeat : Infinity;
-    const base = baseIncident(entry);
 
     if (ageMs > entry.staleAfterMs) {
       await sentinel.report(client, {
@@ -28,6 +49,7 @@ async function cycle(client, sentinel) {
         message: 'A registered background scheduler has stopped reporting its expected heartbeat.',
         details: {
           schedulerId: entry.id,
+          state: entry.state || 'running',
           expectedIntervalMs: entry.intervalMs,
           staleAfterMs: entry.staleAfterMs,
           lastBeatAt: entry.lastBeatAt,
@@ -40,16 +62,12 @@ async function cycle(client, sentinel) {
     } else {
       await sentinel.recover(client, base, {
         schedulerId: entry.id,
+        state: entry.state || 'running',
         lastBeatAt: entry.lastBeatAt,
         lastSuccessAt: entry.lastSuccessAt,
       });
     }
 
-    const failureBase = {
-      ...base,
-      code: `scheduler-failing:${entry.id}`,
-      component: `scheduler:${entry.component || entry.id}:failures`,
-    };
     if (entry.consecutiveFailures >= 3) {
       await sentinel.report(client, {
         ...failureBase,
@@ -57,6 +75,7 @@ async function cycle(client, sentinel) {
         message: 'A registered background scheduler is repeatedly failing while still running.',
         details: {
           schedulerId: entry.id,
+          state: entry.state || 'running',
           consecutiveFailures: entry.consecutiveFailures,
           failures: entry.failures,
           lastFailureAt: entry.lastFailureAt,
@@ -66,6 +85,7 @@ async function cycle(client, sentinel) {
     } else {
       await sentinel.recover(client, failureBase, {
         schedulerId: entry.id,
+        state: entry.state || 'running',
         consecutiveFailures: entry.consecutiveFailures,
       });
     }

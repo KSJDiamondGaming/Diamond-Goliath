@@ -20,7 +20,7 @@ const CONTROLS_PER_PAGE = 2;
 const ADMIN_FIELD_KEYS = new Set(['logChannel', 'managerRoles', 'reviewerRoles', 'levelRoles']);
 
 const CUSTOM_PANEL_KEYS = new Set([
-  'autoRoles', 'embed', 'forms', 'giveaways', 'goodbye', 'invites', 'leveling',
+  'autoRoles', 'embed', 'emojis', 'forms', 'giveaways', 'goodbye', 'invites', 'leveling',
   'polls', 'reactionRoles', 'schedule', 'social', 'starboard', 'stats', 'sticky',
   'suggestions', 'tempVoice', 'temporaryRoles', 'tickets', 'timedRoles', 'verification', 'welcome',
 ]);
@@ -48,6 +48,7 @@ const MODULE_CATALOG = [
   { key: 'stats', studio: 'utilityStudio', route: 'admin:stats', label: '📊 Server Stats', title: '📊 Server Stats', summary: 'Server activity, growth and member statistics.' },
   { key: 'translation', studio: 'utilityStudio', route: 'admin:translation', label: '🌐 Translation', title: '🌐 Translation', summary: 'Language preferences and translation controls.' },
   { key: 'tempVoice', studio: 'utilityStudio', route: 'admin:tempVoice', label: '🔊 Temp Voice', title: '🔊 Temp Voice', summary: 'Temporary voice channels and room automation.' },
+  { key: 'emojis', studio: 'utilityStudio', route: 'admin:module:emojis:panel', label: '😀 Emoji Bank', title: '😀 Emoji Bank', summary: 'Discord-hosted application emojis from Emoji.gg with up to 100 selected per server.' },
 ];
 
 const STUDIO_CATALOG = [
@@ -57,7 +58,7 @@ const STUDIO_CATALOG = [
   { key: 'roleStudio', label: '🎭 Roles', title: '🎭 Role Studio', summary: 'Automatic, reaction, temporary and timed role management.' },
   { key: 'securityStudio', label: '🛡️ Security', title: '🛡️ Security Studio', summary: 'Verification and member protection controls.' },
   { key: 'socialStudio', label: '📣 Social', title: '📣 Social Studio', summary: 'Creator and social-platform alerting.' },
-  { key: 'utilityStudio', label: '🧰 Utility', title: '🧰 Utility Studio', summary: 'Scheduling, statistics, translation and temporary voice tools.' },
+  { key: 'utilityStudio', label: '🧰 Utility', title: '🧰 Utility Studio', summary: 'Scheduling, statistics, translation, temporary voice and Emoji Bank tools.' },
 ];
 
 const MODULE_BY_KEY = Object.fromEntries(MODULE_CATALOG.map((module) => [module.key, module]));
@@ -253,6 +254,10 @@ async function handleModuleAdminInteraction(interaction) {
   if (id === 'admin:modules') return safeUpdate(interaction, buildModuleListPanel(name));
   const studio = id.match(/^admin:studio:([a-zA-Z0-9_-]+)$/);
   if (studio && interaction.isButton?.()) return safeUpdate(interaction, buildStudioPanel(studio[1], name));
+  if (id.startsWith('admin:module:emojis:')) {
+    const emojiPanel = require('../../../modules/utilityStudio/emojis/emojisPanel');
+    return emojiPanel.handleDiscordInteraction?.(interaction) || false;
+  }
   const main = id.match(/^admin:module:([a-zA-Z0-9_-]+):main:(\d+)$/);
   if (main && interaction.isButton?.()) return safeUpdate(interaction, buildModuleMainPanel(interaction.guild, main[1], name, Number(main[2])));
   const legacy = id.match(/^admin:module:([a-zA-Z0-9_-]+):landing$/);

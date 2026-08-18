@@ -22,6 +22,8 @@ const DEPLOYMENT_STATUS = Object.freeze({
 });
 
 const VALID_STATUSES = new Set(Object.values(DEPLOYMENT_STATUS));
+const EMBED_BUTTON_ACTIONS = Object.freeze(['reply', 'toggle-role', 'add-role', 'remove-role', 'user-info', 'server-info']);
+const EMBED_ROLE_BUTTON_ACTIONS = new Set(['toggle-role', 'add-role', 'remove-role']);
 const now = () => new Date().toISOString();
 const isPlainObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
@@ -81,6 +83,41 @@ function clone(value, fallback = {}) {
 
 function cleanString(value, maxLength = 500) {
   return String(value ?? '').trim().slice(0, maxLength);
+}
+
+function normalizeEmbedButtonAction(value) {
+  return String(value || '').trim().toLowerCase().replace(/_/g, '-');
+}
+
+function parseEmbedButtonActionIndex(customId) {
+  const id = String(customId || '');
+  let match = id.match(/^embed:action:(\d+)$/);
+  if (match) return Number(match[1]);
+  match = id.match(/^embed-action:.*:(\d+)$/);
+  return match ? Number(match[1]) : null;
+}
+
+function legacyEmbedButtonActionFromId(customId) {
+  const match = String(customId || '').match(/^embed-action:(.*):(\d+)$/);
+  return match ? normalizeEmbedButtonAction(match[1]) : '';
+}
+
+async function applyEmbedRoleMutation(member, role, action, actorLabel) {
+  const roleId = role.id;
+  if (action === 'add-role') {
+    if (member.roles.cache.has(roleId)) return { outcome: 'already-has-role' };
+    await member.roles.add(role, `Embed Studio button used by ${actorLabel}`);
+    return { outcome: 'added' };
+  }
+  if (action === 'remove-role') {
+    if (!member.roles.cache.has(roleId)) return { outcome: 'missing-role' };
+    await member.roles.remove(role, `Embed Studio button used by ${actorLabel}`);
+    return { outcome: 'removed' };
+  }
+  const hasRole = member.roles.cache.has(roleId);
+  if (hasRole) await member.roles.remove(role, `Embed Studio role toggle used by ${actorLabel}`);
+  else await member.roles.add(role, `Embed Studio role toggle used by ${actorLabel}`);
+  return { outcome: hasRole ? 'removed' : 'added' };
 }
 
 function requireGuildId(value) {
@@ -225,6 +262,48 @@ function findMatchingDeployment(deployments, key) {
 
 function getEmbedDeployment(guildId, key) {
   return findMatchingDeployment(getAllEmbedDeployments(guildId), key);
+}
+
+function getEmbedDeploymentByMessage(guildId, messageId) {
+  const safeGuildId = requireGuildId(guildId);
+  const safeMessageId = cleanDiscordId(messageId);
+  if (!safeMessageId) return null;
+  return Object.values(getAllEmbedDeployments(safeGuildId)).find(
+    (deployment) => String(deployment?.messageId || '') === safeMessageId,
+  ) || null;
+}
+
+function getEmbedPresetForDeployment(guildId, deployment) {
+  const safeGuildId = requireGuildId(guildId);
+  if (!deployment) return null;
+  const presets = typeof guildManager.getEmbedPresets === 'function'
+    ? guildManager.getEmbedPresets(safeGuildId) || {}
+    : {};
+  return presets[deployment.preset] || presets[deployment.key] || null;
+}
+
+function getEmbedButtonsForPreset(preset) {
+  if (!preset || typeof preset !== 'object') return [];
+  if (Array.isArray(preset.buttons) && preset.buttons.length) return preset.buttons;
+  const panels = Array.isArray(preset.panels) ? preset.panels : [];
+  const selectedPanelIndex = Number.isInteger(preset.selectedPanelIndex) ? preset.selectedPanelIndex : null;
+  if (selectedPanelIndex != null && Array.isArray(panels[selectedPanelIndex]?.buttons)) {
+    return panels[selectedPanelIndex].buttons;
+  }
+  const panelsWithButtons = panels.filter((entry) => Array.isArray(entry?.buttons) && entry.buttons.length);
+  if (panelsWithButtons.length === 1) return panelsWithButtons[0].buttons;
+  if (Array.isArray(panels[0]?.buttons)) return panels[0].buttons;
+  return [];
+}
+
+function resolveEmbedButtonDeployment(guildId, messageId) {
+  const deployment = getEmbedDeploymentByMessage(guildId, messageId);
+  const preset = getEmbedPresetForDeployment(guildId, deployment);
+  return {
+    deployment,
+    preset,
+    buttons: getEmbedButtonsForPreset(preset),
+  };
 }
 
 function saveDeployments(guildId, deployments) {
@@ -398,8 +477,18 @@ module.exports = {
   emitEmbedDeleted,
   EMBED_DEPLOYMENTS_SECTION,
   DEPLOYMENT_STATUS,
+  EMBED_BUTTON_ACTIONS,
+  EMBED_ROLE_BUTTON_ACTIONS,
+  normalizeEmbedButtonAction,
+  parseEmbedButtonActionIndex,
+  legacyEmbedButtonActionFromId,
+  applyEmbedRoleMutation,
   getAllEmbedDeployments,
   getEmbedDeployment,
+  getEmbedDeploymentByMessage,
+  getEmbedPresetForDeployment,
+  getEmbedButtonsForPreset,
+  resolveEmbedButtonDeployment,
   saveEmbedDeployment,
   markEmbedDeploymentStatus,
   deleteEmbedDeployment,

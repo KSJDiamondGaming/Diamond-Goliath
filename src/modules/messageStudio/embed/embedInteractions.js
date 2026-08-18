@@ -1,25 +1,95 @@
 'use strict';
 
-const { MessageFlags, PermissionFlagsBits } = require('discord.js');
-require('./embedButtonsCompat');
+const {
+  EmbedBuilder,
+  MessageFlags,
+  PermissionFlagsBits,
+  PermissionsBitField,
+} = require('discord.js');
 const panel = require('./embedPanel');
-const { handleButtonAction } = panel;
 const media = require('./embedMedia');
 const guildManager = require('../../../core/guild/guildManager');
-const { validateChannelAccess } = require('../../../core/security/goliathPermissionGuard');
-const { saveEmbedDeployment, getEmbedDeployment, getDeploymentKeyFromState } = require('./embedDeployments');
+const {
+  validateChannelAccess,
+  canManageRole,
+} = require('../../../core/security/goliathPermissionGuard');
+const {
+  EMBED_BUTTON_ACTIONS,
+  EMBED_ROLE_BUTTON_ACTIONS,
+  normalizeEmbedButtonAction,
+  parseEmbedButtonActionIndex,
+  legacyEmbedButtonActionFromId,
+  resolveEmbedButtonDeployment,
+  applyEmbedRoleMutation,
+  saveEmbedDeployment,
+  getEmbedDeployment,
+  getDeploymentKeyFromState,
+} = require('./embedDeployments');
 const { buildEmbedPayload, prepareEmbedMedia } = require('./embedRenderer');
 
-media.installStateCompatibility(panel);
-media.installPersistentMediaCompatibility(panel);
-media.installStorageNormalization(panel);
-media.installUploadModals(panel);
-media.installMediaOptionsUi(panel);
-media.installMediaManagerUi(panel);
-media.installThumbnailUi(panel);
-panel.getPanelMedia = media.getPanelMedia;
-panel.setPanelMedia = media.setPanelMedia;
-panel.mediaModel = media.mediaModel;
+const DANGEROUS_ROLE_PERMISSIONS = [
+  PermissionsBitField.Flags.Administrator,
+  PermissionsBitField.Flags.ManageGuild,
+  PermissionsBitField.Flags.ManageRoles,
+  PermissionsBitField.Flags.ManageChannels,
+  PermissionsBitField.Flags.ManageWebhooks,
+  PermissionsBitField.Flags.BanMembers,
+  PermissionsBitField.Flags.KickMembers,
+  PermissionsBitField.Flags.ModerateMembers,
+];
+
+function resolved(value, interaction) {
+  try { return interaction ? panel.replaceVars(String(value || ''), interaction) : String(value || ''); }
+  catch { return String(value || ''); }
+}
+function resolveButton(interaction) {
+  const index = parseEmbedButtonActionIndex(interaction.customId);
+  if (!Number.isInteger(index) || index < 0 || index >= panel.MAX_BUTTONS) return { index, button: null, deployment: null };
+  const { deployment, buttons } = resolveEmbedButtonDeployment(interaction.guildId, interaction.message?.id);
+  return { index, button: buttons[index] || null, deployment };
+}
+async function ephemeral(interaction, payload) {
+  const body = typeof payload === 'string' ? { content: payload } : payload;
+  if (interaction.deferred || interaction.replied) return interaction.followUp({ ...body, flags: MessageFlags.Ephemeral });
+  return interaction.reply({ ...body, flags: MessageFlags.Ephemeral });
+}
+async function roleIsSafe(roleId, guild) {
+  if (!roleId || !guild) return { ok: false, reason: 'Role not found.', role: null };
+  const manageable = await canManageRole(guild, roleId);
+  if (!manageable.ok) return { ok: false, reason: manageable.message || 'Goliath cannot manage that role.', role: null };
+  const role = guild.roles?.cache?.get?.(manageable.roleId) || null;
+  if (!role) return { ok: false, reason: 'Role not found.', role: null };
+  if (DANGEROUS_ROLE_PERMISSIONS.some((permission) => role.permissions.has(permission))) return { ok: false, reason: 'Self-service buttons cannot manage privileged moderation or administration roles.', role: null };
+  return { ok: true, role };
+}
+async function executeRoleAction(interaction, action, value) {
+  const roleId = String(resolved(value, interaction) || '').match(/\d{15,25}/)?.[0] || null;
+  if (!roleId) return ephemeral(interaction, '❌ This button does not have a valid role configured.');
+  const safe = await roleIsSafe(roleId, interaction.guild);
+  if (!safe.ok) return ephemeral(interaction, `❌ ${safe.reason}`);
+  const role = safe.role;
+  const member = interaction.member?.roles?.cache ? interaction.member : await interaction.guild.members.fetch(interaction.user.id).catch(() => null);
+  if (!member) return ephemeral(interaction, '❌ Your server member record could not be loaded.');
+  const result = await applyEmbedRoleMutation(member, role, action, interaction.user.tag || interaction.user.id);
+  if (result.outcome === 'already-has-role') return ephemeral(interaction, `ℹ️ You already have **${role.name}**.`);
+  if (result.outcome === 'missing-role') return ephemeral(interaction, `ℹ️ You do not have **${role.name}**.`);
+  return ephemeral(interaction, `${result.outcome === 'removed' ? '✅ Removed' : '✅ Added'} **${role.name}**.`);
+}
+async function handleButtonAction(interaction) {
+  if (!interaction?.isButton?.()) return false;
+  const id = String(interaction.customId || '');
+  if (!id.startsWith('embed:action:') && !id.startsWith('embed-action:')) return false;
+  const { button } = resolveButton(interaction);
+  const action = normalizeEmbedButtonAction(button?.action || legacyEmbedButtonActionFromId(id));
+  const value = button?.actionValue ?? button?.value ?? '';
+  if (!action || action === 'custom' || action === 'none') { await ephemeral(interaction, 'ℹ️ This button does not have an action configured yet.'); return true; }
+  if (action === 'reply' || action === 'message') { await ephemeral(interaction, resolved(value || 'Button pressed.', interaction).slice(0, 2000) || 'Button pressed.'); return true; }
+  if (EMBED_ROLE_BUTTON_ACTIONS.has(action)) { await executeRoleAction(interaction, action, value); return true; }
+  if (action === 'user-info') { const member = interaction.member; const embed = new EmbedBuilder().setColor(0x5865F2).setTitle('👤 Your Server Info').setDescription([`**User:** <@${interaction.user.id}>`, `**User ID:** \`${interaction.user.id}\``, `**Joined:** ${member?.joinedTimestamp ? `<t:${Math.floor(member.joinedTimestamp / 1000)}:F>` : 'Unknown'}`, `**Roles:** ${member?.roles?.cache ? Math.max(0, member.roles.cache.size - 1) : 'Unknown'}`].join('\n')); await ephemeral(interaction, { embeds: [embed] }); return true; }
+  if (action === 'server-info') { const guild = interaction.guild; const embed = new EmbedBuilder().setColor(0x5865F2).setTitle(`🏠 ${guild?.name || 'Server'}`).setDescription([`**Members:** ${guild?.memberCount ?? 'Unknown'}`, `**Server ID:** \`${guild?.id || 'Unknown'}\``, `**Created:** ${guild?.createdTimestamp ? `<t:${Math.floor(guild.createdTimestamp / 1000)}:F>` : 'Unknown'}`].join('\n')); if (guild?.iconURL?.()) embed.setThumbnail(guild.iconURL({ size: 256 })); await ephemeral(interaction, { embeds: [embed] }); return true; }
+  await ephemeral(interaction, `⚠️ The action \`${action}\` is not registered.`);
+  return true;
+}
 
 const DELIVERY_ACTIONS = new Set(['embed:test-send', 'embed:use', 'embed:update-existing']);
 
@@ -166,7 +236,7 @@ async function handleBuilderInteractions(i) {
     if (customId === 'embed:field-manager-select') { panel.saveSession(i, { ...state, selectedFieldIndex: Math.max(0, Number(i.values?.[0]) || 0) }); return updateFields(i); }
     if (customId === 'embed:field-manager-layout') { const layout = String(i.values?.[0] || 'auto'); if (!['auto', '1', '2', '3'].includes(layout)) return true; panel.saveSession(i, { ...state, fieldLayout: layout, hasUnsavedChanges: true }); return updateFields(i); }
     if (customId === 'embed:button-manager-select') { panel.saveSession(i, { ...state, selectedButtonIndex: Math.max(0, Number(i.values?.[0]) || 0) }); return updateButtons(i); }
-    if (customId === 'embed:button-action-select') { if (buttonIndex == null) return updateButtons(i); const action = String(i.values?.[0] || 'none').toLowerCase(); if (action !== 'none' && !panel.EMBED_BUTTON_ACTIONS.includes(action)) return true; const existing = buttons[buttonIndex] || {}; buttons[buttonIndex] = action === 'none' ? { ...existing, action: '', actionValue: '' } : { ...existing, url: '', action, actionValue: '' }; saveButtons(i, state, buttons, buttonIndex); return updateButtonOptions(i); }
+    if (customId === 'embed:button-action-select') { if (buttonIndex == null) return updateButtons(i); const action = String(i.values?.[0] || 'none').toLowerCase(); if (action !== 'none' && !EMBED_BUTTON_ACTIONS.includes(action)) return true; const existing = buttons[buttonIndex] || {}; buttons[buttonIndex] = action === 'none' ? { ...existing, action: '', actionValue: '' } : { ...existing, url: '', action, actionValue: '' }; saveButtons(i, state, buttons, buttonIndex); return updateButtonOptions(i); }
     if (customId === 'embed:button-row-select') { if (buttonIndex == null) return updateButtons(i); const raw = String(i.values?.[0] || 'auto'); const row = manualRow(raw); if (raw !== 'auto' && row == null) return true; if (row != null) { const assigned = buttons.filter((button, idx) => idx !== buttonIndex && manualRow(button?.row) === row).length; if (assigned >= panel.MAX_BUTTONS_PER_ROW) { await i.reply({ content: `⚠️ Row ${row + 1} already has ${panel.MAX_BUTTONS_PER_ROW} explicitly placed buttons. Choose another row or Auto placement.`, flags: 64 }); return true; } } buttons[buttonIndex] = { ...buttons[buttonIndex], row: row == null ? null : row }; saveButtons(i, state, buttons, buttonIndex); return updateButtonOptions(i); }
   }
 
@@ -382,4 +452,4 @@ async function handleInteraction(interaction) {
   return handleBuilderInteractions(interaction);
 }
 
-module.exports = { handleInteraction };
+module.exports = { handleInteraction, handleButtonAction };

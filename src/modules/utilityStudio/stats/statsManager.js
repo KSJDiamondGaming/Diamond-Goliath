@@ -2,6 +2,7 @@
 
 const statsStore = require('./statsStore');
 const statsCounters = require('./statsCounters');
+const sentinelScheduler = require('../../../owner/sentinel/schedulerRegistry.js');
 
 const activeVoiceSessions = new Map();
 const refreshTimers = new Map();
@@ -9,6 +10,7 @@ const refreshInFlight = new Set();
 
 const COUNTER_REFRESH_DELAY_MS = Number(process.env.STATS_COUNTER_REFRESH_DELAY_MS || 30000);
 const COUNTER_REFRESH_INTERVAL_MS = Number(process.env.STATS_COUNTER_REFRESH_INTERVAL_MS || 15 * 60 * 1000);
+const SCHEDULER_ID = 'stats:counter-refresh:global';
 let startupTimer = null;
 let intervalTimer = null;
 
@@ -51,7 +53,7 @@ async function refreshGuildCounters(guild, reason = 'manual') {
     return refreshed;
   } catch (error) {
     console.error(`[Stats] Failed to refresh counters for ${guild.name || guild.id}:`, error);
-    return [];
+    throw error;
   } finally {
     refreshInFlight.delete(guild.id);
   }
@@ -60,9 +62,24 @@ async function refreshGuildCounters(guild, reason = 'manual') {
 async function refreshAllGuildCounters(client, reason = 'scheduled') {
   if (!client?.guilds?.cache) throw new Error('Discord client is unavailable.');
   const results = [];
+  let failures = 0;
   for (const guild of client.guilds.cache.values()) {
-    const refreshed = await refreshGuildCounters(guild, reason);
-    results.push({ guildId: guild.id, count: refreshed.length });
+    try {
+      const refreshed = await refreshGuildCounters(guild, reason);
+      results.push({ guildId: guild.id, count: refreshed.length, failed: false });
+    } catch (error) {
+      failures += 1;
+      results.push({ guildId: guild.id, count: 0, failed: true, error: error?.message || String(error) });
+    }
+  }
+  if (failures > 0) {
+    sentinelScheduler.fail(SCHEDULER_ID, new Error(`${failures} guild counter refresh operation(s) failed.`), {
+      reason,
+      guildsChecked: results.length,
+      failures,
+    });
+  } else {
+    sentinelScheduler.beat(SCHEDULER_ID, { reason, guildsChecked: results.length, failures: 0 });
   }
   return results;
 }
@@ -71,9 +88,20 @@ function startCounterRefreshScheduler(client) {
   if (!client?.guilds?.cache) throw new Error('Discord client is unavailable.');
   if (intervalTimer) return intervalTimer;
 
+  const intervalMs = Math.max(60000, COUNTER_REFRESH_INTERVAL_MS);
+  sentinelScheduler.register({
+    id: SCHEDULER_ID,
+    module: 'stats',
+    component: 'counter-refresh',
+    intervalMs,
+    staleAfterMs: Math.max(intervalMs * 3, 180000),
+    details: { scope: 'all-guilds' },
+  });
+
   startupTimer = setTimeout(() => {
     startupTimer = null;
     refreshAllGuildCounters(client, 'startup').catch((error) => {
+      sentinelScheduler.fail(SCHEDULER_ID, error, { phase: 'startup' });
       console.error('[Stats] Startup counter refresh failed:', error);
     });
   }, 10000);
@@ -81,9 +109,10 @@ function startCounterRefreshScheduler(client) {
 
   intervalTimer = setInterval(() => {
     refreshAllGuildCounters(client, 'scheduled').catch((error) => {
+      sentinelScheduler.fail(SCHEDULER_ID, error, { phase: 'scheduled' });
       console.error('[Stats] Scheduled counter refresh failed:', error);
     });
-  }, Math.max(60000, COUNTER_REFRESH_INTERVAL_MS));
+  }, intervalMs);
 
   intervalTimer.unref?.();
   console.log('[Stats] Counter refresh scheduler started.');
@@ -103,6 +132,7 @@ function stopCounterRefreshScheduler() {
   refreshTimers.clear();
   refreshInFlight.clear();
   activeVoiceSessions.clear();
+  sentinelScheduler.stop(SCHEDULER_ID, { reason: 'stats scheduler stopped intentionally' });
   return true;
 }
 

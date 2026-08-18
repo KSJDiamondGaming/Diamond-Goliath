@@ -9,7 +9,32 @@ const TICK_MS = 60 * 1000;
 const UPCOMING_WINDOW_DAYS = 30;
 const LEFT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 const LEGACY_MESSAGE_TEMPLATE = '🎂 Happy Birthday {mention}! We hope you have a fantastic day! 🎉';
-const DEFAULT_MESSAGE_TEMPLATE = '🎂 Happy Birthday {mention}! From everyone at {server}, we hope you have a fantastic day! 🎉';
+const DEFAULT_INDIVIDUAL_TEMPLATES = [
+  '🎂 Happy Birthday {mention}! We hope you have a fantastic day! 🎉',
+  '🎉 Happy Birthday {mention}! From everyone at {server}, we hope you have an amazing day! 🎂',
+  '🥳 Wishing {mention} a very Happy Birthday from everyone at {server}! Have a brilliant day! 🎉',
+  '🎈 It’s {mention}’s birthday! Everyone at {server} wishes you a fantastic day! 🎂',
+  '🎁 Happy Birthday {mention}! Here’s to another amazing year from all of us at {server}! 🥳',
+  '🎊 It’s time to celebrate {mention}! Happy Birthday from everyone at {server}! 🎂',
+  '🥳 Another trip around the sun! Happy Birthday {mention}! Have an incredible day! 🎉',
+  '🎂 Today is all about {mention}! Everyone at {server} wishes you the happiest of birthdays! 🎈',
+  '🎉 Sending huge birthday wishes to {mention} from all of us at {server}! Have an amazing one! 🥳',
+  '🎁 Happy Birthday {mention}! We hope your day is packed with laughs, celebrations and cake! 🎂',
+];
+const DEFAULT_GROUP_TEMPLATES = [
+  '🎂 Happy Birthday {mentions}! From everyone at {server}, we hope you all have a fantastic day! 🎉',
+  '🥳 We have {count} birthdays to celebrate today! Happy Birthday {mentions} from everyone at {server}! 🎂',
+  '🎉 Birthday celebrations all round! Happy Birthday {mentions}! Have an amazing day from everyone at {server}! 🎈',
+  '🎁 A very Happy Birthday to {mentions}! Everyone at {server} hopes you have a brilliant day! 🥳',
+  '🎂 Today we’re celebrating {count} birthdays! Happy Birthday {mentions} from all of us at {server}! 🎉',
+  '🎊 Double the cake, triple the fun — we have {count} birthdays today! Happy Birthday {mentions} from everyone at {server}! 🎂',
+  '🥳 A huge Happy Birthday to {mentions}! All of us at {server} hope you have an incredible celebration! 🎉',
+  '🎈 Today belongs to {mentions}! Happy Birthday from everyone at {server} — enjoy every minute! 🎂',
+  '🎉 We’re celebrating {count} amazing people today! Happy Birthday {mentions} from all of us at {server}! 🥳',
+  '🎁 Birthday wishes are going out to {mentions}! Everyone at {server} hopes your day is full of fun, laughs and cake! 🎂',
+];
+const DEFAULT_MESSAGE_TEMPLATE = DEFAULT_INDIVIDUAL_TEMPLATES[0];
+const DEFAULT_CARD_IMAGE_URL = 'https://static2.klipy.com/ii/bea85337777ad0e23e63683391435543/47/a8/WjSzGEC0.gif';
 const now = () => new Date().toISOString();
 const clone = (value) => value == null ? value : JSON.parse(JSON.stringify(value));
 const clean = (value, max = 1000) => String(value ?? '').trim().slice(0, max);
@@ -40,10 +65,10 @@ function validTime(value) {
   return /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(String(value || ''));
 }
 
-function normalizeTemplates(input, fallback = [DEFAULT_MESSAGE_TEMPLATE]) {
+function normalizeTemplates(input, fallback = DEFAULT_INDIVIDUAL_TEMPLATES) {
   const list = Array.isArray(input) ? input : String(input || '').split(/\r?\n/);
   const result = [...new Set(list.map((item) => clean(item, 1800)).filter(Boolean))].slice(0, 20);
-  return result.length ? result : fallback;
+  return result.length ? result : [...fallback];
 }
 
 function defaultSection() {
@@ -53,19 +78,22 @@ function defaultSection() {
       announcementTime: '09:00',
       timezone: 'Europe/London',
       messageTemplate: DEFAULT_MESSAGE_TEMPLATE,
-      messageTemplates: [DEFAULT_MESSAGE_TEMPLATE],
+      messageTemplates: [...DEFAULT_INDIVIDUAL_TEMPLATES],
+      groupMessageTemplates: [...DEFAULT_GROUP_TEMPLATES],
       birthdayRoleId: null,
       showAgeByDefault: false,
       announceByDefault: true,
       listByDefault: true,
       leapDayMode: 'feb28',
       monthlyBoardChannelId: null,
+      monthlyBoardDay: 1,
       monthlyBoardTime: '09:00',
       combineSameDay: false,
       useBirthdayEmbed: true,
       cardTitle: '🎂 Happy Birthday!',
       cardFooter: 'From everyone at {server} 🎉',
       cardColor: '#5865F2',
+      cardImageMode: 'default',
       cardImageUrl: null,
       cardUseServerIcon: true,
     },
@@ -124,7 +152,13 @@ function normalizeSection(section = {}) {
   const raw = section && typeof section === 'object' ? section : {};
   const rawTimezone = normalizeTimezone(raw.settings?.timezone);
   const rawMessageTemplate = clean(raw.settings?.messageTemplate, 1800);
-  const templates = normalizeTemplates(raw.settings?.messageTemplates || rawMessageTemplate || base.settings.messageTemplates);
+  const templates = normalizeTemplates(raw.settings?.messageTemplates || rawMessageTemplate || base.settings.messageTemplates, DEFAULT_INDIVIDUAL_TEMPLATES);
+  const groupTemplates = normalizeTemplates(raw.settings?.groupMessageTemplates || base.settings.groupMessageTemplates, DEFAULT_GROUP_TEMPLATES);
+  const rawCardImageUrl = validUrl(raw.settings?.cardImageUrl);
+  const requestedImageMode = String(raw.settings?.cardImageMode || '').trim().toLowerCase();
+  const cardImageMode = ['default', 'custom', 'none'].includes(requestedImageMode)
+    ? requestedImageMode
+    : (rawCardImageUrl ? 'custom' : 'default');
   const settings = {
     ...base.settings,
     ...(raw.settings || {}),
@@ -133,19 +167,22 @@ function normalizeSection(section = {}) {
     timezone: rawTimezone && validTimezone(rawTimezone) ? rawTimezone : base.settings.timezone,
     messageTemplate: !rawMessageTemplate || rawMessageTemplate === LEGACY_MESSAGE_TEMPLATE ? templates[0] : rawMessageTemplate,
     messageTemplates: templates,
+    groupMessageTemplates: groupTemplates,
     birthdayRoleId: cleanId(raw.settings?.birthdayRoleId),
     showAgeByDefault: raw.settings?.showAgeByDefault === true,
     announceByDefault: raw.settings?.announceByDefault !== false,
     listByDefault: raw.settings?.listByDefault !== false,
-    leapDayMode: raw.settings?.leapDayMode === 'mar1' ? 'mar1' : 'feb28',
+    leapDayMode: 'feb28',
     monthlyBoardChannelId: cleanId(raw.settings?.monthlyBoardChannelId),
+    monthlyBoardDay: Math.max(1, Math.min(28, Math.floor(Number(raw.settings?.monthlyBoardDay) || base.settings.monthlyBoardDay))),
     monthlyBoardTime: validTime(raw.settings?.monthlyBoardTime) ? raw.settings.monthlyBoardTime : base.settings.monthlyBoardTime,
     combineSameDay: raw.settings?.combineSameDay === true,
     useBirthdayEmbed: raw.settings?.useBirthdayEmbed !== false,
     cardTitle: clean(raw.settings?.cardTitle || base.settings.cardTitle, 256) || base.settings.cardTitle,
     cardFooter: clean(raw.settings?.cardFooter || base.settings.cardFooter, 2048) || base.settings.cardFooter,
     cardColor: validColor(raw.settings?.cardColor) ? `#${String(raw.settings.cardColor).replace('#', '').toUpperCase()}` : base.settings.cardColor,
-    cardImageUrl: validUrl(raw.settings?.cardImageUrl),
+    cardImageMode,
+    cardImageUrl: rawCardImageUrl,
     cardUseServerIcon: raw.settings?.cardUseServerIcon !== false,
   };
   const members = {};
@@ -186,7 +223,9 @@ function incrementAnalytics(guildId, patch, meta = {}) {
 function updateSettings(guildId, patch = {}, meta = {}) {
   const normalizedPatch = { ...patch };
   if ('timezone' in normalizedPatch) normalizedPatch.timezone = normalizeTimezone(normalizedPatch.timezone);
-  if ('messageTemplates' in normalizedPatch) normalizedPatch.messageTemplates = normalizeTemplates(normalizedPatch.messageTemplates);
+  if ('messageTemplates' in normalizedPatch) normalizedPatch.messageTemplates = normalizeTemplates(normalizedPatch.messageTemplates, DEFAULT_INDIVIDUAL_TEMPLATES);
+  if ('groupMessageTemplates' in normalizedPatch) normalizedPatch.groupMessageTemplates = normalizeTemplates(normalizedPatch.groupMessageTemplates, DEFAULT_GROUP_TEMPLATES);
+  if ('cardImageMode' in normalizedPatch && !['default', 'custom', 'none'].includes(String(normalizedPatch.cardImageMode))) normalizedPatch.cardImageMode = 'default';
   return updateSection(guildId, (section) => ({ ...section, settings: { ...section.settings, ...normalizedPatch } }), meta).settings;
 }
 
@@ -220,7 +259,7 @@ function zonedParts(date, timezone) {
 function isLeapYear(year) { return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0); }
 function effectiveBirthday(member, year, settings) {
   if (member.month !== 2 || member.day !== 29 || isLeapYear(year)) return { month: member.month, day: member.day };
-  return settings.leapDayMode === 'mar1' ? { month: 3, day: 1 } : { month: 2, day: 28 };
+  return { month: 2, day: 28 };
 }
 function birthdayKey(member, year, settings) {
   const date = effectiveBirthday(member, year, settings);
@@ -294,18 +333,40 @@ function renderTemplate(template, guild, member, year) {
   return clean(template, 1800).replaceAll('{mention}', `<@${member.userId}>`).replaceAll('{user}', display)
     .replaceAll('{server}', guild.name || 'this server').replaceAll('{age}', age == null ? '' : String(age));
 }
+function renderGroupTemplate(template, guild, members) {
+  const mentions = members.map((member) => `<@${member.userId}>`).join(' ');
+  return clean(template, 1800)
+    .replaceAll('{mentions}', mentions)
+    .replaceAll('{count}', String(members.length))
+    .replaceAll('{server}', guild.name || 'this server');
+}
+function seededTemplate(templates, seedKey) {
+  const normalized = normalizeTemplates(templates, DEFAULT_INDIVIDUAL_TEMPLATES);
+  const seed = String(seedKey).split('').reduce((sum, ch) => (sum + ch.charCodeAt(0)) % 2147483647, 0);
+  return normalized[seed % normalized.length];
+}
 function pickTemplate(settings, member, today) {
-  const templates = normalizeTemplates(settings.messageTemplates || settings.messageTemplate);
-  const seed = `${member.userId}:${today}`.split('').reduce((sum, ch) => (sum + ch.charCodeAt(0)) % 2147483647, 0);
-  return templates[seed % templates.length];
+  return seededTemplate(settings.messageTemplates || settings.messageTemplate, `${member.userId}:${today}`);
+}
+function pickGroupTemplate(settings, members, today) {
+  const templates = normalizeTemplates(settings.groupMessageTemplates, DEFAULT_GROUP_TEMPLATES);
+  return seededTemplate(templates, `${members.map((member) => member.userId).sort().join(':')}:${today}:group`);
+}
+function resolvedCardImage(settings) {
+  if (settings.cardImageMode === 'none') return null;
+  if (settings.cardImageMode === 'custom') return validUrl(settings.cardImageUrl);
+  return DEFAULT_CARD_IMAGE_URL;
 }
 function birthdayEmbed(guild, section, members, year, today, test = false) {
   const embed = new EmbedBuilder().setColor(colorInt(section.settings.cardColor)).setTitle(test ? `🧪 TEST · ${section.settings.cardTitle}` : section.settings.cardTitle);
-  const lines = members.map((member) => renderTemplate(pickTemplate(section.settings, member, today), guild, member, year));
-  embed.setDescription(lines.join('\n\n').slice(0, 4096));
+  const description = members.length > 1
+    ? renderGroupTemplate(pickGroupTemplate(section.settings, members, today), guild, members)
+    : renderTemplate(pickTemplate(section.settings, members[0], today), guild, members[0], year);
+  embed.setDescription(description.slice(0, 4096));
   const footer = clean(section.settings.cardFooter, 2048).replaceAll('{server}', guild.name || 'this server');
   if (footer) embed.setFooter({ text: footer });
-  if (section.settings.cardImageUrl) embed.setImage(section.settings.cardImageUrl);
+  const cardImage = resolvedCardImage(section.settings);
+  if (cardImage) embed.setImage(cardImage);
   if (section.settings.cardUseServerIcon && guild.iconURL?.()) embed.setThumbnail(guild.iconURL({ size: 256 }));
   embed.setTimestamp();
   return embed;
@@ -348,17 +409,19 @@ async function sendPublicAnnouncement(guild, section, members, year, today, test
   if (section.settings.useBirthdayEmbed) {
     await channel.send({ embeds: [birthdayEmbed(guild, section, members, year, today, test)], allowedMentions: { users: members.map((m) => m.userId) } });
   } else {
-    const content = members.map((member) => renderTemplate(pickTemplate(section.settings, member, today), guild, member, year)).join('\n');
+    const content = members.length > 1
+      ? renderGroupTemplate(pickGroupTemplate(section.settings, members, today), guild, members)
+      : renderTemplate(pickTemplate(section.settings, members[0], today), guild, members[0], year);
     await channel.send({ content: test ? `🧪 **TEST**\n${content}` : content, allowedMentions: { users: members.map((m) => m.userId) } });
   }
 }
 
 async function processGuild(guild, meta = {}) {
   if (!guild || !guildManager.isModuleEnabled(guild.id, SECTION)) return { disabled: true };
-  const section = getSection(guild.id); cleanupStaleRecords(section);
+  const section = getSection(guild.id); const staleRemoved = cleanupStaleRecords(section);
   const parts = zonedParts(new Date(), section.settings.timezone); const year = Number(parts.year);
   const today = `${parts.year}-${parts.month}-${parts.day}`; const currentTime = `${parts.hour}:${parts.minute}`;
-  const result = { announced: 0, rolesAssigned: 0, rolesRemoved: 0, staleRemoved: 0, failures: 0 };
+  const result = { announced: 0, rolesAssigned: 0, rolesRemoved: 0, staleRemoved, failures: 0 };
   const roleId = section.settings.birthdayRoleId;
 
   for (const member of Object.values(section.members)) {
@@ -401,7 +464,7 @@ async function processGuild(guild, meta = {}) {
     } catch (error) { result.failures += 1; noteFailure(section); console.warn(`[birthdays] announcement ${guild.id}: ${error.message}`); }
   }
 
-  if (section.settings.monthlyBoardChannelId && Number(parts.day) === 1 && currentTime >= section.settings.monthlyBoardTime) {
+  if (section.settings.monthlyBoardChannelId && Number(parts.day) === section.settings.monthlyBoardDay && currentTime >= section.settings.monthlyBoardTime) {
     const monthKey = `${parts.year}-${parts.month}`;
     if (section.monthlyBoard.lastPostedKey !== monthKey) {
       try {
@@ -486,6 +549,7 @@ function start(client) {
 
 module.exports = {
   SECTION, TICK_MS, start, defaultSection, normalizeSection, normalizeMember,
+  DEFAULT_INDIVIDUAL_TEMPLATES, DEFAULT_GROUP_TEMPLATES, DEFAULT_CARD_IMAGE_URL,
   getSection, saveSection, updateSection, updateSettings, incrementAnalytics,
   getBirthday, setBirthday, removeBirthday, listUpcoming, nextBirthday, ageFor,
   monthlyWindow, monthlyBoardEmbed, birthdayEmbed, processGuild, buildHealth, validTimezone, validTime,

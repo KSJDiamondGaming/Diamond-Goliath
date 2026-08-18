@@ -10,9 +10,11 @@ const {
 
 const giveawaysStore = require('./giveawaysStore');
 const guildManager = require('../../../core/guild/guildManager');
+const sentinelScheduler = require('../../../owner/sentinel/schedulerRegistry.js');
 const leveling = require('../leveling/leveling');
 
 const ENTER_EMOJI = '🎉';
+const GIVEAWAY_SCHEDULER_ID = 'giveaways:expiry:global';
 
 function isManager(member, section = {}) {
   if (!member) return false;
@@ -341,9 +343,28 @@ async function checkExpiredGiveaways(client) {
 function startGiveawayScheduler(client, intervalMs = 60_000) {
   if (!client || client.__goliathGiveawaySchedulerStarted) return null;
   client.__goliathGiveawaySchedulerStarted = true;
+  const cadence = Math.max(30_000, Number(intervalMs) || 60_000);
+  sentinelScheduler.register({
+    id: GIVEAWAY_SCHEDULER_ID,
+    module: 'giveaways',
+    component: 'expiry-check',
+    intervalMs: cadence,
+    staleAfterMs: Math.max(cadence * 3, 180_000),
+  });
+  const run = async () => {
+    try {
+      const ended = await checkExpiredGiveaways(client);
+      sentinelScheduler.beat(GIVEAWAY_SCHEDULER_ID, { ended: ended.length });
+      return ended;
+    } catch (error) {
+      sentinelScheduler.fail(GIVEAWAY_SCHEDULER_ID, error);
+      throw error;
+    }
+  };
+  run().catch((error) => console.error('[Giveaways] Initial scheduler check failed:', error));
   const timer = setInterval(() => {
-    checkExpiredGiveaways(client).catch((error) => console.error('[Giveaways] Scheduler failed:', error));
-  }, intervalMs);
+    run().catch((error) => console.error('[Giveaways] Scheduler failed:', error));
+  }, cadence);
   timer.unref?.();
   return timer;
 }

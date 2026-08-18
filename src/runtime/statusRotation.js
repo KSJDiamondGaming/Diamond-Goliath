@@ -1,7 +1,9 @@
 const { ActivityType } = require('discord.js');
 const { normalizeBotMode } = require('../config/botModes');
+const sentinelScheduler = require('../owner/sentinel/schedulerRegistry.js');
 
 const STATUS_INTERVAL_MS = 180_000;
+const STATUS_SCHEDULER_ID = 'runtime:status-rotation:global';
 
 const DEV_ACTIVITIES = [
   { name: '🔵 DEV | Building Goliath', type: ActivityType.Watching },
@@ -72,6 +74,15 @@ function startStatusRotation(client) {
     clearInterval(client.statusRotationInterval);
   }
 
+  sentinelScheduler.register({
+    id: STATUS_SCHEDULER_ID,
+    module: 'runtime',
+    component: 'status-rotation',
+    intervalMs: STATUS_INTERVAL_MS,
+    staleAfterMs: STATUS_INTERVAL_MS * 3,
+    details: { mode: normalizeBotMode(client.botMode || process.env.BOT_MODE) },
+  });
+
   const initialActivities = buildActivities(client);
   let index = Math.floor(Math.random() * initialActivities.length);
   let firstRotation = true;
@@ -90,7 +101,12 @@ function startStatusRotation(client) {
       });
 
       index += 1;
+      sentinelScheduler.beat(STATUS_SCHEDULER_ID, {
+        activity: activity.name,
+        activityIndex: index,
+      });
     } catch (error) {
+      sentinelScheduler.fail(STATUS_SCHEDULER_ID, error);
       console.error('[STATUS] Failed to update presence:', error);
     }
   };
@@ -98,6 +114,7 @@ function startStatusRotation(client) {
   rotate();
 
   client.statusRotationInterval = setInterval(rotate, STATUS_INTERVAL_MS);
+  client.statusRotationInterval.unref?.();
 }
 
 module.exports = {

@@ -1,10 +1,12 @@
 'use strict';
 
 const guildManager = require('../../../core/guild/guildManager');
+const sentinelScheduler = require('../../../owner/sentinel/schedulerRegistry.js');
 const scheduledWelcome = require('./scheduledWelcome');
 
 const CHECK_INTERVAL_MS = 60 * 1000;
 const installed = Symbol.for('goliath.messageStudio.scheduledWelcomeScheduler');
+const SCHEDULER_ID = 'welcome:scheduled-welcome:global';
 
 function zonedClock(timezone, date = new Date()) {
   const formatter = new Intl.DateTimeFormat('en-GB', {
@@ -50,12 +52,43 @@ async function checkAllGuilds(client, date = new Date()) {
   return results;
 }
 
+async function monitoredCheckAllGuilds(client, date = new Date()) {
+  try {
+    const results = await checkAllGuilds(client, date);
+    const failed = results.filter((entry) => entry.result?.failed).length;
+    if (failed) {
+      sentinelScheduler.fail(SCHEDULER_ID, new Error(`${failed} scheduled welcome guild run(s) failed.`), {
+        guildsChecked: results.length,
+        guildFailures: failed,
+      });
+    } else {
+      sentinelScheduler.beat(SCHEDULER_ID, { guildsChecked: results.length, guildFailures: 0 });
+    }
+    return results;
+  } catch (error) {
+    sentinelScheduler.fail(SCHEDULER_ID, error, { phase: 'scheduler-cycle' });
+    throw error;
+  }
+}
+
 async function startup(client) {
   if (!client?.guilds?.cache) return { installed: false, reason: 'client_unavailable' };
   if (client[installed]) return { installed: false, reason: 'already_installed' };
   Object.defineProperty(client, installed, { value: true });
-  await checkAllGuilds(client);
-  const timer = setInterval(() => checkAllGuilds(client), CHECK_INTERVAL_MS);
+  sentinelScheduler.register({
+    id: SCHEDULER_ID,
+    module: 'welcome',
+    component: 'scheduled-welcome',
+    intervalMs: CHECK_INTERVAL_MS,
+    staleAfterMs: Math.max(CHECK_INTERVAL_MS * 3, 180_000),
+    details: { scope: 'all-guilds' },
+  });
+  await monitoredCheckAllGuilds(client);
+  const timer = setInterval(() => {
+    monitoredCheckAllGuilds(client).catch((error) => {
+      console.error('[ScheduledWelcome] Scheduler cycle failed:', error?.stack || error?.message || error);
+    });
+  }, CHECK_INTERVAL_MS);
   timer.unref?.();
   console.log('[ScheduledWelcome] Scheduler started (1 minute checks).');
   return { installed: true };
@@ -63,9 +96,11 @@ async function startup(client) {
 
 module.exports = {
   CHECK_INTERVAL_MS,
+  SCHEDULER_ID,
   zonedClock,
   isDue,
   checkGuild,
   checkAllGuilds,
+  monitoredCheckAllGuilds,
   startup,
 };

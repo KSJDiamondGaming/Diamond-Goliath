@@ -3,8 +3,10 @@
 const schedule = require('./schedule');
 const deployment = require('./scheduleDeployment');
 const guildManager = require('../../../core/guild/guildManager');
+const sentinelScheduler = require('../../../owner/sentinel/schedulerRegistry.js');
 
 const REMINDER_TICK_MS = 60 * 1000;
+const SCHEDULER_ID = 'schedule:processor:global';
 const timers = new WeakMap();
 const cleanedRoleEvents = new Set();
 
@@ -103,17 +105,45 @@ async function reconcileProcessedGuild(guild, beforeEvents, action) {
 }
 
 async function processAllGuilds(client, action) {
-  if (!client?.guilds?.cache) return;
+  if (!client?.guilds?.cache) return { processed: 0, failed: 0 };
 
+  let processed = 0;
+  let failed = 0;
   for (const guild of client.guilds.cache.values()) {
     if (!guildManager.isModuleEnabled(guild.id, 'schedule')) continue;
     const beforeEvents = schedule.listEvents(guild.id);
     try {
       await schedule.processGuild(guild, { action });
       await reconcileProcessedGuild(guild, beforeEvents, action);
+      processed += 1;
     } catch (error) {
+      failed += 1;
       console.warn(`[Schedule] ${guild.id}: ${error.message}`);
     }
+  }
+  return { processed, failed };
+}
+
+async function monitoredProcessAllGuilds(client, action) {
+  try {
+    const result = await processAllGuilds(client, action);
+    if (result.failed) {
+      sentinelScheduler.fail(SCHEDULER_ID, new Error(`${result.failed} schedule guild processor(s) failed.`), {
+        action,
+        guildsProcessed: result.processed,
+        guildFailures: result.failed,
+      });
+    } else {
+      sentinelScheduler.beat(SCHEDULER_ID, {
+        action,
+        guildsProcessed: result.processed,
+        guildFailures: 0,
+      });
+    }
+    return result;
+  } catch (error) {
+    sentinelScheduler.fail(SCHEDULER_ID, error, { action });
+    throw error;
   }
 }
 
@@ -121,10 +151,19 @@ async function startup(client) {
   if (!client?.guilds?.cache) throw new Error('Discord client is unavailable.');
   if (timers.has(client)) return timers.get(client);
 
-  await processAllGuilds(client, 'schedule_startup_process');
+  sentinelScheduler.register({
+    id: SCHEDULER_ID,
+    module: 'schedule',
+    component: 'processor',
+    intervalMs: REMINDER_TICK_MS,
+    staleAfterMs: Math.max(REMINDER_TICK_MS * 3, 180_000),
+    details: { scope: 'all-guilds' },
+  });
+
+  await monitoredProcessAllGuilds(client, 'schedule_startup_process');
 
   const timer = setInterval(() => {
-    processAllGuilds(client, 'schedule_interval_process').catch((error) => {
+    monitoredProcessAllGuilds(client, 'schedule_interval_process').catch((error) => {
       console.warn(`[Schedule] Processing failed: ${error.message}`);
     });
   }, REMINDER_TICK_MS);
@@ -139,11 +178,15 @@ function shutdown(client) {
   if (!timer) return false;
   clearInterval(timer);
   timers.delete(client);
+  sentinelScheduler.stop(SCHEDULER_ID, 'schedule processor shutdown');
   return true;
 }
 
 module.exports = {
   REMINDER_TICK_MS,
+  SCHEDULER_ID,
   startup,
   shutdown,
+  processAllGuilds,
+  monitoredProcessAllGuilds,
 };

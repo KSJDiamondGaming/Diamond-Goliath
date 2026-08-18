@@ -3,10 +3,13 @@
 const { MessageFlags } = require('discord.js');
 const polls = require('./polls');
 const { isModuleEnabled } = require('../../../core/guild/guildManager');
+const schedulerRegistry = require('../../../owner/sentinel/schedulerRegistry');
 
 const voteQueues = new Map();
 const processedInteractions = new Map();
 const STARTUP_KEY = Symbol.for('goliath.polls.startup');
+const AUTO_CLOSE_INTERVAL_MS = 60 * 1000;
+const SCHEDULER_ID = 'polls:auto-close:global';
 
 function cleanupProcessedInteractions() {
   const cutoff = Date.now() - 5 * 60 * 1000;
@@ -216,14 +219,51 @@ async function closeExpiredPollsForGuild(guild) {
   return { checked, closed, failed };
 }
 async function runAutoClose(client) {
-  const results = []; for (const guild of client.guilds.cache.values()) results.push({ guildId: guild.id, ...(await closeExpiredPollsForGuild(guild)) }); return results;
+  const results = [];
+  for (const guild of client.guilds.cache.values()) results.push({ guildId: guild.id, ...(await closeExpiredPollsForGuild(guild)) });
+  return results;
+}
+function summarizeAutoClose(results = []) {
+  return results.reduce((summary, result) => {
+    summary.guilds += 1;
+    summary.checked += Number(result.checked || 0);
+    summary.closed += Number(result.closed || 0);
+    summary.failed += Array.isArray(result.failed) ? result.failed.length : 0;
+    return summary;
+  }, { guilds: 0, checked: 0, closed: 0, failed: 0 });
+}
+async function runMonitoredAutoClose(client, phase = 'scheduled') {
+  try {
+    const results = await runAutoClose(client);
+    const summary = summarizeAutoClose(results);
+    if (summary.failed > 0) {
+      schedulerRegistry.fail(SCHEDULER_ID, new Error(`${summary.failed} poll auto-close operation(s) failed.`), { phase, ...summary });
+    } else {
+      schedulerRegistry.beat(SCHEDULER_ID, { phase, ...summary });
+    }
+    return results;
+  } catch (error) {
+    schedulerRegistry.fail(SCHEDULER_ID, error, { phase });
+    throw error;
+  }
 }
 async function startup(client) {
   if (!client?.guilds?.cache) throw new Error('Discord client is unavailable.');
   if (client[STARTUP_KEY]) return client[STARTUP_KEY];
-  await runAutoClose(client);
-  const timer = setInterval(() => { runAutoClose(client).catch((error) => console.warn(`[Polls] Auto-close scan failed: ${error.message}`)); }, 60 * 1000);
-  timer.unref?.(); client[STARTUP_KEY] = { timer, startedAt: polls.now() }; return client[STARTUP_KEY];
+  schedulerRegistry.register({
+    id: SCHEDULER_ID,
+    module: 'polls',
+    component: 'auto-close',
+    intervalMs: AUTO_CLOSE_INTERVAL_MS,
+    staleAfterMs: AUTO_CLOSE_INTERVAL_MS * 3,
+  });
+  await runMonitoredAutoClose(client, 'startup');
+  const timer = setInterval(() => {
+    runMonitoredAutoClose(client, 'scheduled').catch((error) => console.warn(`[Polls] Auto-close scan failed: ${error.message}`));
+  }, AUTO_CLOSE_INTERVAL_MS);
+  timer.unref?.();
+  client[STARTUP_KEY] = { timer, startedAt: polls.now() };
+  return client[STARTUP_KEY];
 }
 
 module.exports = {

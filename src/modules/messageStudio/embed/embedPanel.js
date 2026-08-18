@@ -7,6 +7,7 @@ const {
   ChannelSelectMenuBuilder,
   ChannelType,
   PermissionFlagsBits,
+  RoleSelectMenuBuilder,
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
@@ -734,6 +735,188 @@ function buildButtonsPanel(i, who) {
   ));
   return { embeds: [simplePanel("🔘 Button Management", `Panel ${s.selectedPanelIndex + 1}/${s.panels.length} buttons: ${(s.buttons || []).length}/${MAX_BUTTONS}`, s, who)], components: rows };
 }
+function selectedButtonManagerIndex(state) {
+  const buttons = Array.isArray(state.buttons) ? state.buttons : [];
+  return Number.isInteger(state.selectedButtonIndex) && buttons[state.selectedButtonIndex]
+    ? state.selectedButtonIndex
+    : null;
+}
+function buttonManagerStyleLabel(style) {
+  return { primary: "Primary", secondary: "Secondary", success: "Success", danger: "Danger" }[normalizedButtonStyle(style)];
+}
+function buttonManagerActionLabel(action) {
+  return { reply: "Reply", "toggle-role": "Toggle Role", "add-role": "Add Role", "remove-role": "Remove Role", "user-info": "User Info", "server-info": "Server Info" }[String(action || "").toLowerCase()] || "None";
+}
+function buttonManagerRowLabel(value) {
+  const row = normalizedButtonRow(value);
+  return row == null ? "Auto" : `Row ${row + 1}`;
+}
+function buttonManagerRoleDisplay(interaction, roleId) {
+  const role = interaction?.guild?.roles?.cache?.get?.(String(roleId || "").replace(/\D/g, ""));
+  return role ? `<@&${role.id}>` : roleId ? `Role ${roleId}` : "Not selected";
+}
+function buttonManagerDeployedRowFor(buttons, index) {
+  const rows = layoutEmbedButtons(buttons);
+  const row = rows.findIndex((entries) => entries.some((entry) => entry.index === index));
+  return row >= 0 ? row : null;
+}
+function buildButtonsManagerPanel(interaction) {
+  const state = getSession(interaction);
+  const buttons = Array.isArray(state.buttons) ? state.buttons : [];
+  const index = selectedButtonManagerIndex(state);
+  const item = index == null ? null : buttons[index];
+  const layout = layoutEmbedButtons(buttons);
+  const usedRows = layout.filter((row) => row.length).length;
+  const lines = [
+    `**Buttons:** ${buttons.length}/${MAX_BUTTONS}`,
+    `**Rows used when deployed:** ${usedRows}/${MAX_DEPLOYED_BUTTON_ROWS}`,
+    "",
+  ];
+  if (item) {
+    const destination = item.url
+      ? `Link: ${trim(item.url, 1000)}`
+      : item.action
+        ? `Action: ${buttonManagerActionLabel(item.action)}`
+        : "No destination configured";
+    const actualRow = buttonManagerDeployedRowFor(buttons, index);
+    lines.push(
+      `**Selected button ${index + 1}:** ${item.emoji ? `${item.emoji} ` : ""}${item.label || "Button"}`,
+      `**Style:** ${buttonManagerStyleLabel(item.style)}`,
+      `**Destination:** ${destination}`,
+      `**Row:** ${buttonManagerRowLabel(item.row)}${actualRow != null ? ` → Row ${actualRow + 1}` : ""}`,
+    );
+    const action = String(item.action || "").toLowerCase();
+    if (["toggle-role", "add-role", "remove-role"].includes(action)) lines.push(`**Role:** ${buttonManagerRoleDisplay(interaction, item.actionValue)}`);
+    if (action === "reply" && item.actionValue) lines.push(`**Reply:** ${trim(buttonResolved(item.actionValue, interaction), 900)}`);
+  } else {
+    lines.push("**Selected button:** None");
+  }
+  lines.push("", "Buttons support automatic or explicit row placement. Discord limits are enforced: up to 5 buttons per row and up to 20 buttons across 4 button rows.");
+
+  const embeds = [new EmbedBuilder().setColor(0x5865F2).setTitle("🔘 Buttons").setDescription(lines.join("\n").slice(0, 4096))];
+  if (item) {
+    const previewLabel = trim(buttonResolved(item.label || "Button", interaction), 80) || "Button";
+    const previewUrl = safeUrl(buttonResolved(item.url, interaction)) || "";
+    const actualRow = buttonManagerDeployedRowFor(buttons, index);
+    embeds.push(new EmbedBuilder().setColor(0x5865F2).setTitle("👁️ Selected Button Preview").setDescription([
+      `**Label:** ${item.emoji ? `${item.emoji} ` : ""}${previewLabel}`,
+      `**Style:** ${previewUrl ? "Link" : buttonManagerStyleLabel(item.style)}`,
+      `**Destination:** ${previewUrl ? previewUrl : item.action ? `Action: ${buttonManagerActionLabel(item.action)}` : "Not configured"}`,
+      `**Deploy row:** ${actualRow == null ? "Not placed" : actualRow + 1}`,
+    ].join("\n").slice(0, 4096)));
+  }
+
+  const rows = [];
+  if (buttons.length) {
+    rows.push(new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId("embed:button-manager-select")
+        .setPlaceholder("Select button")
+        .setMinValues(1)
+        .setMaxValues(1)
+        .addOptions(buttons.map((button, buttonIndex) => ({
+          label: `${buttonIndex + 1}. ${trim(button.label || "Button", 80)}`,
+          value: String(buttonIndex),
+          description: trim(`${buttonManagerRowLabel(button.row)} • ${button.url || buttonManagerActionLabel(button.action) || buttonManagerStyleLabel(button.style)}`, 100),
+          default: buttonIndex === index,
+        }))),
+    ));
+  }
+  rows.push(
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId("embed:button-manager-add").setLabel("➕ Add").setStyle(ButtonStyle.Success).setDisabled(buttons.length >= MAX_BUTTONS),
+      new ButtonBuilder().setCustomId("embed:button-manager-edit").setLabel("✏️ Edit").setStyle(ButtonStyle.Primary).setDisabled(index == null),
+      new ButtonBuilder().setCustomId("embed:button-manager-options").setLabel("⚙️ Options").setStyle(ButtonStyle.Secondary).setDisabled(index == null),
+      new ButtonBuilder().setCustomId("embed:button-manager-remove").setLabel("🗑️ Remove").setStyle(ButtonStyle.Danger).setDisabled(index == null),
+    ),
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId("embed:button-manager-up").setLabel("⬆️ Up").setStyle(ButtonStyle.Secondary).setDisabled(index == null || index <= 0),
+      new ButtonBuilder().setCustomId("embed:button-manager-down").setLabel("⬇️ Down").setStyle(ButtonStyle.Secondary).setDisabled(index == null || index >= buttons.length - 1),
+    ),
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId("embed:builder").setLabel("⬅️ Back").setStyle(ButtonStyle.Secondary),
+    ),
+  );
+  return { embeds, components: rows.filter(Boolean).slice(0, EMBED_COMPONENT_LIMITS.maxActionRows) };
+}
+function buildButtonOptionsPanel(interaction) {
+  const state = getSession(interaction);
+  const buttons = Array.isArray(state.buttons) ? state.buttons : [];
+  const index = selectedButtonManagerIndex(state);
+  if (index == null) return buildButtonsManagerPanel(interaction);
+
+  const builtInActions = ["reply", "toggle-role", "add-role", "remove-role", "user-info", "server-info"];
+  const roleActions = new Set(["toggle-role", "add-role", "remove-role"]);
+  const item = buttons[index];
+  const style = normalizedButtonStyle(item.style);
+  const action = String(item.action || "").toLowerCase();
+  const currentAction = builtInActions.includes(action) ? action : "none";
+  const configuredRow = normalizedButtonRow(item.row);
+  const actualRow = buttonManagerDeployedRowFor(buttons, index);
+  const destination = item.url
+    ? `Link: ${trim(item.url, 800)}`
+    : action
+      ? `Action: ${buttonManagerActionLabel(action)}${builtInActions.includes(action) ? "" : " (unsupported legacy action)"}`
+      : "No destination configured";
+  const details = [
+    `**Button:** ${index + 1} / ${buttons.length}`,
+    `**Label:** ${item.label || "Button"}`,
+    `**Style:** ${buttonManagerStyleLabel(style)}`,
+    `**Destination:** ${destination}`,
+    `**Layout:** ${buttonManagerRowLabel(item.row)}${actualRow != null ? ` → deploys on Row ${actualRow + 1}` : ""}`,
+  ];
+  if (roleActions.has(action)) details.push(`**Role:** ${buttonManagerRoleDisplay(interaction, item.actionValue)}`);
+  if (action === "reply") details.push(`**Reply:** ${item.actionValue ? trim(buttonResolved(item.actionValue, interaction), 900) : "Not configured"}`);
+  details.push("", "Choose the action and row placement below. Auto placement fills the first available row. A Discord button row can never contain more than 5 buttons.");
+
+  const rows = [
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId("embed:button-style:primary").setLabel("🔵 Primary").setStyle(style === "primary" ? ButtonStyle.Primary : ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId("embed:button-style:secondary").setLabel("⚪ Secondary").setStyle(style === "secondary" ? ButtonStyle.Primary : ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId("embed:button-style:success").setLabel("🟢 Success").setStyle(style === "success" ? ButtonStyle.Primary : ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId("embed:button-style:danger").setLabel("🔴 Danger").setStyle(style === "danger" ? ButtonStyle.Primary : ButtonStyle.Secondary),
+    ),
+    new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder().setCustomId("embed:button-action-select").setPlaceholder("Choose button action").setMinValues(1).setMaxValues(1).addOptions([
+        { label: "No Action / Link", value: "none", description: "Use no bot action; optionally configure a link", default: currentAction === "none" },
+        { label: "Reply", value: "reply", description: "Send the clicker an ephemeral reply", default: currentAction === "reply" },
+        { label: "Toggle Role", value: "toggle-role", description: "Add or remove the selected role", default: currentAction === "toggle-role" },
+        { label: "Add Role", value: "add-role", description: "Give the selected role", default: currentAction === "add-role" },
+        { label: "Remove Role", value: "remove-role", description: "Remove the selected role", default: currentAction === "remove-role" },
+        { label: "User Info", value: "user-info", description: "Show the clicker their Discord information", default: currentAction === "user-info" },
+        { label: "Server Info", value: "server-info", description: "Show information about this server", default: currentAction === "server-info" },
+      ]),
+    ),
+    new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder().setCustomId("embed:button-row-select").setPlaceholder("Choose button row").setMinValues(1).setMaxValues(1).addOptions([
+        { label: "Auto placement", value: "auto", description: "Fill the first available row automatically", default: configuredRow == null },
+        ...Array.from({ length: MAX_DEPLOYED_BUTTON_ROWS }, (_, row) => ({
+          label: `Row ${row + 1}`,
+          value: String(row),
+          description: `Place this button on Discord button row ${row + 1}`,
+          default: configuredRow === row,
+        })),
+      ]),
+    ),
+  ];
+  if (roleActions.has(action)) {
+    rows.push(new ActionRowBuilder().addComponents(
+      new RoleSelectMenuBuilder().setCustomId("embed:button-action-role").setPlaceholder("Select role for this button").setMinValues(1).setMaxValues(1),
+    ));
+  } else if (action === "reply") {
+    rows.push(new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId("embed:button-reply-edit").setLabel("✏️ Reply Text").setStyle(ButtonStyle.Primary),
+    ));
+  }
+  rows.push(new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId("embed:button-options-back").setLabel("⬅️ Back").setStyle(ButtonStyle.Secondary),
+  ));
+
+  return {
+    embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle("⚙️ Button Options").setDescription(details.join("\n").slice(0, 4096))],
+    components: rows.filter(Boolean).slice(0, EMBED_COMPONENT_LIMITS.maxActionRows),
+  };
+}
 function buildPresetsPanel(i, presets = {}, defaultName = null) {
   const s = getSession(i), rows = [];
   const entries = Object.entries(presets || {}).slice(0, 25);
@@ -1030,6 +1213,8 @@ module.exports = {
   buildFieldsManagerPanel,
   fieldEditorModal,
   buildButtonsPanel,
+  buildButtonsManagerPanel,
+  buildButtonOptionsPanel,
   buildPresetsPanel,
   buildHelpersPanel,
   buildReadinessPanel,

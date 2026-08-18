@@ -9,6 +9,7 @@ const {
 
   uploadBackup,
 } = require('./backupSync');
+const sentinelScheduler = require('../../../owner/sentinel/schedulerRegistry.js');
 
 // ======================================================
 // BACKUP WORKER
@@ -35,6 +36,7 @@ const {
 
 const DEFAULT_INTERVAL_MS =
   1000 * 60 * 5;
+const SCHEDULER_ID = 'serverBackups:remote-sync:global';
 
 // ======================================================
 // INTERNAL STATE
@@ -210,6 +212,43 @@ async function processPendingSyncs() {
 // WORKER RUNTIME
 // ======================================================
 
+function registerScheduler(intervalMs) {
+  return sentinelScheduler.register({
+    id: SCHEDULER_ID,
+    module: 'serverBackups',
+    component: 'remote-sync',
+    intervalMs,
+    staleAfterMs: Math.max(intervalMs * 3, 180_000),
+  });
+}
+
+async function runMonitoredSyncCycle(intervalMs) {
+  const schedulerId = registerScheduler(intervalMs);
+  try {
+    const result = await processPendingSyncs();
+    if (result?.skipped) {
+      sentinelScheduler.beat(schedulerId, { skipped: true, reason: result.reason || 'already-running' });
+      return result;
+    }
+
+    const failures = (result?.results || []).filter((item) => item?.result?.success === false && item?.result?.skipped !== true);
+    const details = {
+      processed: Number(result?.processed || 0),
+      failed: failures.length,
+      skipped: (result?.results || []).filter((item) => item?.result?.skipped === true).length,
+    };
+    if (failures.length) {
+      sentinelScheduler.fail(schedulerId, new Error(`${failures.length} backup sync operation(s) failed.`), details);
+    } else {
+      sentinelScheduler.beat(schedulerId, details);
+    }
+    return result;
+  } catch (error) {
+    sentinelScheduler.fail(schedulerId, error, { phase: 'sync-cycle' });
+    throw error;
+  }
+}
+
 function startBackupWorker(
   options = {}
 ) {
@@ -232,10 +271,11 @@ function startBackupWorker(
     };
   }
 
+  registerScheduler(intervalMs);
   interval = setInterval(
     async () => {
       try {
-        await processPendingSyncs();
+        await runMonitoredSyncCycle(intervalMs);
       } catch (error) {
         console.error(
           '[Backup Sync Worker Error]',
