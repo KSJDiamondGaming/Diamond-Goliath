@@ -79,14 +79,33 @@ module.exports = [
     async execute(client) { await startWorker(client); },
   },
   {
+    name: Events.GuildMemberAdd,
+    async execute(member) {
+      try {
+        const restored = birthdays.markMemberJoined(member.guild.id, member.id, { actorId: member.id });
+        if (restored) await birthdays.processGuild(member.guild, { action: 'birthdays_member_join_process' });
+      } catch (error) {
+        console.warn(`[Birthdays] join ${member.guild.id}/${member.id}: ${error.message}`);
+      }
+    },
+  },
+  {
+    name: Events.GuildMemberRemove,
+    async execute(member) {
+      try {
+        birthdays.markMemberLeft(member.guild.id, member.id, { actorId: member.id });
+      } catch (error) {
+        console.warn(`[Birthdays] leave ${member.guild.id}/${member.id}: ${error.message}`);
+      }
+    },
+  },
+  {
     name: Events.InteractionCreate,
     async execute(interaction) {
       try {
         const id = String(interaction?.customId || '');
         if (!id) return;
 
-        // These two screens are rendered by Goliath's canonical routers first.
-        // Birthdays is appended afterward so the new module does not require a second central router path.
         if (id === 'admin:studio:communityStudio') {
           await appendBirthdayButton(interaction, 'admin:birthdays', 'Birthdays');
           return;

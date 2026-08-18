@@ -69,13 +69,14 @@ function getBulkAction(customId) {
 
 function parseConfirmActionContext(customId) {
   const parts = String(customId || '').split(':');
+  const requestedPage = Number(parts[5]);
   return {
     token: parts[1] || null,
     context: {
       view: parts[2] || 'overview',
       actionFilter: parts[3] || 'all',
       statusFilter: parts[4] || 'all',
-      page: Number(parts[5]) || 0,
+      page: Number.isFinite(requestedPage) ? Math.max(0, Math.trunc(requestedPage)) : 0,
     },
   };
 }

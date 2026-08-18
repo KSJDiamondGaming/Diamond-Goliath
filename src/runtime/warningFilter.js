@@ -9,9 +9,9 @@ process.emitWarning = (warning, ...args) => {
 };
 
 const originalConsoleWarn = console.warn.bind(console);
-const runtimeMode = String(process.env.BOT_MODE || 'DEV').trim().toUpperCase();
 console.warn = (...args) => {
   const message = args.map((item) => String(item?.message || item || '')).join(' ');
+  const runtimeMode = String(process.env.BOT_MODE || 'DEV').trim().toUpperCase();
   if (runtimeMode !== 'DEV' && message.includes('[Audit Intelligence] Configured Command Center guild') && message.includes('is unavailable.')) return;
   originalConsoleWarn(...args);
 };
