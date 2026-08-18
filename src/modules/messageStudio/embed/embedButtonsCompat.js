@@ -1,14 +1,9 @@
 'use strict';
 
 const {
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
   EmbedBuilder,
   MessageFlags,
   PermissionsBitField,
-  RoleSelectMenuBuilder,
-  StringSelectMenuBuilder,
 } = require('discord.js');
 const guildManager = require('../../../core/guild/guildManager');
 const { getAllEmbedDeployments } = require('./embedDeployments');
@@ -28,65 +23,10 @@ const DANGEROUS_ROLE_PERMISSIONS = [
   PermissionsBitField.Flags.ModerateMembers,
 ];
 
-function enforceLimits(rows = []) {
-  const maxActionRows = panel.EMBED_COMPONENT_LIMITS.maxActionRows;
-  const maxComponentsPerRow = panel.EMBED_COMPONENT_LIMITS.maxComponentsPerRow;
-  return rows.filter(Boolean).slice(0, maxActionRows).map((row) => {
-    if (!Array.isArray(row?.components) || row.components.length <= maxComponentsPerRow) return row;
-    row.components = row.components.slice(0, maxComponentsPerRow);
-    return row;
-  });
-}
 function resolved(value, interaction) {
   try { return typeof panel.replaceVars === 'function' && interaction ? panel.replaceVars(String(value || ''), interaction) : String(value || ''); }
   catch { return String(value || ''); }
 }
-
-function selectedIndex(state) { const buttons = Array.isArray(state.buttons) ? state.buttons : []; return Number.isInteger(state.selectedButtonIndex) && buttons[state.selectedButtonIndex] ? state.selectedButtonIndex : null; }
-function normalizedStyle(value) { const style = String(value || 'primary').toLowerCase(); return ['primary', 'secondary', 'success', 'danger'].includes(style) ? style : 'primary'; }
-function styleLabel(style) { return { primary: 'Primary', secondary: 'Secondary', success: 'Success', danger: 'Danger' }[normalizedStyle(style)]; }
-function actionLabel(action) { return { reply: 'Reply', 'toggle-role': 'Toggle Role', 'add-role': 'Add Role', 'remove-role': 'Remove Role', 'user-info': 'User Info', 'server-info': 'Server Info' }[String(action || '').toLowerCase()] || 'None'; }
-function rowLabel(value) { const row = panel.embedButtonRow(value); return row == null ? 'Auto' : `Row ${row + 1}`; }
-function roleDisplay(interaction, roleId) { const role = interaction?.guild?.roles?.cache?.get?.(String(roleId || '').replace(/\D/g, '')); return role ? `<@&${role.id}>` : roleId ? `Role ${roleId}` : 'Not selected'; }
-function deployedRowFor(buttons, index) { const rows = panel.layoutEmbedButtons(buttons); const row = rows.findIndex((entries) => entries.some((entry) => entry.index === index)); return row >= 0 ? row : null; }
-
-function buildButtonOptionsPanel(interaction) {
-  const state = panel.getSession(interaction), buttons = Array.isArray(state.buttons) ? state.buttons : [], index = selectedIndex(state);
-  if (index == null) return panel.buildButtonsManagerPanel(interaction);
-  const item = buttons[index], style = normalizedStyle(item.style), action = String(item.action || '').toLowerCase();
-  const currentAction = BUILT_IN_ACTIONS.includes(action) ? action : 'none', configuredRow = panel.embedButtonRow(item.row), actualRow = deployedRowFor(buttons, index);
-  const destination = item.url ? `Link: ${panel.trim(item.url, 800)}` : action ? `Action: ${actionLabel(action)}${BUILT_IN_ACTIONS.includes(action) ? '' : ' (unsupported legacy action)'}` : 'No destination configured';
-  const details = [`**Button:** ${index + 1} / ${buttons.length}`, `**Label:** ${item.label || 'Button'}`, `**Style:** ${styleLabel(style)}`, `**Destination:** ${destination}`, `**Layout:** ${rowLabel(item.row)}${actualRow != null ? ` → deploys on Row ${actualRow + 1}` : ''}`];
-  if (ROLE_ACTIONS.has(action)) details.push(`**Role:** ${roleDisplay(interaction, item.actionValue)}`);
-  if (action === 'reply') details.push(`**Reply:** ${item.actionValue ? panel.trim(resolved(item.actionValue, interaction), 900) : 'Not configured'}`);
-  details.push('', 'Choose the action and row placement below. Auto placement fills the first available row. A Discord button row can never contain more than 5 buttons.');
-  const rows = [
-    new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('embed:button-style:primary').setLabel('🔵 Primary').setStyle(style === 'primary' ? ButtonStyle.Primary : ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId('embed:button-style:secondary').setLabel('⚪ Secondary').setStyle(style === 'secondary' ? ButtonStyle.Primary : ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId('embed:button-style:success').setLabel('🟢 Success').setStyle(style === 'success' ? ButtonStyle.Primary : ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId('embed:button-style:danger').setLabel('🔴 Danger').setStyle(style === 'danger' ? ButtonStyle.Primary : ButtonStyle.Secondary),
-    ),
-    new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('embed:button-action-select').setPlaceholder('Choose button action').setMinValues(1).setMaxValues(1).addOptions([
-      { label: 'No Action / Link', value: 'none', description: 'Use no bot action; optionally configure a link', default: currentAction === 'none' },
-      { label: 'Reply', value: 'reply', description: 'Send the clicker an ephemeral reply', default: currentAction === 'reply' },
-      { label: 'Toggle Role', value: 'toggle-role', description: 'Add or remove the selected role', default: currentAction === 'toggle-role' },
-      { label: 'Add Role', value: 'add-role', description: 'Give the selected role', default: currentAction === 'add-role' },
-      { label: 'Remove Role', value: 'remove-role', description: 'Remove the selected role', default: currentAction === 'remove-role' },
-      { label: 'User Info', value: 'user-info', description: 'Show the clicker their Discord information', default: currentAction === 'user-info' },
-      { label: 'Server Info', value: 'server-info', description: 'Show information about this server', default: currentAction === 'server-info' },
-    ])),
-    new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('embed:button-row-select').setPlaceholder('Choose button row').setMinValues(1).setMaxValues(1).addOptions([
-      { label: 'Auto placement', value: 'auto', description: 'Fill the first available row automatically', default: configuredRow == null },
-      ...Array.from({ length: panel.MAX_DEPLOYED_BUTTON_ROWS }, (_, row) => ({ label: `Row ${row + 1}`, value: String(row), description: `Place this button on Discord button row ${row + 1}`, default: configuredRow === row })),
-    ])),
-  ];
-  if (ROLE_ACTIONS.has(action)) rows.push(new ActionRowBuilder().addComponents(new RoleSelectMenuBuilder().setCustomId('embed:button-action-role').setPlaceholder('Select role for this button').setMinValues(1).setMaxValues(1)));
-  else if (action === 'reply') rows.push(new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('embed:button-reply-edit').setLabel('✏️ Reply Text').setStyle(ButtonStyle.Primary)));
-  rows.push(new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('embed:button-options-back').setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary)));
-  return { embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('⚙️ Button Options').setDescription(details.join('\n').slice(0, 4096))], components: enforceLimits(rows) };
-}
-panel.buildButtonOptionsPanel = buildButtonOptionsPanel;
 
 function cleanAction(value) { return String(value || '').trim().toLowerCase().replace(/_/g, '-'); }
 function parseRoleId(value) { const raw = String(value || '').replace(/[<@&>]/g, '').trim(); return /^\d{15,25}$/.test(raw) ? raw : null; }
