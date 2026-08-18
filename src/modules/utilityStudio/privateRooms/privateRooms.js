@@ -12,9 +12,11 @@ const {
   saveModuleSection,
   updateModuleSection,
 } = require('../../../core/guild/moduleSectionManager');
+const schedulerRegistry = require('../../../owner/sentinel/schedulerRegistry');
 
 const SECTION = 'privateRooms';
 const TICK_MS = 60 * 1000;
+const PRIVATE_ROOMS_SCHEDULER_ID = 'privateRooms:expiry:global';
 const MAX_TRANSCRIPT_MESSAGES = 2000;
 const DEFAULT_PURPOSES = Object.freeze([
   'Private Conversation',
@@ -623,11 +625,55 @@ async function processGuild(guild, meta = {}) {
 
 async function startup(client) {
   if (client.__goliathPrivateRoomsStarted) return client.__goliathPrivateRoomsStarted;
+
+  schedulerRegistry.register({
+    id: PRIVATE_ROOMS_SCHEDULER_ID,
+    module: SECTION,
+    component: 'expiry',
+    intervalMs: TICK_MS,
+    staleAfterMs: Math.max(TICK_MS * 3, 180_000),
+    environment: client.botMode || process.env.BOT_MODE || null,
+  });
+
   const run = async () => {
-    for (const guild of client.guilds.cache.values()) await processGuild(guild, { action: 'private_rooms_tick' }).catch(() => null);
+    let expired = 0;
+    let failures = 0;
+    let guildsChecked = 0;
+
+    try {
+      for (const guild of client.guilds.cache.values()) {
+        guildsChecked += 1;
+        try {
+          const result = await processGuild(guild, { action: 'private_rooms_tick' });
+          expired += Number(result?.expired || 0);
+          failures += Number(result?.failures || 0);
+        } catch (error) {
+          failures += 1;
+          console.warn(`[PrivateRooms] Scheduler failed for ${guild.id}: ${error.message}`);
+        }
+      }
+
+      const details = { guildsChecked, expired, failures };
+      if (failures > 0) {
+        schedulerRegistry.fail(
+          PRIVATE_ROOMS_SCHEDULER_ID,
+          new Error(`Private Rooms expiry cycle completed with ${failures} failure(s).`),
+          details,
+        );
+      } else {
+        schedulerRegistry.beat(PRIVATE_ROOMS_SCHEDULER_ID, details);
+      }
+      return details;
+    } catch (error) {
+      schedulerRegistry.fail(PRIVATE_ROOMS_SCHEDULER_ID, error, { guildsChecked, expired, failures });
+      throw error;
+    }
   };
+
   await run();
-  const timer = setInterval(run, TICK_MS);
+  const timer = setInterval(() => {
+    run().catch((error) => console.warn(`[PrivateRooms] Expiry scheduler failed: ${error.message}`));
+  }, TICK_MS);
   timer.unref?.();
   client.__goliathPrivateRoomsStarted = timer;
   return timer;
