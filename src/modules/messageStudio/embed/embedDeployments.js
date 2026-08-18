@@ -102,6 +102,24 @@ function legacyEmbedButtonActionFromId(customId) {
   return match ? normalizeEmbedButtonAction(match[1]) : '';
 }
 
+async function applyEmbedRoleMutation(member, role, action, actorLabel) {
+  const roleId = role.id;
+  if (action === 'add-role') {
+    if (member.roles.cache.has(roleId)) return { outcome: 'already-has-role' };
+    await member.roles.add(role, `Embed Studio button used by ${actorLabel}`);
+    return { outcome: 'added' };
+  }
+  if (action === 'remove-role') {
+    if (!member.roles.cache.has(roleId)) return { outcome: 'missing-role' };
+    await member.roles.remove(role, `Embed Studio button used by ${actorLabel}`);
+    return { outcome: 'removed' };
+  }
+  const hasRole = member.roles.cache.has(roleId);
+  if (hasRole) await member.roles.remove(role, `Embed Studio role toggle used by ${actorLabel}`);
+  else await member.roles.add(role, `Embed Studio role toggle used by ${actorLabel}`);
+  return { outcome: hasRole ? 'removed' : 'added' };
+}
+
 function requireGuildId(value) {
   const id = String(value ?? '').trim();
   if (!/^\d{15,25}$/.test(id)) throw new Error('Invalid guild ID.');
@@ -464,6 +482,7 @@ module.exports = {
   normalizeEmbedButtonAction,
   parseEmbedButtonActionIndex,
   legacyEmbedButtonActionFromId,
+  applyEmbedRoleMutation,
   getAllEmbedDeployments,
   getEmbedDeployment,
   getEmbedDeploymentByMessage,
