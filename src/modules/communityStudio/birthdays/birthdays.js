@@ -24,6 +24,7 @@ const DEFAULT_GROUP_TEMPLATES = [
   '🎂 Today we’re celebrating {count} birthdays! Happy Birthday {mentions} from all of us at {server}! 🎉',
 ];
 const DEFAULT_MESSAGE_TEMPLATE = DEFAULT_INDIVIDUAL_TEMPLATES[0];
+const DEFAULT_CARD_IMAGE_URL = 'https://media.giphy.com/media/VyB31XTqZNJhFRZNyl/giphy.gif';
 const now = () => new Date().toISOString();
 const clone = (value) => value == null ? value : JSON.parse(JSON.stringify(value));
 const clean = (value, max = 1000) => String(value ?? '').trim().slice(0, max);
@@ -81,6 +82,7 @@ function defaultSection() {
       cardTitle: '🎂 Happy Birthday!',
       cardFooter: 'From everyone at {server} 🎉',
       cardColor: '#5865F2',
+      cardImageMode: 'default',
       cardImageUrl: null,
       cardUseServerIcon: true,
     },
@@ -141,6 +143,11 @@ function normalizeSection(section = {}) {
   const rawMessageTemplate = clean(raw.settings?.messageTemplate, 1800);
   const templates = normalizeTemplates(raw.settings?.messageTemplates || rawMessageTemplate || base.settings.messageTemplates, DEFAULT_INDIVIDUAL_TEMPLATES);
   const groupTemplates = normalizeTemplates(raw.settings?.groupMessageTemplates || base.settings.groupMessageTemplates, DEFAULT_GROUP_TEMPLATES);
+  const rawCardImageUrl = validUrl(raw.settings?.cardImageUrl);
+  const requestedImageMode = String(raw.settings?.cardImageMode || '').trim().toLowerCase();
+  const cardImageMode = ['default', 'custom', 'none'].includes(requestedImageMode)
+    ? requestedImageMode
+    : (rawCardImageUrl ? 'custom' : 'default');
   const settings = {
     ...base.settings,
     ...(raw.settings || {}),
@@ -162,7 +169,8 @@ function normalizeSection(section = {}) {
     cardTitle: clean(raw.settings?.cardTitle || base.settings.cardTitle, 256) || base.settings.cardTitle,
     cardFooter: clean(raw.settings?.cardFooter || base.settings.cardFooter, 2048) || base.settings.cardFooter,
     cardColor: validColor(raw.settings?.cardColor) ? `#${String(raw.settings.cardColor).replace('#', '').toUpperCase()}` : base.settings.cardColor,
-    cardImageUrl: validUrl(raw.settings?.cardImageUrl),
+    cardImageMode,
+    cardImageUrl: rawCardImageUrl,
     cardUseServerIcon: raw.settings?.cardUseServerIcon !== false,
   };
   const members = {};
@@ -205,6 +213,7 @@ function updateSettings(guildId, patch = {}, meta = {}) {
   if ('timezone' in normalizedPatch) normalizedPatch.timezone = normalizeTimezone(normalizedPatch.timezone);
   if ('messageTemplates' in normalizedPatch) normalizedPatch.messageTemplates = normalizeTemplates(normalizedPatch.messageTemplates, DEFAULT_INDIVIDUAL_TEMPLATES);
   if ('groupMessageTemplates' in normalizedPatch) normalizedPatch.groupMessageTemplates = normalizeTemplates(normalizedPatch.groupMessageTemplates, DEFAULT_GROUP_TEMPLATES);
+  if ('cardImageMode' in normalizedPatch && !['default', 'custom', 'none'].includes(String(normalizedPatch.cardImageMode))) normalizedPatch.cardImageMode = 'default';
   return updateSection(guildId, (section) => ({ ...section, settings: { ...section.settings, ...normalizedPatch } }), meta).settings;
 }
 
@@ -331,6 +340,11 @@ function pickGroupTemplate(settings, members, today) {
   const templates = normalizeTemplates(settings.groupMessageTemplates, DEFAULT_GROUP_TEMPLATES);
   return seededTemplate(templates, `${members.map((member) => member.userId).sort().join(':')}:${today}:group`);
 }
+function resolvedCardImage(settings) {
+  if (settings.cardImageMode === 'none') return null;
+  if (settings.cardImageMode === 'custom') return validUrl(settings.cardImageUrl);
+  return DEFAULT_CARD_IMAGE_URL;
+}
 function birthdayEmbed(guild, section, members, year, today, test = false) {
   const embed = new EmbedBuilder().setColor(colorInt(section.settings.cardColor)).setTitle(test ? `🧪 TEST · ${section.settings.cardTitle}` : section.settings.cardTitle);
   const description = members.length > 1
@@ -339,7 +353,8 @@ function birthdayEmbed(guild, section, members, year, today, test = false) {
   embed.setDescription(description.slice(0, 4096));
   const footer = clean(section.settings.cardFooter, 2048).replaceAll('{server}', guild.name || 'this server');
   if (footer) embed.setFooter({ text: footer });
-  if (section.settings.cardImageUrl) embed.setImage(section.settings.cardImageUrl);
+  const cardImage = resolvedCardImage(section.settings);
+  if (cardImage) embed.setImage(cardImage);
   if (section.settings.cardUseServerIcon && guild.iconURL?.()) embed.setThumbnail(guild.iconURL({ size: 256 }));
   embed.setTimestamp();
   return embed;
@@ -522,7 +537,7 @@ function start(client) {
 
 module.exports = {
   SECTION, TICK_MS, start, defaultSection, normalizeSection, normalizeMember,
-  DEFAULT_INDIVIDUAL_TEMPLATES, DEFAULT_GROUP_TEMPLATES,
+  DEFAULT_INDIVIDUAL_TEMPLATES, DEFAULT_GROUP_TEMPLATES, DEFAULT_CARD_IMAGE_URL,
   getSection, saveSection, updateSection, updateSettings, incrementAnalytics,
   getBirthday, setBirthday, removeBirthday, listUpcoming, nextBirthday, ageFor,
   monthlyWindow, monthlyBoardEmbed, birthdayEmbed, processGuild, buildHealth, validTimezone, validTime,
