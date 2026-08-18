@@ -2,7 +2,7 @@
 
 const {
   ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelSelectMenuBuilder, ChannelType,
-  EmbedBuilder, ModalBuilder, RoleSelectMenuBuilder, TextInputBuilder, TextInputStyle,
+  EmbedBuilder, ModalBuilder, RoleSelectMenuBuilder, StringSelectMenuBuilder, TextInputBuilder, TextInputStyle,
 } = require('discord.js');
 const guildManager = require('../../../core/guild/guildManager');
 const birthdays = require('./birthdays');
@@ -10,6 +10,18 @@ const birthdays = require('./birthdays');
 const row = (...items) => new ActionRowBuilder().addComponents(...items.filter(Boolean));
 const button = (id, label, style = ButtonStyle.Secondary, disabled = false) => new ButtonBuilder().setCustomId(id).setLabel(label).setStyle(style).setDisabled(disabled);
 const UPCOMING_DAYS = 60;
+const TIMEZONES = [
+  ['🇬🇧 Europe/London', 'Europe/London'],
+  ['🇮🇪 Europe/Dublin', 'Europe/Dublin'],
+  ['🇺🇸 America/New_York', 'America/New_York'],
+  ['🇺🇸 America/Chicago', 'America/Chicago'],
+  ['🇺🇸 America/Denver', 'America/Denver'],
+  ['🇺🇸 America/Los_Angeles', 'America/Los_Angeles'],
+  ['🇨🇦 America/Toronto', 'America/Toronto'],
+  ['🇦🇺 Australia/Sydney', 'Australia/Sydney'],
+  ['🇳🇿 Pacific/Auckland', 'Pacific/Auckland'],
+  ['🌐 UTC', 'UTC'],
+];
 
 function birthdayWindow(guildId) {
   const list = birthdays.listUpcoming(guildId, 100, UPCOMING_DAYS);
@@ -50,7 +62,7 @@ function adminPayload(interaction) {
     components: [
       row(
         button('admin:birthdays:celebration', '🎉 Celebration', ButtonStyle.Primary),
-        button('admin:birthdays:management', '🛠️ Birthday Management'),
+        button('admin:birthdays:management', '🛠️ Management'),
       ),
       row(
         button('admin:studio:communityStudio', '⬅️ Back'),
@@ -60,23 +72,71 @@ function adminPayload(interaction) {
   };
 }
 
+function timezoneMenu(currentTimezone) {
+  const options = TIMEZONES.map(([label, value]) => ({ label, value, default: value === currentTimezone }));
+  if (!TIMEZONES.some(([, value]) => value === currentTimezone) && currentTimezone) {
+    options.unshift({ label: `Current · ${currentTimezone}`.slice(0, 100), value: currentTimezone, default: true });
+  }
+  return new StringSelectMenuBuilder()
+    .setCustomId('admin:birthdays:timezone')
+    .setPlaceholder('Choose birthday timezone')
+    .setMinValues(1)
+    .setMaxValues(1)
+    .addOptions(...options.slice(0, 24));
+}
+
 function celebrationPayload(interaction) {
   const section = birthdays.getSection(interaction.guildId);
   const desc = [
     '**📣 Public Celebration**',
     `Channel: ${section.settings.announcementChannelId ? `<#${section.settings.announcementChannelId}>` : '**Not set**'}`,
-    `Time: **${section.settings.announcementTime} · ${section.settings.timezone}**`,
-    `Celebrations: **${section.settings.combineSameDay ? 'Combined' : 'Individual'}**`,
+    `Celebration time: **${section.settings.announcementTime}**`,
+    `Timezone: **${section.settings.timezone}**`,
+    `Same-day birthdays: **${section.settings.combineSameDay ? 'Combined' : 'Individual'}**`,
+    `Individual messages: **${section.settings.messageTemplates.length} ready**`,
+    `Combined messages: **${section.settings.groupMessageTemplates.length} ready**`,
     `Style: **${section.settings.useBirthdayEmbed ? 'Birthday Card' : 'Plain Message'}**`,
-    `Message templates: **${section.settings.messageTemplates.length}**`,
-    '', 'Configure the member-facing birthday celebration here.',
+    '', 'Messages rotate automatically. Use {mention}, {server}, {user} and {age} for individual messages; {mentions}, {count} and {server} for combined messages.',
   ].join('\n');
   return {
     embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('🎉 Birthday Celebration').setDescription(desc).setFooter({ text: 'Goliath Birthdays · Celebration' }).setTimestamp()],
     components: [
       row(new ChannelSelectMenuBuilder().setCustomId('admin:birthdays:channel').setPlaceholder('Public birthday celebration channel').setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setMinValues(0).setMaxValues(1).setDefaultChannels(section.settings.announcementChannelId ? [section.settings.announcementChannelId] : [])),
-      row(button('admin:birthdays:settings', '⚙️ Celebration Settings', ButtonStyle.Primary), button('admin:birthdays:card', '🎨 Birthday Card')),
+      row(timezoneMenu(section.settings.timezone)),
+      row(
+        button('admin:birthdays:settings', '🕐 Set Time', ButtonStyle.Primary),
+        button('admin:birthdays:combine', section.settings.combineSameDay ? '👥 Combined: On' : '👤 Combined: Off', section.settings.combineSameDay ? ButtonStyle.Success : ButtonStyle.Secondary),
+        button('admin:birthdays:card', '🎨 Birthday Card'),
+        button('admin:birthdays:timezone:custom', '🌍 Custom TZ'),
+      ),
+      row(
+        button('admin:birthdays:messages:individual', '💬 Individual Messages'),
+        button('admin:birthdays:messages:group', '🎉 Group Messages'),
+      ),
       row(button('admin:birthdays', '⬅️ Back')),
+    ],
+  };
+}
+
+function messagePoolPayload(interaction, type) {
+  const section = birthdays.getSection(interaction.guildId);
+  const group = type === 'group';
+  const templates = group ? section.settings.groupMessageTemplates : section.settings.messageTemplates;
+  const variables = group ? '`{mentions}` · `{count}` · `{server}`' : '`{mention}` · `{user}` · `{server}` · `{age}`';
+  const preview = templates.slice(0, 5).map((message, index) => `**${index + 1}.** ${message}`).join('\n\n');
+  return {
+    embeds: [new EmbedBuilder()
+      .setColor(0x5865F2)
+      .setTitle(group ? '🎉 Group Birthday Messages' : '💬 Individual Birthday Messages')
+      .setDescription(`Active messages: **${templates.length}**\nVariables: ${variables}\n\n${preview || 'No messages configured.'}\n\nGoliath rotates through this pool automatically.`)
+      .setFooter({ text: 'Goliath Birthdays · Celebration Messages' })
+      .setTimestamp()],
+    components: [
+      row(
+        button(`admin:birthdays:messages:${type}:edit`, '✏️ Edit Messages', ButtonStyle.Primary),
+        button(`admin:birthdays:messages:${type}:defaults`, '♻️ Restore Defaults'),
+      ),
+      row(button('admin:birthdays:celebration', '⬅️ Back')),
     ],
   };
 }
@@ -93,7 +153,7 @@ function managementPayload(interaction) {
     '', 'Manage server-side birthday roles, the management board and member birthday records here.',
   ].join('\n');
   return {
-    embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('🛠️ Birthday Management').setDescription(desc).setFooter({ text: 'Goliath Birthdays · Management' }).setTimestamp()],
+    embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('🛠️ Management').setDescription(desc).setFooter({ text: 'Goliath Birthdays · Management' }).setTimestamp()],
     components: [
       row(new RoleSelectMenuBuilder().setCustomId('admin:birthdays:role').setPlaceholder('Optional all-day birthday role').setMinValues(0).setMaxValues(1).setDefaultRoles(section.settings.birthdayRoleId ? [section.settings.birthdayRoleId] : [])),
       row(new ChannelSelectMenuBuilder().setCustomId('admin:birthdays:monthly:channel').setPlaceholder('Optional management birthday board channel').setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setMinValues(0).setMaxValues(1).setDefaultChannels(section.settings.monthlyBoardChannelId ? [section.settings.monthlyBoardChannelId] : [])),
@@ -107,19 +167,38 @@ function toolsPayload() {
   return {
     embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('⚙️ Birthday Settings').setDescription('Birthday diagnostics, testing and data tools.').setFooter({ text: 'Goliath Birthdays · Settings' }).setTimestamp()],
     components: [
-      row(button('admin:birthdays:testmenu', '🧪 Test Centre'), button('admin:birthdays:health', '🩺 Health')),
-      row(button('admin:birthdays:import', '📥 Import'), button('admin:birthdays:export', '📤 Export')),
+      row(
+        button('admin:birthdays:testmenu', '🧪 Test Centre'),
+        button('admin:birthdays:health', '🩺 Health'),
+        button('admin:birthdays:import', '📥 Import'),
+        button('admin:birthdays:export', '📤 Export'),
+      ),
       row(button('admin:birthdays', '⬅️ Back')),
     ],
   };
 }
 
 function settingsModal(section) {
-  return new ModalBuilder().setCustomId('admin:birthdays:settings:submit').setTitle('Birthday Celebration').addComponents(
-    row(new TextInputBuilder().setCustomId('time').setLabel('Celebration time (HH:MM)').setStyle(TextInputStyle.Short).setRequired(true).setValue(section.settings.announcementTime)),
-    row(new TextInputBuilder().setCustomId('timezone').setLabel('Birthday timezone').setStyle(TextInputStyle.Short).setRequired(true).setValue(section.settings.timezone).setPlaceholder('Europe/London')),
-    row(new TextInputBuilder().setCustomId('combine').setLabel('Combine same-day birthdays? on / off').setStyle(TextInputStyle.Short).setRequired(true).setValue(section.settings.combineSameDay ? 'on' : 'off')),
-    row(new TextInputBuilder().setCustomId('messages').setLabel('Random messages — one per line').setStyle(TextInputStyle.Paragraph).setRequired(true).setMaxLength(4000).setValue(section.settings.messageTemplates.join('\n'))),
+  return new ModalBuilder().setCustomId('admin:birthdays:settings:submit').setTitle('Birthday Celebration Time').addComponents(
+    row(new TextInputBuilder().setCustomId('time').setLabel('Celebration time (HH:MM)').setStyle(TextInputStyle.Short).setRequired(true).setValue(section.settings.announcementTime).setPlaceholder('09:00')),
+  );
+}
+function customTimezoneModal(section) {
+  return new ModalBuilder().setCustomId('admin:birthdays:timezone:custom:submit').setTitle('Custom Birthday Timezone').addComponents(
+    row(new TextInputBuilder().setCustomId('timezone').setLabel('IANA timezone').setStyle(TextInputStyle.Short).setRequired(true).setValue(section.settings.timezone).setPlaceholder('Europe/London')),
+  );
+}
+function messagesModal(section, type) {
+  const group = type === 'group';
+  const values = group ? section.settings.groupMessageTemplates : section.settings.messageTemplates;
+  return new ModalBuilder().setCustomId(`admin:birthdays:messages:${type}:submit`).setTitle(group ? 'Group Birthday Messages' : 'Individual Birthday Messages').addComponents(
+    row(new TextInputBuilder()
+      .setCustomId('messages')
+      .setLabel('One rotating message per line')
+      .setStyle(TextInputStyle.Paragraph)
+      .setRequired(true)
+      .setMaxLength(4000)
+      .setValue(values.join('\n'))),
   );
 }
 function cardModal(section) {
@@ -209,7 +288,15 @@ async function handleAdmin(interaction) {
   if (id === 'admin:birthdays:celebration') { await respond(interaction, celebrationPayload(interaction)); return true; }
   if (id === 'admin:birthdays:management') { await respond(interaction, managementPayload(interaction)); return true; }
   if (id === 'admin:birthdays:tools') { await respond(interaction, toolsPayload()); return true; }
+  if (id === 'admin:birthdays:messages:individual') { await respond(interaction, messagePoolPayload(interaction, 'individual')); return true; }
+  if (id === 'admin:birthdays:messages:group') { await respond(interaction, messagePoolPayload(interaction, 'group')); return true; }
   if (id === 'admin:birthdays:channel' && interaction.isChannelSelectMenu?.()) birthdays.updateSettings(interaction.guildId, { announcementChannelId: interaction.values[0] || null }, { ...actor, action: 'birthdays_channel_update' });
+  else if (id === 'admin:birthdays:timezone' && interaction.isStringSelectMenu?.()) {
+    const timezone = interaction.values[0];
+    if (!birthdays.validTimezone(timezone)) throw new Error('That timezone is not valid.');
+    birthdays.updateSettings(interaction.guildId, { timezone }, { ...actor, action: 'birthdays_timezone_update' });
+  }
+  else if (id === 'admin:birthdays:timezone:custom') { await interaction.showModal(customTimezoneModal(birthdays.getSection(interaction.guildId))); return true; }
   else if (id === 'admin:birthdays:role' && interaction.isRoleSelectMenu?.()) birthdays.updateSettings(interaction.guildId, { birthdayRoleId: interaction.values[0] || null }, { ...actor, action: 'birthdays_role_update' });
   else if (id === 'admin:birthdays:monthly:channel' && interaction.isChannelSelectMenu?.()) birthdays.updateSettings(interaction.guildId, { monthlyBoardChannelId: interaction.values[0] || null }, { ...actor, action: 'birthdays_monthly_channel_update' });
   else if (id === 'admin:birthdays:settings') { await interaction.showModal(settingsModal(birthdays.getSection(interaction.guildId))); return true; }
@@ -218,6 +305,16 @@ async function handleAdmin(interaction) {
   else if (id === 'admin:birthdays:manage') { await interaction.showModal(manageModal()); return true; }
   else if (id === 'admin:birthdays:import') { await interaction.showModal(importModal()); return true; }
   else if (id === 'admin:birthdays:combine') birthdays.updateSettings(interaction.guildId, { combineSameDay: !birthdays.getSection(interaction.guildId).settings.combineSameDay }, { ...actor, action: 'birthdays_combine_toggle' });
+  else if (id === 'admin:birthdays:messages:individual:edit') { await interaction.showModal(messagesModal(birthdays.getSection(interaction.guildId), 'individual')); return true; }
+  else if (id === 'admin:birthdays:messages:group:edit') { await interaction.showModal(messagesModal(birthdays.getSection(interaction.guildId), 'group')); return true; }
+  else if (id === 'admin:birthdays:messages:individual:defaults') {
+    birthdays.updateSettings(interaction.guildId, { messageTemplates: birthdays.DEFAULT_INDIVIDUAL_TEMPLATES }, { ...actor, action: 'birthdays_individual_messages_defaults' });
+    await respond(interaction, messagePoolPayload(interaction, 'individual')); return true;
+  }
+  else if (id === 'admin:birthdays:messages:group:defaults') {
+    birthdays.updateSettings(interaction.guildId, { groupMessageTemplates: birthdays.DEFAULT_GROUP_TEMPLATES }, { ...actor, action: 'birthdays_group_messages_defaults' });
+    await respond(interaction, messagePoolPayload(interaction, 'group')); return true;
+  }
   else if (id === 'admin:birthdays:testmenu') {
     await interaction.reply({ content: '**🧪 Birthday Test Centre**\nThese tests do not mark live birthdays as announced or change scheduler state.', flags: 64, components: [row(button('admin:birthdays:test:role', '🎭 Test Role'), button('admin:birthdays:test:announcement', '📣 Test Celebration'), button('admin:birthdays:test:monthly', '🗓️ Test Monthly Board'))] }); return true;
   }
@@ -233,10 +330,24 @@ async function handleAdmin(interaction) {
     await interaction.reply({ content: `**🩺 Birthday Health — ${health.healthy ? 'Healthy' : 'Needs attention'}**\nIssues: **${health.issues.length}** · Warnings: **${health.warnings.length}**\nLast processed: **${a.lastProcessed || 'Never'}**\nLast announcement: **${a.lastAnnouncement || 'Never'}**\nLast monthly board: **${a.lastMonthlyBoard || 'Never'}**\nNext scheduled announcement: **${a.nextAnnouncement}**\nFailures: **${a.failures}**${a.lastFailure ? ` · Last: ${a.lastFailure}` : ''}`, flags: 64 }); return true;
   }
   else if (id === 'admin:birthdays:settings:submit') {
-    const time = interaction.fields.getTextInputValue('time').trim(); const timezone = interaction.fields.getTextInputValue('timezone').trim();
-    if (!birthdays.validTime(time) || !birthdays.validTimezone(timezone)) throw new Error('Check the announcement time and timezone.');
-    birthdays.updateSettings(interaction.guildId, { announcementTime: time, timezone, combineSameDay: onOff(interaction.fields.getTextInputValue('combine')), messageTemplates: interaction.fields.getTextInputValue('messages') }, { ...actor, action: 'birthdays_settings_update' });
-    await interaction.reply({ content: '✅ Birthday celebration settings updated.', flags: 64 }); return true;
+    const time = interaction.fields.getTextInputValue('time').trim();
+    if (!birthdays.validTime(time)) throw new Error('Celebration time must use HH:MM.');
+    birthdays.updateSettings(interaction.guildId, { announcementTime: time }, { ...actor, action: 'birthdays_time_update' });
+    await interaction.reply({ content: '✅ Birthday celebration time updated.', flags: 64 }); return true;
+  }
+  else if (id === 'admin:birthdays:timezone:custom:submit') {
+    const timezone = interaction.fields.getTextInputValue('timezone').trim();
+    if (!birthdays.validTimezone(timezone)) throw new Error('Enter a valid IANA timezone such as Europe/London.');
+    birthdays.updateSettings(interaction.guildId, { timezone }, { ...actor, action: 'birthdays_timezone_update' });
+    await interaction.reply({ content: `✅ Birthday timezone updated to **${timezone}**.`, flags: 64 }); return true;
+  }
+  else if (id === 'admin:birthdays:messages:individual:submit') {
+    birthdays.updateSettings(interaction.guildId, { messageTemplates: interaction.fields.getTextInputValue('messages') }, { ...actor, action: 'birthdays_individual_messages_update' });
+    await interaction.reply({ content: '✅ Individual birthday message pool updated.', flags: 64 }); return true;
+  }
+  else if (id === 'admin:birthdays:messages:group:submit') {
+    birthdays.updateSettings(interaction.guildId, { groupMessageTemplates: interaction.fields.getTextInputValue('messages') }, { ...actor, action: 'birthdays_group_messages_update' });
+    await interaction.reply({ content: '✅ Group birthday message pool updated.', flags: 64 }); return true;
   }
   else if (id === 'admin:birthdays:card:submit') {
     const color = interaction.fields.getTextInputValue('color').trim(); if (!/^#?[0-9a-f]{6}$/i.test(color)) throw new Error('Card colour must be a 6-digit hex colour such as #5865F2.');
@@ -261,7 +372,7 @@ async function handleAdmin(interaction) {
     let parsed; try { parsed = JSON.parse(interaction.fields.getTextInputValue('json')); } catch { throw new Error('Import data is not valid JSON.'); }
     const result = birthdays.importData(interaction.guildId, parsed, { ...actor, action: 'birthday_admin_import' }); await interaction.reply({ content: `✅ Imported **${result.imported}** birthday record(s). Total stored: **${result.total}**.`, flags: 64 }); return true;
   }
-  if (id === 'admin:birthdays:channel') { await respond(interaction, celebrationPayload(interaction)); return true; }
+  if (id === 'admin:birthdays:channel' || id === 'admin:birthdays:timezone' || id === 'admin:birthdays:combine') { await respond(interaction, celebrationPayload(interaction)); return true; }
   if (id === 'admin:birthdays:role' || id === 'admin:birthdays:monthly:channel') { await respond(interaction, managementPayload(interaction)); return true; }
   await respond(interaction, adminPayload(interaction)); return true;
 }
