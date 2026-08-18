@@ -4,11 +4,13 @@ const crypto = require('node:crypto');
 const { PermissionFlagsBits } = require('discord.js');
 const guildManager = require('../../../core/guild/guildManager');
 const { getModuleSection, saveModuleSection, updateModuleSection } = require('../../../core/guild/moduleSectionManager');
+const sentinelScheduler = require('../../../owner/sentinel/schedulerRegistry.js');
 
 const SECTION = 'timedRoles';
 const UNITS = Object.freeze(['minutes', 'hours', 'days', 'weeks', 'months', 'years']);
 const MODES = Object.freeze(['keep_all', 'highest_only']);
 const SCHEDULER_TICK_MS = 5 * 60 * 1000;
+const SCHEDULER_ID = 'timedRoles:progression:global';
 const now = () => new Date().toISOString();
 const clone = (value) => value == null ? value : JSON.parse(JSON.stringify(value));
 const cleanId = (value) => {
@@ -348,15 +350,45 @@ async function scanGuild(guild, meta = {}) {
 async function startup(client) {
   if (client.__goliathTimedRolesStarted) return null;
   client.__goliathTimedRolesStarted = true;
+  sentinelScheduler.register({
+    id: SCHEDULER_ID,
+    module: SECTION,
+    component: 'progression-scan',
+    intervalMs: SCHEDULER_TICK_MS,
+    staleAfterMs: Math.max(SCHEDULER_TICK_MS * 3, 180_000),
+  });
   const run = async (force = false) => {
     const timestamp = Date.now();
-    for (const guild of client.guilds.cache.values()) {
-      if (!force && !shouldScanGuild(guild.id, timestamp)) continue;
-      await scanGuild(guild, { actorId: client.user?.id }).catch((error) => console.warn(`[TimedRoles] ${guild.id}: ${error.message}`));
+    let scannedGuilds = 0;
+    let guildFailures = 0;
+    let memberFailures = 0;
+    try {
+      for (const guild of client.guilds.cache.values()) {
+        if (!force && !shouldScanGuild(guild.id, timestamp)) continue;
+        try {
+          const result = await scanGuild(guild, { actorId: client.user?.id });
+          scannedGuilds += 1;
+          memberFailures += Number(result?.failed || 0);
+        } catch (error) {
+          guildFailures += 1;
+          console.warn(`[TimedRoles] ${guild.id}: ${error.message}`);
+        }
+      }
+      if (guildFailures > 0) {
+        sentinelScheduler.fail(SCHEDULER_ID, new Error(`${guildFailures} guild timed-role scan(s) failed.`), { scannedGuilds, guildFailures, memberFailures });
+      } else {
+        sentinelScheduler.beat(SCHEDULER_ID, { scannedGuilds, guildFailures, memberFailures });
+      }
+      return { scannedGuilds, guildFailures, memberFailures };
+    } catch (error) {
+      sentinelScheduler.fail(SCHEDULER_ID, error, { scannedGuilds, guildFailures, memberFailures });
+      throw error;
     }
   };
   await run(true);
-  const timer = setInterval(() => run(false), SCHEDULER_TICK_MS);
+  const timer = setInterval(() => {
+    run(false).catch((error) => console.warn(`[TimedRoles] Scheduler failed: ${error.message}`));
+  }, SCHEDULER_TICK_MS);
   timer.unref?.();
   return timer;
 }
