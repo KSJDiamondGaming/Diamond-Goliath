@@ -9,7 +9,21 @@ const TICK_MS = 60 * 1000;
 const UPCOMING_WINDOW_DAYS = 30;
 const LEFT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 const LEGACY_MESSAGE_TEMPLATE = '🎂 Happy Birthday {mention}! We hope you have a fantastic day! 🎉';
-const DEFAULT_MESSAGE_TEMPLATE = '🎂 Happy Birthday {mention}! From everyone at {server}, we hope you have a fantastic day! 🎉';
+const DEFAULT_INDIVIDUAL_TEMPLATES = [
+  '🎂 Happy Birthday {mention}! We hope you have a fantastic day! 🎉',
+  '🎉 Happy Birthday {mention}! From everyone at {server}, we hope you have an amazing day! 🎂',
+  '🥳 Wishing {mention} a very Happy Birthday from everyone at {server}! Have a brilliant day! 🎉',
+  '🎈 It’s {mention}’s birthday! Everyone at {server} wishes you a fantastic day! 🎂',
+  '🎁 Happy Birthday {mention}! Here’s to another amazing year from all of us at {server}! 🥳',
+];
+const DEFAULT_GROUP_TEMPLATES = [
+  '🎂 Happy Birthday {mentions}! From everyone at {server}, we hope you all have a fantastic day! 🎉',
+  '🥳 We have {count} birthdays to celebrate today! Happy Birthday {mentions} from everyone at {server}! 🎂',
+  '🎉 Birthday celebrations all round! Happy Birthday {mentions}! Have an amazing day from everyone at {server}! 🎈',
+  '🎁 A very Happy Birthday to {mentions}! Everyone at {server} hopes you have a brilliant day! 🥳',
+  '🎂 Today we’re celebrating {count} birthdays! Happy Birthday {mentions} from all of us at {server}! 🎉',
+];
+const DEFAULT_MESSAGE_TEMPLATE = DEFAULT_INDIVIDUAL_TEMPLATES[0];
 const now = () => new Date().toISOString();
 const clone = (value) => value == null ? value : JSON.parse(JSON.stringify(value));
 const clean = (value, max = 1000) => String(value ?? '').trim().slice(0, max);
@@ -40,10 +54,10 @@ function validTime(value) {
   return /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(String(value || ''));
 }
 
-function normalizeTemplates(input, fallback = [DEFAULT_MESSAGE_TEMPLATE]) {
+function normalizeTemplates(input, fallback = DEFAULT_INDIVIDUAL_TEMPLATES) {
   const list = Array.isArray(input) ? input : String(input || '').split(/\r?\n/);
   const result = [...new Set(list.map((item) => clean(item, 1800)).filter(Boolean))].slice(0, 20);
-  return result.length ? result : fallback;
+  return result.length ? result : [...fallback];
 }
 
 function defaultSection() {
@@ -53,7 +67,8 @@ function defaultSection() {
       announcementTime: '09:00',
       timezone: 'Europe/London',
       messageTemplate: DEFAULT_MESSAGE_TEMPLATE,
-      messageTemplates: [DEFAULT_MESSAGE_TEMPLATE],
+      messageTemplates: [...DEFAULT_INDIVIDUAL_TEMPLATES],
+      groupMessageTemplates: [...DEFAULT_GROUP_TEMPLATES],
       birthdayRoleId: null,
       showAgeByDefault: false,
       announceByDefault: true,
@@ -124,7 +139,8 @@ function normalizeSection(section = {}) {
   const raw = section && typeof section === 'object' ? section : {};
   const rawTimezone = normalizeTimezone(raw.settings?.timezone);
   const rawMessageTemplate = clean(raw.settings?.messageTemplate, 1800);
-  const templates = normalizeTemplates(raw.settings?.messageTemplates || rawMessageTemplate || base.settings.messageTemplates);
+  const templates = normalizeTemplates(raw.settings?.messageTemplates || rawMessageTemplate || base.settings.messageTemplates, DEFAULT_INDIVIDUAL_TEMPLATES);
+  const groupTemplates = normalizeTemplates(raw.settings?.groupMessageTemplates || base.settings.groupMessageTemplates, DEFAULT_GROUP_TEMPLATES);
   const settings = {
     ...base.settings,
     ...(raw.settings || {}),
@@ -133,6 +149,7 @@ function normalizeSection(section = {}) {
     timezone: rawTimezone && validTimezone(rawTimezone) ? rawTimezone : base.settings.timezone,
     messageTemplate: !rawMessageTemplate || rawMessageTemplate === LEGACY_MESSAGE_TEMPLATE ? templates[0] : rawMessageTemplate,
     messageTemplates: templates,
+    groupMessageTemplates: groupTemplates,
     birthdayRoleId: cleanId(raw.settings?.birthdayRoleId),
     showAgeByDefault: raw.settings?.showAgeByDefault === true,
     announceByDefault: raw.settings?.announceByDefault !== false,
@@ -186,7 +203,8 @@ function incrementAnalytics(guildId, patch, meta = {}) {
 function updateSettings(guildId, patch = {}, meta = {}) {
   const normalizedPatch = { ...patch };
   if ('timezone' in normalizedPatch) normalizedPatch.timezone = normalizeTimezone(normalizedPatch.timezone);
-  if ('messageTemplates' in normalizedPatch) normalizedPatch.messageTemplates = normalizeTemplates(normalizedPatch.messageTemplates);
+  if ('messageTemplates' in normalizedPatch) normalizedPatch.messageTemplates = normalizeTemplates(normalizedPatch.messageTemplates, DEFAULT_INDIVIDUAL_TEMPLATES);
+  if ('groupMessageTemplates' in normalizedPatch) normalizedPatch.groupMessageTemplates = normalizeTemplates(normalizedPatch.groupMessageTemplates, DEFAULT_GROUP_TEMPLATES);
   return updateSection(guildId, (section) => ({ ...section, settings: { ...section.settings, ...normalizedPatch } }), meta).settings;
 }
 
@@ -294,15 +312,31 @@ function renderTemplate(template, guild, member, year) {
   return clean(template, 1800).replaceAll('{mention}', `<@${member.userId}>`).replaceAll('{user}', display)
     .replaceAll('{server}', guild.name || 'this server').replaceAll('{age}', age == null ? '' : String(age));
 }
+function renderGroupTemplate(template, guild, members) {
+  const mentions = members.map((member) => `<@${member.userId}>`).join(' ');
+  return clean(template, 1800)
+    .replaceAll('{mentions}', mentions)
+    .replaceAll('{count}', String(members.length))
+    .replaceAll('{server}', guild.name || 'this server');
+}
+function seededTemplate(templates, seedKey) {
+  const normalized = normalizeTemplates(templates, DEFAULT_INDIVIDUAL_TEMPLATES);
+  const seed = String(seedKey).split('').reduce((sum, ch) => (sum + ch.charCodeAt(0)) % 2147483647, 0);
+  return normalized[seed % normalized.length];
+}
 function pickTemplate(settings, member, today) {
-  const templates = normalizeTemplates(settings.messageTemplates || settings.messageTemplate);
-  const seed = `${member.userId}:${today}`.split('').reduce((sum, ch) => (sum + ch.charCodeAt(0)) % 2147483647, 0);
-  return templates[seed % templates.length];
+  return seededTemplate(settings.messageTemplates || settings.messageTemplate, `${member.userId}:${today}`);
+}
+function pickGroupTemplate(settings, members, today) {
+  const templates = normalizeTemplates(settings.groupMessageTemplates, DEFAULT_GROUP_TEMPLATES);
+  return seededTemplate(templates, `${members.map((member) => member.userId).sort().join(':')}:${today}:group`);
 }
 function birthdayEmbed(guild, section, members, year, today, test = false) {
   const embed = new EmbedBuilder().setColor(colorInt(section.settings.cardColor)).setTitle(test ? `🧪 TEST · ${section.settings.cardTitle}` : section.settings.cardTitle);
-  const lines = members.map((member) => renderTemplate(pickTemplate(section.settings, member, today), guild, member, year));
-  embed.setDescription(lines.join('\n\n').slice(0, 4096));
+  const description = members.length > 1
+    ? renderGroupTemplate(pickGroupTemplate(section.settings, members, today), guild, members)
+    : renderTemplate(pickTemplate(section.settings, members[0], today), guild, members[0], year);
+  embed.setDescription(description.slice(0, 4096));
   const footer = clean(section.settings.cardFooter, 2048).replaceAll('{server}', guild.name || 'this server');
   if (footer) embed.setFooter({ text: footer });
   if (section.settings.cardImageUrl) embed.setImage(section.settings.cardImageUrl);
@@ -348,17 +382,19 @@ async function sendPublicAnnouncement(guild, section, members, year, today, test
   if (section.settings.useBirthdayEmbed) {
     await channel.send({ embeds: [birthdayEmbed(guild, section, members, year, today, test)], allowedMentions: { users: members.map((m) => m.userId) } });
   } else {
-    const content = members.map((member) => renderTemplate(pickTemplate(section.settings, member, today), guild, member, year)).join('\n');
+    const content = members.length > 1
+      ? renderGroupTemplate(pickGroupTemplate(section.settings, members, today), guild, members)
+      : renderTemplate(pickTemplate(section.settings, members[0], today), guild, members[0], year);
     await channel.send({ content: test ? `🧪 **TEST**\n${content}` : content, allowedMentions: { users: members.map((m) => m.userId) } });
   }
 }
 
 async function processGuild(guild, meta = {}) {
   if (!guild || !guildManager.isModuleEnabled(guild.id, SECTION)) return { disabled: true };
-  const section = getSection(guild.id); cleanupStaleRecords(section);
+  const section = getSection(guild.id); const staleRemoved = cleanupStaleRecords(section);
   const parts = zonedParts(new Date(), section.settings.timezone); const year = Number(parts.year);
   const today = `${parts.year}-${parts.month}-${parts.day}`; const currentTime = `${parts.hour}:${parts.minute}`;
-  const result = { announced: 0, rolesAssigned: 0, rolesRemoved: 0, staleRemoved: 0, failures: 0 };
+  const result = { announced: 0, rolesAssigned: 0, rolesRemoved: 0, staleRemoved, failures: 0 };
   const roleId = section.settings.birthdayRoleId;
 
   for (const member of Object.values(section.members)) {
@@ -486,6 +522,7 @@ function start(client) {
 
 module.exports = {
   SECTION, TICK_MS, start, defaultSection, normalizeSection, normalizeMember,
+  DEFAULT_INDIVIDUAL_TEMPLATES, DEFAULT_GROUP_TEMPLATES,
   getSection, saveSection, updateSection, updateSettings, incrementAnalytics,
   getBirthday, setBirthday, removeBirthday, listUpcoming, nextBirthday, ageFor,
   monthlyWindow, monthlyBoardEmbed, birthdayEmbed, processGuild, buildHealth, validTimezone, validTime,
