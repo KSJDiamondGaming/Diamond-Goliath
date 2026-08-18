@@ -22,9 +22,6 @@ function installMediaBoundary(targetPanel) {
 installMediaBoundary(panel);
 
 const interactions = require('./embedInteractions');
-panel.handleButtonAction = interactions.handleButtonAction;
-panel.EMBED_BUTTON_ACTIONS = deployments.EMBED_BUTTON_ACTIONS;
-
 const validation = require('./embedValidation');
 
 function getOverview(guildId) {
