@@ -42,6 +42,9 @@ function register(input = {}) {
     consecutiveFailures: Number(existing.consecutiveFailures || 0),
     beats: Number(existing.beats || 0),
     failures: Number(existing.failures || 0),
+    state: 'running',
+    stoppedAt: null,
+    stopReason: null,
     details: { ...(existing.details || {}), ...(input.details || {}) },
   };
 
@@ -66,6 +69,9 @@ function ensureEntry(idOrInput) {
 function beat(idOrInput, details = {}) {
   const { id, entry } = ensureEntry(idOrInput);
   const now = new Date().toISOString();
+  entry.state = 'running';
+  entry.stoppedAt = null;
+  entry.stopReason = null;
   entry.lastBeatAt = now;
   entry.lastSuccessAt = now;
   entry.lastError = null;
@@ -79,11 +85,25 @@ function beat(idOrInput, details = {}) {
 function fail(idOrInput, error, details = {}) {
   const { id, entry } = ensureEntry(idOrInput);
   const now = new Date().toISOString();
+  entry.state = 'running';
+  entry.stoppedAt = null;
+  entry.stopReason = null;
   entry.lastBeatAt = now;
   entry.lastFailureAt = now;
   entry.lastError = String(error?.stack || error?.message || error || 'Unknown scheduler failure').slice(0, 3500);
   entry.consecutiveFailures += 1;
   entry.failures += 1;
+  entry.details = { ...(entry.details || {}), ...(details || {}) };
+  registry.set(id, entry);
+  return { ...entry, details: { ...entry.details } };
+}
+
+function stop(idOrInput, reason = 'intentional shutdown', details = {}) {
+  const { id, entry } = ensureEntry(idOrInput);
+  const now = new Date().toISOString();
+  entry.state = 'stopped';
+  entry.stoppedAt = now;
+  entry.stopReason = String(reason || 'intentional shutdown').slice(0, 500);
   entry.details = { ...(entry.details || {}), ...(details || {}) };
   registry.set(id, entry);
   return { ...entry, details: { ...entry.details } };
@@ -109,6 +129,7 @@ module.exports = {
   register,
   beat,
   fail,
+  stop,
   unregister,
   entries,
   snapshot,
