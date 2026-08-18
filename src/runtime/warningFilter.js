@@ -8,6 +8,14 @@ process.emitWarning = (warning, ...args) => {
   originalEmitWarning(warning, ...args);
 };
 
+const originalConsoleWarn = console.warn.bind(console);
+const runtimeMode = String(process.env.BOT_MODE || 'DEV').trim().toUpperCase();
+console.warn = (...args) => {
+  const message = args.map((item) => String(item?.message || item || '')).join(' ');
+  if (runtimeMode !== 'DEV' && message.includes('[Audit Intelligence] Configured Command Center guild') && message.includes('is unavailable.')) return;
+  originalConsoleWarn(...args);
+};
+
 try {
   const { ModalSubmitInteraction } = require('discord.js');
   const original = ModalSubmitInteraction?.prototype?.isFromMessage;
