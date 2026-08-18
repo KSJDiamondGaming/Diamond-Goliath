@@ -263,7 +263,10 @@ jobs:
               mkdir -p "$RUNTIME_DIR"
               if [ -d "$BACKUP_DIR" ]; then
                 rm -rf "$RUNTIME_DIR"/* "$RUNTIME_DIR"/.[!.]* "$RUNTIME_DIR"/..?* 2>/dev/null || true
-                cp -a "$BACKUP_DIR/." "$RUNTIME_DIR/"
+                # The running bot can recreate log directories between the cleanup above
+                # and the restore. Extracting a tar stream merges into those directories
+                # safely instead of failing like `cp -a BACKUP/. RUNTIME/` can.
+                tar -C "$BACKUP_DIR" -cf - . | tar -C "$RUNTIME_DIR" -xf -
               fi
             }
             cleanup() { status=$?; restore_runtime; rm -rf "$BACKUP_DIR"; exit "$status"; }
