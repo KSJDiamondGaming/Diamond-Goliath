@@ -272,7 +272,6 @@ function monthlyBoardEmbed(guild, section) {
   const embed = new EmbedBuilder()
     .setColor(0x5865F2)
     .setTitle('🎂 Upcoming Birthdays — Next 2 Months')
-    .setDescription('Management birthday overview. The second month will roll forward and become the first month on next month’s board.')
     .setFooter({ text: `Goliath Birthdays · Monthly Board · ${section.settings.timezone}` })
     .setTimestamp();
   for (const group of groups) {
@@ -322,181 +321,133 @@ async function removeTrackedBirthdayRole(guild, member, roleId, meta = {}, reaso
   if (!discordMember) throw new Error('Birthday member is unavailable.');
   if (!role) return false;
   if (!discordMember.roles.cache.has(roleId)) return false;
-  if (!canManageBirthdayRole(guild, role)) throw new Error('Previous birthday role cannot be managed. Check Manage Roles permission and role hierarchy.');
-  await discordMember.roles.remove(roleId, reason);
+  if (!canManageBirthdayRole(guild, role)) throw new Error(`Goliath cannot manage the birthday role ${role.name}.`);
+  await discordMember.roles.remove(role, reason);
   incrementAnalytics(guild.id, { rolesRemoved: 1 }, meta);
   return true;
 }
 
-async function assignBirthdayRole(guild, section, member, meta = {}) {
+async function processGuild(guild) {
+  if (!guild || !guildManager.isModuleEnabled(guild.id, 'birthdays')) return;
+  const section = getSection(guild.id);
+  const parts = zonedParts(new Date(), section.settings.timezone);
+  const year = Number(parts.year);
+  const todayKey = `${parts.year}-${parts.month}-${parts.day}`;
+  const currentTime = `${parts.hour}:${parts.minute}`;
   const roleId = section.settings.birthdayRoleId;
-  if (!roleId) return false;
-  const { discordMember, role, hasRole } = await getBirthdayRoleState(guild, section, member);
-  if (!discordMember) throw new Error('Birthday member is unavailable.');
-  if (!role) throw new Error('Birthday role is unavailable.');
-  if (!canManageBirthdayRole(guild, role)) throw new Error('Birthday role cannot be managed. Check Manage Roles permission and role hierarchy.');
-  if (!hasRole) await discordMember.roles.add(roleId, 'Goliath birthday role');
-  setBirthday(guild.id, member.userId, { roleAssignedAt: member.roleAssignedAt || now(), roleAssignedRoleId: roleId }, { ...meta, action: 'birthday_role_assigned' });
-  if (!hasRole) incrementAnalytics(guild.id, { rolesAssigned: 1 }, meta);
-  return !hasRole;
-}
-
-async function cleanupBirthdayRoles(guild, section, meta = {}) {
-  const local = zonedParts(new Date(), section.settings.timezone);
-  const year = Number(local.year);
-  const today = `${local.year}-${local.month}-${local.day}`;
-  const configuredRoleId = section.settings.birthdayRoleId;
-  let removed = 0;
   for (const member of Object.values(section.members)) {
-    if (birthdayKey(member, year, section.settings) === today) continue;
-    const trackedRoleId = member.roleAssignedRoleId || configuredRoleId;
-    if (!trackedRoleId) {
-      if (member.roleAssignedAt || member.roleAssignedRoleId) {
-        setBirthday(guild.id, member.userId, { roleAssignedAt: null, roleAssignedRoleId: null }, { ...meta, action: 'birthday_role_state_cleared' });
-      }
-      continue;
-    }
     try {
-      if (await removeTrackedBirthdayRole(guild, member, trackedRoleId, meta, 'Goliath birthday role ended')) removed += 1;
+      const isToday = birthdayKey(member, year, section.settings) === todayKey;
+      const trackedRoleId = cleanId(member.roleAssignedRoleId);
+      if (trackedRoleId && trackedRoleId !== roleId) {
+        await removeTrackedBirthdayRole(guild, member, trackedRoleId, { action: 'birthday_role_replaced' });
+        member.roleAssignedAt = null;
+        member.roleAssignedRoleId = null;
+      }
+      if (isToday && roleId) {
+        const { role, discordMember, hasRole } = await getBirthdayRoleState(guild, section, member);
+        if (!discordMember) throw new Error('Birthday member is unavailable.');
+        if (!role) throw new Error('Configured birthday role no longer exists.');
+        if (!canManageBirthdayRole(guild, role)) throw new Error(`Goliath cannot manage the birthday role ${role.name}.`);
+        if (!hasRole) {
+          await discordMember.roles.add(role, 'Goliath birthday role');
+          incrementAnalytics(guild.id, { rolesAssigned: 1 }, { action: 'birthday_role_assign' });
+        }
+        if (!member.roleAssignedAt || member.roleAssignedRoleId !== roleId) {
+          member.roleAssignedAt = member.roleAssignedAt || now();
+          member.roleAssignedRoleId = roleId;
+        }
+      } else if (!isToday && trackedRoleId) {
+        await removeTrackedBirthdayRole(guild, member, trackedRoleId, { action: 'birthday_role_expire' }, 'Goliath birthday role expired');
+        member.roleAssignedAt = null;
+        member.roleAssignedRoleId = null;
+      }
+      if (!isToday || !member.announce || member.lastAnnouncedKey === todayKey || currentTime < section.settings.announcementTime) continue;
+      const channelId = section.settings.announcementChannelId;
+      if (!channelId) continue;
+      const channel = guild.channels.cache.get(channelId) || await guild.channels.fetch(channelId).catch(() => null);
+      if (!channel?.isTextBased?.()) throw new Error('Birthday announcement channel is unavailable.');
+      const content = renderMessage(section.settings.messageTemplate, guild, member, year);
+      await channel.send({ content, allowedMentions: { users: [member.userId], roles: roleId ? [roleId] : [] } });
+      member.lastAnnouncedKey = todayKey;
+      incrementAnalytics(guild.id, { announcementsSent: 1 }, { action: 'birthday_announcement' });
     } catch (error) {
-      console.warn(`[Birthdays] ${guild.id}/${member.userId} role cleanup: ${error.message}`);
-      continue;
-    }
-    if (member.roleAssignedAt || member.roleAssignedRoleId) {
-      setBirthday(guild.id, member.userId, { roleAssignedAt: null, roleAssignedRoleId: null }, { ...meta, action: 'birthday_role_removed' });
+      incrementAnalytics(guild.id, { failures: 1 }, { action: 'birthday_process_failure' });
+      console.warn(`[birthdays] ${guild.id}/${member.userId}: ${error.message}`);
     }
   }
-  return removed;
-}
-
-async function processMonthlyBoard(guild, section, local, currentTime, meta = {}) {
-  const channelId = section.settings.monthlyBoardChannelId;
-  if (!channelId || local.day !== '01' || currentTime < section.settings.monthlyBoardTime) return false;
-  const monthKey = `${local.year}-${local.month}`;
-  if (section.monthlyBoard?.lastPostedKey === monthKey) return false;
-  const channel = guild.channels.cache.get(channelId) || await guild.channels.fetch(channelId).catch(() => null);
-  if (!channel?.send) throw new Error('Monthly birthday board channel is unavailable.');
-  await channel.send({ embeds: [monthlyBoardEmbed(guild, section)], allowedMentions: { parse: [] } });
-  updateSection(guild.id, (current) => ({ ...current, monthlyBoard: { ...current.monthlyBoard, lastPostedKey: monthKey } }), { ...meta, action: 'birthday_monthly_board_posted' });
-  incrementAnalytics(guild.id, { monthlyBoardsSent: 1 }, meta);
-  return true;
-}
-
-async function processGuild(guild, meta = {}) {
-  if (!guildManager.isModuleEnabled(guild.id, SECTION)) return { disabled: true, announced: 0, monthlyBoards: 0, rolesAssigned: 0, rolesRemoved: 0, failures: 0 };
-  let section = getSection(guild.id);
-  const local = zonedParts(new Date(), section.settings.timezone);
-  const year = Number(local.year);
-  const currentTime = `${local.hour}:${local.minute}`;
-  const today = `${local.year}-${local.month}-${local.day}`;
-  const result = { announced: 0, monthlyBoards: 0, rolesAssigned: 0, rolesRemoved: 0, failures: 0 };
-  result.rolesRemoved = await cleanupBirthdayRoles(guild, section, meta);
-  section = getSection(guild.id);
-
-  for (const member of Object.values(section.members)) {
-    if (birthdayKey(member, year, section.settings) !== today) continue;
-    let currentMember = getBirthday(guild.id, member.userId);
-    const currentSection = getSection(guild.id);
-    const desiredRoleId = currentSection.settings.birthdayRoleId;
-    if (!desiredRoleId || !currentMember) continue;
-    try {
-      if (currentMember.roleAssignedRoleId && currentMember.roleAssignedRoleId !== desiredRoleId) {
-        if (await removeTrackedBirthdayRole(guild, currentMember, currentMember.roleAssignedRoleId, meta)) result.rolesRemoved += 1;
-        setBirthday(guild.id, member.userId, { roleAssignedAt: null, roleAssignedRoleId: null }, { ...meta, action: 'birthday_role_replaced' });
-        currentMember = getBirthday(guild.id, member.userId);
-      }
-
-      const state = await getBirthdayRoleState(guild, currentSection, currentMember);
-      if (!state.discordMember) throw new Error('Birthday member is unavailable.');
-      if (!state.role) throw new Error('Birthday role is unavailable.');
-      if (!canManageBirthdayRole(guild, state.role)) throw new Error('Birthday role cannot be managed. Check Manage Roles permission and role hierarchy.');
-
-      if (currentMember.roleAssignedAt && !state.hasRole && (!currentMember.roleAssignedRoleId || currentMember.roleAssignedRoleId === desiredRoleId)) {
-        setBirthday(guild.id, member.userId, { roleAssignedAt: null, roleAssignedRoleId: null }, { ...meta, action: 'birthday_role_state_repaired' });
-      }
-
-      const refreshed = getBirthday(guild.id, member.userId);
-      if (!state.hasRole || !refreshed?.roleAssignedAt || refreshed.roleAssignedRoleId !== desiredRoleId) {
-        const assigned = await assignBirthdayRole(guild, currentSection, refreshed, meta);
-        if (assigned) result.rolesAssigned += 1;
-      }
-    } catch (error) {
-      result.failures += 1;
-      incrementAnalytics(guild.id, { failures: 1 }, meta);
-      console.warn(`[Birthdays] ${guild.id}/${member.userId} role: ${error.message}`);
-    }
-  }
-
-  try {
-    section = getSection(guild.id);
-    if (await processMonthlyBoard(guild, section, local, currentTime, meta)) result.monthlyBoards += 1;
-  } catch (error) {
-    result.failures += 1;
-    incrementAnalytics(guild.id, { failures: 1 }, meta);
-    console.warn(`[Birthdays] ${guild.id} monthly board: ${error.message}`);
-  }
-
-  section = getSection(guild.id);
-  if (currentTime < section.settings.announcementTime) {
-    incrementAnalytics(guild.id, { lastProcessedAt: now() }, meta);
-    return result;
-  }
-
-  const channelId = section.settings.announcementChannelId;
-  const channel = channelId ? (guild.channels.cache.get(channelId) || await guild.channels.fetch(channelId).catch(() => null)) : null;
-  for (const member of Object.values(section.members)) {
-    if (birthdayKey(member, year, section.settings) !== today) continue;
-    if (member.announce !== false && member.lastAnnouncedKey !== today) {
+  if (section.settings.monthlyBoardChannelId && Number(parts.day) === 1 && currentTime >= section.settings.monthlyBoardTime) {
+    const monthKey = `${parts.year}-${parts.month}`;
+    if (section.monthlyBoard?.lastPostedKey !== monthKey) {
       try {
-        if (!channel?.send) throw new Error('Birthday announcement channel is unavailable.');
-        const content = renderMessage(section.settings.messageTemplate, guild, member, year);
-        await channel.send({ content, allowedMentions: { users: [member.userId] } });
-        setBirthday(guild.id, member.userId, { lastAnnouncedKey: today }, { ...meta, action: 'birthday_announced' });
-        incrementAnalytics(guild.id, { announcementsSent: 1 }, meta);
-        result.announced += 1;
+        const channelId = section.settings.monthlyBoardChannelId;
+        const channel = guild.channels.cache.get(channelId) || await guild.channels.fetch(channelId).catch(() => null);
+        if (!channel?.isTextBased?.()) throw new Error('Monthly birthday board channel is unavailable.');
+        await channel.send({ embeds: [monthlyBoardEmbed(guild, section)], allowedMentions: { parse: [] } });
+        section.monthlyBoard = { ...(section.monthlyBoard || {}), lastPostedKey: monthKey };
+        incrementAnalytics(guild.id, { monthlyBoardsSent: 1 }, { action: 'birthday_monthly_board' });
       } catch (error) {
-        result.failures += 1;
-        incrementAnalytics(guild.id, { failures: 1 }, meta);
-        console.warn(`[Birthdays] ${guild.id}/${member.userId} announcement: ${error.message}`);
+        incrementAnalytics(guild.id, { failures: 1 }, { action: 'birthday_monthly_board_failure' });
+        console.warn(`[birthdays] monthly board ${guild.id}: ${error.message}`);
       }
     }
   }
-  incrementAnalytics(guild.id, { lastProcessedAt: now() }, meta);
-  return result;
+  section.analytics.lastProcessedAt = now();
+  saveSection(guild.id, section, { action: 'birthday_process' });
 }
 
 async function buildHealth(guild) {
   const section = getSection(guild.id);
   const issues = [];
   const warnings = [];
-  const me = guild.members.me;
-  if (!section.settings.announcementChannelId) warnings.push({ code: 'announcement_channel_missing' });
-  else {
+  if (!guildManager.isModuleEnabled(guild.id, 'birthdays')) warnings.push('Birthdays module is disabled.');
+  if (section.settings.announcementChannelId) {
     const channel = guild.channels.cache.get(section.settings.announcementChannelId) || await guild.channels.fetch(section.settings.announcementChannelId).catch(() => null);
-    if (!channel?.send) issues.push({ code: 'announcement_channel_unavailable', channelId: section.settings.announcementChannelId });
-    else {
-      const permissions = channel.permissionsFor?.(me);
-      if (permissions && !permissions.has(PermissionFlagsBits.SendMessages)) issues.push({ code: 'announcement_send_messages_missing', channelId: channel.id });
-    }
-  }
+    if (!channel?.isTextBased?.()) issues.push('Birthday announcement channel is missing or not text based.');
+  } else warnings.push('No birthday announcement channel is configured.');
   if (section.settings.monthlyBoardChannelId) {
     const channel = guild.channels.cache.get(section.settings.monthlyBoardChannelId) || await guild.channels.fetch(section.settings.monthlyBoardChannelId).catch(() => null);
-    if (!channel?.send) issues.push({ code: 'monthly_board_channel_unavailable', channelId: section.settings.monthlyBoardChannelId });
-    else {
-      const permissions = channel.permissionsFor?.(me);
-      if (permissions && !permissions.has(PermissionFlagsBits.SendMessages)) issues.push({ code: 'monthly_board_send_messages_missing', channelId: channel.id });
-    }
+    if (!channel?.isTextBased?.()) issues.push('Monthly birthday board channel is missing or not text based.');
   }
   if (section.settings.birthdayRoleId) {
     const role = guild.roles.cache.get(section.settings.birthdayRoleId) || await guild.roles.fetch(section.settings.birthdayRoleId).catch(() => null);
-    if (!role) warnings.push({ code: 'birthday_role_missing' });
-    else if (!canManageBirthdayRole(guild, role)) warnings.push({ code: 'birthday_role_unmanageable' });
+    if (!role) issues.push('Birthday role no longer exists.');
+    else if (!canManageBirthdayRole(guild, role)) issues.push('Goliath cannot manage the configured birthday role.');
   }
-  return { module: SECTION, guildId: guild.id, enabled: guildManager.isModuleEnabled(guild.id, SECTION), healthy: issues.length === 0, memberCount: Object.keys(section.members).length, issues, warnings, checkedAt: now() };
+  return { healthy: issues.length === 0, issues, warnings, analytics: section.analytics };
+}
+
+const startedClients = new WeakSet();
+const runningClients = new WeakSet();
+function start(client) {
+  if (!client || startedClients.has(client)) return;
+  startedClients.add(client);
+  const run = async () => {
+    if (runningClients.has(client)) return;
+    runningClients.add(client);
+    try {
+      for (const guild of client.guilds.cache.values()) await processGuild(guild).catch((error) => console.warn(`[birthdays] ${guild.id}: ${error.message}`));
+    } finally {
+      runningClients.delete(client);
+    }
+  };
+  const startMinuteLoop = () => {
+    run().catch(() => {});
+    const nowMs = Date.now();
+    const delayToNextMinute = TICK_MS - (nowMs % TICK_MS) + 250;
+    const alignTimer = setTimeout(() => {
+      run().catch(() => {});
+      const interval = setInterval(() => run().catch(() => {}), TICK_MS);
+      interval.unref?.();
+    }, delayToNextMinute);
+    alignTimer.unref?.();
+  };
+  if (client.isReady?.()) startMinuteLoop();
+  else client.once('ready', startMinuteLoop);
 }
 
 module.exports = {
-  SECTION, TICK_MS, defaultSection, normalizeSection, normalizeMember,
+  start, defaultSection, normalizeSection, normalizeMember,
   getSection, saveSection, updateSection, updateSettings, incrementAnalytics,
   getBirthday, setBirthday, removeBirthday, listUpcoming, nextBirthday, ageFor,
   monthlyWindow, monthlyBoardEmbed, processGuild, buildHealth, validTimezone, validTime,
