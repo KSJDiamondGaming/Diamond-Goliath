@@ -22,6 +22,8 @@ const DEPLOYMENT_STATUS = Object.freeze({
 });
 
 const VALID_STATUSES = new Set(Object.values(DEPLOYMENT_STATUS));
+const EMBED_BUTTON_ACTIONS = Object.freeze(['reply', 'toggle-role', 'add-role', 'remove-role', 'user-info', 'server-info']);
+const EMBED_ROLE_BUTTON_ACTIONS = new Set(['toggle-role', 'add-role', 'remove-role']);
 const now = () => new Date().toISOString();
 const isPlainObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
@@ -81,6 +83,23 @@ function clone(value, fallback = {}) {
 
 function cleanString(value, maxLength = 500) {
   return String(value ?? '').trim().slice(0, maxLength);
+}
+
+function normalizeEmbedButtonAction(value) {
+  return String(value || '').trim().toLowerCase().replace(/_/g, '-');
+}
+
+function parseEmbedButtonActionIndex(customId) {
+  const id = String(customId || '');
+  let match = id.match(/^embed:action:(\d+)$/);
+  if (match) return Number(match[1]);
+  match = id.match(/^embed-action:.*:(\d+)$/);
+  return match ? Number(match[1]) : null;
+}
+
+function legacyEmbedButtonActionFromId(customId) {
+  const match = String(customId || '').match(/^embed-action:(.*):(\d+)$/);
+  return match ? normalizeEmbedButtonAction(match[1]) : '';
 }
 
 function requireGuildId(value) {
@@ -440,6 +459,11 @@ module.exports = {
   emitEmbedDeleted,
   EMBED_DEPLOYMENTS_SECTION,
   DEPLOYMENT_STATUS,
+  EMBED_BUTTON_ACTIONS,
+  EMBED_ROLE_BUTTON_ACTIONS,
+  normalizeEmbedButtonAction,
+  parseEmbedButtonActionIndex,
+  legacyEmbedButtonActionFromId,
   getAllEmbedDeployments,
   getEmbedDeployment,
   getEmbedDeploymentByMessage,
