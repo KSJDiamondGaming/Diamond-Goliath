@@ -4,6 +4,7 @@ const templates = require('./embedTemplates');
 const deployments = require('./embedDeployments');
 const panel = require('./embedPanel');
 const media = require('./embedMedia');
+const buttonRuntime = require('./embedButtonsCompat');
 
 function installMediaBoundary(targetPanel) {
   media.installStateCompatibility(targetPanel);
@@ -17,6 +18,8 @@ function installMediaBoundary(targetPanel) {
 }
 
 installMediaBoundary(panel);
+panel.handleButtonAction = buttonRuntime.handleButtonAction;
+panel.EMBED_BUTTON_ACTIONS = buttonRuntime.EMBED_BUTTON_ACTIONS;
 
 const interactions = require('./embedInteractions');
 const validation = require('./embedValidation');
