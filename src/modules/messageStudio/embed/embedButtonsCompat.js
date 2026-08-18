@@ -70,8 +70,6 @@ async function handleButtonAction(interaction) {
   await ephemeral(interaction, `⚠️ The action \`${action}\` is not registered.`); return true;
 }
 
-panel.EMBED_BUTTON_ACTIONS = EMBED_BUTTON_ACTIONS;
-
 module.exports = {
   handleButtonAction,
   EMBED_BUTTON_ACTIONS,
