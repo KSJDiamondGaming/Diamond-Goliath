@@ -71,10 +71,6 @@ async function handleButtonAction(interaction) {
 }
 
 panel.EMBED_BUTTON_ACTIONS = EMBED_BUTTON_ACTIONS;
-panel.EMBED_ROLE_BUTTON_ACTIONS = EMBED_ROLE_BUTTON_ACTIONS;
 panel.handleButtonAction = handleButtonAction;
-panel.parseButtonActionIndex = parseEmbedButtonActionIndex;
-panel.resolveButtonAction = resolveButton;
-panel.supportedButtonActions = EMBED_BUTTON_ACTIONS;
 
 module.exports = panel;
