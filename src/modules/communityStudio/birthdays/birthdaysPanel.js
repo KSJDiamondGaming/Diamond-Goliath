@@ -2,9 +2,10 @@
 
 const guildManager = require('../../../core/guild/guildManager');
 const birthdays = require('./birthdays');
+const management = require('./birthdaysManagement');
 const {
   row, button, birthdayListContent,
-  adminPayload, celebrationPayload, messagePoolPayload, cardPayload, cardImagePayload, managementPayload, toolsPayload, userPayload,
+  adminPayload, celebrationPayload, messagePoolPayload, cardPayload, cardImagePayload, toolsPayload, userPayload,
   settingsModal, customTimezoneModal, messagesModal, cardTextModal, cardColorModal, cardImageModal, monthlySettingsModal, manageModal, importModal, birthdayModal,
 } = require('./birthdaysViews');
 
@@ -27,14 +28,105 @@ function parsePrivacy(raw) {
 async function handleAdmin(interaction) {
   const id = String(interaction.customId || ''); if (!id.startsWith('admin:birthdays')) return false;
   const actor = { actorId: interaction.user.id };
+
   if (id === 'admin:birthdays') { await respond(interaction, adminPayload(interaction)); return true; }
   if (id === 'admin:birthdays:celebration') { await respond(interaction, celebrationPayload(interaction)); return true; }
-  if (id === 'admin:birthdays:management') { await respond(interaction, managementPayload(interaction)); return true; }
+  if (id === 'admin:birthdays:management') { await respond(interaction, management.managementPayload(interaction)); return true; }
   if (id === 'admin:birthdays:tools') { await respond(interaction, toolsPayload()); return true; }
   if (id === 'admin:birthdays:messages:individual') { await respond(interaction, messagePoolPayload(interaction, 'individual')); return true; }
   if (id === 'admin:birthdays:messages:group') { await respond(interaction, messagePoolPayload(interaction, 'group')); return true; }
   if (id === 'admin:birthdays:card') { await respond(interaction, cardPayload(interaction)); return true; }
   if (id === 'admin:birthdays:card:image') { await respond(interaction, cardImagePayload(interaction)); return true; }
+
+  if (id === 'admin:birthdays:role:open') { await respond(interaction, management.rolePayload(interaction, 0)); return true; }
+  if (id.startsWith('admin:birthdays:role:page:')) {
+    const page = Number(id.split(':').pop()) || 0;
+    await respond(interaction, management.rolePayload(interaction, page)); return true;
+  }
+  if (id.startsWith('admin:birthdays:role:select:') && interaction.isStringSelectMenu?.()) {
+    const page = Number(id.split(':').pop()) || 0;
+    const roleId = interaction.values[0];
+    const role = interaction.guild.roles.cache.get(roleId) || await interaction.guild.roles.fetch(roleId).catch(() => null);
+    if (!role || role.id === interaction.guild.id || role.managed) throw new Error('That role cannot be used as the Birthday Role.');
+    if (!role.editable) throw new Error('Goliath cannot assign that role. Move Goliath above it in the role hierarchy and try again.');
+    birthdays.updateSettings(interaction.guildId, { birthdayRoleId: roleId }, { ...actor, action: 'birthdays_role_update' });
+    await respond(interaction, management.rolePayload(interaction, page)); return true;
+  }
+  if (id === 'admin:birthdays:role:clear') {
+    birthdays.updateSettings(interaction.guildId, { birthdayRoleId: null }, { ...actor, action: 'birthdays_role_clear' });
+    await respond(interaction, management.rolePayload(interaction, 0)); return true;
+  }
+
+  if (id === 'admin:birthdays:members') { await respond(interaction, management.memberListPayload(interaction, 0)); return true; }
+  if (id.startsWith('admin:birthdays:members:page:')) {
+    const page = Number(id.split(':').pop()) || 0;
+    await respond(interaction, management.memberListPayload(interaction, page)); return true;
+  }
+  if (id.startsWith('admin:birthdays:members:select:') && interaction.isStringSelectMenu?.()) {
+    await respond(interaction, management.memberPayload(interaction, interaction.values[0])); return true;
+  }
+  if (id === 'admin:birthdays:members:add') { await respond(interaction, management.addMemberPayload()); return true; }
+  if (id === 'admin:birthdays:members:add:select' && interaction.isUserSelectMenu?.()) {
+    const userId = interaction.values[0];
+    const existing = birthdays.getBirthday(interaction.guildId, userId);
+    await interaction.showModal(management.birthdayEditModal(userId, existing, existing ? 'edit' : 'add')); return true;
+  }
+  if (id.startsWith('admin:birthdays:member:add:submit:')) {
+    const userId = id.split(':').pop();
+    birthdays.setBirthday(interaction.guildId, userId, { ...parseDate(interaction.fields.getTextInputValue('date')), listPublic: true, announce: true, showAge: false }, { ...actor, action: 'birthday_admin_add' });
+    await interaction.reply({ content: `✅ Birthday added for <@${userId}>.`, flags: 64 }); return true;
+  }
+  if (id.startsWith('admin:birthdays:member:edit:submit:')) {
+    const userId = id.split(':').pop();
+    birthdays.setBirthday(interaction.guildId, userId, parseDate(interaction.fields.getTextInputValue('date')), { ...actor, action: 'birthday_admin_edit' });
+    await interaction.reply({ content: `✅ Birthday updated for <@${userId}>.`, flags: 64 }); return true;
+  }
+  if (id.startsWith('admin:birthdays:member:edit:')) {
+    const userId = id.split(':').pop();
+    const record = birthdays.getBirthday(interaction.guildId, userId);
+    if (!record) throw new Error('That birthday record no longer exists.');
+    await interaction.showModal(management.birthdayEditModal(userId, record, 'edit')); return true;
+  }
+  if (id.startsWith('admin:birthdays:member:list:')) {
+    const userId = id.split(':').pop(); const record = birthdays.getBirthday(interaction.guildId, userId);
+    if (!record) throw new Error('That birthday record no longer exists.');
+    birthdays.setBirthday(interaction.guildId, userId, { listPublic: !record.listPublic }, { ...actor, action: 'birthday_admin_list_toggle' });
+    await respond(interaction, management.memberPayload(interaction, userId)); return true;
+  }
+  if (id.startsWith('admin:birthdays:member:announce:')) {
+    const userId = id.split(':').pop(); const record = birthdays.getBirthday(interaction.guildId, userId);
+    if (!record) throw new Error('That birthday record no longer exists.');
+    birthdays.setBirthday(interaction.guildId, userId, { announce: !record.announce }, { ...actor, action: 'birthday_admin_announce_toggle' });
+    await respond(interaction, management.memberPayload(interaction, userId)); return true;
+  }
+  if (id.startsWith('admin:birthdays:member:age:')) {
+    const userId = id.split(':').pop(); const record = birthdays.getBirthday(interaction.guildId, userId);
+    if (!record) throw new Error('That birthday record no longer exists.');
+    if (!record.year) throw new Error('This member did not register a birth year, so age cannot be shown.');
+    birthdays.setBirthday(interaction.guildId, userId, { showAge: !record.showAge }, { ...actor, action: 'birthday_admin_age_toggle' });
+    await respond(interaction, management.memberPayload(interaction, userId)); return true;
+  }
+  if (id.startsWith('admin:birthdays:member:remove:')) {
+    const userId = id.split(':').pop();
+    birthdays.removeBirthday(interaction.guildId, userId, { ...actor, action: 'birthday_admin_remove' });
+    await respond(interaction, management.memberListPayload(interaction, 0)); return true;
+  }
+
+  if (id === 'admin:birthdays:board') { await respond(interaction, management.boardPayload(interaction)); return true; }
+  if (id === 'admin:birthdays:board:edit') { await interaction.showModal(management.boardSettingsModal(birthdays.getSection(interaction.guildId))); return true; }
+  if (id === 'admin:birthdays:board:edit:submit') {
+    const day = Number(interaction.fields.getTextInputValue('day').trim());
+    const time = interaction.fields.getTextInputValue('time').trim();
+    if (!Number.isInteger(day) || day < 1 || day > 28) throw new Error('Monthly board day must be between 1 and 28.');
+    if (!birthdays.validTime(time)) throw new Error('Monthly board time must use HH:MM.');
+    birthdays.updateSettings(interaction.guildId, { monthlyBoardDay: day, monthlyBoardTime: time, leapDayMode: 'feb28' }, { ...actor, action: 'birthdays_monthly_settings_update' });
+    await interaction.reply({ content: `✅ Monthly board schedule updated to day **${day}** at **${time}**.`, flags: 64 }); return true;
+  }
+  if (id === 'admin:birthdays:board:preview') {
+    const section = birthdays.getSection(interaction.guildId);
+    await interaction.reply({ content: '👁️ Monthly Birthday Board preview', embeds: [birthdays.monthlyBoardEmbed(interaction.guild, section)], flags: 64, allowedMentions: { parse: [] } }); return true;
+  }
+
   if (id === 'admin:birthdays:channel' && interaction.isChannelSelectMenu?.()) birthdays.updateSettings(interaction.guildId, { announcementChannelId: interaction.values[0] || null }, { ...actor, action: 'birthdays_channel_update' });
   else if (id === 'admin:birthdays:timezone' && interaction.isStringSelectMenu?.()) {
     const timezone = interaction.values[0];
@@ -148,9 +240,8 @@ async function handleAdmin(interaction) {
   }
   else if (id === 'admin:birthdays:monthly:settings:submit') {
     const time = interaction.fields.getTextInputValue('time').trim(); if (!birthdays.validTime(time)) throw new Error('Monthly board time must use HH:MM.');
-    const leap = interaction.fields.getTextInputValue('leap').trim().toLowerCase(); if (!['feb28', 'mar1'].includes(leap)) throw new Error('Leap day mode must be feb28 or mar1.');
-    birthdays.updateSettings(interaction.guildId, { monthlyBoardTime: time, leapDayMode: leap }, { ...actor, action: 'birthdays_monthly_settings_update' });
-    await interaction.reply({ content: `✅ Monthly board updated. Feb 29 birthdays will use **${leap === 'mar1' ? '1 March' : '28 February'}** in non-leap years.`, flags: 64 }); return true;
+    birthdays.updateSettings(interaction.guildId, { monthlyBoardTime: time, leapDayMode: 'feb28' }, { ...actor, action: 'birthdays_monthly_settings_update' });
+    await interaction.reply({ content: '✅ Monthly board time updated.', flags: 64 }); return true;
   }
   else if (id === 'admin:birthdays:manage:submit') {
     const userId = interaction.fields.getTextInputValue('user').trim(); if (!/^\d{15,25}$/.test(userId)) throw new Error('Enter a valid Discord user ID.');
@@ -163,8 +254,10 @@ async function handleAdmin(interaction) {
     let parsed; try { parsed = JSON.parse(interaction.fields.getTextInputValue('json')); } catch { throw new Error('Import data is not valid JSON.'); }
     const result = birthdays.importData(interaction.guildId, parsed, { ...actor, action: 'birthday_admin_import' }); await interaction.reply({ content: `✅ Imported **${result.imported}** birthday record(s). Total stored: **${result.total}**.`, flags: 64 }); return true;
   }
+
   if (id === 'admin:birthdays:channel' || id === 'admin:birthdays:timezone' || id === 'admin:birthdays:combine') { await respond(interaction, celebrationPayload(interaction)); return true; }
-  if (id === 'admin:birthdays:role' || id === 'admin:birthdays:monthly:channel') { await respond(interaction, managementPayload(interaction)); return true; }
+  if (id === 'admin:birthdays:monthly:channel') { await respond(interaction, management.managementPayload(interaction)); return true; }
+  if (id === 'admin:birthdays:role') { await respond(interaction, management.managementPayload(interaction)); return true; }
   await respond(interaction, adminPayload(interaction)); return true;
 }
 
