@@ -2,6 +2,7 @@
 
 const schedule = require('./schedule');
 const deployment = require('./scheduleDeployment');
+const guildManager = require('../../../core/guild/guildManager');
 
 const REMINDER_TICK_MS = 60 * 1000;
 const timers = new WeakMap();
@@ -105,6 +106,7 @@ async function processAllGuilds(client, action) {
   if (!client?.guilds?.cache) return;
 
   for (const guild of client.guilds.cache.values()) {
+    if (!guildManager.isModuleEnabled(guild.id, 'schedule')) continue;
     const beforeEvents = schedule.listEvents(guild.id);
     try {
       await schedule.processGuild(guild, { action });
