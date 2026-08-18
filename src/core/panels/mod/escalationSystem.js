@@ -83,7 +83,7 @@ function buildEscalationReason(escalation, warningCount, reason) {
     ? 'Auto escalation (repeat behavior detected)'
     : `Auto escalation (${warningCount} warnings)`;
 
-  return `${baseReason}${reason ? ` | ${reason}` : ''}`;
+  return `${baseReason}${reason ? ` | ${reason}` : ''}`.slice(0, 512);
 }
 
 async function createEscalationCase({

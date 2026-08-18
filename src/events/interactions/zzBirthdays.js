@@ -5,6 +5,7 @@ const birthdays = require('../../modules/communityStudio/birthdays/birthdays');
 const panel = require('../../modules/communityStudio/birthdays/birthdaysPanel');
 
 const timers = new WeakMap();
+const processingClients = new WeakSet();
 
 function birthdayButton(customId, label) {
   return { type: 2, style: ButtonStyle.Secondary, label, custom_id: customId, emoji: { name: '🎂' } };
@@ -35,17 +36,34 @@ async function appendBirthdayButton(interaction, customId, label) {
 }
 
 async function processAllGuilds(client, action) {
-  for (const guild of client?.guilds?.cache?.values?.() || []) {
-    await birthdays.processGuild(guild, { action }).catch((error) => console.warn(`[Birthdays] ${guild.id}: ${error.message}`));
+  if (!client || processingClients.has(client)) return;
+  processingClients.add(client);
+  try {
+    for (const guild of client?.guilds?.cache?.values?.() || []) {
+      await birthdays.processGuild(guild, { action }).catch((error) => console.warn(`[Birthdays] ${guild.id}: ${error.message}`));
+    }
+  } finally {
+    processingClients.delete(client);
   }
+}
+
+function msUntilNextMinute() {
+  const current = Date.now();
+  return (60000 - (current % 60000)) + 100;
 }
 
 async function startWorker(client) {
   if (!client || timers.has(client)) return;
   await processAllGuilds(client, 'birthdays_startup_process');
-  const timer = setInterval(() => processAllGuilds(client, 'birthdays_interval_process').catch((error) => console.warn(`[Birthdays] worker: ${error.message}`)), birthdays.TICK_MS);
-  timer.unref?.();
-  timers.set(client, timer);
+
+  const worker = { alignmentTimer: null, intervalTimer: null };
+  worker.alignmentTimer = setTimeout(() => {
+    processAllGuilds(client, 'birthdays_boundary_process').catch((error) => console.warn(`[Birthdays] worker: ${error.message}`));
+    worker.intervalTimer = setInterval(() => processAllGuilds(client, 'birthdays_interval_process').catch((error) => console.warn(`[Birthdays] worker: ${error.message}`)), birthdays.TICK_MS);
+    worker.intervalTimer.unref?.();
+  }, msUntilNextMinute());
+  worker.alignmentTimer.unref?.();
+  timers.set(client, worker);
 }
 
 async function safeError(interaction, error) {

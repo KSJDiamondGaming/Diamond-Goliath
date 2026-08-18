@@ -6,11 +6,9 @@ const {
   ButtonStyle,
   EmbedBuilder,
   MessageFlags,
-  ModalBuilder,
   PermissionsBitField,
   RoleSelectMenuBuilder,
   StringSelectMenuBuilder,
-  TextInputBuilder,
   TextInputStyle,
 } = require('discord.js');
 const guildManager = require('../../../core/guild/guildManager');
@@ -20,7 +18,7 @@ const panel = require('./embedPanel');
 const MAX_BUTTONS = panel.MAX_BUTTONS || 20;
 const MAX_COMPONENTS_PER_ROW = panel.EMBED_COMPONENT_LIMITS?.maxComponentsPerRow || 5;
 const MAX_ACTION_ROWS = panel.EMBED_COMPONENT_LIMITS?.maxActionRows || 5;
-const MAX_DEPLOYED_BUTTON_ROWS = Math.max(1, Math.min(4, MAX_ACTION_ROWS - 1));
+const MAX_DEPLOYED_BUTTON_ROWS = panel.MAX_DEPLOYED_BUTTON_ROWS || Math.max(1, Math.min(4, MAX_ACTION_ROWS - 1));
 const BUILT_IN_ACTIONS = Object.freeze(['reply', 'toggle-role', 'add-role', 'remove-role', 'user-info', 'server-info']);
 const ROLE_ACTIONS = new Set(['toggle-role', 'add-role', 'remove-role']);
 const DANGEROUS_ROLE_PERMISSIONS = [
@@ -47,59 +45,42 @@ function resolved(value, interaction) {
   catch { return String(value || ''); }
 }
 
-function input(id, label, value = '', maxLength = 4000, required = false, style = TextInputStyle.Short) {
-  return new TextInputBuilder().setCustomId(id).setLabel(label).setStyle(style).setRequired(required).setMaxLength(maxLength).setValue(String(value || '').slice(0, maxLength));
-}
 function selectedIndex(state) { const buttons = Array.isArray(state.buttons) ? state.buttons : []; return Number.isInteger(state.selectedButtonIndex) && buttons[state.selectedButtonIndex] ? state.selectedButtonIndex : null; }
 function normalizedStyle(value) { const style = String(value || 'primary').toLowerCase(); return ['primary', 'secondary', 'success', 'danger'].includes(style) ? style : 'primary'; }
 function styleLabel(style) { return { primary: 'Primary', secondary: 'Secondary', success: 'Success', danger: 'Danger' }[normalizedStyle(style)]; }
 function actionLabel(action) { return { reply: 'Reply', 'toggle-role': 'Toggle Role', 'add-role': 'Add Role', 'remove-role': 'Remove Role', 'user-info': 'User Info', 'server-info': 'Server Info' }[String(action || '').toLowerCase()] || 'None'; }
-function normalizedRow(value) { if (value === '' || value == null || value === 'auto') return null; const row = Number(value); return Number.isInteger(row) && row >= 0 && row < MAX_DEPLOYED_BUTTON_ROWS ? row : null; }
+const normalizedRow = panel.embedButtonRow;
 function rowLabel(value) { const row = normalizedRow(value); return row == null ? 'Auto' : `Row ${row + 1}`; }
 function resolveUrl(value, interaction) { const raw = resolved(value, interaction).trim(); if (!raw) return ''; try { const url = new URL(raw); return ['https:', 'http:'].includes(url.protocol) ? url.toString() : ''; } catch { return ''; } }
-function styleValue(style) { return { secondary: ButtonStyle.Secondary, success: ButtonStyle.Success, danger: ButtonStyle.Danger }[normalizedStyle(style)] || ButtonStyle.Primary; }
-function actionId(button, absoluteIndex) { if (button?.id) return String(button.id).trim().replace(/[^a-zA-Z0-9:_-]+/g, '-').slice(0, 100); return `embed:action:${absoluteIndex}`; }
 function roleDisplay(interaction, roleId) { const role = interaction?.guild?.roles?.cache?.get?.(String(roleId || '').replace(/\D/g, '')); return role ? `<@&${role.id}>` : roleId ? `Role ${roleId}` : 'Not selected'; }
-function layoutButtons(buttons = []) {
-  const rows = Array.from({ length: MAX_DEPLOYED_BUTTON_ROWS }, () => []);
-  const automatic = [];
-  buttons.slice(0, MAX_BUTTONS).forEach((button, index) => { const row = normalizedRow(button?.row); if (row != null && rows[row].length < MAX_COMPONENTS_PER_ROW) rows[row].push({ button, index }); else automatic.push({ button, index }); });
-  for (const entry of automatic) { const target = rows.findIndex((row) => row.length < MAX_COMPONENTS_PER_ROW); if (target < 0) break; rows[target].push(entry); }
-  return rows;
-}
+const layoutButtons = panel.layoutEmbedButtons;
 function deployedRowFor(buttons, index) { const rows = layoutButtons(buttons); const row = rows.findIndex((entries) => entries.some((entry) => entry.index === index)); return row >= 0 ? row : null; }
 
-panel.buttonRows = (state, interaction = null) => {
-  const output = [];
-  for (const entries of layoutButtons(Array.isArray(state?.buttons) ? state.buttons : [])) {
-    if (!entries.length) continue;
-    const row = new ActionRowBuilder();
-    for (const { button, index } of entries) {
-      const label = short(resolved(button?.label || 'Button', interaction), 80) || 'Button';
-      const url = resolveUrl(button?.url, interaction);
-      const builder = new ButtonBuilder().setLabel(label);
-      if (button?.emoji) builder.setEmoji(button.emoji);
-      if (url) builder.setStyle(ButtonStyle.Link).setURL(url);
-      else builder.setStyle(styleValue(button?.style)).setCustomId(actionId(button, index));
-      row.addComponents(builder);
-    }
-    output.push(row);
-  }
-  return output.slice(0, MAX_DEPLOYED_BUTTON_ROWS);
-};
-
-panel.buttonEditorModal = (state, index = null) => {
+function buildButtonEditorModal(state, index = null) {
   const buttons = Array.isArray(state.buttons) ? state.buttons : [];
   const item = Number.isInteger(index) ? (buttons[index] || {}) : {};
-  return new ModalBuilder().setCustomId(Number.isInteger(index) ? `embed:button-manager-save:${index}` : 'embed:button-manager-save-new').setTitle(Number.isInteger(index) ? 'Edit Button' : 'Add Button').addComponents(
-    new ActionRowBuilder().addComponents(input('label', 'Button label', item.label || '', 80, true)),
-    new ActionRowBuilder().addComponents(input('emoji', 'Emoji (optional)', item.emoji || '', 100, false)),
-    new ActionRowBuilder().addComponents(input('url', 'Link URL / variable (optional)', item.url || '', 4000, false)),
+  return panel.modal(
+    Number.isInteger(index) ? `embed:button-manager-save:${index}` : 'embed:button-manager-save-new',
+    Number.isInteger(index) ? 'Edit Button' : 'Add Button',
+    [
+      panel.input('label', 'Button label', TextInputStyle.Short, item.label || '', true, 80),
+      panel.input('emoji', 'Emoji (optional)', TextInputStyle.Short, item.emoji || '', false, 100),
+      panel.input('url', 'Link URL / variable (optional)', TextInputStyle.Short, item.url || '', false, 4000),
+    ],
   );
-};
-panel.buttonReplyModal = (state) => { const buttons = Array.isArray(state.buttons) ? state.buttons : []; const index = selectedIndex(state); const item = index == null ? {} : (buttons[index] || {}); return new ModalBuilder().setCustomId('embed:button-reply-save').setTitle('Button Reply Text').addComponents(new ActionRowBuilder().addComponents(input('replyText', 'Reply text / variables', item.actionValue || '', 1000, true, TextInputStyle.Paragraph))); };
+}
+function buildButtonReplyModal(state) {
+  const buttons = Array.isArray(state.buttons) ? state.buttons : [];
+  const index = selectedIndex(state);
+  const item = index == null ? {} : (buttons[index] || {});
+  return panel.modal('embed:button-reply-save', 'Button Reply Text', [
+    panel.input('replyText', 'Reply text / variables', TextInputStyle.Paragraph, item.actionValue || '', true, 1000),
+  ]);
+}
+panel.buttonEditorModal = buildButtonEditorModal;
+panel.buttonReplyModal = buildButtonReplyModal;
 
-panel.buildButtonOptionsPanel = (interaction) => {
+function buildButtonOptionsPanel(interaction) {
   const state = panel.getSession(interaction), buttons = Array.isArray(state.buttons) ? state.buttons : [], index = selectedIndex(state);
   if (index == null) return panel.buildButtonsManagerPanel(interaction);
   const item = buttons[index], style = normalizedStyle(item.style), action = String(item.action || '').toLowerCase();
@@ -134,9 +115,10 @@ panel.buildButtonOptionsPanel = (interaction) => {
   else if (action === 'reply') rows.push(new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('embed:button-reply-edit').setLabel('✏️ Reply Text').setStyle(ButtonStyle.Primary)));
   rows.push(new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('embed:button-options-back').setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary)));
   return { embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('⚙️ Button Options').setDescription(details.join('\n').slice(0, 4096))], components: enforceLimits(rows) };
-};
+}
+panel.buildButtonOptionsPanel = buildButtonOptionsPanel;
 
-panel.buildButtonsManagerPanel = (interaction) => {
+function buildButtonsManagerPanel(interaction) {
   const state = panel.getSession(interaction), buttons = Array.isArray(state.buttons) ? state.buttons : [], index = selectedIndex(state), item = index == null ? null : buttons[index];
   const layout = layoutButtons(buttons), usedRows = layout.filter((row) => row.length).length;
   const lines = [`**Buttons:** ${buttons.length}/${MAX_BUTTONS}`, `**Rows used when deployed:** ${usedRows}/${MAX_DEPLOYED_BUTTON_ROWS}`, ''];
@@ -171,7 +153,8 @@ panel.buildButtonsManagerPanel = (interaction) => {
     ),
   );
   return { embeds, components: enforceLimits(rows) };
-};
+}
+panel.buildButtonsManagerPanel = buildButtonsManagerPanel;
 
 function cleanAction(value) { return String(value || '').trim().toLowerCase().replace(/_/g, '-'); }
 function parseRoleId(value) { const raw = String(value || '').replace(/[<@&>]/g, '').trim(); return /^\d{15,25}$/.test(raw) ? raw : null; }
@@ -212,8 +195,6 @@ async function handleButtonAction(interaction) {
 
 panel.EMBED_BUTTON_ACTIONS = BUILT_IN_ACTIONS;
 panel.EMBED_ROLE_BUTTON_ACTIONS = ROLE_ACTIONS;
-panel.layoutEmbedButtons = layoutButtons;
-panel.embedButtonRow = normalizedRow;
 panel.handleButtonAction = handleButtonAction;
 panel.parseButtonActionIndex = parseButtonIndex;
 panel.resolveButtonAction = resolveButton;

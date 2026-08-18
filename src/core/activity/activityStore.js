@@ -5,6 +5,7 @@ const { getGuildSection, updateGuildSection, isModuleEnabled } = require('../gui
 
 function now() { return new Date().toISOString(); }
 function obj(value) { return value && typeof value === 'object' && !Array.isArray(value) ? value : {}; }
+function list(value) { return Array.isArray(value) ? value : []; }
 function text(value = '', fallback = '', max = 1000) { return String(value ?? fallback).trim().slice(0, max); }
 function base() { return { entries: [], updatedAt: now() }; }
 
@@ -26,7 +27,8 @@ function normalise(entry = {}) {
 }
 
 function section(guildId) {
-  return { ...base(), ...obj(getGuildSection(guildId, 'activityTimeline', base())) };
+  const current = { ...base(), ...obj(getGuildSection(guildId, 'activityTimeline', base())) };
+  return { ...current, entries: list(current.entries) };
 }
 
 function logActivity(guildId, entry = {}) {
@@ -34,13 +36,13 @@ function logActivity(guildId, entry = {}) {
   const activity = normalise(entry);
   updateGuildSection(guildId, 'activityTimeline', (current = base()) => {
     const next = { ...base(), ...obj(current) };
-    return { ...next, entries: [activity, ...(next.entries || [])].slice(0, 1000), updatedAt: now() };
+    return { ...next, entries: [activity, ...list(next.entries)].slice(0, 1000), updatedAt: now() };
   }, base());
   return activity;
 }
 
 function getTimeline(guildId, filters = {}) {
-  let entries = [...(section(guildId).entries || [])].map(normalise);
+  let entries = section(guildId).entries.map(normalise);
   if (filters.module) entries = entries.filter((entry) => entry.module === filters.module);
   if (filters.severity) entries = entries.filter((entry) => entry.severity === filters.severity);
   if (filters.search) {

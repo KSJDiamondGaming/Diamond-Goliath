@@ -161,9 +161,10 @@ function normalizeFields(fields = []) {
 }
 
 function buildEmbed(type, data = {}) {
+  const title = String(data.title || formatType(type)).slice(0, 256);
   const embed = new EmbedBuilder()
     .setColor(data.color || '#5865F2')
-    .setTitle(data.title || formatType(type))
+    .setTitle(title)
     .setTimestamp();
 
   const fields = [];

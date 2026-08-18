@@ -869,7 +869,22 @@ function registerAuditEvents(client) {
   client.on(Events.GuildScheduledEventDelete, (event) => audit.capture(client, { type: 'scheduledEvent.delete', category: 'scheduledEvent', action: 'delete', title: 'Scheduled Event Deleted', icon: '🗑️', guild: event.guild, target: { id: event.id, label: event.name }, before: scheduledEventState(event) }));
   client.on(Events.WebhooksUpdate, (channel) => channel.guild && audit.capture(client, { type: 'webhook.update', category: 'webhook', action: 'update', title: 'Webhook Configuration Changed', icon: '🪝', guild: channel.guild, channel, target: { id: channel.id, label: channel.name }, metadata: { note: 'Discord signals that one or more webhooks in this channel changed; exact webhook details depend on audit-log visibility.' } }));
   if (Events.AutoModerationRuleCreate) client.on(Events.AutoModerationRuleCreate, (rule) => audit.capture(client, { type: 'automod.ruleCreate', category: 'automod', action: 'create', title: 'AutoMod Rule Created', icon: '🛡️', guild: rule.guild, target: { id: rule.id, label: rule.name }, after: { id: rule.id, name: rule.name, enabled: rule.enabled, eventType: rule.eventType, triggerType: rule.triggerType, actions: rule.actions } }));
-  if (Events.AutoModerationRuleUpdate) client.on(Events.AutoModerationRuleUpdate, (before, after) => audit.capture(client, { type: 'automod.ruleUpdate', category: 'automod', action: 'update', title: 'AutoMod Rule Updated', icon: '🛡️', guild: after.guild, target: { id: after.id, label: after.name }, before: { id: before.id, name: before.name, enabled: before.enabled, eventType: before.eventType, triggerType: before.triggerType, actions: before.actions }, after: { id: after.id, name: after.name, enabled: after.enabled, eventType: after.eventType, triggerType: after.triggerType, actions: after.actions } }));
+  if (Events.AutoModerationRuleUpdate) client.on(Events.AutoModerationRuleUpdate, (before, after) => {
+    const rule = after || before;
+    if (!rule?.guild) return;
+    const snapshot = (value) => value ? { id: value.id, name: value.name, enabled: value.enabled, eventType: value.eventType, triggerType: value.triggerType, actions: value.actions } : null;
+    return audit.capture(client, {
+      type: 'automod.ruleUpdate',
+      category: 'automod',
+      action: 'update',
+      title: 'AutoMod Rule Updated',
+      icon: '🛡️',
+      guild: rule.guild,
+      target: { id: rule.id || null, label: rule.name || 'AutoMod rule' },
+      before: snapshot(before),
+      after: snapshot(after),
+    });
+  });
   if (Events.AutoModerationRuleDelete) client.on(Events.AutoModerationRuleDelete, (rule) => audit.capture(client, { type: 'automod.ruleDelete', category: 'automod', action: 'delete', title: 'AutoMod Rule Deleted', icon: '🗑️', guild: rule.guild, target: { id: rule.id, label: rule.name }, before: { id: rule.id, name: rule.name, enabled: rule.enabled, eventType: rule.eventType, triggerType: rule.triggerType, actions: rule.actions } }));
   if (Events.AutoModerationActionExecution) client.on(Events.AutoModerationActionExecution, (execution) => audit.capture(client, { type: 'automod.action', category: 'automod', action: 'execute', title: 'AutoMod Action Executed', icon: '🛡️', guild: execution.guild, channel: execution.channel || null, user: execution.member?.user || null, member: execution.member || null, target: { id: execution.userId || execution.member?.id || null, label: execution.member?.user?.tag || execution.userId || 'Unknown user' }, metadata: { ruleId: execution.ruleId || null, ruleTriggerType: execution.ruleTriggerType ?? null, action: execution.action || null, matchedKeyword: execution.matchedKeyword || null, matchedContent: execution.matchedContent || null, content: execution.content || null } }));
   client.on(Events.GuildUpdate, (before, after) => audit.capture(client, { type: 'guild.update', category: 'guild', action: 'update', title: 'Guild Settings Updated', icon: '🏰', guild: after, target: { id: after.id, label: after.name }, before: guildState(before), after: guildState(after) }));
