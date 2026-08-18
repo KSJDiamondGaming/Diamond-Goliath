@@ -43,6 +43,23 @@ async function roleIsSafe(roleId, guild) {
   if (DANGEROUS_ROLE_PERMISSIONS.some((permission) => role.permissions.has(permission))) return { ok: false, reason: 'Self-service buttons cannot manage privileged moderation or administration roles.', role: null };
   return { ok: true, role };
 }
+async function applyRoleMutation(member, role, action, actorLabel) {
+  const roleId = role.id;
+  if (action === 'add-role') {
+    if (member.roles.cache.has(roleId)) return { outcome: 'already-has-role' };
+    await member.roles.add(role, `Embed Studio button used by ${actorLabel}`);
+    return { outcome: 'added' };
+  }
+  if (action === 'remove-role') {
+    if (!member.roles.cache.has(roleId)) return { outcome: 'missing-role' };
+    await member.roles.remove(role, `Embed Studio button used by ${actorLabel}`);
+    return { outcome: 'removed' };
+  }
+  const hasRole = member.roles.cache.has(roleId);
+  if (hasRole) await member.roles.remove(role, `Embed Studio role toggle used by ${actorLabel}`);
+  else await member.roles.add(role, `Embed Studio role toggle used by ${actorLabel}`);
+  return { outcome: hasRole ? 'removed' : 'added' };
+}
 async function executeRoleAction(interaction, action, value) {
   const roleId = String(resolved(value, interaction) || '').match(/\d{15,25}/)?.[0] || null;
   if (!roleId) return ephemeral(interaction, '❌ This button does not have a valid role configured.');
@@ -51,11 +68,10 @@ async function executeRoleAction(interaction, action, value) {
   const role = safe.role;
   const member = interaction.member?.roles?.cache ? interaction.member : await interaction.guild.members.fetch(interaction.user.id).catch(() => null);
   if (!member) return ephemeral(interaction, '❌ Your server member record could not be loaded.');
-  if (action === 'add-role') { if (member.roles.cache.has(roleId)) return ephemeral(interaction, `ℹ️ You already have **${role.name}**.`); await member.roles.add(role, `Embed Studio button used by ${interaction.user.tag || interaction.user.id}`); return ephemeral(interaction, `✅ Added **${role.name}**.`); }
-  if (action === 'remove-role') { if (!member.roles.cache.has(roleId)) return ephemeral(interaction, `ℹ️ You do not have **${role.name}**.`); await member.roles.remove(role, `Embed Studio button used by ${interaction.user.tag || interaction.user.id}`); return ephemeral(interaction, `✅ Removed **${role.name}**.`); }
-  const hasRole = member.roles.cache.has(roleId);
-  if (hasRole) await member.roles.remove(role, `Embed Studio role toggle used by ${interaction.user.tag || interaction.user.id}`); else await member.roles.add(role, `Embed Studio role toggle used by ${interaction.user.tag || interaction.user.id}`);
-  return ephemeral(interaction, `${hasRole ? '✅ Removed' : '✅ Added'} **${role.name}**.`);
+  const result = await applyRoleMutation(member, role, action, interaction.user.tag || interaction.user.id);
+  if (result.outcome === 'already-has-role') return ephemeral(interaction, `ℹ️ You already have **${role.name}**.`);
+  if (result.outcome === 'missing-role') return ephemeral(interaction, `ℹ️ You do not have **${role.name}**.`);
+  return ephemeral(interaction, `${result.outcome === 'removed' ? '✅ Removed' : '✅ Added'} **${role.name}**.`);
 }
 async function handleButtonAction(interaction) {
   if (!interaction?.isButton?.()) return false;
