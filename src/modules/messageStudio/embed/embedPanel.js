@@ -356,21 +356,88 @@ function buildPreviewEmbeds(s, i) {
 function buildPreviewEmbed(s, i) {
   return buildEmbedFromPanel(s.panels[s.selectedPanelIndex], i, s.showTimestamp, s.fieldLayout);
 }
-function buttonRows(s, i, offset = 0) {
-  const rows = [];
-  const buttons = (s.buttons || []).slice(offset, offset + MAX_BUTTONS);
-  for (let idx = 0; idx < buttons.length; idx += 5) {
-    const row = new ActionRowBuilder();
-    buttons.slice(idx, idx + 5).forEach((b, j) => {
-      const builder = new ButtonBuilder().setLabel(trim(replaceVars(b.label || "Button", i), 80)).setStyle(ButtonStyle[b.style] || ButtonStyle.Link);
-      if (b.emoji) builder.setEmoji(b.emoji);
-      if ((ButtonStyle[b.style] || ButtonStyle.Link) === ButtonStyle.Link) builder.setURL(safeUrl(replaceVars(b.url, i)) || "https://discord.com");
-      else builder.setCustomId(b.id || `embed-action:${b.action || "custom"}:${j + offset}`);
-      row.addComponents(builder);
-    });
-    rows.push(row);
+
+const EMBED_COMPONENT_LIMITS = Object.freeze({
+  maxComponentsPerRow: 5,
+  maxActionRows: 5,
+});
+const MAX_DEPLOYED_BUTTON_ROWS = Math.max(1, Math.min(4, EMBED_COMPONENT_LIMITS.maxActionRows - 1));
+function buttonShort(value, max = 500) {
+  const text = String(value || "");
+  return text.length > max ? `${text.slice(0, max - 3)}...` : text;
+}
+function buttonResolved(value, interaction) {
+  try {
+    return interaction ? replaceVars(String(value || ""), interaction) : String(value || "");
+  } catch {
+    return String(value || "");
+  }
+}
+function normalizedButtonStyle(value) {
+  const style = String(value || "primary").toLowerCase();
+  return ["primary", "secondary", "success", "danger"].includes(style) ? style : "primary";
+}
+function buttonStyleValue(style) {
+  return {
+    secondary: ButtonStyle.Secondary,
+    success: ButtonStyle.Success,
+    danger: ButtonStyle.Danger,
+  }[normalizedButtonStyle(style)] || ButtonStyle.Primary;
+}
+function normalizedButtonRow(value) {
+  if (value === "" || value == null || value === "auto") return null;
+  const row = Number(value);
+  return Number.isInteger(row) && row >= 0 && row < MAX_DEPLOYED_BUTTON_ROWS ? row : null;
+}
+function resolveButtonUrl(value, interaction) {
+  const raw = buttonResolved(value, interaction).trim();
+  if (!raw) return "";
+  try {
+    const url = new URL(raw);
+    return ["https:", "http:"].includes(url.protocol) ? url.toString() : "";
+  } catch {
+    return "";
+  }
+}
+function buttonActionId(button, absoluteIndex) {
+  if (button?.id) return String(button.id).trim().replace(/[^a-zA-Z0-9:_-]+/g, "-").slice(0, 100);
+  return `embed:action:${absoluteIndex}`;
+}
+function layoutEmbedButtons(buttons = []) {
+  const rows = Array.from({ length: MAX_DEPLOYED_BUTTON_ROWS }, () => []);
+  const automatic = [];
+  buttons.slice(0, MAX_BUTTONS).forEach((button, index) => {
+    const row = normalizedButtonRow(button?.row);
+    if (row != null && rows[row].length < EMBED_COMPONENT_LIMITS.maxComponentsPerRow) rows[row].push({ button, index });
+    else automatic.push({ button, index });
+  });
+  for (const entry of automatic) {
+    const target = rows.findIndex((row) => row.length < EMBED_COMPONENT_LIMITS.maxComponentsPerRow);
+    if (target < 0) break;
+    rows[target].push(entry);
   }
   return rows;
+}
+function buildButtonRows(state, interaction = null) {
+  const output = [];
+  for (const entries of layoutEmbedButtons(Array.isArray(state?.buttons) ? state.buttons : [])) {
+    if (!entries.length) continue;
+    const row = new ActionRowBuilder();
+    for (const { button, index } of entries) {
+      const label = buttonShort(buttonResolved(button?.label || "Button", interaction), 80) || "Button";
+      const url = resolveButtonUrl(button?.url, interaction);
+      const builder = new ButtonBuilder().setLabel(label);
+      if (button?.emoji) builder.setEmoji(button.emoji);
+      if (url) builder.setStyle(ButtonStyle.Link).setURL(url);
+      else builder.setStyle(buttonStyleValue(button?.style)).setCustomId(buttonActionId(button, index));
+      row.addComponents(builder);
+    }
+    output.push(row);
+  }
+  return output.slice(0, MAX_DEPLOYED_BUTTON_ROWS);
+}
+function buttonRows(state, interaction = null) {
+  return buildButtonRows(state, interaction);
 }
 function buildEmbedPanel(interactionOrGuild, memberDisplayName = "Unknown User") {
   const fake = interactionOrGuild?.guild ? interactionOrGuild : { guild: interactionOrGuild, guildId: interactionOrGuild?.id, user: { id: "system" } };
@@ -927,6 +994,9 @@ module.exports = {
   buildPreviewEmbeds,
   buildPreviewEmbed,
   buttonRows,
+  buildButtonRows,
+  layoutEmbedButtons,
+  embedButtonRow: normalizedButtonRow,
   buildEmbedPanel,
   mainEmbed,
   buildEditorPanel,
@@ -960,6 +1030,8 @@ module.exports = {
   MAX_PANELS,
   MAX_BUTTONS,
   MAX_EMBED_FIELDS,
+  EMBED_COMPONENT_LIMITS,
+  MAX_DEPLOYED_BUTTON_ROWS,
   COLORS,
   TEMPLATES,
   HELPERS,
