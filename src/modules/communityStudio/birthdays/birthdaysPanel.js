@@ -51,6 +51,12 @@ function adminPayload(interaction) {
       `Announcement time: **${section.settings.announcementTime} ${section.settings.timezone}**`,
       'The time above controls the **announcement/ping only**.',
       '',
+      '**🗓️ Monthly Management Board**',
+      `Status: **${section.settings.monthlyBoardChannelId ? 'Enabled' : 'Disabled'}**`,
+      `Channel: ${section.settings.monthlyBoardChannelId ? `<#${section.settings.monthlyBoardChannelId}>` : '**Not set**'}`,
+      `Posts: **1st of every month at ${section.settings.monthlyBoardTime} ${section.settings.timezone}**`,
+      'Window: **current month + next month**. The second month repeats as the first month on the next board.',
+      '',
       `Stored birthdays: **${Object.keys(section.members).length}**`,
       '',
       '**🎂 Today’s Birthdays**',
@@ -62,7 +68,8 @@ function adminPayload(interaction) {
     components: [
       row(new ChannelSelectMenuBuilder().setCustomId('admin:birthdays:channel').setPlaceholder('Public birthday announcement channel').setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setMinValues(0).setMaxValues(1).setDefaultChannels(section.settings.announcementChannelId ? [section.settings.announcementChannelId] : [])),
       row(new RoleSelectMenuBuilder().setCustomId('admin:birthdays:role').setPlaceholder('Optional all-day birthday role').setMinValues(0).setMaxValues(1).setDefaultRoles(section.settings.birthdayRoleId ? [section.settings.birthdayRoleId] : [])),
-      row(button('admin:birthdays:settings', '⚙️ Announcement Settings', ButtonStyle.Primary), button('admin:birthdays:toggle', enabled ? '⏸ Disable' : '▶ Enable', enabled ? ButtonStyle.Danger : ButtonStyle.Success), button('admin:birthdays:upcoming', '📅 Upcoming'), button('admin:birthdays:health', '🩺 Health')),
+      row(new ChannelSelectMenuBuilder().setCustomId('admin:birthdays:monthly:channel').setPlaceholder('Optional management birthday board channel').setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setMinValues(0).setMaxValues(1).setDefaultChannels(section.settings.monthlyBoardChannelId ? [section.settings.monthlyBoardChannelId] : [])),
+      row(button('admin:birthdays:settings', '⚙️ Announcement Settings', ButtonStyle.Primary), button('admin:birthdays:monthly:settings', '🗓️ Monthly Settings'), button('admin:birthdays:toggle', enabled ? '⏸ Disable' : '▶ Enable', enabled ? ButtonStyle.Danger : ButtonStyle.Success), button('admin:birthdays:upcoming', '📅 Upcoming'), button('admin:birthdays:health', '🩺 Health')),
       row(button('admin:studio:communityStudio', '⬅️ Back to Community Studio')),
     ],
   };
@@ -73,6 +80,12 @@ function settingsModal(section) {
     row(new TextInputBuilder().setCustomId('time').setLabel('Announcement time (HH:MM)').setStyle(TextInputStyle.Short).setRequired(true).setValue(section.settings.announcementTime)),
     row(new TextInputBuilder().setCustomId('timezone').setLabel('Server birthday timezone').setStyle(TextInputStyle.Short).setRequired(true).setValue(section.settings.timezone).setPlaceholder('Europe/London')),
     row(new TextInputBuilder().setCustomId('message').setLabel('Public birthday message').setStyle(TextInputStyle.Paragraph).setRequired(true).setMaxLength(1800).setValue(section.settings.messageTemplate)),
+  );
+}
+
+function monthlySettingsModal(section) {
+  return new ModalBuilder().setCustomId('admin:birthdays:monthly:settings:submit').setTitle('Monthly Birthday Board').addComponents(
+    row(new TextInputBuilder().setCustomId('time').setLabel('Monthly board time (HH:MM)').setStyle(TextInputStyle.Short).setRequired(true).setValue(section.settings.monthlyBoardTime).setPlaceholder('09:00')),
   );
 }
 
@@ -131,14 +144,21 @@ async function handleAdmin(interaction) {
   if (id === 'admin:birthdays') { await respond(interaction, adminPayload(interaction)); return true; }
   if (id === 'admin:birthdays:channel' && interaction.isChannelSelectMenu?.()) birthdays.updateSettings(interaction.guildId, { announcementChannelId: interaction.values[0] || null }, { ...actor, action: 'birthdays_channel_update' });
   else if (id === 'admin:birthdays:role' && interaction.isRoleSelectMenu?.()) birthdays.updateSettings(interaction.guildId, { birthdayRoleId: interaction.values[0] || null }, { ...actor, action: 'birthdays_role_update' });
+  else if (id === 'admin:birthdays:monthly:channel' && interaction.isChannelSelectMenu?.()) birthdays.updateSettings(interaction.guildId, { monthlyBoardChannelId: interaction.values[0] || null }, { ...actor, action: 'birthdays_monthly_channel_update' });
   else if (id === 'admin:birthdays:toggle') guildManager.setModuleEnabled(interaction.guildId, 'birthdays', !guildManager.isModuleEnabled(interaction.guildId, 'birthdays'), { ...actor, action: 'birthdays_toggle' });
   else if (id === 'admin:birthdays:settings') { await interaction.showModal(settingsModal(birthdays.getSection(interaction.guildId))); return true; }
+  else if (id === 'admin:birthdays:monthly:settings') { await interaction.showModal(monthlySettingsModal(birthdays.getSection(interaction.guildId))); return true; }
   else if (id === 'admin:birthdays:settings:submit') {
     const time = interaction.fields.getTextInputValue('time').trim(); const timezone = interaction.fields.getTextInputValue('timezone').trim();
     if (!birthdays.validTime(time)) throw new Error('Time must use HH:MM in 24-hour format.');
     if (!birthdays.validTimezone(timezone)) throw new Error('Timezone must be a valid IANA timezone such as Europe/London.');
     birthdays.updateSettings(interaction.guildId, { announcementTime: time, timezone, messageTemplate: interaction.fields.getTextInputValue('message') }, { ...actor, action: 'birthdays_settings_update' });
     await interaction.reply({ content: '✅ Birthday announcement settings updated. The time controls the public announcement only; the birthday role follows the birthday day.', flags: 64 }); return true;
+  } else if (id === 'admin:birthdays:monthly:settings:submit') {
+    const time = interaction.fields.getTextInputValue('time').trim();
+    if (!birthdays.validTime(time)) throw new Error('Monthly board time must use HH:MM in 24-hour format.');
+    birthdays.updateSettings(interaction.guildId, { monthlyBoardTime: time }, { ...actor, action: 'birthdays_monthly_settings_update' });
+    await interaction.reply({ content: '✅ Monthly birthday board settings updated. It will post on the 1st of each month when a management channel is selected.', flags: 64 }); return true;
   } else if (id === 'admin:birthdays:upcoming') {
     await interaction.reply({ content: birthdayListContent(interaction.guildId), flags: 64, allowedMentions: { parse: [] } }); return true;
   } else if (id === 'admin:birthdays:health') {
