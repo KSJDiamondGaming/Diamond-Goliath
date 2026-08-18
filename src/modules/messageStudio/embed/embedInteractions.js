@@ -27,17 +27,6 @@ const {
 } = require('./embedDeployments');
 const { buildEmbedPayload, prepareEmbedMedia } = require('./embedRenderer');
 
-media.installStateCompatibility(panel);
-media.installPersistentMediaCompatibility(panel);
-media.installStorageNormalization(panel);
-media.installUploadModals(panel);
-media.installMediaOptionsUi(panel);
-media.installMediaManagerUi(panel);
-media.installThumbnailUi(panel);
-panel.getPanelMedia = media.getPanelMedia;
-panel.setPanelMedia = media.setPanelMedia;
-panel.mediaModel = media.mediaModel;
-
 const DANGEROUS_ROLE_PERMISSIONS = [
   PermissionsBitField.Flags.Administrator,
   PermissionsBitField.Flags.ManageGuild,
