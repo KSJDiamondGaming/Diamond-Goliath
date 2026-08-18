@@ -14,6 +14,7 @@ async function update(interaction) { const payload = panel.buildInviteStudioPayl
 async function resend(interaction, record) { const member = await interaction.guild.members.fetch(record.inviterId).catch(() => null); const live = await interaction.guild.invites.fetch(record.code).catch(() => null); if (!member?.user || !live) throw new Error('The selected personal link or member is unavailable.'); await member.user.send(panel.personalInvitePayload({ ...interaction, user: member.user }, { invite: live, record })); return live.url; }
 async function handleInviteStudioInteraction(interaction) {
   const id = String(interaction.customId || '');
+console.log('[Invite Studio DEBUG]', interaction.type, id);
   if (!id.startsWith('invites:')) return false;
   if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) { await interaction.reply({ content: '❌ Manage Server permission is required.', flags: MessageFlags.Ephemeral }); return true; }
   const state = panel.sessionFor(interaction);
@@ -41,11 +42,11 @@ if (
   if (id === 'invites:panel-deploy') { await interaction.deferReply({ flags: MessageFlags.Ephemeral }); const message = await tracking.deployPublicPanel(interaction.guild, meta(interaction, 'invite_panel_deploy')); await interaction.editReply(`✅ Panel ready in <#${message.channelId}>.`); return true; }
   if (id === 'invites:panel-embed-modal') { await interaction.showModal(panel.embedModal(interaction)); return true; }
   if (id === 'invites:panel-embed-submit' && interaction.isModalSubmit()) { tracking.savePanelConfig(interaction.guildId, { title: interaction.fields.getTextInputValue('title'), description: interaction.fields.getTextInputValue('description'), footer: interaction.fields.getTextInputValue('footer'), color: interaction.fields.getTextInputValue('color') }, meta(interaction, 'invite_panel_text')); await interaction.reply({ content: '✅ Panel text saved.', flags: MessageFlags.Ephemeral }); await tracking.refreshPublicPanel(interaction.guild).catch(() => null); return true; }
-  if (id === 'invites:member-channel' && interaction.isChannelSelectMenu()) { nested(interaction, 'memberInviteTemplate', { channelId: interaction.values[0] }); await update(interaction); return true; }
-  if (id === 'invites:member-roles' && interaction.isRoleSelectMenu()) { nested(interaction, 'memberInviteTemplate', { roleIds: interaction.values }); await update(interaction); return true; }
+  if (id === 'invites:member-channel') { nested(interaction, 'memberInviteTemplate', { channelId: interaction.values[0] }); await update(interaction); return true; }
+  if (id === 'invites:member-roles') { nested(interaction, 'memberInviteTemplate', { roleIds: interaction.values }); await update(interaction); return true; }
   if (id === 'invites:member-enabled') { const config = invites.getSection(interaction.guildId).settings.memberInviteTemplate; nested(interaction, 'memberInviteTemplate', { enabled: !config.enabled }); await update(interaction); return true; }
   if (id === 'invites:member-dm-modal') { await interaction.showModal(panel.dmModal(interaction)); return true; }
-  if (id === 'invites:member-dm-submit' && interaction.isModalSubmit()) { nested(interaction, 'memberInviteTemplate', { dmTitle: interaction.fields.getTextInputValue('title'), dmMessage: interaction.fields.getTextInputValue('message') }); await interaction.reply({ content: '✅ Member DM saved.', flags: MessageFlags.Ephemeral }); return true; }
+  if (id === 'invites:member-dm-submit') { nested(interaction, 'memberInviteTemplate', { dmTitle: interaction.fields.getTextInputValue('title'), dmMessage: interaction.fields.getTextInputValue('message') }); await interaction.reply({ content: '✅ Member DM saved.', flags: MessageFlags.Ephemeral }); return true; }
   if (id === 'invites:toggle') {
     const enabling = !isModuleEnabled(interaction.guildId, 'invites');
     setModuleEnabled(interaction.guildId, 'invites', enabling, interaction.guild);
@@ -74,6 +75,7 @@ if (
 }
 async function handleMemberInteraction(interaction) {
   const id = String(interaction.customId || '');
+console.log('[Invite Studio DEBUG]', interaction.type, id);
   if (!id.startsWith('invites:member-')) return false;
   if (!isModuleEnabled(interaction.guildId, 'invites')) { await interaction.reply({ content: '❌ Invite Studio is disabled.', flags: MessageFlags.Ephemeral }); return true; }
   if (id === 'invites:member-profile') { await interaction.reply(panel.profilePayload(interaction.guild, interaction.user)); return true; }
