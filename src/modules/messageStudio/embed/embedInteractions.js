@@ -1,9 +1,8 @@
 'use strict';
 
 const { MessageFlags, PermissionFlagsBits } = require('discord.js');
-require('./embedButtonsCompat');
+const { handleButtonAction } = require('./embedButtonsCompat');
 const panel = require('./embedPanel');
-const { handleButtonAction } = panel;
 const media = require('./embedMedia');
 const guildManager = require('../../../core/guild/guildManager');
 const { validateChannelAccess } = require('../../../core/security/goliathPermissionGuard');
