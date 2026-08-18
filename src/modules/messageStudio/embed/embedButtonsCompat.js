@@ -48,11 +48,9 @@ function selectedIndex(state) { const buttons = Array.isArray(state.buttons) ? s
 function normalizedStyle(value) { const style = String(value || 'primary').toLowerCase(); return ['primary', 'secondary', 'success', 'danger'].includes(style) ? style : 'primary'; }
 function styleLabel(style) { return { primary: 'Primary', secondary: 'Secondary', success: 'Success', danger: 'Danger' }[normalizedStyle(style)]; }
 function actionLabel(action) { return { reply: 'Reply', 'toggle-role': 'Toggle Role', 'add-role': 'Add Role', 'remove-role': 'Remove Role', 'user-info': 'User Info', 'server-info': 'Server Info' }[String(action || '').toLowerCase()] || 'None'; }
-const normalizedRow = panel.embedButtonRow;
-function rowLabel(value) { const row = normalizedRow(value); return row == null ? 'Auto' : `Row ${row + 1}`; }
+function rowLabel(value) { const row = panel.embedButtonRow(value); return row == null ? 'Auto' : `Row ${row + 1}`; }
 function roleDisplay(interaction, roleId) { const role = interaction?.guild?.roles?.cache?.get?.(String(roleId || '').replace(/\D/g, '')); return role ? `<@&${role.id}>` : roleId ? `Role ${roleId}` : 'Not selected'; }
-const layoutButtons = panel.layoutEmbedButtons;
-function deployedRowFor(buttons, index) { const rows = layoutButtons(buttons); const row = rows.findIndex((entries) => entries.some((entry) => entry.index === index)); return row >= 0 ? row : null; }
+function deployedRowFor(buttons, index) { const rows = panel.layoutEmbedButtons(buttons); const row = rows.findIndex((entries) => entries.some((entry) => entry.index === index)); return row >= 0 ? row : null; }
 
 function buildButtonEditorModal(state, index = null) {
   const buttons = Array.isArray(state.buttons) ? state.buttons : [];
@@ -82,7 +80,7 @@ function buildButtonOptionsPanel(interaction) {
   const state = panel.getSession(interaction), buttons = Array.isArray(state.buttons) ? state.buttons : [], index = selectedIndex(state);
   if (index == null) return panel.buildButtonsManagerPanel(interaction);
   const item = buttons[index], style = normalizedStyle(item.style), action = String(item.action || '').toLowerCase();
-  const currentAction = BUILT_IN_ACTIONS.includes(action) ? action : 'none', configuredRow = normalizedRow(item.row), actualRow = deployedRowFor(buttons, index);
+  const currentAction = BUILT_IN_ACTIONS.includes(action) ? action : 'none', configuredRow = panel.embedButtonRow(item.row), actualRow = deployedRowFor(buttons, index);
   const destination = item.url ? `Link: ${panel.trim(item.url, 800)}` : action ? `Action: ${actionLabel(action)}${BUILT_IN_ACTIONS.includes(action) ? '' : ' (unsupported legacy action)'}` : 'No destination configured';
   const details = [`**Button:** ${index + 1} / ${buttons.length}`, `**Label:** ${item.label || 'Button'}`, `**Style:** ${styleLabel(style)}`, `**Destination:** ${destination}`, `**Layout:** ${rowLabel(item.row)}${actualRow != null ? ` → deploys on Row ${actualRow + 1}` : ''}`];
   if (ROLE_ACTIONS.has(action)) details.push(`**Role:** ${roleDisplay(interaction, item.actionValue)}`);
@@ -118,7 +116,7 @@ panel.buildButtonOptionsPanel = buildButtonOptionsPanel;
 
 function buildButtonsManagerPanel(interaction) {
   const state = panel.getSession(interaction), buttons = Array.isArray(state.buttons) ? state.buttons : [], index = selectedIndex(state), item = index == null ? null : buttons[index];
-  const layout = layoutButtons(buttons), usedRows = layout.filter((row) => row.length).length;
+  const layout = panel.layoutEmbedButtons(buttons), usedRows = layout.filter((row) => row.length).length;
   const lines = [`**Buttons:** ${buttons.length}/${MAX_BUTTONS}`, `**Rows used when deployed:** ${usedRows}/${MAX_DEPLOYED_BUTTON_ROWS}`, ''];
   if (item) {
     const destination = item.url ? `Link: ${panel.trim(item.url, 1000)}` : item.action ? `Action: ${actionLabel(item.action)}` : 'No destination configured';
