@@ -10,7 +10,6 @@ const {
   PermissionsBitField,
   RoleSelectMenuBuilder,
   StringSelectMenuBuilder,
-  TextInputBuilder,
   TextInputStyle,
 } = require('discord.js');
 const guildManager = require('../../../core/guild/guildManager');
@@ -47,9 +46,6 @@ function resolved(value, interaction) {
   catch { return String(value || ''); }
 }
 
-function input(id, label, value = '', maxLength = 4000, required = false, style = TextInputStyle.Short) {
-  return new TextInputBuilder().setCustomId(id).setLabel(label).setStyle(style).setRequired(required).setMaxLength(maxLength).setValue(String(value || '').slice(0, maxLength));
-}
 function selectedIndex(state) { const buttons = Array.isArray(state.buttons) ? state.buttons : []; return Number.isInteger(state.selectedButtonIndex) && buttons[state.selectedButtonIndex] ? state.selectedButtonIndex : null; }
 function normalizedStyle(value) { const style = String(value || 'primary').toLowerCase(); return ['primary', 'secondary', 'success', 'danger'].includes(style) ? style : 'primary'; }
 function styleLabel(style) { return { primary: 'Primary', secondary: 'Secondary', success: 'Success', danger: 'Danger' }[normalizedStyle(style)]; }
@@ -65,16 +61,16 @@ function buildButtonEditorModal(state, index = null) {
   const buttons = Array.isArray(state.buttons) ? state.buttons : [];
   const item = Number.isInteger(index) ? (buttons[index] || {}) : {};
   return new ModalBuilder().setCustomId(Number.isInteger(index) ? `embed:button-manager-save:${index}` : 'embed:button-manager-save-new').setTitle(Number.isInteger(index) ? 'Edit Button' : 'Add Button').addComponents(
-    new ActionRowBuilder().addComponents(input('label', 'Button label', item.label || '', 80, true)),
-    new ActionRowBuilder().addComponents(input('emoji', 'Emoji (optional)', item.emoji || '', 100, false)),
-    new ActionRowBuilder().addComponents(input('url', 'Link URL / variable (optional)', item.url || '', 4000, false)),
+    new ActionRowBuilder().addComponents(panel.input('label', 'Button label', TextInputStyle.Short, item.label || '', true, 80)),
+    new ActionRowBuilder().addComponents(panel.input('emoji', 'Emoji (optional)', TextInputStyle.Short, item.emoji || '', false, 100)),
+    new ActionRowBuilder().addComponents(panel.input('url', 'Link URL / variable (optional)', TextInputStyle.Short, item.url || '', false, 4000)),
   );
 }
 function buildButtonReplyModal(state) {
   const buttons = Array.isArray(state.buttons) ? state.buttons : [];
   const index = selectedIndex(state);
   const item = index == null ? {} : (buttons[index] || {});
-  return new ModalBuilder().setCustomId('embed:button-reply-save').setTitle('Button Reply Text').addComponents(new ActionRowBuilder().addComponents(input('replyText', 'Reply text / variables', item.actionValue || '', 1000, true, TextInputStyle.Paragraph)));
+  return new ModalBuilder().setCustomId('embed:button-reply-save').setTitle('Button Reply Text').addComponents(new ActionRowBuilder().addComponents(panel.input('replyText', 'Reply text / variables', TextInputStyle.Paragraph, item.actionValue || '', true, 1000)));
 }
 panel.buttonEditorModal = buildButtonEditorModal;
 panel.buttonReplyModal = buildButtonReplyModal;
