@@ -32,22 +32,23 @@ function resolved(value, interaction) {
   catch { return String(value || ''); }
 }
 
-function parseRoleId(value) { const raw = String(value || '').replace(/[<@&>]/g, '').trim(); return /^\d{15,25}$/.test(raw) ? raw : null; }
 function resolveButton(interaction) { const index = parseEmbedButtonActionIndex(interaction.customId); if (!Number.isInteger(index) || index < 0 || index >= panel.MAX_BUTTONS) return { index, button: null, deployment: null }; const { deployment, buttons } = resolveEmbedButtonDeployment(interaction.guildId, interaction.message?.id); return { index, button: buttons[index] || null, deployment }; }
 async function ephemeral(interaction, payload) { const body = typeof payload === 'string' ? { content: payload } : payload; if (interaction.deferred || interaction.replied) return interaction.followUp({ ...body, flags: MessageFlags.Ephemeral }); return interaction.reply({ ...body, flags: MessageFlags.Ephemeral }); }
-async function roleIsSafe(role, guild) {
-  if (!role || !guild) return { ok: false, reason: 'Role not found.' };
-  const manageable = await canManageRole(guild, role.id);
-  if (!manageable.ok) return { ok: false, reason: manageable.message || 'Goliath cannot manage that role.' };
-  if (DANGEROUS_ROLE_PERMISSIONS.some((permission) => role.permissions.has(permission))) return { ok: false, reason: 'Self-service buttons cannot manage privileged moderation or administration roles.' };
-  return { ok: true };
+async function roleIsSafe(roleId, guild) {
+  if (!roleId || !guild) return { ok: false, reason: 'Role not found.', role: null };
+  const manageable = await canManageRole(guild, roleId);
+  if (!manageable.ok) return { ok: false, reason: manageable.message || 'Goliath cannot manage that role.', role: null };
+  const role = guild.roles?.cache?.get?.(manageable.roleId) || null;
+  if (!role) return { ok: false, reason: 'Role not found.', role: null };
+  if (DANGEROUS_ROLE_PERMISSIONS.some((permission) => role.permissions.has(permission))) return { ok: false, reason: 'Self-service buttons cannot manage privileged moderation or administration roles.', role: null };
+  return { ok: true, role };
 }
 async function executeRoleAction(interaction, action, value) {
-  const roleId = parseRoleId(resolved(value, interaction));
+  const roleId = String(resolved(value, interaction) || '').match(/\d{15,25}/)?.[0] || null;
   if (!roleId) return ephemeral(interaction, '❌ This button does not have a valid role configured.');
-  const role = interaction.guild?.roles?.cache?.get(roleId) || await interaction.guild?.roles?.fetch?.(roleId).catch(() => null);
-  const safe = await roleIsSafe(role, interaction.guild);
+  const safe = await roleIsSafe(roleId, interaction.guild);
   if (!safe.ok) return ephemeral(interaction, `❌ ${safe.reason}`);
+  const role = safe.role;
   const member = interaction.member?.roles?.cache ? interaction.member : await interaction.guild.members.fetch(interaction.user.id).catch(() => null);
   if (!member) return ephemeral(interaction, '❌ Your server member record could not be loaded.');
   if (action === 'add-role') { if (member.roles.cache.has(roleId)) return ephemeral(interaction, `ℹ️ You already have **${role.name}**.`); await member.roles.add(role, `Embed Studio button used by ${interaction.user.tag || interaction.user.id}`); return ephemeral(interaction, `✅ Added **${role.name}**.`); }
