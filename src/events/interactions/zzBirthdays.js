@@ -5,6 +5,7 @@ const birthdays = require('../../modules/communityStudio/birthdays/birthdays');
 const panel = require('../../modules/communityStudio/birthdays/birthdaysPanel');
 
 const timers = new WeakMap();
+const processingClients = new WeakSet();
 
 function birthdayButton(customId, label) {
   return { type: 2, style: ButtonStyle.Secondary, label, custom_id: customId, emoji: { name: '🎂' } };
@@ -35,8 +36,14 @@ async function appendBirthdayButton(interaction, customId, label) {
 }
 
 async function processAllGuilds(client, action) {
-  for (const guild of client?.guilds?.cache?.values?.() || []) {
-    await birthdays.processGuild(guild, { action }).catch((error) => console.warn(`[Birthdays] ${guild.id}: ${error.message}`));
+  if (!client || processingClients.has(client)) return;
+  processingClients.add(client);
+  try {
+    for (const guild of client?.guilds?.cache?.values?.() || []) {
+      await birthdays.processGuild(guild, { action }).catch((error) => console.warn(`[Birthdays] ${guild.id}: ${error.message}`));
+    }
+  } finally {
+    processingClients.delete(client);
   }
 }
 
