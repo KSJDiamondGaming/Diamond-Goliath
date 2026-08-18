@@ -77,12 +77,13 @@ function timezoneMenu(currentTimezone) {
   if (!TIMEZONES.some(([, value]) => value === currentTimezone) && currentTimezone) {
     options.unshift({ label: `Current · ${currentTimezone}`.slice(0, 100), value: currentTimezone, default: true });
   }
+  options.push({ label: '✏️ Other / Custom…', value: '__custom__' });
   return new StringSelectMenuBuilder()
     .setCustomId('admin:birthdays:timezone')
     .setPlaceholder('Choose birthday timezone')
     .setMinValues(1)
     .setMaxValues(1)
-    .addOptions(...options.slice(0, 24));
+    .addOptions(...options.slice(0, 25));
 }
 
 function celebrationPayload(interaction) {
@@ -109,13 +110,13 @@ function celebrationPayload(interaction) {
       row(timezoneMenu(section.settings.timezone)),
       row(
         button('admin:birthdays:settings', '🕐 Time', ButtonStyle.Primary),
+        button('admin:birthdays:timezone:custom', '🌍 Timezone'),
         button('admin:birthdays:combine', section.settings.combineSameDay ? '👥 Combined: On' : '👤 Combined: Off', section.settings.combineSameDay ? ButtonStyle.Success : ButtonStyle.Secondary),
-        button('admin:birthdays:card', '🎨 Birthday Card'),
       ),
       row(
         button('admin:birthdays:messages:individual', '💬 Individual Messages'),
         button('admin:birthdays:messages:group', '🎉 Group Messages'),
-        button('admin:birthdays:timezone:custom', '✏️ Custom Timezone'),
+        button('admin:birthdays:card', '🎨 Birthday Card'),
       ),
       row(button('admin:birthdays', '⬅️ Back')),
     ],
@@ -359,6 +360,7 @@ async function handleAdmin(interaction) {
   if (id === 'admin:birthdays:channel' && interaction.isChannelSelectMenu?.()) birthdays.updateSettings(interaction.guildId, { announcementChannelId: interaction.values[0] || null }, { ...actor, action: 'birthdays_channel_update' });
   else if (id === 'admin:birthdays:timezone' && interaction.isStringSelectMenu?.()) {
     const timezone = interaction.values[0];
+    if (timezone === '__custom__') { await interaction.showModal(customTimezoneModal(birthdays.getSection(interaction.guildId))); return true; }
     if (!birthdays.validTimezone(timezone)) throw new Error('That timezone is not valid.');
     birthdays.updateSettings(interaction.guildId, { timezone }, { ...actor, action: 'birthdays_timezone_update' });
   }
