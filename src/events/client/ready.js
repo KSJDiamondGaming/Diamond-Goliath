@@ -5,6 +5,7 @@ const { startupTranslation } = require('../../modules/utilityStudio/translation/
 const scheduleStartup = require('../../modules/utilityStudio/schedule/scheduleStartup');
 const auditStore = require('../../owner/auditIntelligence/auditStore');
 const auditRouter = require('../../owner/auditIntelligence/auditRouter');
+const sentinelSchedulers = require('../../owner/sentinel/schedulerRegistry');
 
 const {
   restoreLockdownReminders,
@@ -54,12 +55,31 @@ async function refreshAuditGuildRegistry(client, reason = 'startup') {
 }
 
 function startAuditGuildRegistryRefresh(client) {
-  const timer = setInterval(() => {
-    refreshAuditGuildRegistry(client, 'scheduled refresh').catch((error) => {
+  const schedulerId = sentinelSchedulers.register({
+    module: 'auditIntelligence',
+    component: 'guild-registry-refresh',
+    intervalMs: AUDIT_REGISTRY_REFRESH_MS,
+    staleAfterMs: AUDIT_REGISTRY_REFRESH_MS * 3,
+    environment: auditStore.runtimeMode?.() || String(client?.botMode || process.env.BOT_MODE || 'DEV').toUpperCase(),
+  });
+
+  const run = async () => {
+    try {
+      const registry = await refreshAuditGuildRegistry(client, 'scheduled refresh');
+      if (!registry) throw new Error('Audit guild registry refresh returned no registry.');
+      sentinelSchedulers.beat(schedulerId, {
+        guilds: Array.isArray(registry.guilds) ? registry.guilds.length : 0,
+        environment: registry.environment || null,
+      });
+    } catch (error) {
+      sentinelSchedulers.fail(schedulerId, error);
       terminal.error(`Audit guild registry scheduled refresh failed: ${error?.message || error}`);
-    });
-  }, AUDIT_REGISTRY_REFRESH_MS);
+    }
+  };
+
+  const timer = setInterval(run, AUDIT_REGISTRY_REFRESH_MS);
   timer.unref?.();
+  return timer;
 }
 
 function liveProbeExpired(request, now = Date.now()) {
@@ -156,11 +176,35 @@ async function processAuditLiveProbeRequests(client) {
 }
 
 function startAuditLiveProbeProcessor(client) {
-  processAuditLiveProbeRequests(client).catch((error) => terminal.error(`Audit live probe startup processing failed: ${error?.message || error}`));
-  const timer = setInterval(() => {
-    processAuditLiveProbeRequests(client).catch((error) => terminal.error(`Audit live probe processing failed: ${error?.message || error}`));
-  }, AUDIT_LIVE_PROBE_POLL_MS);
+  const schedulerId = sentinelSchedulers.register({
+    module: 'auditIntelligence',
+    component: 'live-probe-processor',
+    intervalMs: AUDIT_LIVE_PROBE_POLL_MS,
+    staleAfterMs: 15_000,
+    environment: auditStore.runtimeMode?.() || String(client?.botMode || process.env.BOT_MODE || 'DEV').toUpperCase(),
+  });
+
+  const run = async (phase = 'scheduled') => {
+    try {
+      const processed = await processAuditLiveProbeRequests(client);
+      sentinelSchedulers.beat(schedulerId, {
+        phase,
+        processed,
+        inFlight: auditLiveProbeInFlight.size,
+      });
+    } catch (error) {
+      sentinelSchedulers.fail(schedulerId, error, {
+        phase,
+        inFlight: auditLiveProbeInFlight.size,
+      });
+      terminal.error(`Audit live probe ${phase} processing failed: ${error?.message || error}`);
+    }
+  };
+
+  run('startup');
+  const timer = setInterval(() => run('scheduled'), AUDIT_LIVE_PROBE_POLL_MS);
   timer.unref?.();
+  return timer;
 }
 
 async function restoreAuditReportFeeds(client) {
