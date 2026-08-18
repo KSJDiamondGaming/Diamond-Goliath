@@ -40,12 +40,23 @@ async function processAllGuilds(client, action) {
   }
 }
 
+function msUntilNextMinute() {
+  const current = Date.now();
+  return (60000 - (current % 60000)) + 100;
+}
+
 async function startWorker(client) {
   if (!client || timers.has(client)) return;
   await processAllGuilds(client, 'birthdays_startup_process');
-  const timer = setInterval(() => processAllGuilds(client, 'birthdays_interval_process').catch((error) => console.warn(`[Birthdays] worker: ${error.message}`)), birthdays.TICK_MS);
-  timer.unref?.();
-  timers.set(client, timer);
+
+  const worker = { alignmentTimer: null, intervalTimer: null };
+  worker.alignmentTimer = setTimeout(() => {
+    processAllGuilds(client, 'birthdays_boundary_process').catch((error) => console.warn(`[Birthdays] worker: ${error.message}`));
+    worker.intervalTimer = setInterval(() => processAllGuilds(client, 'birthdays_interval_process').catch((error) => console.warn(`[Birthdays] worker: ${error.message}`)), birthdays.TICK_MS);
+    worker.intervalTimer.unref?.();
+  }, msUntilNextMinute());
+  worker.alignmentTimer.unref?.();
+  timers.set(client, worker);
 }
 
 async function safeError(interaction, error) {
