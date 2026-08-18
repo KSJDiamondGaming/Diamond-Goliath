@@ -13,6 +13,7 @@ const {
   legacyEmbedButtonActionFromId,
   resolveEmbedButtonDeployment,
 } = require('./embedDeployments');
+const { canManageRole } = require('../../../core/security/goliathPermissionGuard');
 const panel = require('./embedPanel');
 
 const DANGEROUS_ROLE_PERMISSIONS = [
@@ -34,12 +35,18 @@ function resolved(value, interaction) {
 function parseRoleId(value) { const raw = String(value || '').replace(/[<@&>]/g, '').trim(); return /^\d{15,25}$/.test(raw) ? raw : null; }
 function resolveButton(interaction) { const index = parseEmbedButtonActionIndex(interaction.customId); if (!Number.isInteger(index) || index < 0 || index >= panel.MAX_BUTTONS) return { index, button: null, deployment: null }; const { deployment, buttons } = resolveEmbedButtonDeployment(interaction.guildId, interaction.message?.id); return { index, button: buttons[index] || null, deployment }; }
 async function ephemeral(interaction, payload) { const body = typeof payload === 'string' ? { content: payload } : payload; if (interaction.deferred || interaction.replied) return interaction.followUp({ ...body, flags: MessageFlags.Ephemeral }); return interaction.reply({ ...body, flags: MessageFlags.Ephemeral }); }
-function roleIsSafe(role, guild) { if (!role || !guild) return { ok: false, reason: 'Role not found.' }; if (role.managed) return { ok: false, reason: 'That role is managed by Discord or another integration.' }; const me = guild.members.me; if (!me || !role.editable || role.position >= me.roles.highest.position) return { ok: false, reason: 'Goliath cannot manage that role.' }; if (DANGEROUS_ROLE_PERMISSIONS.some((permission) => role.permissions.has(permission))) return { ok: false, reason: 'Self-service buttons cannot manage privileged moderation or administration roles.' }; return { ok: true }; }
+async function roleIsSafe(role, guild) {
+  if (!role || !guild) return { ok: false, reason: 'Role not found.' };
+  const manageable = await canManageRole(guild, role.id);
+  if (!manageable.ok) return { ok: false, reason: manageable.message || 'Goliath cannot manage that role.' };
+  if (DANGEROUS_ROLE_PERMISSIONS.some((permission) => role.permissions.has(permission))) return { ok: false, reason: 'Self-service buttons cannot manage privileged moderation or administration roles.' };
+  return { ok: true };
+}
 async function executeRoleAction(interaction, action, value) {
   const roleId = parseRoleId(resolved(value, interaction));
   if (!roleId) return ephemeral(interaction, '❌ This button does not have a valid role configured.');
   const role = interaction.guild?.roles?.cache?.get(roleId) || await interaction.guild?.roles?.fetch?.(roleId).catch(() => null);
-  const safe = roleIsSafe(role, interaction.guild);
+  const safe = await roleIsSafe(role, interaction.guild);
   if (!safe.ok) return ephemeral(interaction, `❌ ${safe.reason}`);
   const member = interaction.member?.roles?.cache ? interaction.member : await interaction.guild.members.fetch(interaction.user.id).catch(() => null);
   if (!member) return ephemeral(interaction, '❌ Your server member record could not be loaded.');
