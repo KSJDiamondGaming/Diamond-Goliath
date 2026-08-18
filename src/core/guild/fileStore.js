@@ -3,6 +3,7 @@ const path = require('node:path');
 
 const EXPECTED_WINDOWS_SYNC_ERRORS = new Set(['EPERM', 'EBUSY']);
 const warnedSyncPaths = new Set();
+let writeSequence = 0;
 
 function clone(value) {
   try {
@@ -80,6 +81,11 @@ function syncFile(filePath) {
   }
 }
 
+function tempPathFor(filePath, purpose = 'write') {
+  writeSequence = (writeSequence + 1) % Number.MAX_SAFE_INTEGER;
+  return `${filePath}.${purpose}.${process.pid}.${Date.now()}.${writeSequence}.tmp`;
+}
+
 function restoreBackup(filePath, backupPath = `${filePath}.bak`) {
   if (!filePath || typeof filePath !== 'string') return false;
   if (!backupPath || typeof backupPath !== 'string' || !fs.existsSync(backupPath)) return false;
@@ -87,7 +93,7 @@ function restoreBackup(filePath, backupPath = `${filePath}.bak`) {
   validateJsonFile(backupPath);
   ensureDir(path.dirname(filePath));
 
-  const restoreTempPath = `${filePath}.restore.tmp`;
+  const restoreTempPath = tempPathFor(filePath, 'restore');
   try {
     fs.copyFileSync(backupPath, restoreTempPath);
     validateJsonFile(restoreTempPath);
@@ -121,8 +127,12 @@ function write(filePath, data = {}) {
 
   ensureDir(path.dirname(filePath));
 
-  const tempPath = `${filePath}.tmp`;
+  // Every write gets its own staging paths. A shared `${filePath}.tmp` allowed
+  // overlapping runtime processes/restarts to rename or delete another writer's
+  // temporary file, producing ENOENT and occasionally breaking the backup step.
+  const tempPath = tempPathFor(filePath, 'write');
   const backupPath = `${filePath}.bak`;
+  const backupTempPath = tempPathFor(filePath, 'backup');
   const json = JSON.stringify(sortKeys(data ?? {}), null, 2);
   const hadExisting = fs.existsSync(filePath);
 
@@ -131,12 +141,13 @@ function write(filePath, data = {}) {
     validateJsonFile(tempPath);
     syncFile(tempPath);
 
-    // Keep one last-known-good on-disk copy before replacing the active guild JSON.
-    // This is intentionally automatic and applies to every guild write.
-    if (hadExisting) {
-      fs.copyFileSync(filePath, backupPath);
-      validateJsonFile(backupPath);
-      syncFile(backupPath);
+    // Stage the backup independently too, then atomically publish it. This keeps
+    // concurrent writers from copying over or validating one another's backup.
+    if (hadExisting && fs.existsSync(filePath)) {
+      fs.copyFileSync(filePath, backupTempPath);
+      validateJsonFile(backupTempPath);
+      syncFile(backupTempPath);
+      fs.renameSync(backupTempPath, backupPath);
     }
 
     try {
@@ -160,9 +171,11 @@ function write(filePath, data = {}) {
   } catch (error) {
     console.error(`[fileStore] Failed to write file: ${filePath}`, error);
 
-    try {
-      if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
-    } catch {}
+    for (const stagedPath of [tempPath, backupTempPath]) {
+      try {
+        if (fs.existsSync(stagedPath)) fs.unlinkSync(stagedPath);
+      } catch {}
+    }
 
     // If the active file became invalid during a fallback write, restore the
     // last-known-good copy automatically rather than leaving client data broken.
@@ -179,6 +192,12 @@ function write(filePath, data = {}) {
     }
 
     throw error;
+  } finally {
+    for (const stagedPath of [tempPath, backupTempPath]) {
+      try {
+        if (fs.existsSync(stagedPath)) fs.unlinkSync(stagedPath);
+      } catch {}
+    }
   }
 }
 
