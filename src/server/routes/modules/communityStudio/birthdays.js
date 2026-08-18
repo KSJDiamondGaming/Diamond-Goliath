@@ -20,6 +20,11 @@ function guildId(req) {
   if (!/^\d{15,25}$/.test(id)) throw new Error('Invalid guild ID.');
   return id;
 }
+function userId(req) {
+  const id = String(req.params.userId || req.body?.userId || '').trim();
+  if (!/^\d{15,25}$/.test(id)) throw new Error('Invalid user ID.');
+  return id;
+}
 
 const actor = (req) => String(req.session?.user?.id || req.body?.actorId || '').trim() || null;
 const client = (req) => req.client || req.app?.get?.('goliath.client') || null;
@@ -38,6 +43,7 @@ async function overview(req, id) {
     month: item.member.month,
     day: item.member.day,
     year: item.member.year,
+    listPublic: item.member.listPublic,
     announce: item.member.announce,
     showAge: item.member.showAge,
     daysUntil: item.daysUntil,
@@ -80,7 +86,9 @@ router.patch('/:guildId/settings', async (req, res) => {
     const id = guildId(req);
     const patch = req.body?.settings || req.body || {};
     if (patch.announcementTime !== undefined && !birthdays.validTime(patch.announcementTime)) throw new Error('Announcement time must use HH:MM in 24-hour format.');
+    if (patch.monthlyBoardTime !== undefined && !birthdays.validTime(patch.monthlyBoardTime)) throw new Error('Monthly board time must use HH:MM in 24-hour format.');
     if (patch.timezone !== undefined && !birthdays.validTimezone(patch.timezone)) throw new Error('Timezone must be a valid IANA timezone such as Europe/London.');
+    if (patch.leapDayMode !== undefined && !['feb28', 'mar1'].includes(patch.leapDayMode)) throw new Error('Leap day mode must be feb28 or mar1.');
     if (patch.birthdayRoleId) {
       const target = await guild(req, id);
       if (!target) throw new Error('Guild is unavailable.');
@@ -102,14 +110,29 @@ router.post('/:guildId/process', async (req, res) => {
   } catch (error) { return fail(res, error); }
 });
 
+router.put('/:guildId/members/:userId', async (req, res) => {
+  try {
+    const id = guildId(req); const uid = userId(req);
+    const input = req.body?.birthday || req.body || {};
+    const saved = birthdays.setBirthday(id, uid, input, { actorId: actor(req), action: 'birthdays_dashboard_set_member' });
+    return ok(res, { saved, ...(await overview(req, id)) });
+  } catch (error) { return fail(res, error); }
+});
+
 router.delete('/:guildId/members/:userId', async (req, res) => {
   try {
-    const id = guildId(req);
-    const userId = String(req.params.userId || '').trim();
-    if (!/^\d{15,25}$/.test(userId)) throw new Error('Invalid user ID.');
-    const removed = birthdays.removeBirthday(id, userId, { actorId: actor(req), action: 'birthdays_dashboard_remove_member' });
+    const id = guildId(req); const uid = userId(req);
+    const removed = birthdays.removeBirthday(id, uid, { actorId: actor(req), action: 'birthdays_dashboard_remove_member' });
     if (!removed) return fail(res, new Error('Birthday record not found.'), 404);
     return ok(res, { removed, ...(await overview(req, id)) });
+  } catch (error) { return fail(res, error); }
+});
+
+router.post('/:guildId/import', async (req, res) => {
+  try {
+    const id = guildId(req);
+    const result = birthdays.importData(id, req.body?.data || req.body, { actorId: actor(req), action: 'birthdays_dashboard_import' });
+    return ok(res, { result, ...(await overview(req, id)) });
   } catch (error) { return fail(res, error); }
 });
 
@@ -126,7 +149,7 @@ router.get('/:guildId/export', (req, res) => {
     const id = guildId(req);
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="goliath-birthdays-${id}.json"`);
-    return res.send(JSON.stringify({ ...birthdays.getSection(id), enabled: guildManager.isModuleEnabled(id, 'birthdays') }, null, 2));
+    return res.send(JSON.stringify(birthdays.exportData(id), null, 2));
   } catch (error) { return fail(res, error); }
 });
 
