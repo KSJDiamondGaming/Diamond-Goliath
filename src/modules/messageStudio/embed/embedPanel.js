@@ -843,6 +843,29 @@ function buttonModal(s, n = null) {
     input("url", "URL", TextInputStyle.Short, b.url),
   ]);
 }
+function buttonEditorModal(state, index = null) {
+  const buttons = Array.isArray(state.buttons) ? state.buttons : [];
+  const item = Number.isInteger(index) ? (buttons[index] || {}) : {};
+  return modal(
+    Number.isInteger(index) ? `embed:button-manager-save:${index}` : "embed:button-manager-save-new",
+    Number.isInteger(index) ? "Edit Button" : "Add Button",
+    [
+      input("label", "Button label", TextInputStyle.Short, item.label || "", true, 80),
+      input("emoji", "Emoji (optional)", TextInputStyle.Short, item.emoji || "", false, 100),
+      input("url", "Link URL / variable (optional)", TextInputStyle.Short, item.url || "", false, 4000),
+    ],
+  );
+}
+function buttonReplyModal(state) {
+  const buttons = Array.isArray(state.buttons) ? state.buttons : [];
+  const index = Number.isInteger(state.selectedButtonIndex) && buttons[state.selectedButtonIndex]
+    ? state.selectedButtonIndex
+    : null;
+  const item = index == null ? {} : (buttons[index] || {});
+  return modal("embed:button-reply-save", "Button Reply Text", [
+    input("replyText", "Reply text / variables", TextInputStyle.Paragraph, item.actionValue || "", true, 1000),
+  ]);
+}
 function colorModal(s) {
   return modal("embed:save-color", "Custom HEX Colour", [input("hex", "HEX colour", TextInputStyle.Short, s.color || PANEL_COLOR, true, 7)]);
 }
@@ -1018,6 +1041,8 @@ module.exports = {
   mediaModal,
   fieldModal,
   buttonModal,
+  buttonEditorModal,
+  buttonReplyModal,
   colorModal,
   presetModal,
   appearanceDetailsModal,
