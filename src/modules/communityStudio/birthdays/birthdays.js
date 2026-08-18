@@ -7,6 +7,8 @@ const { getModuleSection, saveModuleSection, updateModuleSection } = require('..
 const SECTION = 'birthdays';
 const TICK_MS = 60 * 1000;
 const UPCOMING_WINDOW_DAYS = 30;
+const LEGACY_MESSAGE_TEMPLATE = '🎂 Happy Birthday {mention}! We hope you have a fantastic day! 🎉';
+const DEFAULT_MESSAGE_TEMPLATE = '🎂 Happy Birthday {mention}! From everyone at {server}, we hope you have a fantastic day! 🎉';
 const now = () => new Date().toISOString();
 const clone = (value) => value == null ? value : JSON.parse(JSON.stringify(value));
 const clean = (value, max = 1000) => String(value ?? '').trim().slice(0, max);
@@ -40,7 +42,7 @@ function defaultSection() {
       announcementChannelId: null,
       announcementTime: '09:00',
       timezone: 'Europe/London',
-      messageTemplate: '🎂 Happy Birthday {mention}! We hope you have a fantastic day! 🎉',
+      messageTemplate: DEFAULT_MESSAGE_TEMPLATE,
       birthdayRoleId: null,
       roleDurationHours: 24,
       showAgeByDefault: false,
@@ -91,13 +93,14 @@ function normalizeSection(section = {}) {
   const base = defaultSection();
   const raw = section && typeof section === 'object' ? section : {};
   const rawTimezone = normalizeTimezone(raw.settings?.timezone);
+  const rawMessageTemplate = clean(raw.settings?.messageTemplate, 1800);
   const settings = {
     ...base.settings,
     ...(raw.settings || {}),
     announcementChannelId: cleanId(raw.settings?.announcementChannelId),
     announcementTime: validTime(raw.settings?.announcementTime) ? raw.settings.announcementTime : base.settings.announcementTime,
     timezone: rawTimezone && validTimezone(rawTimezone) ? rawTimezone : base.settings.timezone,
-    messageTemplate: clean(raw.settings?.messageTemplate || base.settings.messageTemplate, 1800) || base.settings.messageTemplate,
+    messageTemplate: !rawMessageTemplate || rawMessageTemplate === LEGACY_MESSAGE_TEMPLATE ? base.settings.messageTemplate : rawMessageTemplate,
     birthdayRoleId: cleanId(raw.settings?.birthdayRoleId),
     roleDurationHours: Math.max(1, Math.min(168, Math.floor(Number(raw.settings?.roleDurationHours || 24)))),
     showAgeByDefault: raw.settings?.showAgeByDefault === true,
