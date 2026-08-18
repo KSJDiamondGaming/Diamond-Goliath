@@ -341,9 +341,13 @@ jobs:
             fi
 
             [ "$(git rev-parse HEAD)" = "$EXPECTED_SHA" ] || exit 1
-            restore_runtime
+            # Runtime was restored immediately after checkout. Do not restore it again
+            # after PM2 starts because the live process may already have written newer
+            # runtime state; a second restore can both overwrite that state and make a
+            # successful deploy return a late non-zero tar status.
             trap - EXIT
             rm -rf "$BACKUP_DIR"
+            echo "Deployment completed successfully at $EXPECTED_SHA."
 
       - name: Summary
         run: |
