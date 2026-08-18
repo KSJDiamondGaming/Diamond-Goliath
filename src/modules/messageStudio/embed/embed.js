@@ -38,6 +38,7 @@ module.exports = {
   templates,
   deployments,
   panel,
+  media,
   interactions,
   tracking: deployments,
   validation,
