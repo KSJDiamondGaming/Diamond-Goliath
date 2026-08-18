@@ -39,7 +39,6 @@ function enforceLimits(rows = []) {
     return row;
   });
 }
-function short(value, max = 500) { const text = String(value || ''); return text.length > max ? `${text.slice(0, max - 3)}...` : text; }
 function resolved(value, interaction) {
   try { return typeof panel.replaceVars === 'function' && interaction ? panel.replaceVars(String(value || ''), interaction) : String(value || ''); }
   catch { return String(value || ''); }
@@ -84,10 +83,10 @@ function buildButtonOptionsPanel(interaction) {
   if (index == null) return panel.buildButtonsManagerPanel(interaction);
   const item = buttons[index], style = normalizedStyle(item.style), action = String(item.action || '').toLowerCase();
   const currentAction = BUILT_IN_ACTIONS.includes(action) ? action : 'none', configuredRow = normalizedRow(item.row), actualRow = deployedRowFor(buttons, index);
-  const destination = item.url ? `Link: ${short(item.url, 800)}` : action ? `Action: ${actionLabel(action)}${BUILT_IN_ACTIONS.includes(action) ? '' : ' (unsupported legacy action)'}` : 'No destination configured';
+  const destination = item.url ? `Link: ${panel.trim(item.url, 800)}` : action ? `Action: ${actionLabel(action)}${BUILT_IN_ACTIONS.includes(action) ? '' : ' (unsupported legacy action)'}` : 'No destination configured';
   const details = [`**Button:** ${index + 1} / ${buttons.length}`, `**Label:** ${item.label || 'Button'}`, `**Style:** ${styleLabel(style)}`, `**Destination:** ${destination}`, `**Layout:** ${rowLabel(item.row)}${actualRow != null ? ` → deploys on Row ${actualRow + 1}` : ''}`];
   if (ROLE_ACTIONS.has(action)) details.push(`**Role:** ${roleDisplay(interaction, item.actionValue)}`);
-  if (action === 'reply') details.push(`**Reply:** ${item.actionValue ? short(resolved(item.actionValue, interaction), 900) : 'Not configured'}`);
+  if (action === 'reply') details.push(`**Reply:** ${item.actionValue ? panel.trim(resolved(item.actionValue, interaction), 900) : 'Not configured'}`);
   details.push('', 'Choose the action and row placement below. Auto placement fills the first available row. A Discord button row can never contain more than 5 buttons.');
   const rows = [
     new ActionRowBuilder().addComponents(
@@ -122,20 +121,20 @@ function buildButtonsManagerPanel(interaction) {
   const layout = layoutButtons(buttons), usedRows = layout.filter((row) => row.length).length;
   const lines = [`**Buttons:** ${buttons.length}/${MAX_BUTTONS}`, `**Rows used when deployed:** ${usedRows}/${MAX_DEPLOYED_BUTTON_ROWS}`, ''];
   if (item) {
-    const destination = item.url ? `Link: ${short(item.url, 1000)}` : item.action ? `Action: ${actionLabel(item.action)}` : 'No destination configured';
+    const destination = item.url ? `Link: ${panel.trim(item.url, 1000)}` : item.action ? `Action: ${actionLabel(item.action)}` : 'No destination configured';
     const actualRow = deployedRowFor(buttons, index);
     lines.push(`**Selected button ${index + 1}:** ${item.emoji ? `${item.emoji} ` : ''}${item.label || 'Button'}`, `**Style:** ${styleLabel(item.style)}`, `**Destination:** ${destination}`, `**Row:** ${rowLabel(item.row)}${actualRow != null ? ` → Row ${actualRow + 1}` : ''}`);
     if (ROLE_ACTIONS.has(String(item.action || '').toLowerCase())) lines.push(`**Role:** ${roleDisplay(interaction, item.actionValue)}`);
-    if (item.action === 'reply' && item.actionValue) lines.push(`**Reply:** ${short(resolved(item.actionValue, interaction), 900)}`);
+    if (item.action === 'reply' && item.actionValue) lines.push(`**Reply:** ${panel.trim(resolved(item.actionValue, interaction), 900)}`);
   } else lines.push('**Selected button:** None');
   lines.push('', 'Buttons support automatic or explicit row placement. Discord limits are enforced: up to 5 buttons per row and up to 20 buttons across 4 button rows.');
   const embeds = [new EmbedBuilder().setColor(0x5865F2).setTitle('🔘 Buttons').setDescription(lines.join('\n').slice(0, 4096))];
   if (item) {
-    const previewLabel = short(resolved(item.label || 'Button', interaction), 80) || 'Button', previewUrl = panel.safeUrl(resolved(item.url, interaction)) || '', actualRow = deployedRowFor(buttons, index);
+    const previewLabel = panel.trim(resolved(item.label || 'Button', interaction), 80) || 'Button', previewUrl = panel.safeUrl(resolved(item.url, interaction)) || '', actualRow = deployedRowFor(buttons, index);
     embeds.push(new EmbedBuilder().setColor(0x5865F2).setTitle('👁️ Selected Button Preview').setDescription([`**Label:** ${item.emoji ? `${item.emoji} ` : ''}${previewLabel}`, `**Style:** ${previewUrl ? 'Link' : styleLabel(item.style)}`, `**Destination:** ${previewUrl ? previewUrl : item.action ? `Action: ${actionLabel(item.action)}` : 'Not configured'}`, `**Deploy row:** ${actualRow == null ? 'Not placed' : actualRow + 1}`].join('\n').slice(0, 4096)));
   }
   const rows = [];
-  if (buttons.length) rows.push(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('embed:button-manager-select').setPlaceholder('Select button').setMinValues(1).setMaxValues(1).addOptions(buttons.map((button, buttonIndex) => ({ label: `${buttonIndex + 1}. ${short(button.label || 'Button', 80)}`, value: String(buttonIndex), description: short(`${rowLabel(button.row)} • ${button.url || actionLabel(button.action) || styleLabel(button.style)}`, 100), default: buttonIndex === index })))));
+  if (buttons.length) rows.push(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('embed:button-manager-select').setPlaceholder('Select button').setMinValues(1).setMaxValues(1).addOptions(buttons.map((button, buttonIndex) => ({ label: `${buttonIndex + 1}. ${panel.trim(button.label || 'Button', 80)}`, value: String(buttonIndex), description: panel.trim(`${rowLabel(button.row)} • ${button.url || actionLabel(button.action) || styleLabel(button.style)}`, 100), default: buttonIndex === index })))));
   rows.push(
     new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId('embed:button-manager-add').setLabel('➕ Add').setStyle(ButtonStyle.Success).setDisabled(buttons.length >= MAX_BUTTONS),
