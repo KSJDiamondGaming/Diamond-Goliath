@@ -40,6 +40,7 @@ module.exports = {
   buildHealthReport: validation.buildHealthReport,
   repairAll: validation.repairAll,
   handleInteraction: interactions.handleInteraction,
+  installMediaBoundary,
   templates,
   deployments,
   panel,
