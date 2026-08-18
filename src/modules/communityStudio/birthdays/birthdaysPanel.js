@@ -62,7 +62,7 @@ function adminPayload(interaction) {
         button('admin:birthdays:settings', '⚙️ Schedule', ButtonStyle.Primary),
         button('admin:birthdays:card', '🎨 Birthday Card'),
         button('admin:birthdays:combine', section.settings.combineSameDay ? '👥 Combined: On' : '👤 Combined: Off', section.settings.combineSameDay ? ButtonStyle.Success : ButtonStyle.Secondary),
-        button('admin:birthdays:monthly:settings', '🗓️ Monthly'),
+        button('admin:birthdays:monthly:settings', '🗓️ Monthly / Leap'),
         button('admin:birthdays:testmenu', '🧪 Test Centre'),
       ),
       row(
@@ -89,11 +89,13 @@ function cardModal(section) {
     row(new TextInputBuilder().setCustomId('footer').setLabel('Footer — {server} supported').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(1000).setValue(section.settings.cardFooter || '')),
     row(new TextInputBuilder().setCustomId('color').setLabel('Embed colour hex').setStyle(TextInputStyle.Short).setRequired(true).setValue(section.settings.cardColor)),
     row(new TextInputBuilder().setCustomId('image').setLabel('Optional image / GIF URL').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(2000).setValue(section.settings.cardImageUrl || '').setPlaceholder('https://...')),
+    row(new TextInputBuilder().setCustomId('mode').setLabel('Use embed card? on / off').setStyle(TextInputStyle.Short).setRequired(true).setValue(section.settings.useBirthdayEmbed ? 'on' : 'off')),
   );
 }
 function monthlySettingsModal(section) {
-  return new ModalBuilder().setCustomId('admin:birthdays:monthly:settings:submit').setTitle('Monthly Birthday Board').addComponents(
+  return new ModalBuilder().setCustomId('admin:birthdays:monthly:settings:submit').setTitle('Monthly Board & Leap Day').addComponents(
     row(new TextInputBuilder().setCustomId('time').setLabel('Monthly board time (HH:MM)').setStyle(TextInputStyle.Short).setRequired(true).setValue(section.settings.monthlyBoardTime)),
+    row(new TextInputBuilder().setCustomId('leap').setLabel('Feb 29 in non-leap years').setStyle(TextInputStyle.Short).setRequired(true).setValue(section.settings.leapDayMode === 'mar1' ? 'mar1' : 'feb28').setPlaceholder('feb28 or mar1')),
   );
 }
 function manageModal() {
@@ -159,6 +161,7 @@ function parsePrivacy(raw) {
   const bool = (v, fallback) => !v ? fallback : ['on', 'true', 'yes', '1'].includes(v);
   return { listPublic: bool(values[0], true), announce: bool(values[1], true), showAge: bool(values[2], false) };
 }
+function onOff(raw) { return ['on', 'true', 'yes', '1'].includes(String(raw || '').trim().toLowerCase()); }
 
 async function handleAdmin(interaction) {
   const id = String(interaction.customId || ''); if (!id.startsWith('admin:birthdays')) return false;
@@ -196,13 +199,14 @@ async function handleAdmin(interaction) {
   else if (id === 'admin:birthdays:card:submit') {
     const color = interaction.fields.getTextInputValue('color').trim(); if (!/^#?[0-9a-f]{6}$/i.test(color)) throw new Error('Card colour must be a 6-digit hex colour such as #5865F2.');
     const image = interaction.fields.getTextInputValue('image').trim(); if (image && !/^https?:\/\//i.test(image)) throw new Error('Card image must be an http/https URL.');
-    birthdays.updateSettings(interaction.guildId, { cardTitle: interaction.fields.getTextInputValue('title'), cardFooter: interaction.fields.getTextInputValue('footer'), cardColor: color, cardImageUrl: image || null, useBirthdayEmbed: true }, { ...actor, action: 'birthdays_card_update' });
-    await interaction.reply({ content: '✅ Birthday Card updated and embed mode enabled.', flags: 64 }); return true;
+    birthdays.updateSettings(interaction.guildId, { cardTitle: interaction.fields.getTextInputValue('title'), cardFooter: interaction.fields.getTextInputValue('footer'), cardColor: color, cardImageUrl: image || null, useBirthdayEmbed: onOff(interaction.fields.getTextInputValue('mode')) }, { ...actor, action: 'birthdays_card_update' });
+    await interaction.reply({ content: '✅ Birthday Card settings updated.', flags: 64 }); return true;
   }
   else if (id === 'admin:birthdays:monthly:settings:submit') {
     const time = interaction.fields.getTextInputValue('time').trim(); if (!birthdays.validTime(time)) throw new Error('Monthly board time must use HH:MM.');
-    birthdays.updateSettings(interaction.guildId, { monthlyBoardTime: time }, { ...actor, action: 'birthdays_monthly_settings_update' });
-    await interaction.reply({ content: '✅ Monthly birthday board time updated.', flags: 64 }); return true;
+    const leap = interaction.fields.getTextInputValue('leap').trim().toLowerCase(); if (!['feb28', 'mar1'].includes(leap)) throw new Error('Leap day mode must be feb28 or mar1.');
+    birthdays.updateSettings(interaction.guildId, { monthlyBoardTime: time, leapDayMode: leap }, { ...actor, action: 'birthdays_monthly_settings_update' });
+    await interaction.reply({ content: `✅ Monthly board updated. Feb 29 birthdays will use **${leap === 'mar1' ? '1 March' : '28 February'}** in non-leap years.`, flags: 64 }); return true;
   }
   else if (id === 'admin:birthdays:manage:submit') {
     const userId = interaction.fields.getTextInputValue('user').trim(); if (!/^\d{15,25}$/.test(userId)) throw new Error('Enter a valid Discord user ID.');
