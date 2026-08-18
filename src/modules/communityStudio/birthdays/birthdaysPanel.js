@@ -55,13 +55,11 @@ function adminPayload(interaction) {
         button('admin:birthdays:settings', '⚙️ Celebration', ButtonStyle.Primary),
         button('admin:birthdays:card', '🎨 Birthday Card'),
         button('admin:birthdays:monthly:settings', '📅 Monthly Board'),
-      ),
-      row(
         button('admin:birthdays:manage', '👤 Members'),
         button('admin:birthdays:import', '📥 Import'),
-        button('admin:birthdays:export', '📤 Export'),
       ),
       row(
+        button('admin:birthdays:export', '📤 Export'),
         button('admin:birthdays:testmenu', '🧪 Test Centre'),
         button('admin:birthdays:health', '🩺 Health'),
         button('admin:studio:communityStudio', '⬅️ Back'),
