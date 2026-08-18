@@ -30,7 +30,7 @@ function getIntervalDays() {
 }
 
 function getRetentionLimit() {
-  return getEnvNumber('SERVER_BACKUP_RETENTION', 3);
+  return Math.max(1, Math.trunc(getEnvNumber('SERVER_BACKUP_RETENTION', 3)));
 }
 
 function daysToMs(days) {
@@ -82,6 +82,14 @@ function cleanupOldBackups(guildId) {
 async function backupGuild(guild) {
   if (!guild) return null;
 
+  if (!guildManager.isModuleEnabled(guild.id, 'serverBackups')) {
+    return {
+      guildId: guild.id,
+      skipped: true,
+      reason: 'Server Backups module is disabled.',
+    };
+  }
+
   if (!shouldBackup(guild.id)) {
     return {
       guildId: guild.id,
@@ -119,6 +127,8 @@ async function runServerBackupCycle(client) {
   const results = [];
 
   for (const guild of guilds) {
+    if (!guildManager.isModuleEnabled(guild.id, 'serverBackups')) continue;
+
     try {
       const result = await backupGuild(guild);
       if (result) results.push(result);
