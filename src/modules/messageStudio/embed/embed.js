@@ -14,6 +14,9 @@ function installMediaBoundary(targetPanel) {
   media.installMediaOptionsUi(targetPanel);
   media.installMediaManagerUi(targetPanel);
   media.installThumbnailUi(targetPanel);
+  targetPanel.getPanelMedia = media.getPanelMedia;
+  targetPanel.setPanelMedia = media.setPanelMedia;
+  targetPanel.mediaModel = media.mediaModel;
   return targetPanel;
 }
 
