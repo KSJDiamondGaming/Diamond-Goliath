@@ -33,24 +33,17 @@ function adminPayload(interaction) {
   const desc = [
     `Module: **${enabled ? 'Enabled' : 'Disabled'}**`,
     '', '**🎉 Birthday Day**',
-    `Birthday role: ${section.settings.birthdayRoleId ? `<@&${section.settings.birthdayRoleId}>` : '**None**'}`,
-    'Role lifecycle: **Birthday day only · midnight to midnight**',
-    `Birthdays today: **${today.length}**`,
+    `Role: ${section.settings.birthdayRoleId ? `<@&${section.settings.birthdayRoleId}>` : '**None**'}`,
+    `Today: **${today.length} birthday${today.length === 1 ? '' : 's'}**`,
     '', '**📣 Public Celebration**',
     `Channel: ${section.settings.announcementChannelId ? `<#${section.settings.announcementChannelId}>` : '**Not set**'}`,
-    `Time: **${section.settings.announcementTime} ${section.settings.timezone}**`,
-    `Format: **${section.settings.useBirthdayEmbed ? 'Birthday Card Embed' : 'Plain message'}**`,
-    `Same-day birthdays: **${section.settings.combineSameDay ? 'Combined celebration' : 'Individual celebrations'}**`,
-    `Message pool: **${section.settings.messageTemplates.length}** template${section.settings.messageTemplates.length === 1 ? '' : 's'}`,
-    '', '**🗓️ Monthly Birthday Board**',
-    `Status: **${section.settings.monthlyBoardChannelId ? 'Enabled' : 'Disabled'}**`,
+    `Time: **${section.settings.announcementTime} · ${section.settings.timezone}**`,
+    `Style: **${section.settings.useBirthdayEmbed ? 'Birthday Card' : 'Plain Message'} · ${section.settings.combineSameDay ? 'Combined' : 'Individual'}**`,
+    '', '**📅 Monthly Board**',
     `Channel: ${section.settings.monthlyBoardChannelId ? `<#${section.settings.monthlyBoardChannelId}>` : '**Not set**'}`,
-    `Posts: **1st of every month at ${section.settings.monthlyBoardTime} ${section.settings.timezone}**`,
-    '', '**🔐 Privacy / Calendar**',
-    `Leap day: **${section.settings.leapDayMode === 'mar1' ? '1 March' : '28 February'}** in non-leap years`,
-    `Stored birthdays: **${Object.keys(section.members).length}**`,
-    '', '**🎂 Today’s Birthdays**', todayLines,
-    '', '**📅 Upcoming — Next 2 Months**', upcomingLines,
+    `Schedule: **1st monthly · ${section.settings.monthlyBoardTime}**`,
+    '', '**🎂 Today**', todayLines,
+    '', '**📆 Next 2 Months**', upcomingLines,
   ].join('\n');
   return {
     embeds: [new EmbedBuilder().setColor(enabled ? 0x5865F2 : 0x747F8D).setTitle('🎂 Birthdays').setDescription(desc).setFooter({ text: 'Goliath Birthdays · /admin' }).setTimestamp()],
@@ -59,16 +52,17 @@ function adminPayload(interaction) {
       row(new RoleSelectMenuBuilder().setCustomId('admin:birthdays:role').setPlaceholder('Optional all-day birthday role').setMinValues(0).setMaxValues(1).setDefaultRoles(section.settings.birthdayRoleId ? [section.settings.birthdayRoleId] : [])),
       row(new ChannelSelectMenuBuilder().setCustomId('admin:birthdays:monthly:channel').setPlaceholder('Optional management birthday board channel').setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setMinValues(0).setMaxValues(1).setDefaultChannels(section.settings.monthlyBoardChannelId ? [section.settings.monthlyBoardChannelId] : [])),
       row(
-        button('admin:birthdays:settings', '⚙️ Schedule', ButtonStyle.Primary),
+        button('admin:birthdays:settings', '⚙️ Celebration', ButtonStyle.Primary),
         button('admin:birthdays:card', '🎨 Birthday Card'),
-        button('admin:birthdays:combine', section.settings.combineSameDay ? '👥 Combined: On' : '👤 Combined: Off', section.settings.combineSameDay ? ButtonStyle.Success : ButtonStyle.Secondary),
-        button('admin:birthdays:monthly:settings', '🗓️ Monthly / Leap'),
-        button('admin:birthdays:testmenu', '🧪 Test Centre'),
+        button('admin:birthdays:monthly:settings', '📅 Monthly Board'),
       ),
       row(
-        button('admin:birthdays:manage', '👤 Manage Member'),
+        button('admin:birthdays:manage', '👤 Members'),
         button('admin:birthdays:import', '📥 Import'),
         button('admin:birthdays:export', '📤 Export'),
+      ),
+      row(
+        button('admin:birthdays:testmenu', '🧪 Test Centre'),
         button('admin:birthdays:health', '🩺 Health'),
         button('admin:studio:communityStudio', '⬅️ Back'),
       ),
@@ -77,9 +71,10 @@ function adminPayload(interaction) {
 }
 
 function settingsModal(section) {
-  return new ModalBuilder().setCustomId('admin:birthdays:settings:submit').setTitle('Birthday Schedule & Messages').addComponents(
+  return new ModalBuilder().setCustomId('admin:birthdays:settings:submit').setTitle('Birthday Celebration').addComponents(
     row(new TextInputBuilder().setCustomId('time').setLabel('Celebration time (HH:MM)').setStyle(TextInputStyle.Short).setRequired(true).setValue(section.settings.announcementTime)),
     row(new TextInputBuilder().setCustomId('timezone').setLabel('Birthday timezone').setStyle(TextInputStyle.Short).setRequired(true).setValue(section.settings.timezone).setPlaceholder('Europe/London')),
+    row(new TextInputBuilder().setCustomId('combine').setLabel('Combine same-day birthdays? on / off').setStyle(TextInputStyle.Short).setRequired(true).setValue(section.settings.combineSameDay ? 'on' : 'off')),
     row(new TextInputBuilder().setCustomId('messages').setLabel('Random messages — one per line').setStyle(TextInputStyle.Paragraph).setRequired(true).setMaxLength(4000).setValue(section.settings.messageTemplates.join('\n'))),
   );
 }
@@ -193,8 +188,8 @@ async function handleAdmin(interaction) {
   else if (id === 'admin:birthdays:settings:submit') {
     const time = interaction.fields.getTextInputValue('time').trim(); const timezone = interaction.fields.getTextInputValue('timezone').trim();
     if (!birthdays.validTime(time) || !birthdays.validTimezone(timezone)) throw new Error('Check the announcement time and timezone.');
-    birthdays.updateSettings(interaction.guildId, { announcementTime: time, timezone, messageTemplates: interaction.fields.getTextInputValue('messages') }, { ...actor, action: 'birthdays_settings_update' });
-    await interaction.reply({ content: '✅ Birthday schedule and random message pool updated.', flags: 64 }); return true;
+    birthdays.updateSettings(interaction.guildId, { announcementTime: time, timezone, combineSameDay: onOff(interaction.fields.getTextInputValue('combine')), messageTemplates: interaction.fields.getTextInputValue('messages') }, { ...actor, action: 'birthdays_settings_update' });
+    await interaction.reply({ content: '✅ Birthday celebration settings updated.', flags: 64 }); return true;
   }
   else if (id === 'admin:birthdays:card:submit') {
     const color = interaction.fields.getTextInputValue('color').trim(); if (!/^#?[0-9a-f]{6}$/i.test(color)) throw new Error('Card colour must be a 6-digit hex colour such as #5865F2.');
