@@ -1,55 +1,50 @@
 'use strict';
 
-const { getGuildConfig, saveGuildConfig } = require('../../../core/guild/guildManager');
+const guildManager = require('../../../core/guild/guildManager');
 
-const DEFAULTS = Object.freeze({
-  enabled: false,
-  settings: {
-    allowCopy: true,
-    allowDelete: true,
-    allowRename: true,
-    allowBackup: true,
-    allowRemix: true,
-  },
-});
+const MAX_GUILD_EMOJIS = 100;
 
-function cloneDefaults() {
-  return JSON.parse(JSON.stringify(DEFAULTS));
+function uniqueIds(values) {
+  return [...new Set((Array.isArray(values) ? values : []).map((value) => String(value || '').trim()).filter((value) => /^\d{16,20}$/.test(value)))];
 }
 
-function getEmojiSection(guildId) {
-  const config = getGuildConfig(guildId) || {};
-  const section = config.emojis || config.modules?.emojis || {};
-  const defaults = cloneDefaults();
+function getSection(guildId) {
+  const modules = guildManager.getGuildSection(guildId, 'modules', {});
+  const section = modules.emojis && typeof modules.emojis === 'object' ? modules.emojis : {};
   return {
-    ...defaults,
-    ...section,
-    settings: {
-      ...defaults.settings,
-      ...(section.settings || {}),
-    },
+    enabled: section.enabled === true,
+    favourites: uniqueIds(section.favourites).slice(0, MAX_GUILD_EMOJIS),
   };
 }
 
-function saveEmojiSection(guildId, patch, guild = null) {
-  const config = getGuildConfig(guildId) || {};
-  const current = getEmojiSection(guildId);
+function saveSection(guildId, patch = {}, guildOrMeta = {}) {
+  const current = getSection(guildId);
   const next = {
     ...current,
     ...patch,
-    settings: {
-      ...current.settings,
-      ...(patch.settings || {}),
-    },
+    favourites: uniqueIds(patch.favourites ?? current.favourites).slice(0, MAX_GUILD_EMOJIS),
   };
 
-  config.emojis = next;
-  saveGuildConfig(guildId, config, guild);
+  guildManager.updateGuildSection(guildId, 'modules', (modules) => ({
+    ...modules,
+    emojis: next,
+  }), {}, guildOrMeta);
+
   return next;
 }
 
-module.exports = {
-  DEFAULTS,
-  getEmojiSection,
-  saveEmojiSection,
-};
+function setFavourite(guildId, emojiId, selected, guildOrMeta = {}) {
+  const id = String(emojiId || '').trim();
+  if (!/^\d{16,20}$/.test(id)) throw new Error('Invalid application emoji ID.');
+  const current = getSection(guildId);
+  const favourites = new Set(current.favourites);
+  if (selected) {
+    if (!favourites.has(id) && favourites.size >= MAX_GUILD_EMOJIS) throw new Error(`This server already has ${MAX_GUILD_EMOJIS} selected Goliath emojis.`);
+    favourites.add(id);
+  } else {
+    favourites.delete(id);
+  }
+  return saveSection(guildId, { favourites: [...favourites] }, guildOrMeta);
+}
+
+module.exports = { MAX_GUILD_EMOJIS, getSection, saveSection, setFavourite };
