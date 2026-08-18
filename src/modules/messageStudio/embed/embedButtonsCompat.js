@@ -20,7 +20,7 @@ const panel = require('./embedPanel');
 const MAX_BUTTONS = panel.MAX_BUTTONS || 20;
 const MAX_COMPONENTS_PER_ROW = panel.EMBED_COMPONENT_LIMITS?.maxComponentsPerRow || 5;
 const MAX_ACTION_ROWS = panel.EMBED_COMPONENT_LIMITS?.maxActionRows || 5;
-const MAX_DEPLOYED_BUTTON_ROWS = Math.max(1, Math.min(4, MAX_ACTION_ROWS - 1));
+const MAX_DEPLOYED_BUTTON_ROWS = panel.MAX_DEPLOYED_BUTTON_ROWS || Math.max(1, Math.min(4, MAX_ACTION_ROWS - 1));
 const BUILT_IN_ACTIONS = Object.freeze(['reply', 'toggle-role', 'add-role', 'remove-role', 'user-info', 'server-info']);
 const ROLE_ACTIONS = new Set(['toggle-role', 'add-role', 'remove-role']);
 const DANGEROUS_ROLE_PERMISSIONS = [
@@ -54,41 +54,12 @@ function selectedIndex(state) { const buttons = Array.isArray(state.buttons) ? s
 function normalizedStyle(value) { const style = String(value || 'primary').toLowerCase(); return ['primary', 'secondary', 'success', 'danger'].includes(style) ? style : 'primary'; }
 function styleLabel(style) { return { primary: 'Primary', secondary: 'Secondary', success: 'Success', danger: 'Danger' }[normalizedStyle(style)]; }
 function actionLabel(action) { return { reply: 'Reply', 'toggle-role': 'Toggle Role', 'add-role': 'Add Role', 'remove-role': 'Remove Role', 'user-info': 'User Info', 'server-info': 'Server Info' }[String(action || '').toLowerCase()] || 'None'; }
-function normalizedRow(value) { if (value === '' || value == null || value === 'auto') return null; const row = Number(value); return Number.isInteger(row) && row >= 0 && row < MAX_DEPLOYED_BUTTON_ROWS ? row : null; }
+const normalizedRow = panel.embedButtonRow;
 function rowLabel(value) { const row = normalizedRow(value); return row == null ? 'Auto' : `Row ${row + 1}`; }
 function resolveUrl(value, interaction) { const raw = resolved(value, interaction).trim(); if (!raw) return ''; try { const url = new URL(raw); return ['https:', 'http:'].includes(url.protocol) ? url.toString() : ''; } catch { return ''; } }
-function styleValue(style) { return { secondary: ButtonStyle.Secondary, success: ButtonStyle.Success, danger: ButtonStyle.Danger }[normalizedStyle(style)] || ButtonStyle.Primary; }
-function actionId(button, absoluteIndex) { if (button?.id) return String(button.id).trim().replace(/[^a-zA-Z0-9:_-]+/g, '-').slice(0, 100); return `embed:action:${absoluteIndex}`; }
 function roleDisplay(interaction, roleId) { const role = interaction?.guild?.roles?.cache?.get?.(String(roleId || '').replace(/\D/g, '')); return role ? `<@&${role.id}>` : roleId ? `Role ${roleId}` : 'Not selected'; }
-function layoutButtons(buttons = []) {
-  const rows = Array.from({ length: MAX_DEPLOYED_BUTTON_ROWS }, () => []);
-  const automatic = [];
-  buttons.slice(0, MAX_BUTTONS).forEach((button, index) => { const row = normalizedRow(button?.row); if (row != null && rows[row].length < MAX_COMPONENTS_PER_ROW) rows[row].push({ button, index }); else automatic.push({ button, index }); });
-  for (const entry of automatic) { const target = rows.findIndex((row) => row.length < MAX_COMPONENTS_PER_ROW); if (target < 0) break; rows[target].push(entry); }
-  return rows;
-}
+const layoutButtons = panel.layoutEmbedButtons;
 function deployedRowFor(buttons, index) { const rows = layoutButtons(buttons); const row = rows.findIndex((entries) => entries.some((entry) => entry.index === index)); return row >= 0 ? row : null; }
-
-function buildButtonRows(state, interaction = null) {
-  const output = [];
-  for (const entries of layoutButtons(Array.isArray(state?.buttons) ? state.buttons : [])) {
-    if (!entries.length) continue;
-    const row = new ActionRowBuilder();
-    for (const { button, index } of entries) {
-      const label = short(resolved(button?.label || 'Button', interaction), 80) || 'Button';
-      const url = resolveUrl(button?.url, interaction);
-      const builder = new ButtonBuilder().setLabel(label);
-      if (button?.emoji) builder.setEmoji(button.emoji);
-      if (url) builder.setStyle(ButtonStyle.Link).setURL(url);
-      else builder.setStyle(styleValue(button?.style)).setCustomId(actionId(button, index));
-      row.addComponents(builder);
-    }
-    output.push(row);
-  }
-  return output.slice(0, MAX_DEPLOYED_BUTTON_ROWS);
-}
-panel.buttonRows = buildButtonRows;
-panel.buildButtonRows = buildButtonRows;
 
 panel.buttonEditorModal = (state, index = null) => {
   const buttons = Array.isArray(state.buttons) ? state.buttons : [];
@@ -214,8 +185,6 @@ async function handleButtonAction(interaction) {
 
 panel.EMBED_BUTTON_ACTIONS = BUILT_IN_ACTIONS;
 panel.EMBED_ROLE_BUTTON_ACTIONS = ROLE_ACTIONS;
-panel.layoutEmbedButtons = layoutButtons;
-panel.embedButtonRow = normalizedRow;
 panel.handleButtonAction = handleButtonAction;
 panel.parseButtonActionIndex = parseButtonIndex;
 panel.resolveButtonAction = resolveButton;
