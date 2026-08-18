@@ -61,7 +61,7 @@ function adminPayload(interaction) {
     embeds: [new EmbedBuilder().setColor(enabled ? 0x5865F2 : 0x747F8D).setTitle('🎂 Birthdays').setDescription(desc).setFooter({ text: 'Goliath Birthdays · /admin' }).setTimestamp()],
     components: [
       row(button('admin:birthdays:celebration', '🎉 Celebration', ButtonStyle.Primary), button('admin:birthdays:management', '🛠️ Management')),
-      row(button('admin:studio:communityStudio', '⬅️ Back'), button('admin:birthdays:tools', '⚙️ Settings')),
+      row(button('admin:studio:communityStudio', '⬅️ Back'), button('admin:birthdays:testmenu', '🧪 Test Centre'), button('admin:birthdays:tools', '⚙️ Settings')),
     ],
   };
 }
@@ -106,38 +106,13 @@ function messagePoolPayload(interaction, type) {
   const templates = group ? section.settings.groupMessageTemplates : section.settings.messageTemplates;
   const variables = group ? '`{mentions}` · `{count}` · `{server}`' : '`{mention}` · `{user}` · `{server}` · `{age}`';
   const preview = templates.slice(0, 5).map((message, index) => `**${index + 1}.** ${message}`).join('\n\n');
-  return {
-    embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle(group ? '🎉 Group Birthday Messages' : '💬 Individual Birthday Messages').setDescription(`Active messages: **${templates.length}**\nVariables: ${variables}\n\n${preview || 'No messages configured.'}\n\nGoliath rotates through this pool automatically.`).setFooter({ text: 'Goliath Birthdays · Celebration Messages' }).setTimestamp()],
-    components: [row(button(`admin:birthdays:messages:${type}:edit`, '✏️ Edit Messages', ButtonStyle.Primary), button(`admin:birthdays:messages:${type}:defaults`, '♻️ Restore Defaults')), row(button('admin:birthdays:celebration', '⬅️ Back'))],
-  };
+  return { embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle(group ? '🎉 Group Birthday Messages' : '💬 Individual Birthday Messages').setDescription(`Active messages: **${templates.length}**\nVariables: ${variables}\n\n${preview || 'No messages configured.'}\n\nGoliath rotates through this pool automatically.`).setFooter({ text: 'Goliath Birthdays · Celebration Messages' }).setTimestamp()], components: [row(button(`admin:birthdays:messages:${type}:edit`, '✏️ Edit Messages', ButtonStyle.Primary), button(`admin:birthdays:messages:${type}:defaults`, '♻️ Restore Defaults')), row(button('admin:birthdays:celebration', '⬅️ Back'))] };
 }
-
-function cardImageLabel(section) {
-  if (section.settings.cardImageMode === 'none') return 'None';
-  if (section.settings.cardImageMode === 'custom') return section.settings.cardImageUrl ? 'Custom Image/GIF' : 'Custom — URL missing';
-  return 'Goliath Default GIF';
-}
-function cardPayload(interaction) {
-  const section = birthdays.getSection(interaction.guildId);
-  const desc = [`Status: **${section.settings.useBirthdayEmbed ? 'Enabled' : 'Disabled'}**`, `Title: **${section.settings.cardTitle}**`, `Colour: **${section.settings.cardColor}**`, `Thumbnail: **${section.settings.cardUseServerIcon ? 'Server Icon' : 'Off'}**`, `Image: **${cardImageLabel(section)}**`, `Footer: **${section.settings.cardFooter || 'None'}**`].join('\n');
-  return { embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('🎨 Birthday Card').setDescription(desc).setFooter({ text: 'Goliath Birthdays · Birthday Card' }).setTimestamp()], components: [row(button('admin:birthdays:card:toggle', section.settings.useBirthdayEmbed ? '🟢 Card: On' : '⚪ Card: Off', section.settings.useBirthdayEmbed ? ButtonStyle.Success : ButtonStyle.Secondary), button('admin:birthdays:card:text', '✏️ Card Text', ButtonStyle.Primary), button('admin:birthdays:card:color', '🎨 Colour'), button('admin:birthdays:card:image', '🖼️ Image / GIF')), row(button('admin:birthdays:card:preview', '👁️ Preview'), button('admin:birthdays:card:defaults', '♻️ Restore Defaults')), row(button('admin:birthdays:celebration', '⬅️ Back'))] };
-}
-function cardImagePayload(interaction) {
-  const section = birthdays.getSection(interaction.guildId);
-  const desc = [`Current image: **${cardImageLabel(section)}**`, '', 'Choose the built-in birthday GIF, use your own image/GIF URL, or disable the large card image.', section.settings.cardImageMode === 'custom' && section.settings.cardImageUrl ? `\nCustom URL: ${section.settings.cardImageUrl}` : ''].join('\n');
-  return { embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('🖼️ Birthday Card Image / GIF').setDescription(desc).setFooter({ text: 'Goliath Birthdays · Birthday Card' }).setTimestamp()], components: [row(button('admin:birthdays:card:image:default', '🎉 Goliath Default', section.settings.cardImageMode === 'default' ? ButtonStyle.Success : ButtonStyle.Secondary), button('admin:birthdays:card:image:custom', '🔗 Custom URL', section.settings.cardImageMode === 'custom' ? ButtonStyle.Success : ButtonStyle.Secondary), button('admin:birthdays:card:image:none', '🚫 No Image', section.settings.cardImageMode === 'none' ? ButtonStyle.Success : ButtonStyle.Secondary)), row(button('admin:birthdays:card', '⬅️ Back'))] };
-}
-
-function managementPayload(interaction) {
-  const section = birthdays.getSection(interaction.guildId);
-  const desc = ['**🎭 Birthday Role**', `Role: ${section.settings.birthdayRoleId ? `<@&${section.settings.birthdayRoleId}>` : '**Not set**'}`, 'Automatically applied for the member’s birthday day.', '', '**📅 Monthly Board**', `Channel: ${section.settings.monthlyBoardChannelId ? `<#${section.settings.monthlyBoardChannelId}>` : '**Not set**'}`, `Schedule: **1st monthly · ${section.settings.monthlyBoardTime} · ${section.settings.timezone}**`, `Leap day: **${section.settings.leapDayMode === 'mar1' ? '1 March' : '28 February'} in non-leap years**`, '', '**👥 Member Birthdays**', 'Manage members’ stored birthday records.'].join('\n');
-  return { embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('🛠️ Management').setDescription(desc).setFooter({ text: 'Goliath Birthdays · Management' }).setTimestamp()], components: [row(new RoleSelectMenuBuilder().setCustomId('admin:birthdays:role').setPlaceholder('Birthday Role').setMinValues(0).setMaxValues(1).setDefaultRoles(section.settings.birthdayRoleId ? [section.settings.birthdayRoleId] : [])), row(new ChannelSelectMenuBuilder().setCustomId('admin:birthdays:monthly:channel').setPlaceholder('Monthly Board Channel').setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setMinValues(0).setMaxValues(1).setDefaultChannels(section.settings.monthlyBoardChannelId ? [section.settings.monthlyBoardChannelId] : [])), row(button('admin:birthdays:manage', '👥 Manage Birthdays'), button('admin:birthdays:monthly:settings', '📅 Board Settings')), row(button('admin:birthdays', '⬅️ Back'))] };
-}
-
-function toolsPayload() {
-  return { embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('⚙️ Birthday Settings').setDescription('Birthday diagnostics, testing and data tools.').setFooter({ text: 'Goliath Birthdays · Settings' }).setTimestamp()], components: [row(button('admin:birthdays:testmenu', '🧪 Test Centre'), button('admin:birthdays:health', '🩺 Health'), button('admin:birthdays:import', '📥 Import'), button('admin:birthdays:export', '📤 Export')), row(button('admin:birthdays', '⬅️ Back'))] };
-}
-
+function cardImageLabel(section) { if (section.settings.cardImageMode === 'none') return 'None'; if (section.settings.cardImageMode === 'custom') return section.settings.cardImageUrl ? 'Custom Image/GIF' : 'Custom — URL missing'; return 'Goliath Default GIF'; }
+function cardPayload(interaction) { const section = birthdays.getSection(interaction.guildId); const desc = [`Status: **${section.settings.useBirthdayEmbed ? 'Enabled' : 'Disabled'}**`, `Title: **${section.settings.cardTitle}**`, `Colour: **${section.settings.cardColor}**`, `Thumbnail: **${section.settings.cardUseServerIcon ? 'Server Icon' : 'Off'}**`, `Image: **${cardImageLabel(section)}**`, `Footer: **${section.settings.cardFooter || 'None'}**`].join('\n'); return { embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('🎨 Birthday Card').setDescription(desc).setFooter({ text: 'Goliath Birthdays · Birthday Card' }).setTimestamp()], components: [row(button('admin:birthdays:card:toggle', section.settings.useBirthdayEmbed ? '🟢 Card: On' : '⚪ Card: Off', section.settings.useBirthdayEmbed ? ButtonStyle.Success : ButtonStyle.Secondary), button('admin:birthdays:card:text', '✏️ Card Text', ButtonStyle.Primary), button('admin:birthdays:card:color', '🎨 Colour'), button('admin:birthdays:card:image', '🖼️ Image / GIF')), row(button('admin:birthdays:card:preview', '👁️ Preview'), button('admin:birthdays:card:defaults', '♻️ Restore Defaults')), row(button('admin:birthdays:celebration', '⬅️ Back'))] }; }
+function cardImagePayload(interaction) { const section = birthdays.getSection(interaction.guildId); const desc = [`Current image: **${cardImageLabel(section)}**`, '', 'Choose the built-in birthday GIF, use your own image/GIF URL, or disable the large card image.', section.settings.cardImageMode === 'custom' && section.settings.cardImageUrl ? `\nCustom URL: ${section.settings.cardImageUrl}` : ''].join('\n'); return { embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('🖼️ Birthday Card Image / GIF').setDescription(desc).setFooter({ text: 'Goliath Birthdays · Birthday Card' }).setTimestamp()], components: [row(button('admin:birthdays:card:image:default', '🎉 Goliath Default', section.settings.cardImageMode === 'default' ? ButtonStyle.Success : ButtonStyle.Secondary), button('admin:birthdays:card:image:custom', '🔗 Custom URL', section.settings.cardImageMode === 'custom' ? ButtonStyle.Success : ButtonStyle.Secondary), button('admin:birthdays:card:image:none', '🚫 No Image', section.settings.cardImageMode === 'none' ? ButtonStyle.Success : ButtonStyle.Secondary)), row(button('admin:birthdays:card', '⬅️ Back'))] }; }
+function managementPayload(interaction) { const section = birthdays.getSection(interaction.guildId); const desc = ['**🎭 Birthday Role**', `Role: ${section.settings.birthdayRoleId ? `<@&${section.settings.birthdayRoleId}>` : '**Not set**'}`, 'Automatically applied for the member’s birthday day.', '', '**📅 Monthly Board**', `Channel: ${section.settings.monthlyBoardChannelId ? `<#${section.settings.monthlyBoardChannelId}>` : '**Not set**'}`, `Schedule: **1st monthly · ${section.settings.monthlyBoardTime} · ${section.settings.timezone}**`, `Leap day: **${section.settings.leapDayMode === 'mar1' ? '1 March' : '28 February'} in non-leap years**`, '', '**👥 Member Birthdays**', 'Manage members’ stored birthday records.'].join('\n'); return { embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('🛠️ Management').setDescription(desc).setFooter({ text: 'Goliath Birthdays · Management' }).setTimestamp()], components: [row(new RoleSelectMenuBuilder().setCustomId('admin:birthdays:role').setPlaceholder('Birthday Role').setMinValues(0).setMaxValues(1).setDefaultRoles(section.settings.birthdayRoleId ? [section.settings.birthdayRoleId] : [])), row(new ChannelSelectMenuBuilder().setCustomId('admin:birthdays:monthly:channel').setPlaceholder('Monthly Board Channel').setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setMinValues(0).setMaxValues(1).setDefaultChannels(section.settings.monthlyBoardChannelId ? [section.settings.monthlyBoardChannelId] : [])), row(button('admin:birthdays:manage', '👥 Manage Birthdays'), button('admin:birthdays:monthly:settings', '📅 Board Settings')), row(button('admin:birthdays', '⬅️ Back'))] }; }
+function toolsPayload() { return { embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('⚙️ Birthday Settings').setDescription('Birthday diagnostics, testing and data tools.').setFooter({ text: 'Goliath Birthdays · Settings' }).setTimestamp()], components: [row(button('admin:birthdays:testmenu', '🧪 Test Centre'), button('admin:birthdays:health', '🩺 Health'), button('admin:birthdays:import', '📥 Import'), button('admin:birthdays:export', '📤 Export')), row(button('admin:birthdays', '⬅️ Back'))] }; }
 function settingsModal(section) { return new ModalBuilder().setCustomId('admin:birthdays:settings:submit').setTitle('Birthday Celebration Time').addComponents(row(new TextInputBuilder().setCustomId('time').setLabel('Celebration time (HH:MM)').setStyle(TextInputStyle.Short).setRequired(true).setValue(section.settings.announcementTime).setPlaceholder('09:00'))); }
 function customTimezoneModal(section) { return new ModalBuilder().setCustomId('admin:birthdays:timezone:custom:submit').setTitle('Custom Birthday Timezone').addComponents(row(new TextInputBuilder().setCustomId('timezone').setLabel('IANA timezone').setStyle(TextInputStyle.Short).setRequired(true).setValue(section.settings.timezone).setPlaceholder('Europe/London'))); }
 function messagesModal(section, type) { const group = type === 'group'; const values = group ? section.settings.groupMessageTemplates : section.settings.messageTemplates; return new ModalBuilder().setCustomId(`admin:birthdays:messages:${type}:submit`).setTitle(group ? 'Group Birthday Messages' : 'Individual Birthday Messages').addComponents(row(new TextInputBuilder().setCustomId('messages').setLabel('One rotating message per line').setStyle(TextInputStyle.Paragraph).setRequired(true).setMaxLength(4000).setValue(values.join('\n')))); }
@@ -148,66 +123,7 @@ function monthlySettingsModal(section) { return new ModalBuilder().setCustomId('
 function manageModal() { return new ModalBuilder().setCustomId('admin:birthdays:manage:submit').setTitle('Manage Member Birthday').addComponents(row(new TextInputBuilder().setCustomId('user').setLabel('Discord user ID').setStyle(TextInputStyle.Short).setRequired(true).setPlaceholder('123456789012345678')), row(new TextInputBuilder().setCustomId('date').setLabel('Birthday (DD/MM or DD/MM/YYYY)').setStyle(TextInputStyle.Short).setRequired(false).setPlaceholder('18/08/1990 · blank = remove')), row(new TextInputBuilder().setCustomId('privacy').setLabel('List / Announce / Age (on/off)').setStyle(TextInputStyle.Short).setRequired(false).setPlaceholder('on / on / off'))); }
 function importModal() { return new ModalBuilder().setCustomId('admin:birthdays:import:submit').setTitle('Import Birthdays JSON').addComponents(row(new TextInputBuilder().setCustomId('json').setLabel('Paste Goliath birthday JSON').setStyle(TextInputStyle.Paragraph).setRequired(true).setMaxLength(4000))); }
 function birthdayModal(record) { const value = record ? `${String(record.day).padStart(2, '0')}/${String(record.month).padStart(2, '0')}${record.year ? `/${record.year}` : ''}` : ''; return new ModalBuilder().setCustomId('birthdays:user:set:submit').setTitle('My Birthday').addComponents(row(new TextInputBuilder().setCustomId('date').setLabel('Birthday (DD/MM or DD/MM/YYYY)').setStyle(TextInputStyle.Short).setRequired(true).setPlaceholder('16/08 or 16/08/1990').setValue(value))); }
+function userPayload(interaction) { const record = birthdays.getBirthday(interaction.guildId, interaction.user.id); const section = birthdays.getSection(interaction.guildId); const isToday = birthdayWindow(interaction.guildId).today.some((item) => item.member.userId === interaction.user.id); const desc = record ? ['**🎂 Your Birthday**', `Date: **${String(record.day).padStart(2, '0')}/${String(record.month).padStart(2, '0')}${record.year ? `/${record.year}` : ''}**${isToday ? ' — **TODAY**' : ''}`, '', '**🎉 Birthday Day**', `Role: ${section.settings.birthdayRoleId ? `<@&${section.settings.birthdayRoleId}>` : '**Not configured**'}`, `Public celebration: **${section.settings.announcementTime} · ${section.settings.timezone}**`, section.settings.announcementChannelId ? `Channel: <#${section.settings.announcementChannelId}>` : 'Channel: **Not configured**'].join('\n') : ['**🎂 Add Your Birthday**', 'You have not added a birthday yet.', 'Your birth year is optional. Privacy settings become available after saving your birthday.', '', `Server birthday timezone: **${section.settings.timezone}**`].join('\n'); return { embeds: [new EmbedBuilder().setColor(isToday ? 0xF1C40F : 0x5865F2).setTitle(isToday ? '🎉 Happy Birthday!' : '🎂 My Birthday').setDescription(desc).setFooter({ text: 'Goliath Birthdays · /user' }).setTimestamp()], components: record ? [row(button('birthdays:user:set', '✏️ Edit Birthday', ButtonStyle.Primary), button('birthdays:user:upcoming', '📅 Today & Upcoming')), row(button('birthdays:user:privacy', '🔐 Privacy Settings'), button('birthdays:user:remove', '🗑️ Remove Birthday', ButtonStyle.Danger)), row(button('user:category:community', '⬅️ Back'))] : [row(button('birthdays:user:set', '➕ Add Birthday', ButtonStyle.Primary), button('birthdays:user:upcoming', '📅 Today & Upcoming')), row(button('user:category:community', '⬅️ Back'))] }; }
+function userPrivacyPayload(interaction) { const record = birthdays.getBirthday(interaction.guildId, interaction.user.id); if (!record) return userPayload(interaction); const ageAvailable = Boolean(record.year); const desc = ['**📅 Listed in Birthday Lists**', 'Controls whether your birthday appears in Goliath birthday lists, including **Today & Upcoming** and the server **Monthly Birthday Board**.', `Status: **${record.listPublic ? 'On' : 'Off'}**`, '', '**📣 Birthday Announcement**', 'Controls whether Goliath publicly celebrates your birthday in the server configured birthday channel.', `Status: **${record.announce ? 'On' : 'Off'}**`, '', '**🎈 Show My Age**', ageAvailable ? 'Controls whether your age is shown publicly when your birth year has been provided.' : 'Age cannot be displayed because no birth year is stored.', `Status: **${ageAvailable ? (record.showAge ? 'On' : 'Off') : 'Unavailable'}**`].join('\n'); return { embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('🔐 Birthday Privacy').setDescription(desc).setFooter({ text: 'Goliath Birthdays · Privacy Settings' }).setTimestamp()], components: [row(button('birthdays:user:list', record.listPublic ? '📅 Listed: On' : '📅 Listed: Off', record.listPublic ? ButtonStyle.Success : ButtonStyle.Secondary), button('birthdays:user:announce', record.announce ? '📣 Announce: On' : '📣 Announce: Off', record.announce ? ButtonStyle.Success : ButtonStyle.Secondary), button('birthdays:user:age', ageAvailable ? (record.showAge ? '🎈 Age: On' : '🎈 Age: Off') : '🎈 Age: Unavailable', ageAvailable && record.showAge ? ButtonStyle.Success : ButtonStyle.Secondary, !ageAvailable)), row(button('birthdays:user:open', '⬅️ Back'))] }; }
 
-function userPayload(interaction) {
-  const record = birthdays.getBirthday(interaction.guildId, interaction.user.id);
-  const section = birthdays.getSection(interaction.guildId);
-  const isToday = birthdayWindow(interaction.guildId).today.some((item) => item.member.userId === interaction.user.id);
-  const desc = record ? [
-    '**🎂 Your Birthday**',
-    `Date: **${String(record.day).padStart(2, '0')}/${String(record.month).padStart(2, '0')}${record.year ? `/${record.year}` : ''}**${isToday ? ' — **TODAY**' : ''}`,
-    '', '**🎉 Birthday Day**',
-    `Role: ${section.settings.birthdayRoleId ? `<@&${section.settings.birthdayRoleId}>` : '**Not configured**'}`,
-    `Public celebration: **${section.settings.announcementTime} · ${section.settings.timezone}**`,
-    section.settings.announcementChannelId ? `Channel: <#${section.settings.announcementChannelId}>` : 'Channel: **Not configured**',
-  ].join('\n') : [
-    '**🎂 Add Your Birthday**', 'You have not added a birthday yet.',
-    'Your birth year is optional. Privacy settings become available after saving your birthday.',
-    '', `Server birthday timezone: **${section.settings.timezone}**`,
-  ].join('\n');
-  return {
-    embeds: [new EmbedBuilder().setColor(isToday ? 0xF1C40F : 0x5865F2).setTitle(isToday ? '🎉 Happy Birthday!' : '🎂 My Birthday').setDescription(desc).setFooter({ text: 'Goliath Birthdays · /user' }).setTimestamp()],
-    components: record ? [
-      row(button('birthdays:user:set', '✏️ Edit Birthday', ButtonStyle.Primary), button('birthdays:user:upcoming', '📅 Today & Upcoming')),
-      row(button('birthdays:user:privacy', '🔐 Privacy Settings'), button('birthdays:user:remove', '🗑️ Remove Birthday', ButtonStyle.Danger)),
-      row(button('user:category:community', '⬅️ Back')),
-    ] : [
-      row(button('birthdays:user:set', '➕ Add Birthday', ButtonStyle.Primary), button('birthdays:user:upcoming', '📅 Today & Upcoming')),
-      row(button('user:category:community', '⬅️ Back')),
-    ],
-  };
-}
-
-function userPrivacyPayload(interaction) {
-  const record = birthdays.getBirthday(interaction.guildId, interaction.user.id);
-  if (!record) return userPayload(interaction);
-  const ageAvailable = Boolean(record.year);
-  const desc = [
-    '**📅 Listed in Birthday Lists**',
-    'Controls whether your birthday appears in Goliath birthday lists, including **Today & Upcoming** and the server **Monthly Birthday Board**.',
-    `Status: **${record.listPublic ? 'On' : 'Off'}**`,
-    '', '**📣 Birthday Announcement**',
-    'Controls whether Goliath publicly celebrates your birthday in the server configured birthday channel.',
-    `Status: **${record.announce ? 'On' : 'Off'}**`,
-    '', '**🎈 Show My Age**',
-    ageAvailable ? 'Controls whether your age is shown publicly when your birth year has been provided.' : 'Age cannot be displayed because no birth year is stored.',
-    `Status: **${ageAvailable ? (record.showAge ? 'On' : 'Off') : 'Unavailable'}**`,
-  ].join('\n');
-  return {
-    embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('🔐 Birthday Privacy').setDescription(desc).setFooter({ text: 'Goliath Birthdays · Privacy Settings' }).setTimestamp()],
-    components: [
-      row(
-        button('birthdays:user:list', record.listPublic ? '📅 Listed: On' : '📅 Listed: Off', record.listPublic ? ButtonStyle.Success : ButtonStyle.Secondary),
-        button('birthdays:user:announce', record.announce ? '📣 Announce: On' : '📣 Announce: Off', record.announce ? ButtonStyle.Success : ButtonStyle.Secondary),
-        button('birthdays:user:age', ageAvailable ? (record.showAge ? '🎈 Age: On' : '🎈 Age: Off') : '🎈 Age: Unavailable', ageAvailable && record.showAge ? ButtonStyle.Success : ButtonStyle.Secondary, !ageAvailable),
-      ),
-      row(button('birthdays:user:open', '⬅️ Back')),
-    ],
-  };
-}
-
-module.exports = {
-  row, button, birthdayListContent,
-  adminPayload, celebrationPayload, messagePoolPayload, cardPayload, cardImagePayload, managementPayload, toolsPayload, userPayload, userPrivacyPayload,
-  settingsModal, customTimezoneModal, messagesModal, cardTextModal, cardColorModal, cardImageModal, monthlySettingsModal, manageModal, importModal, birthdayModal,
-};
+module.exports = { row, button, birthdayListContent, adminPayload, celebrationPayload, messagePoolPayload, cardPayload, cardImagePayload, managementPayload, toolsPayload, userPayload, userPrivacyPayload, settingsModal, customTimezoneModal, messagesModal, cardTextModal, cardColorModal, cardImageModal, monthlySettingsModal, manageModal, importModal, birthdayModal };
