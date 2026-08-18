@@ -88,6 +88,7 @@ function buildButtonRows(state, interaction = null) {
   return output.slice(0, MAX_DEPLOYED_BUTTON_ROWS);
 }
 panel.buttonRows = buildButtonRows;
+panel.buildButtonRows = buildButtonRows;
 
 panel.buttonEditorModal = (state, index = null) => {
   const buttons = Array.isArray(state.buttons) ? state.buttons : [];
