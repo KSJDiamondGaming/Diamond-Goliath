@@ -71,7 +71,6 @@ async function handleButtonAction(interaction) {
 }
 
 panel.EMBED_BUTTON_ACTIONS = EMBED_BUTTON_ACTIONS;
-panel.handleButtonAction = handleButtonAction;
 
 module.exports = {
   handleButtonAction,
