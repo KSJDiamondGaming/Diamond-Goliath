@@ -26,29 +26,43 @@ const CUSTOM_PANEL_KEYS = new Set([
 ]);
 
 const MODULE_CATALOG = [
+  // Community Studio
+  { key: 'birthdays', studio: 'communityStudio', route: 'admin:birthdays', label: '🎂 Birthdays', title: '🎂 Birthdays', summary: 'Birthday registration, celebrations and member birthday tools.' },
   { key: 'giveaways', studio: 'communityStudio', route: 'admin:giveaways', label: '🎉 Giveaways', title: '🎉 Giveaways', summary: 'Giveaway creation, entries, winners and rerolls.' },
   { key: 'invites', studio: 'communityStudio', route: 'admin:invites', label: '📨 Invite Studio', title: '📨 Invite Studio', summary: 'Create invite links, attach roles and track member joins.' },
   { key: 'leveling', studio: 'communityStudio', route: 'admin:leveling', label: '🏆 Leveling', title: '🏆 Leveling', summary: 'XP, levels, leaderboards and level roles.' },
   { key: 'polls', studio: 'communityStudio', route: 'admin:polls', label: '📊 Polls', title: '📊 Polls', summary: 'Poll creation, voting and results.' },
+
+  // Feedback Studio
   { key: 'forms', studio: 'feedbackStudio', route: 'admin:forms', label: '📝 Forms', title: '📝 Forms', summary: 'Forms, submissions, review and response storage.' },
   { key: 'suggestions', studio: 'feedbackStudio', route: 'admin:suggestions', label: '💡 Suggestions', title: '💡 Suggestions', summary: 'Suggestion intake, voting and review workflow.' },
   { key: 'tickets', studio: 'feedbackStudio', route: 'admin:tickets', label: '🎟️ Tickets', title: '🎟️ Tickets', summary: 'Support tickets and private help channels.' },
-  { key: 'embed', studio: 'messageStudio', route: 'admin:embed', label: '✨ Embed Studio', title: '✨ Embed Studio', summary: 'Build and manage Discord embeds.' },
+
+  // Message Studio
   { key: 'goodbye', studio: 'messageStudio', route: 'admin:goodbye', label: '👋 Goodbye', title: '👋 Goodbye', summary: 'Public farewell messages and Embed Studio templates.' },
+  { key: 'embed', studio: 'messageStudio', route: 'admin:embed', label: '✨ Embed Studio', title: '✨ Embed Studio', summary: 'Build and manage Discord embeds.' },
   { key: 'starboard', studio: 'messageStudio', route: 'admin:starboard', label: '⭐ Starboard', title: '⭐ Starboard', summary: 'Highlight popular server messages.' },
   { key: 'sticky', studio: 'messageStudio', route: 'admin:sticky', label: '💬 Sticky Messages', title: '💬 Sticky Messages', summary: 'Keep important messages at the bottom of chat.' },
   { key: 'welcome', studio: 'messageStudio', route: 'admin:welcome', label: '👋 Welcome', title: '👋 Welcome', summary: 'Welcome messages, member DMs and Embed Studio templates.' },
+
+  // Role Studio
   { key: 'autoRoles', studio: 'roleStudio', route: 'admin:autoRoles', label: '👥 Auto Roles', title: '👥 Auto Roles', summary: 'Assign roles automatically when members join.' },
   { key: 'reactionRoles', studio: 'roleStudio', route: 'admin:reactionRoles', label: '🎭 Reaction Roles', title: '🎭 Reaction Roles', summary: 'Reaction-role panels, emoji mappings and deployments.' },
   { key: 'temporaryRoles', studio: 'roleStudio', route: 'admin:temporaryRoles', label: '⏳ Temporary Roles', title: '⏳ Temporary Roles', summary: 'Assign roles that expire after a configured duration.' },
   { key: 'timedRoles', studio: 'roleStudio', route: 'admin:timedRoles', label: '🕒 Timed Roles', title: '🕒 Timed Roles', summary: 'Progress members through role milestones over time.' },
+
+  // Security Studio
   { key: 'verification', studio: 'securityStudio', route: 'admin:verification', label: '✅ Verification', title: '✅ Verification', summary: 'Member verification and onboarding protection.' },
+
+  // Social Studio
   { key: 'social', studio: 'socialStudio', route: 'admin:social', label: '📣 Social Alerts', title: '📣 Social Alerts', summary: 'Creator alerts for Twitch, YouTube, TikTok, Kick and more.' },
+
+  // Utility Studio
+  { key: 'emojis', studio: 'utilityStudio', route: 'admin:module:emojis:panel', label: '😀 Emoji Bank', title: '😀 Emoji Bank', summary: 'Discord-hosted application emojis from Emoji.gg with up to 100 selected per server.' },
   { key: 'schedule', studio: 'utilityStudio', route: 'admin:schedule', label: '📅 Schedule', title: '📅 Schedule', summary: 'Scheduled messages, recurring tasks and timezone-aware automation.' },
   { key: 'stats', studio: 'utilityStudio', route: 'admin:stats', label: '📊 Server Stats', title: '📊 Server Stats', summary: 'Server activity, growth and member statistics.' },
-  { key: 'translation', studio: 'utilityStudio', route: 'admin:translation', label: '🌐 Translation', title: '🌐 Translation', summary: 'Language preferences and translation controls.' },
   { key: 'tempVoice', studio: 'utilityStudio', route: 'admin:tempVoice', label: '🔊 Temp Voice', title: '🔊 Temp Voice', summary: 'Temporary voice channels and room automation.' },
-  { key: 'emojis', studio: 'utilityStudio', route: 'admin:module:emojis:panel', label: '😀 Emoji Bank', title: '😀 Emoji Bank', summary: 'Discord-hosted application emojis from Emoji.gg with up to 100 selected per server.' },
+  { key: 'translation', studio: 'utilityStudio', route: 'admin:translation', label: '🌐 Translation', title: '🌐 Translation', summary: 'Language preferences and translation controls.' },
 ];
 
 const STUDIO_CATALOG = [
