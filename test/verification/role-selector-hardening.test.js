@@ -69,6 +69,14 @@ test('Discord admin Role Selector controls use central security enforcement', ()
   assert.match(panel, /security\.enforceInteractionSecurity\(interaction, \{ level: 'admin', guildOnly: true \}\)/);
 });
 
+test('Discord Role Selector admin UI exposes acceptance readiness', () => {
+  assert.match(panel, /\*\*Acceptance:\*\*/);
+  assert.match(panel, /health\.acceptance\?\.ready/);
+  assert.match(panel, /Acceptance: \*\*/);
+  assert.match(panel, /failedChecks/);
+  assert.match(panel, /No acceptance blockers detected/);
+});
+
 test('Dashboard Role Selector routes require authenticated guild management access', () => {
   assert.match(route, /req\.session\?\.user\?\.id/);
   assert.match(route, /PermissionFlagsBits\.Administrator/);
