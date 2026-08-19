@@ -7,6 +7,14 @@ const MAX_APPLICATION_EMOJIS = 2000;
 const MAX_CORE_EMOJIS = 40;
 const MAX_STUDIO_EMOJIS = MAX_APPLICATION_EMOJIS - MAX_CORE_EMOJIS;
 const CORE_EMOJI_PREFIX = 'goliath_';
+const CORE_EMOJI_ALIASES = Object.freeze([
+  'success', 'error', 'warning', 'info', 'yes', 'no',
+  'home', 'settings', 'back', 'next', 'previous', 'close', 'refresh', 'search', 'edit', 'delete', 'save',
+  'user', 'role', 'channel', 'ticket', 'lock', 'unlock', 'bell', 'calendar', 'clock', 'link',
+  'twitch', 'youtube', 'tiktok', 'kick', 'discord', 'xbox', 'playstation', 'steam', 'pc',
+  'party', 'heart', 'star', 'gift',
+]);
+const CORE_EMOJI_ALIAS_SET = new Set(CORE_EMOJI_ALIASES);
 
 function requireEmojiManager(client) {
   const manager = client?.application?.emojis;
@@ -34,6 +42,10 @@ function isCoreEmoji(emoji) {
 function coreAlias(name) {
   const clean = String(name || '').toLowerCase();
   return isCoreEmojiName(clean) ? clean.slice(CORE_EMOJI_PREFIX.length) : clean;
+}
+
+function isApprovedCoreAlias(value) {
+  return CORE_EMOJI_ALIAS_SET.has(cleanEmojiName(value));
 }
 
 function componentPayload(emoji) {
@@ -68,6 +80,8 @@ async function overview(client, guildId) {
   const bank = await listBank(client);
   const core = bank.filter((emoji) => emoji.core === true);
   const studio = bank.filter((emoji) => emoji.core !== true);
+  const installedCoreAliases = new Set(core.map((emoji) => String(emoji.alias || '').toLowerCase()));
+  const missingCore = CORE_EMOJI_ALIASES.filter((alias) => !installedCoreAliases.has(alias));
   const section = emojiStore.getSection(guildId);
   const validStudioIds = new Set(studio.map((emoji) => emoji.id));
   const favourites = section.favourites.filter((id) => validStudioIds.has(id));
@@ -96,6 +110,8 @@ async function overview(client, guildId) {
     },
     bank,
     core,
+    coreCatalog: CORE_EMOJI_ALIASES,
+    missingCore,
     studio,
     favourites,
   };
@@ -111,8 +127,10 @@ async function createCoreEmoji(client, attachment, requestedName) {
 
   const alias = cleanEmojiName(requestedName);
   if (!alias) throw new Error('Core emoji name is required.');
-  const maxAliasLength = 32 - CORE_EMOJI_PREFIX.length;
-  const name = `${CORE_EMOJI_PREFIX}${alias.slice(0, maxAliasLength)}`;
+  if (!CORE_EMOJI_ALIAS_SET.has(alias)) {
+    throw new Error(`Unknown Goliath Core emoji alias: ${alias}. Use one of the locked Core catalog names.`);
+  }
+  const name = `${CORE_EMOJI_PREFIX}${alias}`;
   const duplicate = [...bank.values()].find((emoji) => String(emoji.name).toLowerCase() === name);
   if (duplicate) return { emoji: serialise(duplicate), created: false };
 
@@ -162,6 +180,12 @@ async function renameInBank(client, emojiId, name, options = {}) {
 
   const clean = cleanEmojiName(name);
   if (!clean) throw new Error('Emoji name is required.');
+  if (isCoreEmoji(existing) && options.allowCore === true) {
+    const alias = isCoreEmojiName(clean) ? coreAlias(clean) : clean;
+    if (!CORE_EMOJI_ALIAS_SET.has(alias)) throw new Error(`Unknown Goliath Core emoji alias: ${alias}.`);
+    const edited = await manager.edit(String(emojiId), { name: `${CORE_EMOJI_PREFIX}${alias}` });
+    return serialise(edited);
+  }
   if (isCoreEmojiName(clean) && options.allowCore !== true) throw new Error(`Names beginning with ${CORE_EMOJI_PREFIX} are reserved for Goliath Core emojis.`);
   const edited = await manager.edit(String(emojiId), { name: clean });
   return serialise(edited);
@@ -296,9 +320,11 @@ module.exports = {
   MAX_CORE_EMOJIS,
   MAX_STUDIO_EMOJIS,
   CORE_EMOJI_PREFIX,
+  CORE_EMOJI_ALIASES,
   isCoreEmojiName,
   isCoreEmoji,
   coreAlias,
+  isApprovedCoreAlias,
   listBank,
   overview,
   createCoreEmoji,
