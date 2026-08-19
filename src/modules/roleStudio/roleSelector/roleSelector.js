@@ -105,7 +105,7 @@ function normalizePalette(value) {
     const hex = normalizeHex(item?.hex); const id = slug(item?.id || item?.key || item?.label, 'colour');
     if (!hex || seen.has(id)) continue; seen.add(id);
     const c = classifyHex(hex);
-    out.push({ id, key: id, label: cleanText(item?.label || id, 60), emoji: cleanText(item?.emoji || '🎨', 16), hex, family: cleanText(item?.family || c.family, 20), order: Number.isFinite(Number(item?.order)) ? Number(item.order) : c.familyOrder, enabled: item?.enabled !== false });
+    out.push({ id, key: id, label: cleanText(item?.label || id, 60), emoji: cleanText(item?.emoji || '🎨', 100), hex, family: cleanText(item?.family || c.family, 20), order: Number.isFinite(Number(item?.order)) ? Number(item.order) : c.familyOrder, enabled: item?.enabled !== false });
   }
   return out.length ? out : DEFAULT_PALETTE.map(clone);
 }
@@ -115,7 +115,7 @@ function normalizeStandardOptions(value) {
   for (let i = 0; i < source.length && out.length < 25; i += 1) {
     const item = source[i] || {}; const id = slug(item.id || item.key || item.label, 'option');
     if (seen.has(id)) continue; seen.add(id);
-    out.push({ id, key: id, label: cleanText(item.label || id, 80), emoji: cleanText(item.emoji || '', 16), description: cleanText(item.description || '', 100), roleId: cleanId(item.roleId), enabled: item.enabled !== false, order: Number.isFinite(Number(item.order)) ? Number(item.order) : (i + 1) * 10, managed: item.managed !== false, unusedSince: item.unusedSince || null });
+    out.push({ id, key: id, label: cleanText(item.label || id, 80), emoji: cleanText(item.emoji || '', 100), description: cleanText(item.description || '', 100), roleId: cleanId(item.roleId), enabled: item.enabled !== false, order: Number.isFinite(Number(item.order)) ? Number(item.order) : (i + 1) * 10, managed: item.managed !== false, unusedSince: item.unusedSince || null });
   }
   return out;
 }
@@ -133,7 +133,7 @@ function normalizeGroup(input = {}, idHint = '') {
     }
     return { ...base, ...clone(input), id: COLOUR_GROUP_ID, key: COLOUR_GROUP_ID, name: 'Colours', emoji: input.emoji || '🌈', type: 'colour', builtIn: true, enabled: input.enabled !== false, selectionMode: 'single', allowRemove: input.allowRemove !== false, palette: normalizePalette(input.palette), customHexEnabled: input.customHexEnabled !== false, managedRoles };
   }
-  return { id, key: id, name: cleanText(input.name || id, 80), emoji: cleanText(input.emoji || '🏷️', 16), description: cleanText(input.description || '', 200), type: 'standard', builtIn: false, enabled: input.enabled !== false, selectionMode: input.selectionMode === 'multiple' ? 'multiple' : 'single', allowRemove: input.allowRemove !== false, options: normalizeStandardOptions(input.options), createdAt: input.createdAt || now(), updatedAt: input.updatedAt || now() };
+  return { id, key: id, name: cleanText(input.name || id, 80), emoji: cleanText(input.emoji || '🏷️', 100), description: cleanText(input.description || '', 200), type: 'standard', builtIn: false, enabled: input.enabled !== false, selectionMode: input.selectionMode === 'multiple' ? 'multiple' : 'single', allowRemove: input.allowRemove !== false, options: normalizeStandardOptions(input.options), createdAt: input.createdAt || now(), updatedAt: input.updatedAt || now() };
 }
 function normalizeSection(value = {}) {
   const base = defaultSection(); const source = value && typeof value === 'object' ? value : {};
