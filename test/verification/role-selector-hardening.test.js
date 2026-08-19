@@ -1,0 +1,89 @@
+'use strict';
+
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const test = require('node:test');
+
+const ROOT = path.resolve(__dirname, '../..');
+const read = (relativePath) => fs.readFileSync(path.join(ROOT, relativePath), 'utf8');
+
+const core = read('src/modules/roleStudio/roleSelector/roleSelector.js');
+const health = read('src/modules/roleStudio/roleSelector/roleSelectorHealth.js');
+const panel = read('src/modules/roleStudio/roleSelector/roleSelectorPanel.js');
+const route = read('src/server/routes/modules/roleStudio/roleSelector.js');
+const startup = read('src/events/client/roleSelectorStartup.js');
+const contracts = read('src/owner/sentinel/moduleContracts.js');
+
+test('Role Selector core member mutations enforce module enabled state', () => {
+  for (const functionName of [
+    'ensureStandardOptionRole',
+    'ensureColourRole',
+    'applyStandardSelection',
+    'applyColourSelection',
+    'clearSelection',
+  ]) {
+    const block = core.match(new RegExp(`(?:async )?function ${functionName}\\([^)]*\\) \\{[\\s\\S]*?\\n\\}`))?.[0] || '';
+    assert.match(block, /assertModuleEnabled\(guild\.id\)/, `${functionName} must enforce the global module switch`);
+  }
+});
+
+test('Role Selector hierarchy sync rejects unsafe anchors', () => {
+  assert.match(core, /anchor\.managed \|\| anchor\.position >= me\.roles\.highest\.position/);
+  assert.match(core, /reason: 'anchor_unmanageable'/);
+});
+
+test('Managed group deletion preserves unresolved Goliath roles', () => {
+  assert.match(core, /unresolvedRoles/);
+  assert.match(core, /reason: 'unmanageable'/);
+  assert.match(core, /reason: 'delete_failed'/);
+  assert.match(core, /unresolved: unresolvedRoles\.length/);
+  assert.match(panel, /if \(result\.unresolved\)/);
+  assert.match(route, /if \(result\.unresolved\)/);
+  assert.match(route, /res\.status\(409\)/);
+});
+
+test('Role Selector health validates deployment message and repairs stale state', () => {
+  assert.match(health, /deployment\.messageId/);
+  assert.match(health, /message_missing|deployment_message_missing/);
+  assert.match(health, /memberSelections/);
+  assert.match(health, /anchor_unmanageable|anchor.*position|highest\.position/);
+});
+
+test('Discord admin Role Selector controls use central security enforcement', () => {
+  assert.match(panel, /const adminControl = id\.startsWith\('admin:roleSelector'\) \|\| id\.startsWith\('admin:colourRoles'\)/);
+  assert.match(panel, /security\.enforceInteractionSecurity\(interaction, \{ level: 'admin', guildOnly: true \}\)/);
+});
+
+test('Dashboard Role Selector routes require authenticated guild management access', () => {
+  assert.match(route, /req\.session\?\.user\?\.id/);
+  assert.match(route, /PermissionFlagsBits\.Administrator/);
+  assert.match(route, /PermissionFlagsBits\.ManageGuild/);
+  assert.match(route, /router\.use\('\/:guildId', requireRoleSelectorGuildAccess\)/);
+  assert.doesNotMatch(route, /req\.body\?\.actorId/);
+});
+
+test('Dashboard channel changes retire old deployment and clear old message id', () => {
+  assert.match(route, /deploymentChannelChanged/);
+  assert.match(route, /panel\.retireDeployment\(g, before\.deployment\)/);
+  assert.match(route, /messageId: null/);
+});
+
+test('Role Selector deployment supports disabled and retired panel states', () => {
+  assert.match(panel, /function memberDisabledPayload\(/);
+  assert.match(panel, /components: \[\]/);
+  assert.match(panel, /async function retireDeployment\(/);
+  assert.match(panel, /await message\.edit\(memberDisabledPayload\(\)\)/);
+});
+
+test('Role Selector scheduled maintenance respects the module switch', () => {
+  assert.match(startup, /isModuleEnabled\(guild\.id, roleSelector\.MODULE\)/);
+  assert.match(startup, /syncManagedRoleAppearance\(guild\)/);
+  assert.match(startup, /syncManagedRoleHierarchy\(guild\)/);
+  assert.match(startup, /cleanupUnused\(guild\)/);
+  assert.match(startup, /INTERVAL_MS = 60 \* 60 \* 1000/);
+});
+
+test('Sentinel contract describes Role Selector as scheduled', () => {
+  assert.match(contracts, /roleSelector: \{ class: 'scheduled', signals: \['runtime', 'interaction', 'scheduler', 'persistence', 'discord-write'\] \}/);
+});
