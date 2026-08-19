@@ -239,17 +239,59 @@ function roleIdsForGroup(group) {
 }
 async function deleteManagedGroupRoles(guild, groupId) {
   const group = getGroup(guild.id, groupId);
-  if (!group || group.builtIn) return { deleted: 0, skipped: 0 };
-  let deleted = 0; let skipped = 0;
+  if (!group || group.builtIn) return { deleted: 0, skipped: 0, unresolved: 0, unresolvedRoles: [] };
+
+  let deleted = 0;
+  let skipped = 0;
+  const unresolvedRoles = [];
+  const clearedRoleIds = new Set();
+
   for (const option of group.options || []) {
-    if (!option.roleId || option.managed === false) { skipped += option.roleId ? 1 : 0; continue; }
+    if (!option.roleId) continue;
+    if (option.managed === false) { skipped += 1; continue; }
+
     const role = guild.roles.cache.get(option.roleId) || await guild.roles.fetch(option.roleId).catch(() => null);
-    if (!role) continue;
-    if (!canManageRole(guild, role)) { skipped += 1; continue; }
-    if (await role.delete(`Goliath Role Selector group deleted · ${group.name}`).then(() => true).catch(() => false)) deleted += 1;
+    if (!role) {
+      clearedRoleIds.add(option.roleId);
+      continue;
+    }
+
+    if (!canManageRole(guild, role)) {
+      unresolvedRoles.push({ roleId: role.id, name: role.name, reason: 'unmanageable' });
+      continue;
+    }
+
+    const removed = await role.delete(`Goliath Role Selector group deleted · ${group.name}`).then(() => true).catch(() => false);
+    if (removed) {
+      deleted += 1;
+      clearedRoleIds.add(option.roleId);
+    } else {
+      unresolvedRoles.push({ roleId: role.id, name: role.name, reason: 'delete_failed' });
+    }
   }
-  if (deleted) updateSection(guild.id, (current) => ({ ...current, analytics: { ...current.analytics, rolesDeleted: Number(current.analytics.rolesDeleted || 0) + deleted } }));
-  return { deleted, skipped };
+
+  if (clearedRoleIds.size) {
+    const refreshed = getGroup(guild.id, group.id);
+    if (refreshed) {
+      saveGroup(guild.id, {
+        ...refreshed,
+        options: (refreshed.options || []).map((option) => clearedRoleIds.has(option.roleId)
+          ? { ...option, roleId: null, unusedSince: null }
+          : option),
+      }, { action: 'role_selector_group_delete_reconcile' });
+    }
+  }
+
+  if (deleted) {
+    updateSection(guild.id, (current) => ({ ...current, analytics: { ...current.analytics, rolesDeleted: Number(current.analytics.rolesDeleted || 0) + deleted } }));
+  }
+
+  return {
+    deleted,
+    skipped,
+    unresolved: unresolvedRoles.length,
+    unresolvedRoles,
+  };
 }
 function selectionFor(section, userId, groupId) {
   const value = section.memberSelections?.[userId]?.[groupId]; return Array.isArray(value) ? value : value ? [value] : [];
