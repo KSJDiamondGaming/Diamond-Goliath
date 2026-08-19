@@ -3,6 +3,100 @@
 const { PermissionFlagsBits } = require('discord.js');
 const roleSelector = require('./roleSelector');
 
+async function fetchRole(guild, roleId) {
+  if (!roleId) return null;
+  return guild.roles.cache.get(roleId) || await guild.roles.fetch(roleId).catch(() => null);
+}
+
+async function fetchChannel(guild, channelId) {
+  if (!channelId) return null;
+  return guild.channels.cache.get(channelId) || await guild.channels.fetch(channelId).catch(() => null);
+}
+
+async function fetchDeploymentMessage(channel, messageId) {
+  if (!channel?.messages?.fetch || !messageId) return null;
+  return channel.messages.fetch(messageId).catch(() => null);
+}
+
+function anchorIsUnsafe(guild, anchor) {
+  const me = guild.members.me;
+  if (!anchor || !me) return true;
+  if (anchor.managed) return true;
+  return anchor.position >= me.roles.highest.position;
+}
+
+function countStaleSelections(section) {
+  let stale = 0;
+
+  for (const selections of Object.values(section.memberSelections || {})) {
+    if (!selections || typeof selections !== 'object') continue;
+
+    for (const [groupId, rawValues] of Object.entries(selections)) {
+      const group = section.groups?.[groupId];
+      const values = Array.isArray(rawValues) ? rawValues : rawValues ? [rawValues] : [];
+
+      if (!group) {
+        stale += values.length || 1;
+        continue;
+      }
+
+      if (group.type === 'colour') {
+        const known = new Set(Object.keys(group.managedRoles || {}).map((hex) => roleSelector.normalizeHex(hex)).filter(Boolean));
+        stale += values.filter((value) => !known.has(roleSelector.normalizeHex(value))).length;
+        continue;
+      }
+
+      const known = new Set((group.options || []).map((option) => option.id));
+      stale += values.filter((value) => !known.has(String(value))).length;
+    }
+  }
+
+  return stale;
+}
+
+function pruneStaleSelections(section) {
+  const memberSelections = JSON.parse(JSON.stringify(section.memberSelections || {}));
+  let removed = 0;
+
+  for (const [userId, selections] of Object.entries(memberSelections)) {
+    if (!selections || typeof selections !== 'object') {
+      delete memberSelections[userId];
+      removed += 1;
+      continue;
+    }
+
+    for (const [groupId, rawValues] of Object.entries(selections)) {
+      const group = section.groups?.[groupId];
+      const values = Array.isArray(rawValues) ? rawValues : rawValues ? [rawValues] : [];
+
+      if (!group) {
+        removed += values.length || 1;
+        delete selections[groupId];
+        continue;
+      }
+
+      if (group.type === 'colour') {
+        const known = new Set(Object.keys(group.managedRoles || {}).map((hex) => roleSelector.normalizeHex(hex)).filter(Boolean));
+        const next = values.map((value) => roleSelector.normalizeHex(value)).filter((value) => value && known.has(value));
+        removed += Math.max(0, values.length - next.length);
+        selections[groupId] = next;
+        continue;
+      }
+
+      const known = new Set((group.options || []).map((option) => option.id));
+      const next = values.map(String).filter((value) => known.has(value));
+      removed += Math.max(0, values.length - next.length);
+      selections[groupId] = next;
+    }
+
+    if (!Object.values(selections).some((value) => Array.isArray(value) ? value.length : Boolean(value))) {
+      delete memberSelections[userId];
+    }
+  }
+
+  return { memberSelections, removed };
+}
+
 async function buildHealth(guild) {
   const section = roleSelector.getSection(guild.id);
   const issues = [];
@@ -12,9 +106,9 @@ async function buildHealth(guild) {
   if (!me?.permissions.has(PermissionFlagsBits.ManageRoles)) issues.push('Goliath is missing Manage Roles.');
 
   if (section.style.anchorRoleId) {
-    const anchor = guild.roles.cache.get(section.style.anchorRoleId)
-      || await guild.roles.fetch(section.style.anchorRoleId).catch(() => null);
+    const anchor = await fetchRole(guild, section.style.anchorRoleId);
     if (!anchor) warnings.push('The configured divider / anchor role no longer exists.');
+    else if (anchorIsUnsafe(guild, anchor)) warnings.push('The configured divider / anchor role is above Goliath or otherwise unusable for selector placement.');
   }
 
   let managedRoleCount = 0;
@@ -23,7 +117,7 @@ async function buildHealth(guild) {
     const ids = roleSelector.roleIdsForGroup(group);
     managedRoleCount += ids.length;
     for (const roleId of ids) {
-      const role = guild.roles.cache.get(roleId) || await guild.roles.fetch(roleId).catch(() => null);
+      const role = await fetchRole(guild, roleId);
       if (!role) {
         warnings.push(`${group.name}: a stored role reference is missing.`);
         continue;
@@ -34,10 +128,20 @@ async function buildHealth(guild) {
   }
 
   if (section.deployment.channelId) {
-    const channel = guild.channels.cache.get(section.deployment.channelId)
-      || await guild.channels.fetch(section.deployment.channelId).catch(() => null);
-    if (!channel?.send) warnings.push('The deployed Role Selector channel is missing or no longer sendable.');
+    const channel = await fetchChannel(guild, section.deployment.channelId);
+    if (!channel?.send) {
+      warnings.push('The deployed Role Selector channel is missing or no longer sendable.');
+    } else if (section.deployment.messageId) {
+      const message = await fetchDeploymentMessage(channel, section.deployment.messageId);
+      if (!message) warnings.push('The deployed Role Selector message no longer exists.');
+      else if (guild.client?.user?.id && message.author?.id !== guild.client.user.id) warnings.push('The stored Role Selector deployment message is not owned by Goliath.');
+    }
+  } else if (section.deployment.messageId) {
+    warnings.push('A Role Selector message ID is stored without a deployment channel.');
   }
+
+  const staleSelections = countStaleSelections(section);
+  if (staleSelections) warnings.push(`${staleSelections} stale member selection reference(s) were detected.`);
 
   const usage = await roleSelector.getUsage(guild);
   return {
@@ -48,19 +152,24 @@ async function buildHealth(guild) {
     managedRoleCount,
     totalUsing: usage.totalUsing,
     groupCount: roleSelector.listGroups(guild.id).length,
+    staleSelections,
     checkedAt: new Date().toISOString(),
   };
 }
 
 async function repair(guild) {
-  const section = roleSelector.getSection(guild.id);
+  let section = roleSelector.getSection(guild.id);
+
   for (const group of roleSelector.listGroups(guild.id)) {
     if (group.type === 'colour') {
       const managedRoles = { ...(group.managedRoles || {}) };
       let changed = false;
       for (const [hex, record] of Object.entries(managedRoles)) {
-        const role = guild.roles.cache.get(record.roleId) || await guild.roles.fetch(record.roleId).catch(() => null);
-        if (!role) { delete managedRoles[hex]; changed = true; }
+        const role = await fetchRole(guild, record.roleId);
+        if (!role) {
+          delete managedRoles[hex];
+          changed = true;
+        }
       }
       if (changed) roleSelector.saveGroup(guild.id, { ...group, managedRoles }, { action: 'role_selector_health_repair' });
     } else {
@@ -75,9 +184,37 @@ async function repair(guild) {
       if (changed) roleSelector.saveGroup(guild.id, { ...group, options }, { action: 'role_selector_health_repair' });
     }
   }
-  if (section.style.anchorRoleId && !guild.roles.cache.has(section.style.anchorRoleId)) {
-    roleSelector.updateSection(guild.id, (current) => ({ ...current, style: { ...current.style, anchorRoleId: null } }), { action: 'role_selector_health_repair' });
+
+  section = roleSelector.getSection(guild.id);
+
+  if (section.style.anchorRoleId) {
+    const anchor = await fetchRole(guild, section.style.anchorRoleId);
+    if (!anchor || anchorIsUnsafe(guild, anchor)) {
+      roleSelector.updateSection(guild.id, (current) => ({ ...current, style: { ...current.style, anchorRoleId: null } }), { action: 'role_selector_health_repair' });
+    }
   }
+
+  section = roleSelector.getSection(guild.id);
+  if (section.deployment.channelId) {
+    const channel = await fetchChannel(guild, section.deployment.channelId);
+    if (!channel?.send) {
+      roleSelector.updateSection(guild.id, (current) => ({ ...current, deployment: { channelId: null, messageId: null } }), { action: 'role_selector_health_repair' });
+    } else if (section.deployment.messageId) {
+      const message = await fetchDeploymentMessage(channel, section.deployment.messageId);
+      if (!message || (guild.client?.user?.id && message.author?.id !== guild.client.user.id)) {
+        roleSelector.updateSection(guild.id, (current) => ({ ...current, deployment: { ...current.deployment, messageId: null } }), { action: 'role_selector_health_repair' });
+      }
+    }
+  } else if (section.deployment.messageId) {
+    roleSelector.updateSection(guild.id, (current) => ({ ...current, deployment: { channelId: null, messageId: null } }), { action: 'role_selector_health_repair' });
+  }
+
+  section = roleSelector.getSection(guild.id);
+  const pruned = pruneStaleSelections(section);
+  if (pruned.removed) {
+    roleSelector.updateSection(guild.id, (current) => ({ ...current, memberSelections: pruned.memberSelections }), { action: 'role_selector_health_repair' });
+  }
+
   await roleSelector.syncManagedRoleAppearance(guild).catch(() => null);
   await roleSelector.syncManagedRoleHierarchy(guild).catch(() => null);
   return buildHealth(guild);
