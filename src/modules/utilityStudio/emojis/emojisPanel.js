@@ -20,7 +20,7 @@ const emojiStore = require('./emojisStore');
 const router = express.Router();
 const PANEL_COLOR = 0x5865F2;
 const ok = (res, payload = {}) => res.json({ success: true, ...payload });
-const fail = (res, error, status = 400) => res.status(status).json({ success: false, error: error?.message || 'Emoji request failed.' });
+const fail = (res, error, status = null) => res.status(status || error?.statusCode || 400).json({ success: false, error: error?.message || 'Emoji request failed.' });
 
 function guildId(req) {
   const id = String(req.params.guildId || '').trim();
@@ -32,8 +32,51 @@ function actor(req) {
   return String(req.session?.user?.id || req.body?.actorId || '').trim() || null;
 }
 
+function authenticatedActor(req) {
+  return String(req.session?.user?.id || '').trim() || null;
+}
+
+function coreManagerIds() {
+  const raw = [
+    process.env.GOLIATH_CORE_MANAGER_IDS,
+    process.env.GOLIATH_OWNER_IDS,
+    process.env.BOT_OWNER_ID,
+  ].filter(Boolean).join(',');
+  return new Set(raw.split(/[\s,]+/).map((value) => value.trim()).filter((value) => /^\d{16,20}$/.test(value)));
+}
+
+function requireCoreManager(req) {
+  const userId = authenticatedActor(req);
+  const allowed = coreManagerIds();
+  if (!userId || !allowed.has(userId)) {
+    const error = new Error('Goliath Core emoji management is restricted to configured bot owners.');
+    error.statusCode = 403;
+    throw error;
+  }
+  return userId;
+}
+
 function client(req) {
   return req.client || req.app?.get?.('goliath.client') || null;
+}
+
+function decodeBase64Image(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  const match = raw.match(/^data:image\/(?:png|gif|jpe?g|webp);base64,(.+)$/i);
+  const encoded = match ? match[1] : raw;
+  if (!/^[A-Za-z0-9+/=\r\n]+$/.test(encoded)) throw new Error('Core emoji imageBase64 is invalid.');
+  const buffer = Buffer.from(encoded.replace(/\s+/g, ''), 'base64');
+  if (!buffer.length) throw new Error('Core emoji image was empty.');
+  if (buffer.length > emojiApi.MAX_BYTES) throw new Error(`Core emoji image is too large (${buffer.length} bytes).`);
+  return buffer;
+}
+
+async function transientCoreAttachment(body = {}) {
+  if (body.imageUrl) return emojiApi.downloadAsset(String(body.imageUrl).trim());
+  const buffer = decodeBase64Image(body.imageBase64);
+  if (buffer) return buffer;
+  throw new Error('Provide imageUrl or imageBase64 for the Core emoji.');
 }
 
 async function payload(req, id) {
@@ -76,6 +119,46 @@ router.post('/:guildId/import', async (req, res) => {
       emojiStore.setFavourite(id, result.emoji.id, true, { actorId: actor(req), action: 'emoji_panel_import' });
     }
     return ok(res, { result, ...(await payload(req, id)) });
+  } catch (error) { return fail(res, error); }
+});
+
+router.post('/:guildId/core', async (req, res) => {
+  try {
+    const id = guildId(req);
+    const ownerId = requireCoreManager(req);
+    const alias = String(req.body?.alias || '').trim();
+    if (!emojis.isApprovedCoreAlias(alias)) throw new Error('Use one of the locked Goliath Core emoji aliases.');
+    const attachment = await transientCoreAttachment(req.body || {});
+    const result = await emojis.createCoreEmoji(client(req), attachment, alias);
+    return ok(res, {
+      actorId: ownerId,
+      result,
+      transientUpload: true,
+      permanentGoliathStorage: 0,
+      ...(await payload(req, id)),
+    });
+  } catch (error) { return fail(res, error); }
+});
+
+router.patch('/:guildId/core/:emojiId', async (req, res) => {
+  try {
+    const id = guildId(req);
+    const ownerId = requireCoreManager(req);
+    const emoji = await emojis.renameInBank(client(req), req.params.emojiId, req.body?.alias || req.body?.name, { allowCore: true });
+    if (!emoji.core) throw new Error('That application emoji is not part of Goliath Core.');
+    return ok(res, { actorId: ownerId, emoji, ...(await payload(req, id)) });
+  } catch (error) { return fail(res, error); }
+});
+
+router.delete('/:guildId/core/:emojiId', async (req, res) => {
+  try {
+    const id = guildId(req);
+    const ownerId = requireCoreManager(req);
+    const overview = await emojis.overview(client(req), id);
+    const target = (overview.core || []).find((emoji) => String(emoji.id) === String(req.params.emojiId));
+    if (!target) throw new Error('That application emoji is not part of Goliath Core.');
+    await emojis.removeFromBank(client(req), req.params.emojiId, { allowCore: true });
+    return ok(res, { actorId: ownerId, removed: target, ...(await payload(req, id)) });
   } catch (error) { return fail(res, error); }
 });
 
