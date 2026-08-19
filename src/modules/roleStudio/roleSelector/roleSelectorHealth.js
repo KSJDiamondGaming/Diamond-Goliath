@@ -1,6 +1,7 @@
 'use strict';
 
 const { PermissionFlagsBits } = require('discord.js');
+const guildManager = require('../../../core/guild/guildManager');
 const roleSelector = require('./roleSelector');
 
 async function fetchRole(guild, roleId) {
@@ -97,6 +98,45 @@ function pruneStaleSelections(section) {
   return { memberSelections, removed };
 }
 
+async function buildAcceptanceReadiness(guild, section = roleSelector.getSection(guild.id)) {
+  const checks = [];
+  const add = (id, passed, detail) => checks.push({ id, passed: Boolean(passed), detail });
+  const me = guild.members.me;
+  const enabled = guildManager.isModuleEnabled(guild.id, roleSelector.MODULE);
+
+  add('module_enabled', enabled, enabled ? 'Role Selector is enabled.' : 'Enable Role Selector before member acceptance tests.');
+  add('manage_roles', me?.permissions.has(PermissionFlagsBits.ManageRoles), me?.permissions.has(PermissionFlagsBits.ManageRoles) ? 'Goliath has Manage Roles.' : 'Goliath is missing Manage Roles.');
+
+  if (section.style.anchorRoleId) {
+    const anchor = await fetchRole(guild, section.style.anchorRoleId);
+    add('anchor_valid', Boolean(anchor) && !anchorIsUnsafe(guild, anchor), !anchor ? 'Configured anchor role is missing.' : anchorIsUnsafe(guild, anchor) ? 'Configured anchor is above Goliath or otherwise unusable.' : `Anchor ${anchor.name} is usable.`);
+  } else {
+    add('anchor_valid', false, 'No divider / anchor role is configured.');
+  }
+
+  const groups = roleSelector.listGroups(guild.id).filter((group) => group.enabled);
+  add('colour_group', groups.some((group) => group.id === roleSelector.COLOUR_GROUP_ID), 'Built-in Colours selector must be enabled.');
+  add('custom_group', groups.some((group) => !group.builtIn), groups.some((group) => !group.builtIn) ? 'At least one custom selector group is available.' : 'Create at least one custom group for single/multiple-choice acceptance testing.');
+
+  if (section.deployment.channelId) {
+    const channel = await fetchChannel(guild, section.deployment.channelId);
+    const message = channel && section.deployment.messageId ? await fetchDeploymentMessage(channel, section.deployment.messageId) : null;
+    add('deployment_channel', Boolean(channel?.send), channel?.send ? `Deployment channel ${channel.name || channel.id} is available.` : 'Deployment channel is missing or not sendable.');
+    add('deployment_message', Boolean(message) && (!guild.client?.user?.id || message.author?.id === guild.client.user.id), !section.deployment.messageId ? 'No deployed message is stored yet.' : !message ? 'Stored deployed message is missing.' : guild.client?.user?.id && message.author?.id !== guild.client.user.id ? 'Stored deployment message is not owned by Goliath.' : 'Deployed Role Selector message is present and owned by Goliath.');
+  } else {
+    add('deployment_channel', false, 'No deployment channel is configured.');
+    add('deployment_message', false, 'No deployed Role Selector message exists yet.');
+  }
+
+  const required = ['module_enabled', 'manage_roles', 'anchor_valid', 'colour_group', 'custom_group', 'deployment_channel', 'deployment_message'];
+  const failed = checks.filter((check) => required.includes(check.id) && !check.passed);
+  return {
+    ready: failed.length === 0,
+    checks,
+    failed: failed.map((check) => check.id),
+  };
+}
+
 async function buildHealth(guild) {
   const section = roleSelector.getSection(guild.id);
   const issues = [];
@@ -143,7 +183,10 @@ async function buildHealth(guild) {
   const staleSelections = countStaleSelections(section);
   if (staleSelections) warnings.push(`${staleSelections} stale member selection reference(s) were detected.`);
 
-  const usage = await roleSelector.getUsage(guild);
+  const [usage, acceptance] = await Promise.all([
+    roleSelector.getUsage(guild),
+    buildAcceptanceReadiness(guild, section),
+  ]);
   return {
     module: roleSelector.MODULE,
     healthy: issues.length === 0,
@@ -153,6 +196,7 @@ async function buildHealth(guild) {
     totalUsing: usage.totalUsing,
     groupCount: roleSelector.listGroups(guild.id).length,
     staleSelections,
+    acceptance,
     checkedAt: new Date().toISOString(),
   };
 }
@@ -220,4 +264,4 @@ async function repair(guild) {
   return buildHealth(guild);
 }
 
-module.exports = { buildHealth, repair };
+module.exports = { buildAcceptanceReadiness, buildHealth, repair };
