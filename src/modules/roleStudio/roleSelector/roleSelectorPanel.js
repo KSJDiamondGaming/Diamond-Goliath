@@ -40,11 +40,38 @@ async function respond(interaction, payload) {
   if (interaction.deferred || interaction.replied) return interaction.editReply(payload);
   return interaction.update(payload);
 }
+async function resolveComponentShortcodes(guild, components = []) {
+  const allowed = await emojis.allowedGuildEmojis(guild.client, guild.id);
+  return (components || []).map((entry) => {
+    const data = typeof entry?.toJSON === 'function' ? entry.toJSON() : entry;
+    if (!data || typeof data !== 'object' || !Array.isArray(data.components)) return entry;
+    return {
+      ...data,
+      components: data.components.map((component) => {
+        if (!component || component.type !== 3 || !Array.isArray(component.options)) return component;
+        return {
+          ...component,
+          options: component.options.map((option) => {
+            const rawName = String(option?.emoji?.name || '');
+            const shortcode = rawName.match(/^:([A-Za-z0-9_]{2,32}):$/);
+            if (!shortcode) return option;
+            const emoji = allowed.get(shortcode[1].toLowerCase());
+            if (emoji) return { ...option, emoji: emojis.componentPayload(emoji) };
+            const next = { ...option };
+            delete next.emoji;
+            return next;
+          }),
+        };
+      }),
+    };
+  });
+}
 async function resolveMemberPayload(guild, payload = {}) {
   return {
     ...payload,
     content: payload.content == null ? payload.content : await emojis.resolveText(guild.client, guild.id, payload.content),
     embeds: await emojis.resolveEmbeds(guild.client, guild.id, payload.embeds || []),
+    components: await resolveComponentShortcodes(guild, payload.components || []),
   };
 }
 function customGroups(guildId) { return roleSelector.listGroups(guildId).filter((group) => !group.builtIn); }
