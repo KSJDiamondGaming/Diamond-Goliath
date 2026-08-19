@@ -45,9 +45,10 @@ test('Managed group deletion preserves unresolved Goliath roles', () => {
 
 test('Role Selector health validates deployment message and repairs stale state', () => {
   assert.match(health, /deployment\.messageId/);
-  assert.match(health, /message_missing|deployment_message_missing/);
+  assert.match(health, /fetchDeploymentMessage/);
+  assert.match(health, /The deployed Role Selector message no longer exists\./);
   assert.match(health, /memberSelections/);
-  assert.match(health, /anchor_unmanageable|anchor.*position|highest\.position/);
+  assert.match(health, /anchorIsUnsafe/);
 });
 
 test('Discord admin Role Selector controls use central security enforcement', () => {
