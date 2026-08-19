@@ -585,7 +585,7 @@ function promote(target) {
   const environment = String(target || '').toLowerCase();
   const plan = {
     beta: { source: 'dev', deploy: '/home/goliath/deploy-beta.sh' },
-    production: { source: 'dev', deploy: '/home/goliath/deploy-production.sh' },
+    production: { source: 'beta', deploy: '/home/goliath/deploy-production.sh' },
   }[environment];
 
   if (!plan) {
@@ -613,10 +613,15 @@ function promote(target) {
     return true;
   }
 
+  if (!run('git', ['merge-base', '--is-ancestor', targetRef, sourceRef])) {
+    console.error(`${environment} cannot fast-forward to ${plan.source}; promotion aborted.`);
+    return false;
+  }
+
   if (!run('git', ['checkout', '-B', environment, targetRef])) return false;
-  if (!run('git', ['merge', '--no-ff', '--no-edit', sourceRef])) return false;
+  if (!run('git', ['merge', '--ff-only', sourceRef])) return false;
   if (!run('git', ['push', 'origin', environment])) return false;
-  console.log(`${environment} synchronized with ${plan.source}.`);
+  console.log(`${environment} fast-forwarded to ${plan.source}.`);
   return true;
 }
 
