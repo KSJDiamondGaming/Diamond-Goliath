@@ -136,7 +136,7 @@ function normalizeBackComponent(component, interaction) {
   const customId = data?.custom_id || data?.customId || null;
   const parentStudio = resolveParentStudio(interaction?.customId);
   if (!parentStudio || customId !== 'admin:modules') return data;
-  return { ...data, custom_id: `admin:studio:${parentStudio}`, label: 'â¬…ï¸ Back' };
+  return { ...data, custom_id: `admin:studio:${parentStudio}`, label: '⬅️ Back' };
 }
 function componentId(component) {
   return component?.custom_id || component?.customId || null;
@@ -151,7 +151,7 @@ function findComponent(rows, customId) {
 function normalizeVerificationRows(payload, rows) {
   const title = payload?.embeds?.[0]?.title;
 
-  if (title === 'ðŸ”€ Verification Â· Workflow') {
+  if (title === '🔄 Verification · Workflow') {
     if (rows.length !== 3 || rows[0]?.components?.length !== 3 || rows[1]?.components?.length !== 5) return rows;
     const workflowButtons = [...rows[0].components, ...rows[1].components];
     return [
@@ -161,7 +161,7 @@ function normalizeVerificationRows(payload, rows) {
     ];
   }
 
-  if (title === 'âœ… Verification Â· Overview') {
+  if (title === '✅ Verification · Overview') {
     const workflow = findComponent(rows, 'admin:verification:page:workflow');
     const roles = findComponent(rows, 'admin:verification:page:roles');
     const messages = findComponent(rows, 'admin:verification:page:messages');
@@ -174,7 +174,7 @@ function normalizeVerificationRows(payload, rows) {
     const next = {
       ...workflow,
       custom_id: 'admin:verification:overview:next',
-      label: 'Next âž¡ï¸',
+      label: 'Next ➡️',
       style: 2,
     };
     return [
@@ -183,7 +183,7 @@ function normalizeVerificationRows(payload, rows) {
     ];
   }
 
-  if (title === 'ðŸŽ¨ Verification Â· Panel Builder') {
+  if (title === '🎨 Verification · Panel Builder') {
     const editRow = rows[0];
     const publishRow = rows[1];
     const savedPanels = findComponent(rows, 'admin:verification:page:saved_panels');
@@ -274,7 +274,7 @@ function isVerificationMemberInteraction(interaction) {
 }
 async function safeInteractionError(interaction, error = null) {
   const detail = error?.message ? `\n\`${String(error.message).slice(0, 300)}\`` : '';
-  const payload = { content: `âŒ Interaction failed.${detail}`, flags: MessageFlags.Ephemeral };
+  const payload = { content: `❌ Interaction failed.${detail}`, flags: MessageFlags.Ephemeral };
   try {
     if (interaction?.isAutocomplete?.()) { await interaction.respond([]).catch(() => null); return; }
     if (interaction?.deferred || interaction?.replied) {
@@ -314,7 +314,7 @@ async function handleVerificationMemberInteraction(interaction) {
   verificationLocks.set(lockKey, operation);
   try {
     const result = await operation;
-    await interaction.editReply({ content: result.ok ? `âœ… ${result.message}` : `âŒ ${result.message}` });
+    await interaction.editReply({ content: result.ok ? `✅ ${result.message}` : `❌ ${result.message}` });
   } finally {
     if (verificationLocks.get(lockKey) === operation) verificationLocks.delete(lockKey);
   }
@@ -343,86 +343,61 @@ module.exports = {
         return;
       }
       const interactionAgeMs = Math.max(0, Date.now() - Number(interaction.createdTimestamp || Date.now()));
-      const customId = String(interaction.customId || '');
-    if (customId === 'admin:studio:roleStudio') {
-      interaction.customId = 'admin:roleStudio:handled';
+const customId = String(interaction.customId || '');
 
-      const payload = await roleStudioPanel.buildRoleStudioPanel(
-        interaction.guild,
-        interaction.member?.displayName ||
-          interaction.user?.username ||
-          'Unknown User'
-      );
+      if (customId === 'admin:studio:roleStudio') {
+  interaction.customId = 'admin:roleStudio:handled';
 
-      if (interaction.deferred || interaction.replied) {
-        await interaction.editReply(payload);
-      } else {
-        await interaction.update(payload);
-      }
+  const payload = await roleStudioPanel.buildRoleStudioPanel(
+    interaction.guild,
+    interaction.member?.displayName ||
+      interaction.user?.username ||
+      'Unknown User'
+  );
 
-      return;
-    }
+  if (interaction.deferred || interaction.replied) {
+    await interaction.editReply(payload);
+  } else {
+    await interaction.update(payload);
+  }
 
-    if (
-      customId.startsWith('admin:roleSelector') ||
-      customId.startsWith('roleSelector:') ||
-      customId.startsWith('admin:colourRoles') ||
-      customId.startsWith('colourRoles:')
-    ) {
-      await roleSelectorPanel.handleRoleSelectorInteraction(interaction);
-      return;
-    }
+  return;
+}
 
-    if (
-      customId.startsWith('admin:privateRooms') ||
-      customId.startsWith('user:privateRooms:') ||
-      customId.startsWith('privateRooms:')
-    ) {
-      if (customId.startsWith('admin:privateRooms')) {
-        await privateRoomsPanel.handleAdminInteraction(interaction);
-        return;
-      }
+if (
+  customId.startsWith('admin:roleSelector') ||
+  customId.startsWith('roleSelector:') ||
+  customId.startsWith('admin:colourRoles') ||
+  customId.startsWith('colourRoles:')
+) {
+  await roleSelectorPanel.handleRoleSelectorInteraction(interaction);
+  return;
+}
 
-      if (customId.startsWith('user:privateRooms:')) {
-        await privateRoomsPanel.handleUserInteraction(interaction);
-        return;
-      }
+if (
+  customId.startsWith('admin:privateRooms') ||
+  customId.startsWith('user:privateRooms:') ||
+  customId.startsWith('privateRooms:')
+) {
+  if (customId.startsWith('admin:privateRooms')) {
+    await privateRoomsPanel.handleAdminInteraction(interaction);
+    return;
+  }
 
-      if (typeof privateRoomsPanel.handleInteraction === 'function') {
-        await privateRoomsPanel.handleInteraction(interaction);
-        return;
-      }
-    }
+  if (customId.startsWith('user:privateRooms:')) {
+    await privateRoomsPanel.handleUserInteraction(interaction);
+    return;
+  }
 
-    if (
-      customId.startsWith('admin:birthdays') ||
-      customId.startsWith('birthdays:user:')
-    ) {
-      if (customId.startsWith('admin:birthdays')) {
-        await birthdaysPanel.handleAdmin(interaction);
-        return;
-      }
+  if (typeof privateRoomsPanel.handleInteraction === 'function') {
+    await privateRoomsPanel.handleInteraction(interaction);
+    return;
+  }
+}
 
-      if (customId.startsWith('birthdays:user:')) {
-        await birthdaysPanel.handleUser(interaction);
-        return;
-      }
-    }
-
-
-      if (isVerificationMemberInteraction(interaction)) { await handleVerificationMemberInteraction(interaction); return; }
-      if (interactionAgeMs > 1500) console.warn(`[InteractionCreate] Slow dispatch before routing: customId=${customId} age=${interactionAgeMs}ms pid=${process.pid}`);
-      if (startsWith(interaction, 'user:')) {
-        if (!await callHandler(userPanelInteractions, 'handleUserPanelInteraction', interaction)) throw new Error(`User panel did not handle ${customId}.`);
-        return;
-      }
-      if (customId.startsWith('mod_') || customId.startsWith('mod:')) {
-        if (!await callHandler(modInteractions, 'handleModInteraction', interaction)) throw new Error(`Mod interactions did not handle ${customId}.`);
-        return;
-      }
       const isTicketRuntimeInteraction = customId.startsWith('ticket_') || customId.startsWith('goliath_ticket_');
       if (isTicketRuntimeInteraction && interaction.guildId && guildManager.isModuleEnabled?.(interaction.guildId, 'tickets') === false) {
-        await interaction.reply({ content: 'âŒ Tickets is currently disabled for this server.', flags: MessageFlags.Ephemeral });
+        await interaction.reply({ content: '❌ Tickets is currently disabled for this server.', flags: MessageFlags.Ephemeral });
         return;
       }
       if (customId.startsWith('restore_request_')) {
@@ -509,4 +484,9 @@ module.exports = {
     }
   },
 };
+
+
+
+
+
 

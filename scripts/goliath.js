@@ -484,6 +484,76 @@ function syncCommands(target = mode) {
   return result.status === 0;
 }
 
+function dashboardImportAudit() {
+  section('Dashboard imports');
+
+  const dashboardFiles = walk(absolute('src/dashboard'), [
+    '.js',
+    '.jsx',
+    '.mjs',
+    '.cjs',
+  ]);
+
+  const errors = [];
+
+  for (const filePath of dashboardFiles) {
+    const source = read(filePath);
+
+    const imports = [
+      ...source.matchAll(
+        /(?:import|export).*?from\s+['"]([^'"]+)['"]/g
+      ),
+    ].map((match) => match[1]);
+
+    for (const specification of imports) {
+      if (!specification.startsWith('.')) continue;
+
+      const resolved = path.resolve(
+        path.dirname(filePath),
+        specification
+      );
+
+      const candidates = [
+        resolved,
+        `${resolved}.js`,
+        `${resolved}.jsx`,
+        path.join(resolved, 'index.js'),
+        path.join(resolved, 'index.jsx'),
+      ];
+
+      if (!candidates.some((candidate) => fs.existsSync(candidate))) {
+        errors.push(
+          `${relative(filePath)} -> ${specification}`
+        );
+      }
+    }
+  }
+
+  for (const error of errors) {
+    console.log(` - ${error}`);
+  }
+
+  return errors.length === 0;
+}
+
+function auditCommand() {
+  section('Goliath audit');
+
+  return [
+    projectShape,
+    commandAudit,
+    dashboardAudit,
+    dashboardImportAudit,
+    sourceAudit,
+    importAudit,
+    runtimeAudit,
+    goodbyeAudit,
+    reactionRolesAudit,
+    roleStudioAudit,
+    inviteStudioAudit,
+  ].map((suite) => suite()).every(Boolean);
+}
+
 function doctor(target = '') {
   const suites = {
     goodbye: goodbyeAudit,
@@ -552,6 +622,8 @@ function promote(target) {
 
 const commands = {
   doctor: () => doctor(process.argv[3]),
+  audit: auditCommand,
+  'dashboard-imports': dashboardImportAudit,
   'deploy-plan': () => deployPlan(process.argv[3], process.argv[4], process.argv[5]),
   'sync-commands': () => syncCommands(process.argv[3]),
   promote: () => promote(process.argv[3]),
