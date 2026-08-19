@@ -891,9 +891,19 @@ let ticketSetupPanelApi;
       )
       .setTimestamp();
 
+    const guildId = ticket.guildId || channel.guild?.id || null;
+    const client = channel.client || channel.guild?.client || null;
+    const content = `<@${user?.id || ticket.creatorId}>`;
+    const resolvedContent = client && guildId
+      ? await emojis.resolveText(client, guildId, content)
+      : content;
+    const resolvedEmbeds = client && guildId
+      ? await emojis.resolveEmbeds(client, guildId, [embed])
+      : [embed];
+
     return channel.send({
-      content: `<@${user?.id || ticket.creatorId}>`,
-      embeds: [embed],
+      content: resolvedContent,
+      embeds: resolvedEmbeds,
       components: getTicketActionRows(ticket, {
         allowReopen: true,
         allowDelete: true,
