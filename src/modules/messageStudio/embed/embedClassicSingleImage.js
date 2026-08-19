@@ -1,12 +1,10 @@
 'use strict';
 
-const { AttachmentBuilder, MessageFlags } = require('discord.js');
-const fetch = require('node-fetch');
+const { AttachmentBuilder } = require('discord.js');
 const sharp = require('sharp');
 
-const CLASSIC_CANVAS_WIDTH = 520;
-const MAX_SOURCE_BYTES = 8 * 1024 * 1024;
-const FETCH_TIMEOUT_MS = 8000;
+const SINGLE_IMAGE_CANVAS_WIDTH = 900;
+const SINGLE_IMAGE_CENTER_COMPENSATION = 180;
 
 function hasAdvancedMedia(mediaState) {
   const panels = Array.isArray(mediaState?.panels) ? mediaState.panels : [];
@@ -23,100 +21,50 @@ function hasAdvancedMedia(mediaState) {
   });
 }
 
-function hasApplicationEmojiShortcode(embeds = []) {
-  return embeds.some((embed) => {
-    const data = typeof embed?.toJSON === 'function' ? embed.toJSON() : embed;
-    if (!data || typeof data !== 'object') return false;
-    const values = [
-      data.title,
-      data.description,
-      data.author?.name,
-      data.footer?.text,
-      ...(Array.isArray(data.fields) ? data.fields.flatMap((field) => [field?.name, field?.value]) : []),
-    ];
-    return values.some((value) => /(^|[^<]):[a-zA-Z0-9_]{2,32}:/.test(String(value || '')));
-  });
-}
+async function shiftSingleImageAttachment(file) {
+  const name = String(file?.name || '').trim();
+  const attachment = file?.attachment;
+  if (!/^embed-panel-\d+\.png$/i.test(name) || !Buffer.isBuffer(attachment)) return file;
 
-function syncSimpleMediaIntoEmbeds(embeds = [], mediaState = null) {
-  const panels = Array.isArray(mediaState?.panels) ? mediaState.panels : [];
-  for (let index = 0; index < embeds.length; index += 1) {
-    const embed = embeds[index];
-    if (!embed || typeof embed.setImage !== 'function') continue;
-    const media = panels[index] || null;
-    const image = Array.isArray(media?.gallery) ? String(media.gallery[0]?.source || '').trim() : '';
-    const thumbnail = String(media?.thumbnail?.source || '').trim();
-    if (image) embed.setImage(image);
-    if (thumbnail && typeof embed.setThumbnail === 'function') embed.setThumbnail(thumbnail);
-  }
-  return embeds;
-}
-
-function isHttpsUrl(value) {
-  try { return new URL(String(value || '')).protocol === 'https:'; }
-  catch { return false; }
-}
-
-async function fetchImageBuffer(url) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-  timer.unref?.();
   try {
-    const response = await fetch(url, { signal: controller.signal, redirect: 'follow' });
-    if (!response.ok) throw new Error(`Image fetch failed with HTTP ${response.status}`);
-    const contentType = String(response.headers.get('content-type') || '').toLowerCase();
-    if (contentType && !contentType.startsWith('image/')) throw new Error(`Image URL returned ${contentType}`);
-    const declared = Number(response.headers.get('content-length') || 0);
-    if (declared > MAX_SOURCE_BYTES) throw new Error('Image exceeds 8 MB processing limit.');
-    const buffer = await response.buffer();
-    if (buffer.length > MAX_SOURCE_BYTES) throw new Error('Image exceeds 8 MB processing limit.');
-    return buffer;
-  } finally {
-    clearTimeout(timer);
+    // The Components V2 media gallery keeps the surrounding container full
+    // width but visually anchors a lone gallery image toward the left. The
+    // renderer already puts the artwork on a transparent 900px canvas. Trim
+    // back to the visible artwork, then place it farther right on the SAME
+    // 900px transparent canvas. This compensates for Discord's gallery offset
+    // without shrinking the panel, cropping the artwork, or changing aspect.
+    const visible = await sharp(attachment, { failOn: 'warning' })
+      .trim({ background: { r: 0, g: 0, b: 0, alpha: 0 } })
+      .png()
+      .toBuffer();
+    const meta = await sharp(visible).metadata();
+    const width = Number(meta.width || 0);
+    const height = Number(meta.height || 0);
+    if (!width || !height || width >= SINGLE_IMAGE_CANVAS_WIDTH) return file;
+
+    const naturalLeft = Math.floor((SINGLE_IMAGE_CANVAS_WIDTH - width) / 2);
+    const left = Math.min(
+      SINGLE_IMAGE_CANVAS_WIDTH - width,
+      Math.max(0, naturalLeft + SINGLE_IMAGE_CENTER_COMPENSATION),
+    );
+
+    const centered = await sharp({
+      create: {
+        width: SINGLE_IMAGE_CANVAS_WIDTH,
+        height,
+        channels: 4,
+        background: { r: 0, g: 0, b: 0, alpha: 0 },
+      },
+    })
+      .composite([{ input: visible, left, top: 0 }])
+      .png()
+      .toBuffer();
+
+    return new AttachmentBuilder(centered, { name });
+  } catch (error) {
+    console.warn('[Embed Renderer] Single-image centering compensation failed:', error?.message || error);
+    return file;
   }
-}
-
-async function prepareClassicCenteredImages(embeds = []) {
-  const files = [];
-
-  for (let index = 0; index < embeds.length; index += 1) {
-    const embed = embeds[index];
-    if (!embed || typeof embed.toJSON !== 'function' || typeof embed.setImage !== 'function') continue;
-    const imageUrl = String(embed.toJSON()?.image?.url || '').trim();
-    if (!isHttpsUrl(imageUrl)) continue;
-
-    try {
-      const buffer = await fetchImageBuffer(imageUrl);
-      const source = sharp(buffer, { failOn: 'warning' });
-      const meta = await source.metadata();
-      const width = Number(meta.width || 0);
-      const height = Number(meta.height || 0);
-      if (!width || !height || width >= CLASSIC_CANVAS_WIDTH) continue;
-
-      const left = Math.floor((CLASSIC_CANVAS_WIDTH - width) / 2);
-      const right = CLASSIC_CANVAS_WIDTH - width - left;
-      const centered = await source
-        .ensureAlpha()
-        .extend({
-          top: 0,
-          bottom: 0,
-          left,
-          right,
-          background: { r: 0, g: 0, b: 0, alpha: 0 },
-        })
-        .png()
-        .toBuffer();
-
-      const name = `embed-panel-${index + 1}-centered.png`;
-      files.push(new AttachmentBuilder(centered, { name }));
-      embed.setImage(`attachment://${name}`);
-    } catch (error) {
-      // Best effort: preserve the original image rather than blocking delivery.
-      console.warn(`[Embed Renderer] Could not center classic image for panel ${index + 1}:`, error?.message || error);
-    }
-  }
-
-  return { embeds, files };
 }
 
 function installClassicSingleImagePayload(renderer) {
@@ -125,31 +73,22 @@ function installClassicSingleImagePayload(renderer) {
 
   const originalBuildEmbedPayload = renderer.buildEmbedPayload.bind(renderer);
 
-  renderer.buildEmbedPayload = async function classicSingleImagePayload(options = {}) {
-    const embeds = Array.isArray(options.embeds) ? options.embeds : [];
+  renderer.buildEmbedPayload = async function fullWidthCenteredSingleImage(options = {}) {
     const mediaState = options.media || options.mediaV2 || null;
+    const payload = await originalBuildEmbedPayload(options);
 
-    // Keep the normal Discord embed width and use the original centering method:
-    // narrow images are placed unchanged on a transparent 520px canvas. This
-    // forces the full embed image width while keeping visible artwork centered.
-    if (!hasAdvancedMedia(mediaState) && !hasApplicationEmojiShortcode(embeds)) {
-      syncSimpleMediaIntoEmbeds(embeds, mediaState);
-      const prepared = await prepareClassicCenteredImages(embeds);
-      const payload = {
-        embeds: prepared.embeds,
-        components: Array.isArray(options.actionRows) ? options.actionRows : [],
-      };
-      if (prepared.files.length) payload.files = prepared.files;
-      if (options.allowUserPing && options.userId) payload.content = `<@${options.userId}>`;
-      if (options.ephemeral) payload.flags = MessageFlags.Ephemeral;
-      return payload;
+    // IMPORTANT: do not switch this case to a classic EmbedBuilder payload.
+    // Components V2 is what keeps the container/panel at the full width the
+    // user designed. Only compensate the single image's visual position.
+    if (!hasAdvancedMedia(mediaState) && Array.isArray(payload?.files) && payload.files.length) {
+      payload.files = await Promise.all(payload.files.map(shiftSingleImageAttachment));
     }
 
-    return originalBuildEmbedPayload(options);
+    return payload;
   };
 
   renderer.__classicSingleImagePayloadInstalled = true;
-  console.log('[Embed Renderer] Full-width centered single-image path installed.');
+  console.log('[Embed Renderer] Full-width panel + centered single-image path installed.');
   return renderer;
 }
 
