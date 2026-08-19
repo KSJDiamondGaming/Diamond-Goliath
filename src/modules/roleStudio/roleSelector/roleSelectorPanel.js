@@ -13,6 +13,7 @@ const {
 } = require('discord.js');
 
 const guildManager = require('../../../core/guild/guildManager');
+const security = require('../../../core/security/securityCore');
 const roleSelector = require('./roleSelector');
 const healthService = require('./roleSelectorHealth');
 
@@ -203,6 +204,12 @@ async function handleRoleSelectorInteraction(interaction) {
   const id = String(interaction.customId || ''); const actor = { actorId: interaction.user?.id };
   if (!id.startsWith('admin:roleSelector') && !id.startsWith('roleSelector:') && !id.startsWith('admin:colourRoles') && !id.startsWith('colourRoles:')) return false;
   try {
+    const adminControl = id.startsWith('admin:roleSelector') || id.startsWith('admin:colourRoles');
+    if (adminControl) {
+      const access = await security.enforceInteractionSecurity(interaction, { level: 'admin', guildOnly: true });
+      if (!access.allowed) return true;
+    }
+
     if (id === 'admin:colourRoles' || id === 'admin:roleSelector' || id === 'admin:roleSelector:home') return respond(interaction, await buildAdminPanel(interaction.guild, displayName(interaction)));
     if (id === 'admin:roleSelector:enable' || id === 'admin:roleSelector:disable') {
       guildManager.setModuleEnabled(interaction.guildId, roleSelector.MODULE, id.endsWith(':enable'), { ...actor, action: id });
