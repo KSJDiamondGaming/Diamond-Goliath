@@ -363,12 +363,8 @@ function birthdayEmbed(guild, section, members, year, today, test = false) {
     ? renderGroupTemplate(pickGroupTemplate(section.settings, members, today), guild, members)
     : renderTemplate(pickTemplate(section.settings, members[0], today), guild, members[0], year);
   embed.setDescription(description.slice(0, 4096));
-  const footer = clean(section.settings.cardFooter, 2048).replaceAll('{server}', guild.name || 'this server');
-  if (footer) embed.setFooter({ text: footer });
   const cardImage = resolvedCardImage(section.settings);
   if (cardImage) embed.setImage(cardImage);
-  if (section.settings.cardUseServerIcon && guild.iconURL?.()) embed.setThumbnail(guild.iconURL({ size: 256 }));
-  embed.setTimestamp();
   return embed;
 }
 
