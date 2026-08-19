@@ -83,6 +83,7 @@ export default function RoleSelector({ theme, selectedGuild, selectedGuildData }
   const colours = groups.find((group) => group.id === 'colours');
   const usage = data.usage || { groups: [], totalUsing: 0, totalMembers: 0 };
   const health = data.health || {};
+  const acceptance = health.acceptance || { ready: false, checks: [], failed: [] };
   const selectedUsage = usage.groups?.find((group) => group.groupId === selectedGroupId);
 
   function chooseGroup(group) { if (!group) return; setSelectedGroupId(group.id); setEditDraft(groupDraft(group)); }
@@ -168,6 +169,16 @@ export default function RoleSelector({ theme, selectedGuild, selectedGuildData }
       {selectedUsage?.rows?.length ? selectedUsage.rows.map((item, index) => <div key={item.id} style={{ borderTop: index ? `1px solid ${theme.cardBorder}` : 'none', paddingTop: index ? 9 : 0 }}><strong>{index + 1}. {item.label} — {item.count}</strong>{item.members?.length ? <div style={{ color: theme.mutedText, fontSize: 12, marginTop: 3 }}>{item.members.slice(0, 30).map((member) => member.name).join(', ')}{item.members.length > 30 ? ` +${item.members.length - 30} more` : ''}</div> : null}</div>) : <div style={{ color: theme.mutedText }}>No selections yet.</div>}
     </section>
 
-    <section style={{ ...card, display: 'grid', gap: 6 }}><h2 style={{ margin: 0 }}>Health</h2><strong style={{ color: health.healthy ? '#86efac' : '#fbbf24' }}>{health.healthy ? '✅ Healthy' : '⚠️ Needs attention'}</strong>{(health.issues || []).map((item, index) => <div key={`i-${index}`} style={{ color: '#fca5a5' }}>• {item}</div>)}{(health.warnings || []).slice(0, 12).map((item, index) => <div key={`w-${index}`} style={{ color: '#fbbf24' }}>• {item}</div>)}</section>
+    <section style={{ ...card, display: 'grid', gap: 8 }}>
+      <h2 style={{ margin: 0 }}>Health & Acceptance</h2>
+      <strong style={{ color: health.healthy ? '#86efac' : '#fbbf24' }}>{health.healthy ? '✅ Healthy' : '⚠️ Needs attention'}</strong>
+      {(health.issues || []).map((item, index) => <div key={`i-${index}`} style={{ color: '#fca5a5' }}>• {item}</div>)}
+      {(health.warnings || []).slice(0, 12).map((item, index) => <div key={`w-${index}`} style={{ color: '#fbbf24' }}>• {item}</div>)}
+      <div style={{ borderTop: `1px solid ${theme.cardBorder}`, marginTop: 4, paddingTop: 10 }}>
+        <strong style={{ color: acceptance.ready ? '#86efac' : '#fbbf24' }}>{acceptance.ready ? '✅ Acceptance Ready' : '⚠️ Acceptance Not Ready'}</strong>
+        <div style={{ color: theme.mutedText, fontSize: 12, marginTop: 3 }}>{acceptance.ready ? 'The guild is configured for the manual Role Selector acceptance run.' : `${acceptance.failed?.length || 0} readiness check(s) still need attention.`}</div>
+      </div>
+      {(acceptance.checks || []).map((check) => <div key={check.id} style={{ display: 'grid', gridTemplateColumns: '22px 1fr', gap: 6, alignItems: 'start' }}><span>{check.passed ? '✅' : '❌'}</span><div><strong>{String(check.id || '').replaceAll('_', ' ')}</strong><div style={{ color: theme.mutedText, fontSize: 12 }}>{check.detail}</div></div></div>)}
+    </section>
   </div>;
 }
