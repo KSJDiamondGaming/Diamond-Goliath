@@ -245,7 +245,11 @@ async function handleRoleSelectorInteraction(interaction) {
     if (id === 'admin:roleSelector:toggleRemove') { const group = roleSelector.getGroup(interaction.guildId, getState(interaction).groupId); if (!group) throw new Error('Select a group first.'); roleSelector.saveGroup(interaction.guildId, { ...group, allowRemove: !group.allowRemove }, { ...actor, action: 'role_selector_toggle_remove' }); return respond(interaction, buildGroupsPanel(interaction)); }
     if (id === 'admin:roleSelector:deleteGroup') {
       const group = roleSelector.getGroup(interaction.guildId, getState(interaction).groupId); if (!group) throw new Error('Select a group first.');
-      await roleSelector.deleteManagedGroupRoles(interaction.guild, group.id);
+      const result = await roleSelector.deleteManagedGroupRoles(interaction.guild, group.id);
+      if (result.unresolved) {
+        const names = result.unresolvedRoles.map((item) => `@${item.name}`).join(', ');
+        throw new Error(`Group not deleted because ${result.unresolved} Goliath-managed role(s) could not be removed${names ? `: ${names}` : '.'}. Move them below Goliath or fix Manage Roles, then retry.`);
+      }
       roleSelector.removeGroup(interaction.guildId, group.id, { ...actor, action: 'role_selector_delete_group' }); getState(interaction).groupId = null; return respond(interaction, buildGroupsPanel(interaction));
     }
     if (id === 'admin:roleSelector:palette') { const group = roleSelector.getGroup(interaction.guildId, roleSelector.COLOUR_GROUP_ID); const selected = new Set(interaction.values || []); roleSelector.saveGroup(interaction.guildId, { ...group, palette: group.palette.map((item) => ({ ...item, enabled: selected.has(item.id) })) }, { ...actor, action: 'role_selector_palette' }); return respond(interaction, buildColoursPanel(interaction.guild)); }
