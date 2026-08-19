@@ -31,7 +31,7 @@ async function channelHealth(target, channelId, label, required) {
   const me = target?.members?.me;
   const permissions = me && channel.permissionsFor?.(me);
   if (permissions && ![PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.EmbedLinks].every((permission) => permissions.has(permission))) {
-    return { level: 'issue', code: `${label}_permissions_missing`, channelId };
+    throw new Error(`Goliath lacks permission to post in the ${label.toLowerCase()}.`);
   }
   return null;
 }
@@ -39,7 +39,7 @@ async function channelHealth(target, channelId, label, required) {
 async function buildHealth(target, section) {
   if (!target) return null;
   const checks = await Promise.all([
-    channelHealth(target, section.submitChannelId, 'submit_channel', section.requireReview === false),
+    channelHealth(target, section.submitChannelId, 'submit_channel', true),
     channelHealth(target, section.reviewChannelId || section.submitChannelId, 'review_channel', section.requireReview !== false),
     channelHealth(target, section.approvedChannelId, 'approved_channel', false),
     channelHealth(target, section.deniedChannelId, 'denied_channel', false),
@@ -121,7 +121,7 @@ router.get('/:guildId/export', (req, res) => {
   try {
     const id = guildId(req);
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="goliath-suggestions-${id}.json"`);
+    res.setHeader('Content-Disposition', `attachment; filename=\"goliath-suggestions-${id}.json\"`);
     return res.send(JSON.stringify({ ...suggestions.getSection(id), enabled: guildManager.isModuleEnabled(id, 'suggestions') }, null, 2));
   } catch (error) { return fail(res, error); }
 });
