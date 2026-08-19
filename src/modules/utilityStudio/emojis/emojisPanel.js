@@ -45,14 +45,23 @@ function coreManagerIds() {
   return new Set(raw.split(/[\s,]+/).map((value) => value.trim()).filter((value) => /^\d{16,20}$/.test(value)));
 }
 
+function isCoreManagerId(userId) {
+  return Boolean(userId && coreManagerIds().has(String(userId)));
+}
+
 function requireCoreManager(req) {
   const userId = authenticatedActor(req);
-  const allowed = coreManagerIds();
-  if (!userId || !allowed.has(userId)) {
+  if (!isCoreManagerId(userId)) {
     const error = new Error('Goliath Core emoji management is restricted to configured bot owners.');
     error.statusCode = 403;
     throw error;
   }
+  return userId;
+}
+
+function requireCoreManagerInteraction(interaction) {
+  const userId = String(interaction?.user?.id || '').trim();
+  if (!isCoreManagerId(userId)) throw new Error('Goliath Core emoji management is restricted to configured bot owners.');
   return userId;
 }
 
@@ -252,6 +261,37 @@ function searchModal() {
     ));
 }
 
+function coreAddUrlModal(alias) {
+  return new ModalBuilder()
+    .setCustomId(`admin:module:emojis:core-add-submit:${alias}`)
+    .setTitle(`Add Core :${alias}:`)
+    .addComponents(row(
+      new TextInputBuilder()
+        .setCustomId('imageUrl')
+        .setLabel('Direct image URL')
+        .setPlaceholder('https://.../emoji.png')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true)
+        .setMaxLength(1000)
+    ));
+}
+
+function coreRenameModal(emoji) {
+  return new ModalBuilder()
+    .setCustomId(`admin:module:emojis:core-rename-submit:${emoji.id}`)
+    .setTitle('Rename Core emoji')
+    .addComponents(row(
+      new TextInputBuilder()
+        .setCustomId('alias')
+        .setLabel('Core alias')
+        .setPlaceholder('success, ticket, discord...')
+        .setValue(String(emoji.alias || ''))
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true)
+        .setMaxLength(32)
+    ));
+}
+
 function resultLabel(entry) {
   return String(entry?.title || entry?.slug || `Emoji ${entry?.id || ''}`).slice(0, 100);
 }
@@ -292,26 +332,81 @@ function searchResultsPanel(results, query, interaction) {
   return { embeds: [embed], components };
 }
 
-function corePanel(overview, interaction) {
+function corePanel(overview, interaction, notice = '') {
   const core = Array.isArray(overview.core) ? overview.core.slice(0, 25) : [];
+  const missing = Array.isArray(overview.missingCore) ? overview.missingCore : [];
+  const isManager = isCoreManagerId(interaction?.user?.id);
   const lines = core.map((emoji) => `${emoji.mention || `:${emoji.name}:`}  \`:${emoji.alias}:\``);
   const embed = new EmbedBuilder()
     .setColor(PANEL_COLOR)
     .setTitle('💠 Goliath Core Emojis')
     .setDescription([
       `**Core usage:** ${overview.coreCapacity.used}/${overview.coreCapacity.max}`,
+      `**Missing:** ${missing.length}`,
       '**Availability:** Every Goliath guild automatically',
       '**Guild slots used:** 0',
       '**Server favourites used:** 0',
       '',
-      lines.length ? 'Use these aliases anywhere Goliath supports Emoji Studio shortcodes:' : 'No Core emojis have been uploaded yet.',
+      lines.length ? 'Installed Core aliases:' : 'No Core emojis have been uploaded yet.',
       ...lines,
-      overview.core.length > core.length ? `\nShowing the first ${core.length} of ${overview.core.length} Core emojis.` : '',
+      overview.core.length > core.length ? `\nShowing the first ${core.length} of ${overview.core.length} installed Core emojis.` : '',
+      isManager ? '\n**Owner controls:** Add missing aliases or manage installed Core emojis below.' : '',
+      notice ? `\n${notice}` : '',
     ].filter(Boolean).join('\n'))
     .setFooter({ text: `Requested by ${memberName(interaction)}` });
+
+  const components = [];
+  if (isManager && missing.length) {
+    components.push(row(
+      new StringSelectMenuBuilder()
+        .setCustomId('admin:module:emojis:core-add-select')
+        .setPlaceholder('Add a missing Core emoji')
+        .addOptions(missing.slice(0, 25).map((alias) => ({
+          label: `:${alias}:`,
+          value: alias,
+          description: 'Upload by direct image URL',
+        })))
+    ));
+  }
+  if (isManager && core.length) {
+    components.push(row(
+      new StringSelectMenuBuilder()
+        .setCustomId('admin:module:emojis:core-manage-select')
+        .setPlaceholder('Manage an installed Core emoji')
+        .addOptions(core.map((emoji) => ({
+          label: `:${emoji.alias}:`.slice(0, 100),
+          value: String(emoji.id),
+          description: emoji.animated ? 'Animated Core emoji' : 'Static Core emoji',
+          emoji: emoji.component || undefined,
+        })))
+    ));
+  }
+  components.push(row(button('admin:module:emojis:panel', '⬅️ Emoji Studio', ButtonStyle.Secondary)));
+  return { embeds: [embed], components };
+}
+
+function coreManagePanel(overview, interaction, emoji, notice = '') {
+  const embed = new EmbedBuilder()
+    .setColor(PANEL_COLOR)
+    .setTitle(`💠 Manage :${emoji.alias}:`)
+    .setDescription([
+      emoji.mention || `:${emoji.name}:`,
+      '',
+      `**Alias:** :${emoji.alias}:`,
+      `**Discord name:** ${emoji.name}`,
+      `**ID:** ${emoji.id}`,
+      `**Type:** ${emoji.animated ? 'Animated' : 'Static'}`,
+      notice ? `\n${notice}` : '',
+    ].filter(Boolean).join('\n'));
   return {
     embeds: [embed],
-    components: [row(button('admin:module:emojis:panel', '⬅️ Emoji Studio', ButtonStyle.Secondary))],
+    components: [
+      row(
+        button(`admin:module:emojis:core-rename:${emoji.id}`, '✏️ Rename', ButtonStyle.Primary),
+        button(`admin:module:emojis:core-delete:${emoji.id}`, '🗑️ Delete', ButtonStyle.Danger),
+      ),
+      row(button('admin:module:emojis:core', '⬅️ Goliath Core', ButtonStyle.Secondary)),
+    ],
   };
 }
 
@@ -406,6 +501,67 @@ async function handleDiscordInteraction(interaction) {
 
   if (id === 'admin:module:emojis:core' && interaction.isButton?.()) {
     await sendPanel(interaction, corePanel(await discordOverview(interaction), interaction));
+    return true;
+  }
+
+  if (id === 'admin:module:emojis:core-add-select' && interaction.isStringSelectMenu?.()) {
+    requireCoreManagerInteraction(interaction);
+    const alias = String(interaction.values?.[0] || '');
+    if (!emojis.isApprovedCoreAlias(alias)) throw new Error('Unknown Goliath Core emoji alias.');
+    await interaction.showModal(coreAddUrlModal(alias));
+    return true;
+  }
+
+  if (id.startsWith('admin:module:emojis:core-add-submit:') && interaction.isModalSubmit?.()) {
+    requireCoreManagerInteraction(interaction);
+    const alias = id.slice('admin:module:emojis:core-add-submit:'.length);
+    if (!emojis.isApprovedCoreAlias(alias)) throw new Error('Unknown Goliath Core emoji alias.');
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const imageUrl = interaction.fields.getTextInputValue('imageUrl');
+    const attachment = await emojiApi.downloadAsset(String(imageUrl).trim());
+    const result = await emojis.createCoreEmoji(interaction.client, attachment, alias);
+    await interaction.editReply(corePanel(await discordOverview(interaction), interaction, `${result.created ? '✅ Added' : '✅ Already installed'} :${alias}:.`));
+    return true;
+  }
+
+  if (id === 'admin:module:emojis:core-manage-select' && interaction.isStringSelectMenu?.()) {
+    requireCoreManagerInteraction(interaction);
+    const overview = await discordOverview(interaction);
+    const emoji = (overview.core || []).find((entry) => String(entry.id) === String(interaction.values?.[0] || ''));
+    if (!emoji) throw new Error('That Goliath Core emoji no longer exists.');
+    await sendPanel(interaction, coreManagePanel(overview, interaction, emoji));
+    return true;
+  }
+
+  if (id.startsWith('admin:module:emojis:core-rename:') && interaction.isButton?.()) {
+    requireCoreManagerInteraction(interaction);
+    const emojiId = id.slice('admin:module:emojis:core-rename:'.length);
+    const overview = await discordOverview(interaction);
+    const emoji = (overview.core || []).find((entry) => String(entry.id) === emojiId);
+    if (!emoji) throw new Error('That Goliath Core emoji no longer exists.');
+    await interaction.showModal(coreRenameModal(emoji));
+    return true;
+  }
+
+  if (id.startsWith('admin:module:emojis:core-rename-submit:') && interaction.isModalSubmit?.()) {
+    requireCoreManagerInteraction(interaction);
+    const emojiId = id.slice('admin:module:emojis:core-rename-submit:'.length);
+    const alias = interaction.fields.getTextInputValue('alias');
+    if (!emojis.isApprovedCoreAlias(alias)) throw new Error('Use one of the locked Goliath Core emoji aliases.');
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const emoji = await emojis.renameInBank(interaction.client, emojiId, alias, { allowCore: true });
+    await interaction.editReply(coreManagePanel(await discordOverview(interaction), interaction, emoji, `✅ Renamed to :${emoji.alias}:`));
+    return true;
+  }
+
+  if (id.startsWith('admin:module:emojis:core-delete:') && interaction.isButton?.()) {
+    requireCoreManagerInteraction(interaction);
+    const emojiId = id.slice('admin:module:emojis:core-delete:'.length);
+    const overview = await discordOverview(interaction);
+    const target = (overview.core || []).find((entry) => String(entry.id) === emojiId);
+    if (!target) throw new Error('That Goliath Core emoji no longer exists.');
+    await emojis.removeFromBank(interaction.client, emojiId, { allowCore: true });
+    await sendPanel(interaction, corePanel(await discordOverview(interaction), interaction, `🗑️ Removed :${target.alias}: from Goliath Core.`));
     return true;
   }
 
