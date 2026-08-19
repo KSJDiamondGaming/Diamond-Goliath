@@ -9,10 +9,10 @@ const MAX_STUDIO_EMOJIS = MAX_APPLICATION_EMOJIS - MAX_CORE_EMOJIS;
 const CORE_EMOJI_PREFIX = 'goliath_';
 const CORE_EMOJI_ALIASES = Object.freeze([
   'success', 'error', 'warning', 'info', 'yes', 'no',
-  'home', 'settings', 'back', 'next', 'previous', 'close', 'refresh', 'search', 'edit', 'delete', 'save',
-  'user', 'role', 'channel', 'ticket', 'lock', 'unlock', 'bell', 'calendar', 'clock', 'link',
-  'twitch', 'youtube', 'tiktok', 'kick', 'discord', 'xbox', 'playstation', 'steam', 'pc',
-  'party', 'heart', 'star', 'gift',
+  'home', 'settings', 'back', 'next', 'close', 'search', 'edit', 'delete', 'save',
+  'user', 'role', 'channel', 'ticket', 'link', 'heart', 'star',
+  'activision', 'blizzard', 'discord', 'epic', 'facebook', 'instagram', 'kick', 'nintendo', 'pc',
+  'playstation', 'snapchat', 'steam', 'tiktok', 'twitch', 'whatsapp', 'x', 'xbox', 'youtube',
 ]);
 const CORE_EMOJI_ALIAS_SET = new Set(CORE_EMOJI_ALIASES);
 
