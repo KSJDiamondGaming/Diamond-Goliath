@@ -54,7 +54,7 @@ async function overview(client, guildId) {
 async function importFromEmojiGG(client, emojiGgId, requestedName = null) {
   const manager = requireEmojiManager(client);
   const bank = await manager.fetch();
-  if (bank.size >= MAX_APPLICATION_EMOJIS) throw new Error('Goliath application emoji bank is full (2,000/2,000).');
+  if (bank.size >= MAX_APPLICATION_EMOJIS) throw new Error('Emoji Studio application emoji pool is full (2,000/2,000).');
 
   const source = await emojiApi.findById(emojiGgId);
   if (!source) throw new Error('Emoji.gg emoji was not found.');
