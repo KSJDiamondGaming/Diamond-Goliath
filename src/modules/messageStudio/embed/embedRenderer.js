@@ -234,6 +234,59 @@ function textEmojiIds(embeds = []) {
   return [...ids];
 }
 
+function replaceEmojiShortcodes(value, allowedByName) {
+  const text = String(value || '');
+  if (!text || !allowedByName?.size) return text;
+  return text.replace(/:([a-zA-Z0-9_]{2,32}):/g, (match, name, offset, source) => {
+    const prefix = source.slice(Math.max(0, offset - 2), offset);
+    if (prefix.endsWith('<') || prefix === '<a') return match;
+    const emoji = allowedByName.get(name);
+    if (!emoji) return match;
+    return `<${emoji.animated ? 'a' : ''}:${emoji.name}:${emoji.id}>`;
+  });
+}
+
+async function resolveApplicationEmojiShortcodes(embeds = [], interaction = null) {
+  const manager = interaction?.client?.application?.emojis;
+  const guildId = String(interaction?.guildId || interaction?.guild?.id || '').trim();
+  if (!manager || !guildId) return embeds;
+
+  const section = emojiStore.getSection(guildId);
+  if (!section.enabled || !section.favourites.length) return embeds;
+
+  let bank = manager.cache;
+  if (!bank?.size) bank = await manager.fetch();
+  const selected = new Set(section.favourites.map(String));
+  const allowedByName = new Map();
+  for (const emoji of bank.values()) {
+    if (!selected.has(String(emoji.id)) || !emoji.name) continue;
+    allowedByName.set(String(emoji.name), emoji);
+  }
+  if (!allowedByName.size) return embeds;
+
+  return (embeds || []).map((embed) => {
+    const data = typeof embed?.toJSON === 'function' ? embed.toJSON() : embed;
+    if (!data || typeof data !== 'object') return embed;
+    const resolved = { ...data };
+    if (data.title != null) resolved.title = replaceEmojiShortcodes(data.title, allowedByName);
+    if (data.description != null) resolved.description = replaceEmojiShortcodes(data.description, allowedByName);
+    if (data.author && typeof data.author === 'object') {
+      resolved.author = { ...data.author, name: replaceEmojiShortcodes(data.author.name, allowedByName) };
+    }
+    if (data.footer && typeof data.footer === 'object') {
+      resolved.footer = { ...data.footer, text: replaceEmojiShortcodes(data.footer.text, allowedByName) };
+    }
+    if (Array.isArray(data.fields)) {
+      resolved.fields = data.fields.map((field) => ({
+        ...field,
+        name: replaceEmojiShortcodes(field?.name, allowedByName),
+        value: replaceEmojiShortcodes(field?.value, allowedByName),
+      }));
+    }
+    return resolved;
+  });
+}
+
 async function validateApplicationEmojiUsage(embeds = [], actionRows = [], interaction = null) {
   const usedIds = [...new Set([...componentEmojiIds(actionRows), ...textEmojiIds(embeds)])];
   if (!usedIds.length) return true;
@@ -264,10 +317,11 @@ async function buildEmbedPayload(options = {}) {
   const mediaState = options.media || options.mediaV2 || null;
   const components = [];
   const files = [];
-  await validateApplicationEmojiUsage(embeds, actionRows, interaction);
+  const resolvedEmbeds = await resolveApplicationEmojiShortcodes(embeds, interaction);
+  await validateApplicationEmojiUsage(resolvedEmbeds, actionRows, interaction);
   if (allowUserPing && userId) components.push(new TextDisplayBuilder().setContent(`<@${userId}>`));
-  for (let index = 0; index < embeds.length; index += 1) {
-    const embed = embeds[index];
+  for (let index = 0; index < resolvedEmbeds.length; index += 1) {
+    const embed = resolvedEmbeds[index];
     const data = typeof embed?.toJSON === 'function' ? embed.toJSON() : embed;
     if (!data || typeof data !== 'object') continue;
     const media = panelMedia(mediaState, index);
