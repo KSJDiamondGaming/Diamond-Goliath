@@ -52,7 +52,17 @@ function customGroupSelect(guildId, selectedId = null, customId = 'admin:roleSel
   return row(menu);
 }
 
+function memberDisabledPayload() {
+  return {
+    embeds: [new EmbedBuilder()
+      .setColor(0x747F8D)
+      .setTitle('🎭 Role Selector')
+      .setDescription('Role Selector is currently unavailable. An administrator can re-enable it from Role Studio.')],
+    components: [],
+  };
+}
 function memberLauncherPayload(guild) {
+  if (!guildManager.isModuleEnabled(guild.id, roleSelector.MODULE)) return memberDisabledPayload();
   const groups = roleSelector.listGroups(guild.id).filter((group) => group.enabled).slice(0, 25);
   const menu = new StringSelectMenuBuilder().setCustomId('roleSelector:openGroup').setPlaceholder('Choose a category').setMinValues(1).setMaxValues(1);
   if (groups.length) menu.addOptions(groups.map((group) => ({ label: `${group.emoji || '🏷️'} ${group.name}`.slice(0, 100), value: group.id, description: (group.description || (group.selectionMode === 'multiple' ? 'Choose one or more' : 'Choose one')).slice(0, 100) })));
@@ -63,6 +73,7 @@ function memberLauncherPayload(guild) {
   };
 }
 function memberGroupPayload(guild, member, groupId) {
+  roleSelector.assertModuleEnabled(guild.id);
   const group = roleSelector.getGroup(guild.id, groupId);
   if (!group || !group.enabled) throw new Error('That selector is unavailable.');
   const embed = new EmbedBuilder().setColor(0x5865F2).setTitle(`${group.emoji || '🏷️'} ${group.name}`).setDescription([group.description || 'Choose your role.', group.selectionMode === 'multiple' ? 'Select every option that applies.' : 'Select one option.', group.allowRemove ? 'You may clear this category at any time.' : null].filter(Boolean).join('\n'));
@@ -146,11 +157,46 @@ function styleModal(section) { return new ModalBuilder().setCustomId('admin:role
 function dividerModal() { return new ModalBuilder().setCustomId('admin:roleSelector:createDividerSubmit').setTitle('Create Role Selector Divider').addComponents(row(new TextInputBuilder().setCustomId('name').setLabel('Divider role name').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(100).setValue('🎭 | ROLE SELECTOR'))); }
 function hexModal() { return new ModalBuilder().setCustomId('roleSelector:customHexSubmit').setTitle('Pick Your Own Colour').addComponents(row(new TextInputBuilder().setCustomId('hex').setLabel('HEX colour').setStyle(TextInputStyle.Short).setRequired(true).setPlaceholder('#1EA7FF')), row(new TextInputBuilder().setCustomId('label').setLabel('Colour name').setStyle(TextInputStyle.Short).setRequired(false).setPlaceholder('Sky Blue'))); }
 
+async function fetchDeployment(guild, deployment) {
+  if (!deployment?.channelId) return { channel: null, message: null };
+  const channel = guild.channels.cache.get(deployment.channelId) || await guild.channels.fetch(deployment.channelId).catch(() => null);
+  if (!channel?.messages?.fetch) return { channel, message: null };
+  const message = deployment.messageId ? await channel.messages.fetch(deployment.messageId).catch(() => null) : null;
+  return { channel, message };
+}
+async function syncDeploymentState(guild) {
+  const section = roleSelector.getSection(guild.id);
+  const { message } = await fetchDeployment(guild, section.deployment);
+  if (!message) return { updated: false, reason: section.deployment?.messageId ? 'message_missing' : 'not_deployed' };
+  if (guild.client?.user?.id && message.author?.id !== guild.client.user.id) return { updated: false, reason: 'message_not_owned' };
+  await message.edit(memberLauncherPayload(guild));
+  return { updated: true, messageId: message.id, channelId: message.channel.id };
+}
+async function retireDeployment(guild, deployment) {
+  const { message } = await fetchDeployment(guild, deployment);
+  if (!message) return false;
+  if (guild.client?.user?.id && message.author?.id !== guild.client.user.id) return false;
+  await message.edit(memberDisabledPayload()).catch(() => null);
+  return true;
+}
 async function deploySelector(interaction) {
-  const section = roleSelector.getSection(interaction.guildId); const channelId = section.deployment.channelId || interaction.channelId;
-  const channel = interaction.guild.channels.cache.get(channelId) || await interaction.guild.channels.fetch(channelId).catch(() => null); if (!channel?.send) throw new Error('Choose a sendable text channel.');
-  let message = section.deployment.messageId ? await channel.messages.fetch(section.deployment.messageId).catch(() => null) : null; const payload = memberLauncherPayload(interaction.guild); message = message ? await message.edit(payload) : await channel.send(payload);
-  roleSelector.updateSection(interaction.guildId, (current) => ({ ...current, deployment: { channelId: channel.id, messageId: message.id } }), { actorId: interaction.user.id, action: 'role_selector_deploy' }); return message;
+  const section = roleSelector.getSection(interaction.guildId);
+  const channelId = section.deployment.channelId || interaction.channelId;
+  const channel = interaction.guild.channels.cache.get(channelId) || await interaction.guild.channels.fetch(channelId).catch(() => null);
+  if (!channel?.send) throw new Error('Choose a sendable text channel.');
+
+  let message = section.deployment.messageId && section.deployment.channelId === channel.id
+    ? await channel.messages.fetch(section.deployment.messageId).catch(() => null)
+    : null;
+
+  if (section.deployment.messageId && section.deployment.channelId && section.deployment.channelId !== channel.id) {
+    await retireDeployment(interaction.guild, section.deployment);
+  }
+
+  const payload = memberLauncherPayload(interaction.guild);
+  message = message ? await message.edit(payload) : await channel.send(payload);
+  roleSelector.updateSection(interaction.guildId, (current) => ({ ...current, deployment: { channelId: channel.id, messageId: message.id } }), { actorId: interaction.user.id, action: 'role_selector_deploy' });
+  return message;
 }
 
 async function handleRoleSelectorInteraction(interaction) {
@@ -158,7 +204,11 @@ async function handleRoleSelectorInteraction(interaction) {
   if (!id.startsWith('admin:roleSelector') && !id.startsWith('roleSelector:') && !id.startsWith('admin:colourRoles') && !id.startsWith('colourRoles:')) return false;
   try {
     if (id === 'admin:colourRoles' || id === 'admin:roleSelector' || id === 'admin:roleSelector:home') return respond(interaction, await buildAdminPanel(interaction.guild, displayName(interaction)));
-    if (id === 'admin:roleSelector:enable' || id === 'admin:roleSelector:disable') { guildManager.setModuleEnabled(interaction.guildId, roleSelector.MODULE, id.endsWith(':enable'), { ...actor, action: id }); return respond(interaction, await buildAdminPanel(interaction.guild, displayName(interaction))); }
+    if (id === 'admin:roleSelector:enable' || id === 'admin:roleSelector:disable') {
+      guildManager.setModuleEnabled(interaction.guildId, roleSelector.MODULE, id.endsWith(':enable'), { ...actor, action: id });
+      await syncDeploymentState(interaction.guild).catch(() => null);
+      return respond(interaction, await buildAdminPanel(interaction.guild, displayName(interaction)));
+    }
     if (id === 'admin:roleSelector:groups') return respond(interaction, buildGroupsPanel(interaction));
     if (id === 'admin:roleSelector:colours') return respond(interaction, buildColoursPanel(interaction.guild));
     if (id === 'admin:roleSelector:style') return respond(interaction, buildStylePanel(interaction.guild));
@@ -205,6 +255,7 @@ async function handleRoleSelectorInteraction(interaction) {
     if (id === 'admin:roleSelector:deploy') { const message = await deploySelector(interaction); return interaction.reply({ content: `✅ Role Selector deployed in <#${message.channel.id}>.`, flags: 64 }); }
     if (id === 'admin:roleSelector:health') { const health = await healthService.repair(interaction.guild); return interaction.reply({ content: `Role Selector health: **${health.healthy ? 'Healthy ✅' : 'Needs attention ⚠️'}**\nIssues: ${health.issues.length} · Warnings: ${health.warnings.length}`, flags: 64 }); }
 
+    if (id.startsWith('roleSelector:')) roleSelector.assertModuleEnabled(interaction.guildId);
     if (id === 'roleSelector:openGroup') { if (interaction.values?.[0] === '__none__') return interaction.reply({ content: 'No selector groups are available.', flags: 64 }); return interaction.reply({ ...memberGroupPayload(interaction.guild, interaction.member, interaction.values[0]), flags: 64 }); }
     if (id === 'roleSelector:colourChoose') { await roleSelector.applyColourSelection(interaction.guild, interaction.member, interaction.values[0]); return interaction.reply({ content: '✅ Your colour has been updated.', flags: 64 }); }
     if (id === 'roleSelector:customHex') { await interaction.showModal(hexModal()); return true; }
@@ -213,6 +264,7 @@ async function handleRoleSelectorInteraction(interaction) {
     if (id.startsWith('roleSelector:clear:')) { await roleSelector.clearSelection(interaction.guild, interaction.member, id.split(':').slice(2).join(':')); return interaction.reply({ content: '✅ Your selection has been cleared.', flags: 64 }); }
 
     // Migration compatibility for already-deployed Colour Roles controls.
+    if (id.startsWith('colourRoles:')) roleSelector.assertModuleEnabled(interaction.guildId);
     if (id === 'colourRoles:choose') { await roleSelector.applyColourSelection(interaction.guild, interaction.member, interaction.values[0]); return interaction.reply({ content: '✅ Your colour has been updated.', flags: 64 }); }
     if (id === 'colourRoles:remove') { await roleSelector.clearSelection(interaction.guild, interaction.member, roleSelector.COLOUR_GROUP_ID); return interaction.reply({ content: '✅ Your colour has been removed.', flags: 64 }); }
     if (id === 'colourRoles:custom') { await interaction.showModal(hexModal()); return true; }
@@ -229,5 +281,8 @@ async function handleRoleSelectorInteraction(interaction) {
 module.exports = {
   buildAdminPanel,
   handleRoleSelectorInteraction,
+  memberDisabledPayload,
   memberLauncherPayload,
+  retireDeployment,
+  syncDeploymentState,
 };
