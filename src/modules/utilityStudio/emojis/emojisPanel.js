@@ -112,14 +112,14 @@ function button(id, label, style = ButtonStyle.Primary) { return new ButtonBuild
 function memberName(interaction) { return interaction.member?.displayName || interaction.user?.displayName || interaction.user?.username || 'Unknown User'; }
 
 async function discordOverview(interaction) {
-  if (!interaction?.guild?.id || !interaction?.client) throw new Error('Emoji Bank requires a server interaction.');
+  if (!interaction?.guild?.id || !interaction?.client) throw new Error('Emoji Studio requires a server interaction.');
   return emojis.overview(interaction.client, interaction.guild.id);
 }
 
 function mainEmbed(overview, interaction, notice = '') {
   return new EmbedBuilder()
     .setColor(overview.enabled ? 0x57F287 : PANEL_COLOR)
-    .setTitle('😀 Emoji Bank')
+    .setTitle('😀 Emoji Studio')
     .setDescription([
       'Extra Goliath emojis hosted by Discord — no Goliath image storage and no guild emoji slots used.',
       '',
@@ -201,7 +201,7 @@ function searchResultsPanel(results, query, interaction) {
   }
   components.push(row(
     button('admin:module:emojis:search-open', '🔎 Search Again', ButtonStyle.Primary),
-    button('admin:module:emojis:panel', '⬅️ Emoji Bank', ButtonStyle.Secondary)
+    button('admin:module:emojis:panel', '⬅️ Emoji Studio', ButtonStyle.Secondary)
   ));
   return { embeds: [embed], components };
 }
@@ -217,16 +217,16 @@ function bankPanel(overview, interaction) {
   }));
   const embed = new EmbedBuilder()
     .setColor(PANEL_COLOR)
-    .setTitle('🌐 Goliath Emoji Bank')
+    .setTitle('🌐 Goliath Bank')
     .setDescription([
       `**Bank usage:** ${overview.capacity.used}/${overview.capacity.max}`,
       `**This server:** ${overview.guildCapacity.used}/${overview.guildCapacity.max}`,
       '',
-      options.length ? 'Select an emoji to add/remove it from this server. Showing the first 25 bank entries.' : 'The Goliath Emoji Bank is empty.',
+      options.length ? 'Select an emoji to add/remove it from this server. Showing the first 25 bank entries.' : 'The Goliath Bank is empty.',
     ].join('\n'));
   const components = [];
   if (options.length) components.push(row(new StringSelectMenuBuilder().setCustomId('admin:module:emojis:bank-toggle').setPlaceholder('Add/remove a bank emoji').addOptions(options)));
-  components.push(row(button('admin:module:emojis:panel', '⬅️ Emoji Bank', ButtonStyle.Secondary)));
+  components.push(row(button('admin:module:emojis:panel', '⬅️ Emoji Studio', ButtonStyle.Secondary)));
   return { embeds: [embed], components };
 }
 
@@ -245,7 +245,7 @@ function guildPanel(overview, interaction) {
   if (selected.length) components.push(row(new StringSelectMenuBuilder().setCustomId('admin:module:emojis:guild-remove').setPlaceholder('Remove a server emoji').addOptions(selected.map((emoji) => ({
     label: `:${emoji.name}:`.slice(0, 100), value: String(emoji.id), description: emoji.animated ? 'Animated application emoji' : 'Static application emoji', emoji: emoji.component || undefined,
   })) )));
-  components.push(row(button('admin:module:emojis:panel', '⬅️ Emoji Bank', ButtonStyle.Secondary)));
+  components.push(row(button('admin:module:emojis:panel', '⬅️ Emoji Studio', ButtonStyle.Secondary)));
   return { embeds: [embed], components };
 }
 
@@ -277,7 +277,7 @@ async function handleDiscordInteraction(interaction) {
   }
 
   if (id === 'admin:module:emojis:search-submit' && interaction.isModalSubmit?.()) {
-    if (!emojiStore.getSection(interaction.guild.id).enabled) throw new Error('Enable Emoji Bank before importing emojis.');
+    if (!emojiStore.getSection(interaction.guild.id).enabled) throw new Error('Enable Emoji Studio before importing emojis.');
     const query = interaction.fields.getTextInputValue('query');
     const results = await emojiApi.search(query, 25);
     await sendPanel(interaction, searchResultsPanel(results, query, interaction));
@@ -285,7 +285,7 @@ async function handleDiscordInteraction(interaction) {
   }
 
   if (id === 'admin:module:emojis:import' && interaction.isStringSelectMenu?.()) {
-    if (!emojiStore.getSection(interaction.guild.id).enabled) throw new Error('Enable Emoji Bank before importing emojis.');
+    if (!emojiStore.getSection(interaction.guild.id).enabled) throw new Error('Enable Emoji Studio before importing emojis.');
     await interaction.deferUpdate();
     const result = await emojis.importFromEmojiGG(interaction.client, interaction.values?.[0]);
     emojiStore.setFavourite(interaction.guild.id, result.emoji.id, true, { actorId: interaction.user?.id || null, action: 'emoji_discord_import' });
