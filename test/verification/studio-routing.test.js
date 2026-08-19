@@ -20,6 +20,11 @@ test('Community Studio keeps Birthdays and Giveaways entry routes', () => {
   assert.match(moduleAdminPanels, /key: 'giveaways', studio: 'communityStudio', route: 'admin:giveaways'/);
 });
 
+test('Utility Studio keeps Private Rooms entry route', () => {
+  assert.match(moduleAdminPanels, /key: 'privateRooms', studio: 'utilityStudio', route: 'admin:privateRooms'/);
+  assert.match(moduleAdminPanels, /'polls', 'privateRooms', 'reactionRoles'/);
+});
+
 test('Giveaways admin panel returns directly to Community Studio', () => {
   assert.match(giveawaysAdminPanel, /admin:studio:communityStudio/);
   assert.match(giveawaysAdminPanel, /handleGiveawaysAdminInteraction/);
