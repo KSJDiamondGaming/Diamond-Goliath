@@ -55,7 +55,7 @@ function rolePayload(interaction, requestedPage = 0) {
     default: role.id === section.settings.birthdayRoleId,
   }));
   const components = [];
-  if (options.length) components.push(row(new StringSelectMenuBuilder().setCustomId(`admin:birthdays:role:select:${page}`).setPlaceholder('Select Birthday Role').setMinValues(1).setMaxValues(1).addOptions(...options)));
+  if (options.length) components.push(row(new StringSelectMenuBuilder().setCustomId(`admin:birthdays:role:select:${page}`).setPlaceholder('Birthday Role').setMinValues(1).setMaxValues(1).addOptions(...options)));
   if (pages > 1) {
     components.push(row(
       button(`admin:birthdays:role:page:${page - 1}`, '◀️ Previous', ButtonStyle.Secondary, page <= 0),
@@ -66,9 +66,9 @@ function rolePayload(interaction, requestedPage = 0) {
     button('admin:birthdays:role:clear', '🧹 Clear Role', ButtonStyle.Secondary, !section.settings.birthdayRoleId),
     button('admin:birthdays:management', '⬅️ Back'),
   ));
-  const pageLine = pages > 1 ? `\n\nPage **${page + 1}/${pages}**` : '';
+  const desc = pages > 1 ? `Page **${page + 1}/${pages}**` : `Current role: ${section.settings.birthdayRoleId ? `<@&${section.settings.birthdayRoleId}>` : '**Not set**'}`;
   return {
-    embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('🎭 Birthday Role').setDescription(`Choose the role Goliath applies for the member’s birthday day.${pageLine}`).setFooter({ text: 'Goliath Birthdays · Management' }).setTimestamp()],
+    embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('🎭 Birthday Role').setDescription(desc).setFooter({ text: 'Goliath Birthdays · Management' }).setTimestamp()],
     components,
   };
 }
@@ -92,7 +92,7 @@ function memberListPayload(interaction, requestedPage = 0) {
     };
   });
   const components = [];
-  if (options.length) components.push(row(new StringSelectMenuBuilder().setCustomId(`admin:birthdays:members:select:${page}`).setPlaceholder('Select a registered member').setMinValues(1).setMaxValues(1).addOptions(...options)));
+  if (options.length) components.push(row(new StringSelectMenuBuilder().setCustomId(`admin:birthdays:members:select:${page}`).setPlaceholder('Select registered member').setMinValues(1).setMaxValues(1).addOptions(...options)));
   components.push(row(button('admin:birthdays:members:add', '➕ Add Birthday', ButtonStyle.Primary)));
   if (pages > 1) {
     components.push(row(
@@ -103,7 +103,7 @@ function memberListPayload(interaction, requestedPage = 0) {
   components.push(row(button('admin:birthdays:management', '⬅️ Back')));
   const pageLine = pages > 1 ? `\n\nPage **${page + 1}/${pages}**` : '';
   return {
-    embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('👥 Member Birthdays').setDescription(`Registered birthdays: **${records.length}**\n\nSelect a registered member to view or manage their birthday, privacy and celebration settings.${pageLine}`).setFooter({ text: 'Goliath Birthdays · Member Management' }).setTimestamp()],
+    embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('👥 Member Birthdays').setDescription(`Registered birthdays: **${records.length}**${pageLine}`).setFooter({ text: 'Goliath Birthdays · Member Management' }).setTimestamp()],
     components,
   };
 }
@@ -143,7 +143,7 @@ function memberPayload(interaction, userId) {
 
 function addMemberPayload() {
   return {
-    embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('➕ Add Birthday').setDescription('Select a server member, then enter their birthday. New records default to **Listed: On**, **Announce: On**, **Show Age: Off**.').setFooter({ text: 'Goliath Birthdays · Member Management' }).setTimestamp()],
+    embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('➕ Add Birthday').setDescription('Select member').setFooter({ text: 'Goliath Birthdays · Member Management' }).setTimestamp()],
     components: [
       row(new UserSelectMenuBuilder().setCustomId('admin:birthdays:members:add:select').setPlaceholder('Select member').setMinValues(1).setMaxValues(1)),
       row(button('admin:birthdays:members', '⬅️ Back')),
