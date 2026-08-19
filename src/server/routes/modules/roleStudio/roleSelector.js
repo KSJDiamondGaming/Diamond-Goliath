@@ -4,6 +4,7 @@ const express = require('express');
 const guildManager = require('../../../../core/guild/guildManager');
 const roleSelector = require('../../../../modules/roleStudio/roleSelector/roleSelector');
 const healthService = require('../../../../modules/roleStudio/roleSelector/roleSelectorHealth');
+const panel = require('../../../../modules/roleStudio/roleSelector/roleSelectorPanel');
 
 const router = express.Router();
 
@@ -60,6 +61,7 @@ router.put('/:guildId/config', async (req, res) => {
     if (g) {
       await roleSelector.syncManagedRoleAppearance(g).catch(() => null);
       await roleSelector.syncManagedRoleHierarchy(g).catch(() => null);
+      await panel.syncDeploymentState(g).catch(() => null);
     }
     return success(res, await overview(req, id));
   } catch (error) { return failure(res, error); }
@@ -141,10 +143,19 @@ router.post('/:guildId/create-divider', async (req, res) => {
 router.post('/:guildId/deploy', async (req, res) => {
   try {
     const id = guildId(req); const g = await guild(req, id); if (!g) throw new Error('Guild is unavailable.');
-    const channelId = String(req.body?.channelId || roleSelector.getSection(id).deployment?.channelId || '').trim(); if (!channelId) throw new Error('Select a deployment channel.');
+    const section = roleSelector.getSection(id);
+    const channelId = String(req.body?.channelId || section.deployment?.channelId || '').trim(); if (!channelId) throw new Error('Select a deployment channel.');
     const channel = g.channels.cache.get(channelId) || await g.channels.fetch(channelId).catch(() => null); if (!channel?.send) throw new Error('Selected channel is unavailable.');
-    const panel = require('../../../../modules/roleStudio/roleSelector/roleSelectorPanel');
-    const section = roleSelector.getSection(id); let message = section.deployment?.messageId ? await channel.messages.fetch(section.deployment.messageId).catch(() => null) : null; const payload = panel.memberLauncherPayload(g);
+
+    let message = section.deployment?.messageId && section.deployment?.channelId === channel.id
+      ? await channel.messages.fetch(section.deployment.messageId).catch(() => null)
+      : null;
+
+    if (section.deployment?.messageId && section.deployment?.channelId && section.deployment.channelId !== channel.id) {
+      await panel.retireDeployment(g, section.deployment).catch(() => null);
+    }
+
+    const payload = panel.memberLauncherPayload(g);
     if (message) await message.edit(payload); else message = await channel.send(payload);
     roleSelector.updateSection(id, (current) => ({ ...current, deployment: { channelId: channel.id, messageId: message.id } }), { actorId: actorId(req), action: 'role_selector_dashboard_deploy' });
     return success(res, { messageId: message.id, ...(await overview(req, id)) });
@@ -152,7 +163,7 @@ router.post('/:guildId/deploy', async (req, res) => {
 });
 
 router.post('/:guildId/repair', async (req, res) => {
-  try { const id = guildId(req); const g = await guild(req, id); if (!g) throw new Error('Guild is unavailable.'); const repair = await healthService.repair(g); return success(res, { repair, ...(await overview(req, id)) }); } catch (error) { return failure(res, error); }
+  try { const id = guildId(req); const g = await guild(req, id); if (!g) throw new Error('Guild is unavailable.'); const repair = await healthService.repair(g); await panel.syncDeploymentState(g).catch(() => null); return success(res, { repair, ...(await overview(req, id)) }); } catch (error) { return failure(res, error); }
 });
 router.post('/:guildId/cleanup', async (req, res) => {
   try { const id = guildId(req); const g = await guild(req, id); if (!g) throw new Error('Guild is unavailable.'); const cleanup = await roleSelector.cleanupUnused(g); return success(res, { cleanup, ...(await overview(req, id)) }); } catch (error) { return failure(res, error); }
