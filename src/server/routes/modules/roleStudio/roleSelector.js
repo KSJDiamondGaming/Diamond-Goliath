@@ -1,7 +1,9 @@
 'use strict';
 
 const express = require('express');
+const { PermissionFlagsBits } = require('discord.js');
 const guildManager = require('../../../../core/guild/guildManager');
+const security = require('../../../../core/security/securityCore');
 const roleSelector = require('../../../../modules/roleStudio/roleSelector/roleSelector');
 const healthService = require('../../../../modules/roleStudio/roleSelector/roleSelectorHealth');
 const panel = require('../../../../modules/roleStudio/roleSelector/roleSelectorPanel');
@@ -13,11 +15,42 @@ function guildId(req) {
   if (!/^\d{15,25}$/.test(value)) throw new Error('Invalid guild ID.');
   return value;
 }
-function actorId(req) { return String(req.session?.user?.id || req.body?.actorId || '').trim() || null; }
+function cleanDiscordId(value) {
+  const id = String(value || '').replace(/[<@#!&>]/g, '').trim();
+  return /^\d{15,25}$/.test(id) ? id : null;
+}
+function actorId(req) { return cleanDiscordId(req.roleSelectorActorId || req.session?.user?.id); }
 function client(req) { return req.client || req.app?.get?.('goliath.client') || req.app?.locals?.client || null; }
 async function guild(req, id) { const c = client(req); return c?.guilds?.cache?.get(id) || await c?.guilds?.fetch?.(id).catch(() => null); }
 function success(res, payload = {}) { return res.json({ success: true, ...payload }); }
 function failure(res, error, status = 400) { return res.status(status).json({ success: false, error: error.message || 'Role Selector request failed.' }); }
+
+async function requireRoleSelectorGuildAccess(req, res, next) {
+  try {
+    const userId = cleanDiscordId(req.session?.user?.id);
+    if (!userId) return res.status(401).json({ success: false, error: 'Authentication required.' });
+
+    const id = guildId(req);
+    req.roleSelectorActorId = userId;
+    if (security.isBotOwner(userId)) return next();
+
+    const g = await guild(req, id);
+    if (!g) return res.status(403).json({ success: false, error: 'Guild is unavailable or not accessible.' });
+
+    const member = g.members.cache.get(userId) || await g.members.fetch(userId).catch(() => null);
+    const allowed = Boolean(
+      member?.permissions?.has(PermissionFlagsBits.Administrator) ||
+      member?.permissions?.has(PermissionFlagsBits.ManageGuild)
+    );
+    if (!allowed) return res.status(403).json({ success: false, error: 'Manage Server permission is required.' });
+
+    return next();
+  } catch (error) {
+    return failure(res, error, 403);
+  }
+}
+
+router.use('/:guildId', requireRoleSelectorGuildAccess);
 
 async function overview(req, id) {
   const g = await guild(req, id);
