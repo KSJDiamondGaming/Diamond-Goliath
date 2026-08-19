@@ -19,6 +19,7 @@ const sessions = new Map();
 let defaultStateFactory = null;
 let stateSync = (state) => state;
 let basePanelFactory = null;
+let presetCompatibilityInstalled = false;
 
 function configure({ defaultState, sync, basePanel } = {}) {
   if (typeof defaultState === 'function') defaultStateFactory = defaultState;
@@ -275,6 +276,124 @@ function setDefault(interaction, name) {
   return saveSession(interaction, { ...current, selectedPreset: name || null });
 }
 
+function installPresetCompatibility() {
+  if (presetCompatibilityInstalled) return true;
+
+  let embedPanel;
+  let interactions;
+  let guildManager;
+  try {
+    embedPanel = require('./embedPanel');
+    interactions = require('./embedInteractions');
+    guildManager = require('../../../core/guild/guildManager');
+  } catch {
+    return false;
+  }
+
+  if (!embedPanel || typeof embedPanel.buildPresetsPanel !== 'function') return false;
+
+  const originalBuildPresetsPanel = embedPanel.buildPresetsPanel.bind(embedPanel);
+  embedPanel.buildPresetsPanel = function buildPresetsPanelCompatibility(interaction, presets, defaultName = null) {
+    const guildId = interaction?.guildId || interaction?.guild?.id || null;
+    let resolvedPresets = presets;
+    let resolvedDefault = defaultName;
+
+    if (!resolvedPresets || typeof resolvedPresets !== 'object' || Array.isArray(resolvedPresets)) {
+      resolvedPresets = guildId && typeof guildManager.getEmbedPresets === 'function'
+        ? guildManager.getEmbedPresets(guildId) || {}
+        : {};
+    }
+
+    if (resolvedDefault == null && guildId && typeof guildManager.getEmbedDefaults === 'function') {
+      const state = getSession(interaction);
+      const defaults = guildManager.getEmbedDefaults(guildId) || {};
+      resolvedDefault = defaults[state?.template || 'custom'] || null;
+    }
+
+    return originalBuildPresetsPanel(interaction, resolvedPresets, resolvedDefault);
+  };
+
+  if (typeof embedPanel.setDefault === 'function') {
+    const originalSetDefault = embedPanel.setDefault.bind(embedPanel);
+    embedPanel.setDefault = function setDefaultCompatibility(first, templateKey, presetName, guildOrMeta) {
+      if (typeof first === 'string' && /^\d{16,20}$/.test(first) && templateKey && presetName) {
+        try {
+          guildManager.setEmbedDefault(first, templateKey, presetName, guildOrMeta);
+          return true;
+        } catch (error) {
+          console.warn('[Embed Presets] Failed to set default preset:', error?.message || error);
+          return false;
+        }
+      }
+      return originalSetDefault(first, templateKey);
+    };
+  }
+
+  if (interactions && typeof interactions.handleInteraction === 'function' && !interactions.__namedPresetCompatibility) {
+    const originalHandleInteraction = interactions.handleInteraction.bind(interactions);
+    interactions.handleInteraction = async function handleNamedPresetInteraction(interaction) {
+      const customId = String(interaction?.customId || '');
+      const guildId = interaction?.guildId || interaction?.guild?.id || null;
+
+      if (interaction?.isButton?.() && customId === 'embed:preset-default') {
+        const state = getSession(interaction);
+        const presetName = state?.selectedPreset || null;
+        if (!presetName) {
+          await interaction.reply({ content: 'Select a preset first.', flags: 64 });
+          return true;
+        }
+        try {
+          guildManager.setEmbedDefault(guildId, state.template || 'custom', presetName, interaction.guild);
+          await interaction.update(embedPanel.buildPresetsPanel(interaction));
+        } catch (error) {
+          await interaction.reply({ content: `❌ Could not set default preset: ${error?.message || error}`, flags: 64 });
+        }
+        return true;
+      }
+
+      if (interaction?.isButton?.() && customId === 'embed:preset-delete') {
+        const state = getSession(interaction);
+        const presetName = state?.selectedPreset || null;
+        if (!presetName) {
+          await interaction.reply({ content: 'Select a preset first.', flags: 64 });
+          return true;
+        }
+
+        const defaults = typeof guildManager.getEmbedDefaults === 'function'
+          ? guildManager.getEmbedDefaults(guildId) || {}
+          : {};
+        const templateKey = state.template || 'custom';
+
+        if (typeof guildManager.deleteEmbedPreset === 'function') {
+          guildManager.deleteEmbedPreset(guildId, presetName, interaction.guild);
+        } else {
+          const presets = typeof guildManager.getEmbedPresets === 'function' ? guildManager.getEmbedPresets(guildId) || {} : {};
+          delete presets[presetName];
+          if (typeof guildManager.replaceGuildSection === 'function') guildManager.replaceGuildSection(guildId, 'embedPresets', presets, interaction.guild);
+        }
+
+        if (defaults[templateKey] === presetName && typeof guildManager.clearEmbedDefault === 'function') {
+          guildManager.clearEmbedDefault(guildId, templateKey, interaction.guild);
+        }
+
+        clearUnsaved(interaction, { ...state, selectedPreset: null });
+        await interaction.update(embedPanel.buildPresetsPanel(interaction));
+        return true;
+      }
+
+      return originalHandleInteraction(interaction);
+    };
+    interactions.__namedPresetCompatibility = true;
+  }
+
+  presetCompatibilityInstalled = true;
+  return true;
+}
+
+queueMicrotask(() => {
+  if (!installPresetCompatibility()) setImmediate(installPresetCompatibility);
+});
+
 function bindPanel(panel, { defaultState, sync, basePanel } = {}) {
   if (!panel || typeof panel !== 'object') return panel;
   configure({ defaultState, sync, basePanel });
@@ -339,4 +458,5 @@ module.exports = {
   applyTemplate,
   applyPreset,
   setDefault,
+  installPresetCompatibility,
 };
