@@ -197,19 +197,43 @@ async function replaceCoreEmoji(client, emojiId, attachment) {
   const bank = await manager.fetch();
   if (bank.size >= MAX_APPLICATION_EMOJIS) throw new Error('Goliath application emoji pool is full; free one application emoji slot before replacing a Core emoji.');
 
+  const targetName = `${CORE_EMOJI_PREFIX}${alias}`;
   const temporaryName = `${CORE_EMOJI_PREFIX}replacement_${String(existing.id).slice(-8)}`.slice(0, 32);
+  const backupName = `${CORE_EMOJI_PREFIX}backup_${String(existing.id).slice(-8)}`.slice(0, 32);
   let created = null;
+  let originalStaged = false;
+
   try {
     created = await manager.create({ attachment, name: temporaryName });
-    await manager.delete(existing.id);
-    const renamed = await manager.edit(created.id, { name: `${CORE_EMOJI_PREFIX}${alias}` });
-    return {
-      emoji: serialise(renamed),
-      replaced: serialise(existing),
-    };
+    await manager.edit(existing.id, { name: backupName });
+    originalStaged = true;
+
+    try {
+      const renamed = await manager.edit(created.id, { name: targetName });
+      await manager.delete(existing.id);
+      return {
+        emoji: serialise(renamed),
+        replaced: serialise(existing),
+      };
+    } catch (swapError) {
+      let restoreError = null;
+      if (originalStaged) {
+        try { await manager.edit(existing.id, { name: targetName }); }
+        catch (error) { restoreError = error; }
+      }
+      if (created?.id) {
+        try { await manager.delete(created.id); } catch (_) { /* best-effort cleanup */ }
+      }
+      if (restoreError) {
+        const error = new Error(`Core emoji replacement failed and automatic rollback could not restore :${alias}:. ${swapError?.message || 'Replacement failed.'}`);
+        error.cause = restoreError;
+        throw error;
+      }
+      throw swapError;
+    }
   } catch (error) {
-    if (created?.id) {
-      try { await manager.delete(created.id); } catch (_) { /* best-effort rollback */ }
+    if (!originalStaged && created?.id) {
+      try { await manager.delete(created.id); } catch (_) { /* best-effort cleanup */ }
     }
     throw error;
   }
