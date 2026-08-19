@@ -60,6 +60,16 @@ function registerEvents(client, options = {}) {
 
   if (!fs.existsSync(eventsPath)) return { files: 0, groups: 0 };
 
+  // Embed interactions import embedPanel directly, so install the shared media
+  // runtime before event modules are required. This guarantees every consumer
+  // sees the same initialized panel API (including buildMediaManagerPanel).
+  try {
+    require('../modules/messageStudio/embed/embed');
+  } catch (error) {
+    console.warn('⚠️ Embed Studio runtime initialization failed before event registration');
+    console.warn(error?.stack || error?.message || error);
+  }
+
   const files = [];
   const grouped = new Map();
   const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).forEach((entry) => {
