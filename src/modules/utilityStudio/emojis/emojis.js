@@ -80,8 +80,21 @@ async function overview(client, guildId) {
   const bank = await listBank(client);
   const core = bank.filter((emoji) => emoji.core === true);
   const studio = bank.filter((emoji) => emoji.core !== true);
-  const installedCoreAliases = new Set(core.map((emoji) => String(emoji.alias || '').toLowerCase()));
+  const installedCoreByAlias = new Map(core.map((emoji) => [String(emoji.alias || '').toLowerCase(), emoji]));
+  const installedCoreAliases = new Set(installedCoreByAlias.keys());
   const missingCore = CORE_EMOJI_ALIASES.filter((alias) => !installedCoreAliases.has(alias));
+  const coreStatus = CORE_EMOJI_ALIASES.map((alias, index) => {
+    const emoji = installedCoreByAlias.get(alias) || null;
+    return {
+      slot: index + 1,
+      alias,
+      installed: Boolean(emoji),
+      emoji,
+      id: emoji?.id || null,
+      mention: emoji?.mention || null,
+      animated: Boolean(emoji?.animated),
+    };
+  });
   const section = emojiStore.getSection(guildId);
   const validStudioIds = new Set(studio.map((emoji) => emoji.id));
   const favourites = section.favourites.filter((id) => validStudioIds.has(id));
@@ -111,6 +124,7 @@ async function overview(client, guildId) {
     bank,
     core,
     coreCatalog: CORE_EMOJI_ALIASES,
+    coreStatus,
     missingCore,
     studio,
     favourites,
