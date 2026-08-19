@@ -13,6 +13,7 @@ const moduleAdminPanels = read('src/core/admin/functions/moduleAdminPanels.js');
 const giveawaysAdminPanel = read('src/modules/communityStudio/giveaways/giveawaysAdminPanel.js');
 const privateRoomsPanel = read('src/modules/utilityStudio/privateRooms/privateRoomsPanel.js');
 const birthdaysPanel = read('src/modules/communityStudio/birthdays/birthdaysPanel.js');
+const birthdaysViews = read('src/modules/communityStudio/birthdays/birthdaysViews.js');
 
 test('Community Studio keeps Birthdays and Giveaways entry routes', () => {
   assert.match(moduleAdminPanels, /key: 'birthdays', studio: 'communityStudio', route: 'admin:birthdays'/);
@@ -38,6 +39,6 @@ test('Private Rooms admin panel returns directly to Utility Studio', () => {
 });
 
 test('Birthdays admin panel keeps a Community Studio return route', () => {
-  assert.match(birthdaysPanel, /admin:studio:communityStudio/);
+  assert.match(birthdaysViews, /admin:studio:communityStudio/);
   assert.match(birthdaysPanel, /handleAdmin/);
 });
