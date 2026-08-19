@@ -48,6 +48,11 @@ function isApprovedCoreAlias(value) {
   return CORE_EMOJI_ALIAS_SET.has(cleanEmojiName(value));
 }
 
+function coreArtifactName(kind, alias) {
+  const marker = kind === 'backup' ? 'b' : 'r';
+  return `${CORE_EMOJI_PREFIX}${marker}_${alias}`.slice(0, 32);
+}
+
 function componentPayload(emoji) {
   if (!emoji?.id || !emoji?.name) return null;
   return {
@@ -98,12 +103,58 @@ function buildCoreIntegrity(core = []) {
   };
 }
 
+async function recoverCoreArtifacts(client) {
+  const manager = requireEmojiManager(client);
+  const bank = await manager.fetch();
+  const byName = new Map([...bank.values()].filter((emoji) => emoji?.name).map((emoji) => [String(emoji.name).toLowerCase(), emoji]));
+  const actions = [];
+
+  for (const alias of CORE_EMOJI_ALIASES) {
+    const targetName = `${CORE_EMOJI_PREFIX}${alias}`;
+    const backupName = coreArtifactName('backup', alias);
+    const replacementName = coreArtifactName('replacement', alias);
+    const target = byName.get(targetName) || null;
+    const backup = byName.get(backupName) || null;
+    const replacement = byName.get(replacementName) || null;
+
+    if (target) {
+      if (backup) {
+        await manager.delete(backup.id);
+        actions.push({ alias, action: 'deleted_stale_backup', emojiId: String(backup.id) });
+      }
+      if (replacement) {
+        await manager.delete(replacement.id);
+        actions.push({ alias, action: 'deleted_stale_replacement', emojiId: String(replacement.id) });
+      }
+      continue;
+    }
+
+    if (backup) {
+      const restored = await manager.edit(backup.id, { name: targetName });
+      actions.push({ alias, action: 'restored_backup', emojiId: String(restored.id) });
+      if (replacement) {
+        await manager.delete(replacement.id);
+        actions.push({ alias, action: 'deleted_unfinished_replacement', emojiId: String(replacement.id) });
+      }
+      continue;
+    }
+
+    if (replacement) {
+      const completed = await manager.edit(replacement.id, { name: targetName });
+      actions.push({ alias, action: 'completed_replacement', emojiId: String(completed.id) });
+    }
+  }
+
+  return actions;
+}
+
 async function listBank(client) {
   const emojis = await requireEmojiManager(client).fetch();
   return [...emojis.values()].map(serialise).sort((a, b) => String(a.name).localeCompare(String(b.name)));
 }
 
 async function overview(client, guildId) {
+  const coreRecovery = await recoverCoreArtifacts(client);
   const bank = await listBank(client);
   const core = bank.filter((emoji) => emoji.core === true);
   const studio = bank.filter((emoji) => emoji.core !== true);
@@ -159,6 +210,7 @@ async function overview(client, guildId) {
     coreCatalog: CORE_EMOJI_ALIASES,
     coreStatus,
     coreIntegrity,
+    coreRecovery,
     missingCore,
     studio,
     favourites,
@@ -198,10 +250,16 @@ async function replaceCoreEmoji(client, emojiId, attachment) {
   if (bank.size >= MAX_APPLICATION_EMOJIS) throw new Error('Goliath application emoji pool is full; free one application emoji slot before replacing a Core emoji.');
 
   const targetName = `${CORE_EMOJI_PREFIX}${alias}`;
-  const temporaryName = `${CORE_EMOJI_PREFIX}replacement_${String(existing.id).slice(-8)}`.slice(0, 32);
-  const backupName = `${CORE_EMOJI_PREFIX}backup_${String(existing.id).slice(-8)}`.slice(0, 32);
+  const temporaryName = coreArtifactName('replacement', alias);
+  const backupName = coreArtifactName('backup', alias);
   let created = null;
   let originalStaged = false;
+
+  const staleTemporary = [...bank.values()].find((emoji) => String(emoji.name).toLowerCase() === temporaryName);
+  const staleBackup = [...bank.values()].find((emoji) => String(emoji.name).toLowerCase() === backupName);
+  if (staleTemporary || staleBackup) {
+    throw new Error(`Core emoji :${alias}: has an unfinished replacement state. Open Goliath Core once to run automatic recovery, then try again.`);
+  }
 
   try {
     created = await manager.create({ attachment, name: temporaryName });
@@ -434,6 +492,7 @@ module.exports = {
   isCoreEmoji,
   coreAlias,
   isApprovedCoreAlias,
+  recoverCoreArtifacts,
   listBank,
   overview,
   createCoreEmoji,
