@@ -16,6 +16,7 @@ const HELPERS = [
 ];
 
 const sessions = new Map();
+const pendingPresetSaves = new Map();
 let defaultStateFactory = null;
 let stateSync = (state) => state;
 let basePanelFactory = null;
@@ -99,6 +100,10 @@ function refreshGuild(interaction) {
 
 function sessionKey(interaction) {
   return `${interaction?.guildId || interaction?.guild?.id || 'global'}:${interaction?.user?.id || 'system'}`;
+}
+
+function cleanPresetName(value) {
+  return String(value || '').trim().slice(0, 50);
 }
 
 function replaceVars(value, interaction, allowUserPing = false) {
@@ -279,10 +284,12 @@ function setDefault(interaction, name) {
 function installPresetCompatibility() {
   if (presetCompatibilityInstalled) return true;
 
+  let discord;
   let embedPanel;
   let interactions;
   let guildManager;
   try {
+    discord = require('discord.js');
     embedPanel = require('./embedPanel');
     interactions = require('./embedInteractions');
     guildManager = require('../../../core/guild/guildManager');
@@ -291,6 +298,16 @@ function installPresetCompatibility() {
   }
 
   if (!embedPanel || typeof embedPanel.buildPresetsPanel !== 'function') return false;
+
+  const {
+    ActionRowBuilder,
+    ButtonBuilder,
+    ButtonStyle,
+    ModalBuilder,
+    StringSelectMenuBuilder,
+    TextInputBuilder,
+    TextInputStyle,
+  } = discord;
 
   const originalBuildPresetsPanel = embedPanel.buildPresetsPanel.bind(embedPanel);
   embedPanel.buildPresetsPanel = function buildPresetsPanelCompatibility(interaction, presets, defaultName = null) {
@@ -304,13 +321,49 @@ function installPresetCompatibility() {
         : {};
     }
 
+    const current = getSession(interaction);
     if (resolvedDefault == null && guildId && typeof guildManager.getEmbedDefaults === 'function') {
-      const state = getSession(interaction);
       const defaults = guildManager.getEmbedDefaults(guildId) || {};
-      resolvedDefault = defaults[state?.template || 'custom'] || null;
+      resolvedDefault = defaults[current?.template || 'custom'] || null;
     }
 
-    return originalBuildPresetsPanel(interaction, resolvedPresets, resolvedDefault);
+    const base = originalBuildPresetsPanel(interaction, resolvedPresets, resolvedDefault);
+    const entries = Object.entries(resolvedPresets || {}).slice(0, 25);
+    const rows = [];
+
+    if (entries.length) {
+      rows.push(new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId('embed:preset-select')
+          .setPlaceholder('💾 Select preset')
+          .setMinValues(1)
+          .setMaxValues(1)
+          .addOptions(entries.map(([key, preset]) => {
+            const display = cleanPresetName(preset?.name || key) || key;
+            return {
+              label: display.slice(0, 100),
+              value: key.slice(0, 100),
+              description: resolvedDefault === key ? 'Default preset' : 'Saved preset',
+              default: current?.selectedPreset === key,
+            };
+          })),
+      ));
+    }
+
+    rows.push(new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('embed:preset-load').setLabel('📂 Load').setStyle(ButtonStyle.Primary).setDisabled(!current?.selectedPreset),
+      new ButtonBuilder().setCustomId('embed:preset-save').setLabel('💾 Save Current').setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId('embed:preset-new').setLabel('➕ New').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId('embed:preset-rename').setLabel('✏️ Rename').setStyle(ButtonStyle.Secondary).setDisabled(!current?.selectedPreset),
+      new ButtonBuilder().setCustomId('embed:preset-duplicate').setLabel('📄 Duplicate').setStyle(ButtonStyle.Secondary).setDisabled(!current?.selectedPreset),
+    ));
+    rows.push(new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('embed:preset-delete').setLabel('🗑️ Delete').setStyle(ButtonStyle.Danger).setDisabled(!current?.selectedPreset),
+      new ButtonBuilder().setCustomId('embed:preset-default').setLabel('⭐ Set Default').setStyle(ButtonStyle.Secondary).setDisabled(!current?.selectedPreset),
+      new ButtonBuilder().setCustomId('embed:back').setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary),
+    ));
+
+    return { ...base, components: rows.slice(0, 5) };
   };
 
   if (typeof embedPanel.setDefault === 'function') {
@@ -329,14 +382,162 @@ function installPresetCompatibility() {
     };
   }
 
+  function nameModal(customId, title, label, value = '') {
+    return new ModalBuilder()
+      .setCustomId(customId)
+      .setTitle(title)
+      .addComponents(new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('name')
+          .setLabel(label)
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+          .setMaxLength(50)
+          .setValue(cleanPresetName(value)),
+      ));
+  }
+
   if (interactions && typeof interactions.handleInteraction === 'function' && !interactions.__namedPresetCompatibility) {
     const originalHandleInteraction = interactions.handleInteraction.bind(interactions);
     interactions.handleInteraction = async function handleNamedPresetInteraction(interaction) {
       const customId = String(interaction?.customId || '');
       const guildId = interaction?.guildId || interaction?.guild?.id || null;
+      const state = getSession(interaction);
+
+      if (interaction?.isStringSelectMenu?.() && customId === 'embed:preset-select') {
+        const presetName = String(interaction.values?.[0] || '');
+        const presets = guildManager.getEmbedPresets?.(guildId) || {};
+        if (!presets[presetName]) {
+          await interaction.reply({ content: 'Preset not found.', flags: 64 });
+          return true;
+        }
+        saveSession(interaction, { ...state, selectedPreset: presetName });
+        await interaction.update(embedPanel.buildPresetsPanel(interaction));
+        return true;
+      }
+
+      if (interaction?.isButton?.() && customId === 'embed:preset-load') {
+        const presetName = state?.selectedPreset || null;
+        const preset = presetName ? guildManager.getEmbedPreset?.(guildId, presetName) : null;
+        if (!preset) {
+          await interaction.reply({ content: 'Select a valid preset first.', flags: 64 });
+          return true;
+        }
+        applyPreset(interaction, presetName, preset);
+        clearUnsaved(interaction, getSession(interaction));
+        await interaction.update(embedPanel.buildEditorPanel(interaction, memberName(interaction)));
+        return true;
+      }
+
+      if (interaction?.isButton?.() && customId === 'embed:preset-new') {
+        resetSession(interaction);
+        await interaction.update(embedPanel.buildEditorPanel(interaction, memberName(interaction)));
+        return true;
+      }
+
+      if (interaction?.isButton?.() && customId === 'embed:preset-rename') {
+        if (!state?.selectedPreset) {
+          await interaction.reply({ content: 'Select a preset first.', flags: 64 });
+          return true;
+        }
+        await interaction.showModal(nameModal('embed:preset-rename-modal', 'Rename Embed Preset', 'New preset name', state.selectedPreset));
+        return true;
+      }
+
+      if (interaction?.isButton?.() && customId === 'embed:preset-duplicate') {
+        if (!state?.selectedPreset) {
+          await interaction.reply({ content: 'Select a preset first.', flags: 64 });
+          return true;
+        }
+        await interaction.showModal(nameModal('embed:preset-duplicate-modal', 'Duplicate Embed Preset', 'Copy name', `${state.selectedPreset} Copy`));
+        return true;
+      }
+
+      if (interaction?.isModalSubmit?.() && customId === 'embed:preset-rename-modal') {
+        const oldName = state?.selectedPreset || null;
+        const newName = cleanPresetName(interaction.fields.getTextInputValue('name'));
+        const presets = guildManager.getEmbedPresets?.(guildId) || {};
+        if (!oldName || !presets[oldName]) {
+          await interaction.reply({ content: 'The selected preset no longer exists.', flags: 64 });
+          return true;
+        }
+        if (!newName) {
+          await interaction.reply({ content: 'A preset name is required.', flags: 64 });
+          return true;
+        }
+        if (newName !== oldName && presets[newName]) {
+          await interaction.reply({ content: `A preset named **${newName}** already exists.`, flags: 64 });
+          return true;
+        }
+        if (newName !== oldName) {
+          guildManager.saveEmbedPreset(guildId, newName, { ...presets[oldName], name: newName }, interaction.guild);
+          guildManager.deleteEmbedPreset?.(guildId, oldName, interaction.guild);
+          const defaults = guildManager.getEmbedDefaults?.(guildId) || {};
+          for (const [templateKey, defaultPreset] of Object.entries(defaults)) {
+            if (defaultPreset === oldName) guildManager.setEmbedDefault?.(guildId, templateKey, newName, interaction.guild);
+          }
+        }
+        saveSession(interaction, { ...state, selectedPreset: newName });
+        await interaction.reply({ content: `✅ Renamed preset to **${newName}**.`, ...embedPanel.buildPresetsPanel(interaction), flags: 64 });
+        return true;
+      }
+
+      if (interaction?.isModalSubmit?.() && customId === 'embed:preset-duplicate-modal') {
+        const sourceName = state?.selectedPreset || null;
+        const newName = cleanPresetName(interaction.fields.getTextInputValue('name'));
+        const presets = guildManager.getEmbedPresets?.(guildId) || {};
+        if (!sourceName || !presets[sourceName]) {
+          await interaction.reply({ content: 'The selected preset no longer exists.', flags: 64 });
+          return true;
+        }
+        if (!newName) {
+          await interaction.reply({ content: 'A preset name is required.', flags: 64 });
+          return true;
+        }
+        if (presets[newName]) {
+          await interaction.reply({ content: `A preset named **${newName}** already exists.`, flags: 64 });
+          return true;
+        }
+        guildManager.saveEmbedPreset(guildId, newName, { ...presets[sourceName], name: newName }, interaction.guild);
+        saveSession(interaction, { ...state, selectedPreset: newName });
+        await interaction.reply({ content: `✅ Duplicated as **${newName}**.`, ...embedPanel.buildPresetsPanel(interaction), flags: 64 });
+        return true;
+      }
+
+      if (interaction?.isModalSubmit?.() && customId === 'embed:preset-save-modal') {
+        const name = cleanPresetName(interaction.fields.getTextInputValue('name'));
+        const presets = guildManager.getEmbedPresets?.(guildId) || {};
+        if (name && presets[name]) {
+          pendingPresetSaves.set(sessionKey(interaction), { name, data: presetData(state) });
+          const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('embed:preset-overwrite-confirm').setLabel('✅ Overwrite').setStyle(ButtonStyle.Danger),
+            new ButtonBuilder().setCustomId('embed:preset-overwrite-cancel').setLabel('Cancel').setStyle(ButtonStyle.Secondary),
+          );
+          await interaction.reply({ content: `⚠️ **${name}** already exists. Overwrite it?`, components: [row], flags: 64 });
+          return true;
+        }
+      }
+
+      if (interaction?.isButton?.() && customId === 'embed:preset-overwrite-confirm') {
+        const pending = pendingPresetSaves.get(sessionKey(interaction));
+        if (!pending) {
+          await interaction.update({ content: 'This overwrite request has expired.', components: [] });
+          return true;
+        }
+        guildManager.saveEmbedPreset(guildId, pending.name, pending.data, interaction.guild);
+        pendingPresetSaves.delete(sessionKey(interaction));
+        clearUnsaved(interaction, { ...state, selectedPreset: pending.name });
+        await interaction.update({ content: `✅ Overwrote **${pending.name}**.`, ...embedPanel.buildPresetsPanel(interaction) });
+        return true;
+      }
+
+      if (interaction?.isButton?.() && customId === 'embed:preset-overwrite-cancel') {
+        pendingPresetSaves.delete(sessionKey(interaction));
+        await interaction.update({ content: 'Overwrite cancelled.', components: [] });
+        return true;
+      }
 
       if (interaction?.isButton?.() && customId === 'embed:preset-default') {
-        const state = getSession(interaction);
         const presetName = state?.selectedPreset || null;
         if (!presetName) {
           await interaction.reply({ content: 'Select a preset first.', flags: 64 });
@@ -352,7 +553,6 @@ function installPresetCompatibility() {
       }
 
       if (interaction?.isButton?.() && customId === 'embed:preset-delete') {
-        const state = getSession(interaction);
         const presetName = state?.selectedPreset || null;
         if (!presetName) {
           await interaction.reply({ content: 'Select a preset first.', flags: 64 });
