@@ -119,6 +119,80 @@ async function resolveGuildEmoji(client, guildId, reference) {
   return serialise(emoji);
 }
 
+async function allowedGuildEmojis(client, guildId) {
+  const section = emojiStore.getSection(guildId);
+  if (!section.enabled || !section.favourites.length) return new Map();
+
+  const bank = await requireEmojiManager(client).fetch();
+  const selected = new Set(section.favourites.map(String));
+  const allowed = new Map();
+  for (const emoji of bank.values()) {
+    if (!emoji?.name || !selected.has(String(emoji.id))) continue;
+    allowed.set(String(emoji.name).toLowerCase(), emoji);
+  }
+  return allowed;
+}
+
+function replaceShortcodes(value, allowedByName) {
+  const text = String(value || '');
+  if (!text || !allowedByName?.size) return text;
+  return text.replace(/:([a-zA-Z0-9_]{2,32}):/g, (match, name, offset, source) => {
+    const prefix = source.slice(Math.max(0, offset - 2), offset);
+    if (prefix.endsWith('<') || prefix === '<a') return match;
+    const emoji = allowedByName.get(String(name).toLowerCase());
+    return emoji ? render(emoji, match) : match;
+  });
+}
+
+async function resolveText(client, guildId, value) {
+  if (value == null) return value;
+  const allowed = await allowedGuildEmojis(client, guildId);
+  return replaceShortcodes(value, allowed);
+}
+
+async function resolveEmbedData(client, guildId, embed) {
+  const data = typeof embed?.toJSON === 'function' ? embed.toJSON() : embed;
+  if (!data || typeof data !== 'object') return embed;
+  const allowed = await allowedGuildEmojis(client, guildId);
+  if (!allowed.size) return data;
+
+  const resolved = { ...data };
+  if (data.title != null) resolved.title = replaceShortcodes(data.title, allowed);
+  if (data.description != null) resolved.description = replaceShortcodes(data.description, allowed);
+  if (data.author && typeof data.author === 'object') resolved.author = { ...data.author, name: replaceShortcodes(data.author.name, allowed) };
+  if (data.footer && typeof data.footer === 'object') resolved.footer = { ...data.footer, text: replaceShortcodes(data.footer.text, allowed) };
+  if (Array.isArray(data.fields)) {
+    resolved.fields = data.fields.map((field) => ({
+      ...field,
+      name: replaceShortcodes(field?.name, allowed),
+      value: replaceShortcodes(field?.value, allowed),
+    }));
+  }
+  return resolved;
+}
+
+async function resolveEmbeds(client, guildId, embeds = []) {
+  const allowed = await allowedGuildEmojis(client, guildId);
+  if (!allowed.size) return embeds;
+  return (embeds || []).map((embed) => {
+    const data = typeof embed?.toJSON === 'function' ? embed.toJSON() : embed;
+    if (!data || typeof data !== 'object') return embed;
+    const resolved = { ...data };
+    if (data.title != null) resolved.title = replaceShortcodes(data.title, allowed);
+    if (data.description != null) resolved.description = replaceShortcodes(data.description, allowed);
+    if (data.author && typeof data.author === 'object') resolved.author = { ...data.author, name: replaceShortcodes(data.author.name, allowed) };
+    if (data.footer && typeof data.footer === 'object') resolved.footer = { ...data.footer, text: replaceShortcodes(data.footer.text, allowed) };
+    if (Array.isArray(data.fields)) {
+      resolved.fields = data.fields.map((field) => ({
+        ...field,
+        name: replaceShortcodes(field?.name, allowed),
+        value: replaceShortcodes(field?.value, allowed),
+      }));
+    }
+    return resolved;
+  });
+}
+
 async function renderForGuild(client, guildId, reference, fallback = '') {
   const emoji = await resolveGuildEmoji(client, guildId, reference);
   return render(emoji, fallback);
@@ -138,6 +212,11 @@ module.exports = {
   renameInBank,
   render,
   resolveGuildEmoji,
+  allowedGuildEmojis,
+  replaceShortcodes,
+  resolveText,
+  resolveEmbedData,
+  resolveEmbeds,
   renderForGuild,
   componentEmojiForGuild,
   componentPayload,
