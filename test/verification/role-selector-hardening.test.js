@@ -14,6 +14,7 @@ const panel = read('src/modules/roleStudio/roleSelector/roleSelectorPanel.js');
 const route = read('src/server/routes/modules/roleStudio/roleSelector.js');
 const startup = read('src/events/client/roleSelectorStartup.js');
 const contracts = read('src/owner/sentinel/moduleContracts.js');
+const dashboard = read('src/dashboard/js/pages/modules/RoleSelector.jsx');
 
 test('Role Selector core member mutations enforce module enabled state', () => {
   for (const functionName of [
@@ -51,6 +52,18 @@ test('Role Selector health validates deployment message and repairs stale state'
   assert.match(health, /anchorIsUnsafe/);
 });
 
+test('Role Selector health exposes acceptance readiness', () => {
+  assert.match(health, /async function buildAcceptanceReadiness\(/);
+  assert.match(health, /module_enabled/);
+  assert.match(health, /manage_roles/);
+  assert.match(health, /anchor_valid/);
+  assert.match(health, /colour_group/);
+  assert.match(health, /custom_group/);
+  assert.match(health, /deployment_channel/);
+  assert.match(health, /deployment_message/);
+  assert.match(health, /acceptance,/);
+});
+
 test('Discord admin Role Selector controls use central security enforcement', () => {
   assert.match(panel, /const adminControl = id\.startsWith\('admin:roleSelector'\) \|\| id\.startsWith\('admin:colourRoles'\)/);
   assert.match(panel, /security\.enforceInteractionSecurity\(interaction, \{ level: 'admin', guildOnly: true \}\)/);
@@ -68,6 +81,13 @@ test('Dashboard channel changes retire old deployment and clear old message id',
   assert.match(route, /deploymentChannelChanged/);
   assert.match(route, /panel\.retireDeployment\(g, before\.deployment\)/);
   assert.match(route, /messageId: null/);
+});
+
+test('Role Selector dashboard renders acceptance readiness checks', () => {
+  assert.match(dashboard, /const acceptance = health\.acceptance/);
+  assert.match(dashboard, /Health & Acceptance/);
+  assert.match(dashboard, /Acceptance Ready/);
+  assert.match(dashboard, /acceptance\.checks/);
 });
 
 test('Role Selector deployment supports disabled and retired panel states', () => {
