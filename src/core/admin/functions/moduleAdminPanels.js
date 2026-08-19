@@ -20,7 +20,7 @@ const CONTROLS_PER_PAGE = 2;
 const ADMIN_FIELD_KEYS = new Set(['logChannel', 'managerRoles', 'reviewerRoles', 'levelRoles']);
 
 const CUSTOM_PANEL_KEYS = new Set([
-  'autoRoles', 'embed', 'emojis', 'forms', 'giveaways', 'goodbye', 'invites', 'leveling',
+  'autoRoles', 'birthdays', 'embed', 'emojis', 'forms', 'giveaways', 'goodbye', 'invites', 'leveling',
   'polls', 'reactionRoles', 'schedule', 'social', 'starboard', 'stats', 'sticky',
   'suggestions', 'tempVoice', 'temporaryRoles', 'tickets', 'timedRoles', 'verification', 'welcome',
 ]);
