@@ -83,18 +83,37 @@ router.get('/:guildId/overview', async (req, res) => {
 router.put('/:guildId/config', async (req, res) => {
   try {
     const id = guildId(req); const patch = req.body || {};
+    const before = roleSelector.getSection(id);
+    const g = await guild(req, id);
+    const nextChannelId = patch.deployment && Object.prototype.hasOwnProperty.call(patch.deployment, 'channelId')
+      ? cleanDiscordId(patch.deployment.channelId)
+      : before.deployment?.channelId || null;
+    const deploymentChannelChanged = Boolean(
+      patch.deployment &&
+      Object.prototype.hasOwnProperty.call(patch.deployment, 'channelId') &&
+      nextChannelId !== (before.deployment?.channelId || null)
+    );
+
+    if (deploymentChannelChanged && g && before.deployment?.messageId) {
+      await panel.retireDeployment(g, before.deployment).catch(() => null);
+    }
+
     if (typeof patch.enabled === 'boolean') guildManager.setModuleEnabled(id, roleSelector.MODULE, patch.enabled, { actorId: actorId(req), action: 'role_selector_dashboard_toggle' });
     roleSelector.updateSection(id, (current) => ({
       ...current,
       ...(patch.style ? { style: { ...current.style, ...patch.style } } : {}),
-      ...(patch.deployment ? { deployment: { ...current.deployment, ...patch.deployment } } : {}),
+      ...(patch.deployment ? {
+        deployment: deploymentChannelChanged
+          ? { ...current.deployment, ...patch.deployment, channelId: nextChannelId, messageId: null }
+          : { ...current.deployment, ...patch.deployment },
+      } : {}),
       ...(patch.cleanup ? { cleanup: { ...current.cleanup, ...patch.cleanup } } : {}),
     }), { actorId: actorId(req), action: 'role_selector_dashboard_config' });
-    const g = await guild(req, id);
+
     if (g) {
       await roleSelector.syncManagedRoleAppearance(g).catch(() => null);
       await roleSelector.syncManagedRoleHierarchy(g).catch(() => null);
-      await panel.syncDeploymentState(g).catch(() => null);
+      if (!deploymentChannelChanged) await panel.syncDeploymentState(g).catch(() => null);
     }
     return success(res, await overview(req, id));
   } catch (error) { return failure(res, error); }
