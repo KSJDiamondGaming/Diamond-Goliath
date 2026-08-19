@@ -372,10 +372,14 @@ function coreSearchResultsPanel(alias, results, query, interaction) {
 }
 
 function corePanel(overview, interaction, notice = '') {
-  const core = Array.isArray(overview.core) ? overview.core.slice(0, 25) : [];
-  const missing = Array.isArray(overview.missingCore) ? overview.missingCore : [];
+  const status = Array.isArray(overview.coreStatus) ? overview.coreStatus : [];
+  const missing = status.filter((entry) => !entry.installed);
+  const installed = status.filter((entry) => entry.installed && entry.emoji).map((entry) => entry.emoji);
   const isManager = isCoreManagerId(interaction?.user?.id);
-  const lines = core.map((emoji) => `${emoji.mention || `:${emoji.name}:`}  \`:${emoji.alias}:\``);
+  const statusLine = (entry) => `${entry.installed ? '✅' : '⬜'} **${String(entry.slot).padStart(2, '0')}**  \`:${entry.alias}:\``;
+  const firstHalf = status.slice(0, 20).map(statusLine).join('\n') || 'No Core slots found.';
+  const secondHalf = status.slice(20, 40).map(statusLine).join('\n') || 'No Core slots found.';
+
   const embed = new EmbedBuilder()
     .setColor(PANEL_COLOR)
     .setTitle('💠 Goliath Core Emojis')
@@ -385,40 +389,46 @@ function corePanel(overview, interaction, notice = '') {
       '**Availability:** Every Goliath guild automatically',
       '**Guild slots used:** 0',
       '**Server favourites used:** 0',
-      '',
-      lines.length ? 'Installed Core aliases:' : 'No Core emojis have been uploaded yet.',
-      ...lines,
-      overview.core.length > core.length ? `\nShowing the first ${core.length} of ${overview.core.length} installed Core emojis.` : '',
       isManager ? '\n**Owner controls:** Add missing aliases from Emoji.gg or a direct image URL, or manage installed Core emojis below.' : '',
       notice ? `\n${notice}` : '',
     ].filter(Boolean).join('\n'))
+    .addFields(
+      { name: 'Core Slots 01–20', value: firstHalf, inline: true },
+      { name: 'Core Slots 21–40', value: secondHalf, inline: true },
+    )
     .setFooter({ text: `Requested by ${memberName(interaction)}` });
 
   const components = [];
   if (isManager && missing.length) {
-    components.push(row(
-      new StringSelectMenuBuilder()
-        .setCustomId('admin:module:emojis:core-add-select')
-        .setPlaceholder('Add a missing Core emoji')
-        .addOptions(missing.slice(0, 25).map((alias) => ({
-          label: `:${alias}:`,
-          value: alias,
-          description: 'Search Emoji.gg or use direct image URL',
-        })))
-    ));
+    const missingChunks = [missing.slice(0, 25), missing.slice(25, 50)].filter((chunk) => chunk.length);
+    missingChunks.forEach((chunk, index) => {
+      components.push(row(
+        new StringSelectMenuBuilder()
+          .setCustomId(`admin:module:emojis:core-add-select:${index}`)
+          .setPlaceholder(index === 0 ? 'Add missing Core emoji (1)' : 'Add missing Core emoji (2)')
+          .addOptions(chunk.map((entry) => ({
+            label: `:${entry.alias}:`,
+            value: entry.alias,
+            description: `Core slot ${String(entry.slot).padStart(2, '0')} • Emoji.gg or image URL`.slice(0, 100),
+          })))
+      ));
+    });
   }
-  if (isManager && core.length) {
-    components.push(row(
-      new StringSelectMenuBuilder()
-        .setCustomId('admin:module:emojis:core-manage-select')
-        .setPlaceholder('Manage an installed Core emoji')
-        .addOptions(core.map((emoji) => ({
-          label: `:${emoji.alias}:`.slice(0, 100),
-          value: String(emoji.id),
-          description: emoji.animated ? 'Animated Core emoji' : 'Static Core emoji',
-          emoji: emoji.component || undefined,
-        })))
-    ));
+  if (isManager && installed.length) {
+    const installedChunks = [installed.slice(0, 25), installed.slice(25, 50)].filter((chunk) => chunk.length);
+    installedChunks.forEach((chunk, index) => {
+      components.push(row(
+        new StringSelectMenuBuilder()
+          .setCustomId(`admin:module:emojis:core-manage-select:${index}`)
+          .setPlaceholder(index === 0 ? 'Manage installed Core emoji (1)' : 'Manage installed Core emoji (2)')
+          .addOptions(chunk.map((emoji) => ({
+            label: `:${emoji.alias}:`.slice(0, 100),
+            value: String(emoji.id),
+            description: emoji.animated ? 'Animated Core emoji' : 'Static Core emoji',
+            emoji: emoji.component || undefined,
+          })))
+      ));
+    });
   }
   components.push(row(button('admin:module:emojis:panel', '⬅️ Emoji Studio', ButtonStyle.Secondary)));
   return { embeds: [embed], components };
@@ -543,7 +553,7 @@ async function handleDiscordInteraction(interaction) {
     return true;
   }
 
-  if (id === 'admin:module:emojis:core-add-select' && interaction.isStringSelectMenu?.()) {
+  if (id.startsWith('admin:module:emojis:core-add-select') && interaction.isStringSelectMenu?.()) {
     requireCoreManagerInteraction(interaction);
     const alias = String(interaction.values?.[0] || '');
     if (!emojis.isApprovedCoreAlias(alias)) throw new Error('Unknown Goliath Core emoji alias.');
@@ -588,7 +598,7 @@ async function handleDiscordInteraction(interaction) {
     return true;
   }
 
-  if (id === 'admin:module:emojis:core-manage-select' && interaction.isStringSelectMenu?.()) {
+  if (id.startsWith('admin:module:emojis:core-manage-select') && interaction.isStringSelectMenu?.()) {
     requireCoreManagerInteraction(interaction);
     const overview = await discordOverview(interaction);
     const emoji = (overview.core || []).find((entry) => String(entry.id) === String(interaction.values?.[0] || ''));
