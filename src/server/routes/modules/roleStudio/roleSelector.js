@@ -121,9 +121,21 @@ router.post('/:guildId/groups', async (req, res) => {
 router.delete('/:guildId/groups/:groupId', async (req, res) => {
   try {
     const id = guildId(req); const g = await guild(req, id);
-    if (g) await roleSelector.deleteManagedGroupRoles(g, req.params.groupId);
+    if (!g) throw new Error('Guild is unavailable.');
+
+    const result = await roleSelector.deleteManagedGroupRoles(g, req.params.groupId);
+    if (result.unresolved) {
+      return res.status(409).json({
+        success: false,
+        error: 'Group was not deleted because one or more Goliath-managed roles could not be removed.',
+        unresolved: result.unresolved,
+        unresolvedRoles: result.unresolvedRoles,
+        deletedRoles: result.deleted,
+      });
+    }
+
     roleSelector.removeGroup(id, req.params.groupId, { actorId: actorId(req), action: 'role_selector_dashboard_delete_group' });
-    return success(res, await overview(req, id));
+    return success(res, { deletion: result, ...(await overview(req, id)) });
   } catch (error) { return failure(res, error); }
 });
 
