@@ -4,6 +4,7 @@ const templates = require('./embedTemplates');
 const deployments = require('./embedDeployments');
 const panel = require('./embedPanel');
 const media = require('./embedMedia');
+const { installMediaManagerBase } = require('./embedMediaManagerBase');
 
 const mediaStateApi = Object.freeze({
   getPanelMedia: media.getPanelMedia,
@@ -16,6 +17,7 @@ function installMediaRuntime(targetPanel) {
   media.installPersistentMediaCompatibility(targetPanel);
   media.installStorageNormalization(targetPanel);
   media.installUploadModals(targetPanel);
+  installMediaManagerBase(targetPanel, media);
   media.installMediaOptionsUi(targetPanel);
   media.installMediaManagerUi(targetPanel);
   media.installThumbnailUi(targetPanel);
