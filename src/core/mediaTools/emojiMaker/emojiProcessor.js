@@ -29,6 +29,68 @@ function getEmojiProcessorStatus() {
   };
 }
 
+async function prepareEmojiBuffer(input, options = {}) {
+  const source = Buffer.isBuffer(input) ? input : Buffer.from(input || []);
+  if (!source.length) throw new Error('Emoji image buffer is empty.');
+
+  const sharp = optionalSharp();
+  if (!sharp) {
+    return {
+      buffer: source,
+      processed: false,
+      animated: false,
+      warning: 'Sharp is not installed; the original image was returned unchanged.',
+    };
+  }
+
+  const size = normalizeSize(options.size, 512);
+  const padding = Math.min(Math.floor(size / 4), Math.max(0, Math.round(Number(options.padding ?? 32))));
+  const contentSize = Math.max(32, size - (padding * 2));
+  const metadata = await sharp(source, { animated: true }).metadata();
+  const animated = Number(metadata.pages || 1) > 1;
+
+  // Preserve animated uploads rather than flattening them into a static PNG.
+  if (animated) {
+    return {
+      buffer: source,
+      processed: false,
+      animated: true,
+      size: metadata.width || null,
+      format: metadata.format || null,
+      warning: 'Animated emoji was preserved unchanged so animation is not lost.',
+    };
+  }
+
+  const transparent = { r: 0, g: 0, b: 0, alpha: 0 };
+  const buffer = await sharp(source)
+    .ensureAlpha()
+    .trim({ background: transparent })
+    .resize(contentSize, contentSize, {
+      fit: 'contain',
+      background: transparent,
+      withoutEnlargement: false,
+    })
+    .extend({
+      top: padding,
+      bottom: padding,
+      left: padding,
+      right: padding,
+      background: transparent,
+    })
+    .png({ compressionLevel: 9, adaptiveFiltering: true })
+    .toBuffer();
+
+  return {
+    buffer,
+    processed: true,
+    animated: false,
+    size,
+    contentSize,
+    padding,
+    format: 'png',
+  };
+}
+
 async function createEmoji({ inputPath, outputPath, options = {} }) {
   const sharp = optionalSharp();
   const preset = String(options.preset || 'emoji');
@@ -63,5 +125,6 @@ async function createEmoji({ inputPath, outputPath, options = {} }) {
 
 module.exports = {
   createEmoji,
+  prepareEmojiBuffer,
   getEmojiProcessorStatus,
 };
