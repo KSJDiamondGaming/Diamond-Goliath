@@ -31,7 +31,7 @@ async function channelHealth(target, channelId, label, required) {
   const me = target?.members?.me;
   const permissions = me && channel.permissionsFor?.(me);
   if (permissions && ![PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.EmbedLinks].every((permission) => permissions.has(permission))) {
-    throw new Error(`Goliath lacks permission to post in the ${label.toLowerCase()}.`);
+    return { level: 'issue', code: `${label}_permissions_missing`, channelId };
   }
   return null;
 }
