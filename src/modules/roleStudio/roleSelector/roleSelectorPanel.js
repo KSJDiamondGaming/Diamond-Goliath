@@ -14,6 +14,7 @@ const {
 
 const guildManager = require('../../../core/guild/guildManager');
 const security = require('../../../core/security/securityCore');
+const emojis = require('../../utilityStudio/emojis/emojis');
 const roleSelector = require('./roleSelector');
 const healthService = require('./roleSelectorHealth');
 
@@ -38,6 +39,13 @@ async function respond(interaction, payload) {
   if (interaction.isModalSubmit?.()) return interaction.reply({ ...payload, flags: 64 });
   if (interaction.deferred || interaction.replied) return interaction.editReply(payload);
   return interaction.update(payload);
+}
+async function resolveMemberPayload(guild, payload = {}) {
+  return {
+    ...payload,
+    content: payload.content == null ? payload.content : await emojis.resolveText(guild.client, guild.id, payload.content),
+    embeds: await emojis.resolveEmbeds(guild.client, guild.id, payload.embeds || []),
+  };
 }
 function customGroups(guildId) { return roleSelector.listGroups(guildId).filter((group) => !group.builtIn); }
 function customGroupSelect(guildId, selectedId = null, customId = 'admin:roleSelector:groupSelect') {
@@ -170,7 +178,7 @@ async function syncDeploymentState(guild) {
   const { message } = await fetchDeployment(guild, section.deployment);
   if (!message) return { updated: false, reason: section.deployment?.messageId ? 'message_missing' : 'not_deployed' };
   if (guild.client?.user?.id && message.author?.id !== guild.client.user.id) return { updated: false, reason: 'message_not_owned' };
-  await message.edit(memberLauncherPayload(guild));
+  await message.edit(await resolveMemberPayload(guild, memberLauncherPayload(guild)));
   return { updated: true, messageId: message.id, channelId: message.channel.id };
 }
 async function retireDeployment(guild, deployment) {
@@ -194,7 +202,7 @@ async function deploySelector(interaction) {
     await retireDeployment(interaction.guild, section.deployment);
   }
 
-  const payload = memberLauncherPayload(interaction.guild);
+  const payload = await resolveMemberPayload(interaction.guild, memberLauncherPayload(interaction.guild));
   message = message ? await message.edit(payload) : await channel.send(payload);
   roleSelector.updateSection(interaction.guildId, (current) => ({ ...current, deployment: { channelId: channel.id, messageId: message.id } }), { actorId: interaction.user.id, action: 'role_selector_deploy' });
   return message;
@@ -267,7 +275,7 @@ async function handleRoleSelectorInteraction(interaction) {
     if (id === 'admin:roleSelector:health') { const health = await healthService.repair(interaction.guild); return interaction.reply({ content: `Role Selector health: **${health.healthy ? 'Healthy ✅' : 'Needs attention ⚠️'}**\nIssues: ${health.issues.length} · Warnings: ${health.warnings.length}`, flags: 64 }); }
 
     if (id.startsWith('roleSelector:')) roleSelector.assertModuleEnabled(interaction.guildId);
-    if (id === 'roleSelector:openGroup') { if (interaction.values?.[0] === '__none__') return interaction.reply({ content: 'No selector groups are available.', flags: 64 }); return interaction.reply({ ...memberGroupPayload(interaction.guild, interaction.member, interaction.values[0]), flags: 64 }); }
+    if (id === 'roleSelector:openGroup') { if (interaction.values?.[0] === '__none__') return interaction.reply({ content: 'No selector groups are available.', flags: 64 }); return interaction.reply({ ...(await resolveMemberPayload(interaction.guild, memberGroupPayload(interaction.guild, interaction.member, interaction.values[0]))), flags: 64 }); }
     if (id === 'roleSelector:colourChoose') { await roleSelector.applyColourSelection(interaction.guild, interaction.member, interaction.values[0]); return interaction.reply({ content: '✅ Your colour has been updated.', flags: 64 }); }
     if (id === 'roleSelector:customHex') { await interaction.showModal(hexModal()); return true; }
     if (id === 'roleSelector:customHexSubmit') { await roleSelector.applyColourSelection(interaction.guild, interaction.member, interaction.fields.getTextInputValue('hex'), interaction.fields.getTextInputValue('label')); return interaction.reply({ content: '✅ Your custom colour has been applied.', flags: 64 }); }
