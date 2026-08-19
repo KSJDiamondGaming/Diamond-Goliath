@@ -148,6 +148,7 @@ async function buildAdminPanel(guild, requestedBy = 'Unknown User') {
       `**Format:** \`${roleSelector.roleNameFor(section, 'Example Role')}\``,
       `**Anchor:** ${section.style.anchorRoleId ? `<@&${section.style.anchorRoleId}> (${section.style.placement})` : '`Not set`'}`,
       `**Deployed:** ${section.deployment.channelId ? `<#${section.deployment.channelId}>` : '`Not deployed`'}`,
+      `**Acceptance:** ${health.acceptance?.ready ? 'Ready ✅' : `Not ready ⚠️ (${health.acceptance?.failed?.length || 0} blocker(s))`}`,
       '', health.issues.length ? `⚠️ ${health.issues.length} health issue(s)` : '✅ Health checks passed',
     ].join('\n')).setFooter({ text: `Requested by ${requestedBy}` }).setTimestamp()],
     components: [
@@ -299,7 +300,22 @@ async function handleRoleSelectorInteraction(interaction) {
     if (id === 'admin:roleSelector:scanStyle') { const suggestion = roleSelector.suggestRoleStyle(interaction.guild); roleSelector.updateSection(interaction.guildId, (current) => ({ ...current, style: { ...current.style, detectedFormat: suggestion.format, detectedIcon: suggestion.icon, detectedSeparator: suggestion.separator, detectedConfidence: suggestion.confidence } }), { ...actor, action: 'role_selector_style_scan' }); return respond(interaction, buildStylePanel(interaction.guild)); }
     if (id === 'admin:roleSelector:applyStyle') { roleSelector.updateSection(interaction.guildId, (current) => ({ ...current, style: { ...current.style, format: current.style.detectedFormat || current.style.format, icon: current.style.detectedIcon || '', separator: current.style.detectedSeparator || current.style.separator } }), { ...actor, action: 'role_selector_style_apply' }); await roleSelector.syncManagedRoleAppearance(interaction.guild); return respond(interaction, buildStylePanel(interaction.guild)); }
     if (id === 'admin:roleSelector:deploy') { const message = await deploySelector(interaction); return interaction.reply({ content: `✅ Role Selector deployed in <#${message.channel.id}>.`, flags: 64 }); }
-    if (id === 'admin:roleSelector:health') { const health = await healthService.repair(interaction.guild); return interaction.reply({ content: `Role Selector health: **${health.healthy ? 'Healthy ✅' : 'Needs attention ⚠️'}**\nIssues: ${health.issues.length} · Warnings: ${health.warnings.length}`, flags: 64 }); }
+    if (id === 'admin:roleSelector:health') {
+      const health = await healthService.repair(interaction.guild);
+      const failedChecks = (health.acceptance?.checks || []).filter((check) => !check.passed);
+      const blockers = failedChecks.length
+        ? failedChecks.slice(0, 7).map((check) => `• ${check.detail}`).join('\n')
+        : '• No acceptance blockers detected.';
+      return interaction.reply({
+        content: [
+          `Role Selector health: **${health.healthy ? 'Healthy ✅' : 'Needs attention ⚠️'}**`,
+          `Issues: ${health.issues.length} · Warnings: ${health.warnings.length}`,
+          `Acceptance: **${health.acceptance?.ready ? 'Ready ✅' : 'Not ready ⚠️'}**`,
+          blockers,
+        ].join('\n'),
+        flags: 64,
+      });
+    }
 
     if (id.startsWith('roleSelector:')) roleSelector.assertModuleEnabled(interaction.guildId);
     if (id === 'roleSelector:openGroup') { if (interaction.values?.[0] === '__none__') return interaction.reply({ content: 'No selector groups are available.', flags: 64 }); return interaction.reply({ ...(await resolveMemberPayload(interaction.guild, memberGroupPayload(interaction.guild, interaction.member, interaction.values[0]))), flags: 64 }); }
