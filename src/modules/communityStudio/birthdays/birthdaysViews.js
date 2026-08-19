@@ -61,7 +61,7 @@ function adminPayload(interaction) {
     embeds: [new EmbedBuilder().setColor(enabled ? 0x5865F2 : 0x747F8D).setTitle('🎂 Birthdays').setDescription(desc).setFooter({ text: 'Goliath Birthdays · /admin' }).setTimestamp()],
     components: [
       row(button('admin:birthdays:celebration', '🎉 Celebration', ButtonStyle.Primary), button('admin:birthdays:management', '🛠️ Management')),
-      row(button('admin:studio:communityStudio', '⬅️ Back'), button('admin:birthdays:testmenu', '🧪 Test Centre'), button('admin:birthdays:tools', '⚙️ Settings')),
+      row(button('admin:studio:communityStudio', '⬅️ Back'), button('admin:birthdays:tools', '⚙️ Settings')),
     ],
   };
 }

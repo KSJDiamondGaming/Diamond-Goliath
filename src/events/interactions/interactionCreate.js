@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 
 const { Events, MessageFlags } = require('discord.js');
 
@@ -43,6 +43,25 @@ const goodbyePanel = optionalRequire('goodbye', '../../modules/messageStudio/goo
 const moduleAdminPanels = optionalRequire('generic module admin', '../../core/admin/functions/moduleAdminPanels');
 const userPanelInteractions = optionalRequire('user panel', '../../core/panels/user/userInteractions');
 const modInteractions = optionalRequire('mod interactions', '../../core/panels/mod/modInteractions');
+const roleSelectorPanel = optionalRequire(
+  'role selector',
+  '../../modules/roleStudio/roleSelector/roleSelectorPanel'
+);
+
+const roleStudioPanel = optionalRequire(
+  'role studio panel',
+  '../../modules/roleStudio/roleStudioPanel'
+);
+
+const privateRoomsPanel = optionalRequire(
+  'private rooms panel',
+  '../../modules/utilityStudio/privateRooms/privateRoomsPanel'
+);
+
+const birthdaysPanel = optionalRequire(
+  'birthdays panel',
+  '../../modules/communityStudio/birthdays/birthdaysPanel'
+);
 
 const MODULE_STUDIO_PREFIXES = [
   ['communityStudio', ['admin:invites', 'invites:', 'admin:giveaways', 'giveaways:', 'admin:leveling', 'leveling:', 'admin:polls', 'poll_vote:']],
@@ -132,7 +151,7 @@ function findComponent(rows, customId) {
 function normalizeVerificationRows(payload, rows) {
   const title = payload?.embeds?.[0]?.title;
 
-  if (title === '🔀 Verification · Workflow') {
+  if (title === '🔄 Verification · Workflow') {
     if (rows.length !== 3 || rows[0]?.components?.length !== 3 || rows[1]?.components?.length !== 5) return rows;
     const workflowButtons = [...rows[0].components, ...rows[1].components];
     return [
@@ -324,18 +343,58 @@ module.exports = {
         return;
       }
       const interactionAgeMs = Math.max(0, Date.now() - Number(interaction.createdTimestamp || Date.now()));
-      const customId = String(interaction.customId || '');
+const customId = String(interaction.customId || '');
 
-      if (isVerificationMemberInteraction(interaction)) { await handleVerificationMemberInteraction(interaction); return; }
-      if (interactionAgeMs > 1500) console.warn(`[InteractionCreate] Slow dispatch before routing: customId=${customId} age=${interactionAgeMs}ms pid=${process.pid}`);
-      if (startsWith(interaction, 'user:')) {
-        if (!await callHandler(userPanelInteractions, 'handleUserPanelInteraction', interaction)) throw new Error(`User panel did not handle ${customId}.`);
-        return;
-      }
-      if (customId.startsWith('mod_') || customId.startsWith('mod:')) {
-        if (!await callHandler(modInteractions, 'handleModInteraction', interaction)) throw new Error(`Mod interactions did not handle ${customId}.`);
-        return;
-      }
+      if (customId === 'admin:studio:roleStudio') {
+  interaction.customId = 'admin:roleStudio:handled';
+
+  const payload = await roleStudioPanel.buildRoleStudioPanel(
+    interaction.guild,
+    interaction.member?.displayName ||
+      interaction.user?.username ||
+      'Unknown User'
+  );
+
+  if (interaction.deferred || interaction.replied) {
+    await interaction.editReply(payload);
+  } else {
+    await interaction.update(payload);
+  }
+
+  return;
+}
+
+if (
+  customId.startsWith('admin:roleSelector') ||
+  customId.startsWith('roleSelector:') ||
+  customId.startsWith('admin:colourRoles') ||
+  customId.startsWith('colourRoles:')
+) {
+  await roleSelectorPanel.handleRoleSelectorInteraction(interaction);
+  return;
+}
+
+if (
+  customId.startsWith('admin:privateRooms') ||
+  customId.startsWith('user:privateRooms:') ||
+  customId.startsWith('privateRooms:')
+) {
+  if (customId.startsWith('admin:privateRooms')) {
+    await privateRoomsPanel.handleAdminInteraction(interaction);
+    return;
+  }
+
+  if (customId.startsWith('user:privateRooms:')) {
+    await privateRoomsPanel.handleUserInteraction(interaction);
+    return;
+  }
+
+  if (typeof privateRoomsPanel.handleInteraction === 'function') {
+    await privateRoomsPanel.handleInteraction(interaction);
+    return;
+  }
+}
+
       const isTicketRuntimeInteraction = customId.startsWith('ticket_') || customId.startsWith('goliath_ticket_');
       if (isTicketRuntimeInteraction && interaction.guildId && guildManager.isModuleEnabled?.(interaction.guildId, 'tickets') === false) {
         await interaction.reply({ content: '❌ Tickets is currently disabled for this server.', flags: MessageFlags.Ephemeral });
@@ -425,3 +484,9 @@ module.exports = {
     }
   },
 };
+
+
+
+
+
+

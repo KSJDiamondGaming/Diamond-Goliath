@@ -86,7 +86,7 @@ function buildGiveawaysAdminPanel(guild, memberDisplayName = 'Unknown User') {
     row(new ChannelSelectMenuBuilder().setCustomId('admin:giveaways:logChannel').setPlaceholder('Log channel').setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setMinValues(0).setMaxValues(1)),
     row(new RoleSelectMenuBuilder().setCustomId('admin:giveaways:managerRoles').setPlaceholder('Manager roles').setMinValues(0).setMaxValues(10)),
     row(button('admin:giveaways:deployTest', '🚀 Deploy Test Giveaway', ButtonStyle.Success), button(enabled ? 'admin:giveaways:disable' : 'admin:giveaways:enable', enabled ? '⏸️ Disable' : '▶️ Enable', ButtonStyle.Secondary), button('admin:giveaways:toggleMultiple', '🎟️ Multiple', ButtonStyle.Secondary), button('admin:giveaways:toggleRequireRole', '🔒 Role Req', ButtonStyle.Secondary), button('admin:giveaways:togglePing', '📣 Ping', ButtonStyle.Secondary)),
-    row(button('admin:giveaways:levelingEligibility', '🏆 XP Eligibility', ButtonStyle.Primary), button('admin:modules', '⬅️ Modules', ButtonStyle.Secondary)),
+    row(button('admin:giveaways:levelingEligibility', '🏆 XP Eligibility', ButtonStyle.Primary), button('admin:studio:communityStudio', '⬅️ Back', ButtonStyle.Secondary)),
   ] };
 }
 
@@ -141,9 +141,15 @@ function buildLevelingEligibilityModal(section = {}) {
     );
 }
 
+async function handleGiveawaysAdminInteraction(interaction) {
+  const handler = require('./giveawaysInteractionHandler');
+  return handler.handleGiveawaysAdminInteraction(interaction);
+}
+
 module.exports = {
   buildGiveawaysAdminPanel,
   buildLevelingEligibilityPanel,
   buildLevelingEligibilityModal,
   getLevelingEligibility,
+  handleGiveawaysAdminInteraction,
 };
