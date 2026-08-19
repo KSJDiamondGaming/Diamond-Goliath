@@ -123,3 +123,15 @@ try {
   console.warn('[Runtime] Unable to apply hierarchy-aware role dropdown standard.');
   console.warn(error?.stack || error?.message || error);
 }
+
+setImmediate(() => {
+  try {
+    const presetManager = require('../modules/messageStudio/embed/embedPresetManagerCompat');
+    if (!presetManager.install()) {
+      console.warn('[Embed Presets] Enhanced preset manager was not ready at startup.');
+    }
+  } catch (error) {
+    console.warn('[Embed Presets] Enhanced preset manager failed to install.');
+    console.warn(error?.stack || error?.message || error);
+  }
+});
