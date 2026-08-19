@@ -261,19 +261,30 @@ function searchModal() {
     ));
 }
 
-function coreAddUrlModal(alias) {
+function coreSourceModal(alias) {
   return new ModalBuilder()
     .setCustomId(`admin:module:emojis:core-add-submit:${alias}`)
     .setTitle(`Add Core :${alias}:`)
-    .addComponents(row(
-      new TextInputBuilder()
-        .setCustomId('imageUrl')
-        .setLabel('Direct image URL')
-        .setPlaceholder('https://.../emoji.png')
-        .setStyle(TextInputStyle.Short)
-        .setRequired(true)
-        .setMaxLength(1000)
-    ));
+    .addComponents(
+      row(
+        new TextInputBuilder()
+          .setCustomId('query')
+          .setLabel('Emoji.gg search (optional)')
+          .setPlaceholder('success, check, ticket...')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(false)
+          .setMaxLength(80)
+      ),
+      row(
+        new TextInputBuilder()
+          .setCustomId('imageUrl')
+          .setLabel('OR direct image URL (optional)')
+          .setPlaceholder('https://.../emoji.png')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(false)
+          .setMaxLength(1000)
+      )
+    );
 }
 
 function coreRenameModal(emoji) {
@@ -332,6 +343,34 @@ function searchResultsPanel(results, query, interaction) {
   return { embeds: [embed], components };
 }
 
+function coreSearchResultsPanel(alias, results, query, interaction) {
+  const clean = Array.isArray(results) ? results.slice(0, 25) : [];
+  const embed = new EmbedBuilder()
+    .setColor(PANEL_COLOR)
+    .setTitle(`🔎 Choose image for :${alias}:`)
+    .setDescription(clean.length
+      ? `Found **${clean.length}** Emoji.gg result(s) for **${String(query).slice(0, 80)}**. The selected image will become Goliath Core \`:${alias}:\`.`
+      : `No Emoji.gg results found for **${String(query).slice(0, 80)}**.`)
+    .setFooter({ text: `Requested by ${memberName(interaction)}` });
+  const components = [];
+  if (clean.length) {
+    components.push(row(
+      new StringSelectMenuBuilder()
+        .setCustomId(`admin:module:emojis:core-search-import:${alias}`)
+        .setPlaceholder(`Choose Emoji.gg image for :${alias}:`)
+        .setMinValues(1)
+        .setMaxValues(1)
+        .addOptions(clean.map((entry) => ({
+          label: resultLabel(entry),
+          value: String(entry.id),
+          description: resultDescription(entry),
+        })))
+    ));
+  }
+  components.push(row(button('admin:module:emojis:core', '⬅️ Goliath Core', ButtonStyle.Secondary)));
+  return { embeds: [embed], components };
+}
+
 function corePanel(overview, interaction, notice = '') {
   const core = Array.isArray(overview.core) ? overview.core.slice(0, 25) : [];
   const missing = Array.isArray(overview.missingCore) ? overview.missingCore : [];
@@ -350,7 +389,7 @@ function corePanel(overview, interaction, notice = '') {
       lines.length ? 'Installed Core aliases:' : 'No Core emojis have been uploaded yet.',
       ...lines,
       overview.core.length > core.length ? `\nShowing the first ${core.length} of ${overview.core.length} installed Core emojis.` : '',
-      isManager ? '\n**Owner controls:** Add missing aliases or manage installed Core emojis below.' : '',
+      isManager ? '\n**Owner controls:** Add missing aliases from Emoji.gg or a direct image URL, or manage installed Core emojis below.' : '',
       notice ? `\n${notice}` : '',
     ].filter(Boolean).join('\n'))
     .setFooter({ text: `Requested by ${memberName(interaction)}` });
@@ -364,7 +403,7 @@ function corePanel(overview, interaction, notice = '') {
         .addOptions(missing.slice(0, 25).map((alias) => ({
           label: `:${alias}:`,
           value: alias,
-          description: 'Upload by direct image URL',
+          description: 'Search Emoji.gg or use direct image URL',
         })))
     ));
   }
@@ -508,7 +547,7 @@ async function handleDiscordInteraction(interaction) {
     requireCoreManagerInteraction(interaction);
     const alias = String(interaction.values?.[0] || '');
     if (!emojis.isApprovedCoreAlias(alias)) throw new Error('Unknown Goliath Core emoji alias.');
-    await interaction.showModal(coreAddUrlModal(alias));
+    await interaction.showModal(coreSourceModal(alias));
     return true;
   }
 
@@ -516,11 +555,36 @@ async function handleDiscordInteraction(interaction) {
     requireCoreManagerInteraction(interaction);
     const alias = id.slice('admin:module:emojis:core-add-submit:'.length);
     if (!emojis.isApprovedCoreAlias(alias)) throw new Error('Unknown Goliath Core emoji alias.');
+    const query = String(interaction.fields.getTextInputValue('query') || '').trim();
+    const imageUrl = String(interaction.fields.getTextInputValue('imageUrl') || '').trim();
+    if (!query && !imageUrl) throw new Error('Enter an Emoji.gg search or a direct image URL.');
+
+    if (imageUrl) {
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+      const attachment = await emojiApi.downloadAsset(imageUrl);
+      const result = await emojis.createCoreEmoji(interaction.client, attachment, alias);
+      await interaction.editReply(corePanel(await discordOverview(interaction), interaction, `${result.created ? '✅ Added' : '✅ Already installed'} :${alias}:.`));
+      return true;
+    }
+
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-    const imageUrl = interaction.fields.getTextInputValue('imageUrl');
-    const attachment = await emojiApi.downloadAsset(String(imageUrl).trim());
+    const results = await emojiApi.search(query, 25);
+    await interaction.editReply(coreSearchResultsPanel(alias, results, query, interaction));
+    return true;
+  }
+
+  if (id.startsWith('admin:module:emojis:core-search-import:') && interaction.isStringSelectMenu?.()) {
+    requireCoreManagerInteraction(interaction);
+    const alias = id.slice('admin:module:emojis:core-search-import:'.length);
+    if (!emojis.isApprovedCoreAlias(alias)) throw new Error('Unknown Goliath Core emoji alias.');
+    await interaction.deferUpdate();
+    const source = await emojiApi.findById(interaction.values?.[0]);
+    if (!source) throw new Error('Emoji.gg emoji was not found.');
+    const url = emojiApi.assetUrl(source);
+    if (!url) throw new Error('Emoji.gg did not provide an image URL for this emoji.');
+    const attachment = await emojiApi.downloadAsset(url);
     const result = await emojis.createCoreEmoji(interaction.client, attachment, alias);
-    await interaction.editReply(corePanel(await discordOverview(interaction), interaction, `${result.created ? '✅ Added' : '✅ Already installed'} :${alias}:.`));
+    await interaction.editReply(corePanel(await discordOverview(interaction), interaction, `${result.created ? '✅ Imported' : '✅ Already installed'} :${alias}: from Emoji.gg.`));
     return true;
   }
 
