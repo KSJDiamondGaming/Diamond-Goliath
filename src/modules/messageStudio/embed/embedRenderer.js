@@ -21,6 +21,8 @@ const emojiStore = require('../../utilityStudio/emojis/emojisStore');
 const CANVAS_WIDTH = 520;
 const PORTRAIT_WIDTH = 320;
 const PORTRAIT_SHIFT_RIGHT = 0;
+const SINGLE_IMAGE_CANVAS_WIDTH = 900;
+const SINGLE_IMAGE_VISIBLE_WIDTH = 520;
 const MAX_SOURCE_BYTES = 8 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 8000;
 const PANEL_BG = { r: 19, g: 20, b: 22, alpha: 1 };
@@ -99,16 +101,35 @@ async function sourceImage(url, guildId = 'global') {
   return remote;
 }
 async function makeCenteredPortrait(buffer) {
-  const input = sharp(buffer, { failOn: 'warning' });
-  const meta = await input.metadata();
-  const width = Number(meta.width || 0), height = Number(meta.height || 0);
+  const source = sharp(buffer, { failOn: 'warning' });
+  const meta = await source.metadata();
+  const width = Number(meta.width || 0);
+  const height = Number(meta.height || 0);
   if (!width || !height) return null;
-  if (width >= CANVAS_WIDTH) return input.png().toBuffer();
-  const left = Math.floor((CANVAS_WIDTH - width) / 2);
-  const right = CANVAS_WIDTH - width - left;
-  return input
+
+  // Components V2 media galleries left-align a lone image. Put the visible
+  // artwork on a wider transparent canvas so Discord renders the gallery at
+  // full panel width while the artwork itself stays exactly centered.
+  const targetVisibleWidth = Math.min(width, SINGLE_IMAGE_VISIBLE_WIDTH);
+  const visible = await source
+    .resize({ width: targetVisibleWidth, withoutEnlargement: true, fit: 'inside' })
     .ensureAlpha()
-    .extend({ top: 0, bottom: 0, left, right, background: { r: 0, g: 0, b: 0, alpha: 0 } })
+    .png()
+    .toBuffer();
+  const visibleMeta = await sharp(visible).metadata();
+  const visibleWidth = Number(visibleMeta.width || targetVisibleWidth);
+  const visibleHeight = Number(visibleMeta.height || height);
+  const left = Math.floor((SINGLE_IMAGE_CANVAS_WIDTH - visibleWidth) / 2);
+
+  return sharp({
+    create: {
+      width: SINGLE_IMAGE_CANVAS_WIDTH,
+      height: visibleHeight,
+      channels: 4,
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    },
+  })
+    .composite([{ input: visible, left, top: 0 }])
     .png()
     .toBuffer();
 }
@@ -174,7 +195,7 @@ async function addMediaFiles(container, media, interaction, payloadFiles, panelI
       if (entry?.spoiler) attachment.setSpoiler(true);
       payloadFiles.push(attachment);
       container.addFileComponents(new FileBuilder().setURL(`attachment://${name}`).setSpoiler(entry?.spoiler === true));
-    } catch (error) { throw new Error(`Attached file "${entry?.name || sourceFilename(source, 'file')}" could not be prepared: ${error?.message || error}`); }
+    } catch (error) { throw new Error(`Attached file \"${entry?.name || sourceFilename(source, 'file')}\" could not be prepared: ${error?.message || error}`); }
   }
 }
 function nativeImageShouldPassThrough(contentType) {
