@@ -241,7 +241,7 @@ function buildCategoryPanel(categoryKey, interactionOrName = 'Unknown User') {
   const moduleButtons = modules.map((module) => button(
     `user:module:${module.key}`,
     module.label,
-    module.key === 'social' || module.key === 'birthdays' || module.key === 'giveaways' || module.key === 'leveling' ? ButtonStyle.Success : ButtonStyle.Secondary,
+    ButtonStyle.Primary,
     false,
     module.emoji,
   ));
