@@ -104,7 +104,7 @@ const CHANNEL_FIELDS = {
   approvedChannel: { prop: 'approvedChannelId', label: '✅ Approved Channel', max: 1, types: [ChannelType.GuildText, ChannelType.GuildAnnouncement] },
   channels: { prop: 'channels', label: '💬 Sticky Channels', max: 10, types: [ChannelType.GuildText, ChannelType.GuildAnnouncement] },
   defaultChannel: { prop: 'defaultChannelId', label: '📊 Default Channel', max: 1, types: [ChannelType.GuildText, ChannelType.GuildAnnouncement] },
-  deniedChannel: { prop: 'deniedChannelId', label: '✅ Denied Channel', max: 1, types: [ChannelType.GuildText, ChannelType.GuildAnnouncement] },
+  deniedChannel: { prop: 'deniedChannelId', label: '❌ Denied Channel', max: 1, types: [ChannelType.GuildText, ChannelType.GuildAnnouncement] },
   logChannel: { prop: 'logChannelId', label: '📋 Log Channel', max: 1, types: [ChannelType.GuildText, ChannelType.GuildAnnouncement] },
   announceChannel: { prop: 'announceChannelId', label: '📣 Announce Channel', max: 1, types: [ChannelType.GuildText, ChannelType.GuildAnnouncement] },
   resultsChannel: { prop: 'resultsChannelId', label: '📈 Results Channel', max: 1, types: [ChannelType.GuildText, ChannelType.GuildAnnouncement] },
