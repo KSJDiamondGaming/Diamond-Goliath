@@ -91,6 +91,14 @@ test('Dashboard channel changes retire old deployment and clear old message id',
   assert.match(route, /messageId: null/);
 });
 
+test('Dashboard Role Selector deploy resolves configured emoji shortcodes', () => {
+  assert.match(route, /const emojis = require\('\.\.\/\.\.\/\.\.\/\.\.\/modules\/utilityStudio\/emojis\/emojis'\)/);
+  assert.match(route, /async function resolveDashboardMemberPayload\(/);
+  assert.match(route, /emojis\.allowedGuildEmojis/);
+  assert.match(route, /emojis\.componentPayload/);
+  assert.match(route, /await resolveDashboardMemberPayload\(g, panel\.memberLauncherPayload\(g\)\)/);
+});
+
 test('Role Selector dashboard renders acceptance readiness checks', () => {
   assert.match(dashboard, /const acceptance = health\.acceptance/);
   assert.match(dashboard, /Health & Acceptance/);
