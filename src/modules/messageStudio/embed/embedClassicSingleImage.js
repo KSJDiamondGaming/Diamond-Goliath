@@ -4,7 +4,7 @@ const { AttachmentBuilder } = require('discord.js');
 const sharp = require('sharp');
 
 const SINGLE_IMAGE_CANVAS_WIDTH = 900;
-const SINGLE_IMAGE_CENTER_COMPENSATION = 180;
+const SINGLE_IMAGE_CENTER_COMPENSATION = 340;
 
 function hasAdvancedMedia(mediaState) {
   const panels = Array.isArray(mediaState?.panels) ? mediaState.panels : [];
@@ -38,8 +38,6 @@ async function shiftSingleImageAttachment(file, index) {
   try {
     // Keep the Components V2 container untouched so the panel remains full
     // width. Only move the visible artwork inside its transparent media canvas.
-    // AttachmentBuilder stores its values on .data in some discord.js builds,
-    // so read both the public getters and the backing data object.
     const visible = await sharp(attachment, { failOn: 'warning' })
       .trim({ background: { r: 0, g: 0, b: 0, alpha: 0 } })
       .png()
