@@ -20,7 +20,7 @@ const MODULE_CONTRACTS = Object.freeze({
   stats: { class: 'background', signals: ['runtime', 'background-worker', 'persistence'] },
   sticky: { class: 'background', signals: ['runtime', 'background-worker', 'persistence', 'discord-write'] },
   suggestions: { class: 'event', signals: ['runtime', 'interaction', 'persistence', 'discord-write'] },
-  temporaryRoles: { class: 'scheduled', signals: ['runtime', 'scheduler', 'persistence', 'discord-write'] },
+  temporaryRoles: { class: 'scheduled', signals: ['runtime', 'interaction', 'scheduler', 'persistence', 'discord-write'] },
   tempVoice: { class: 'event', signals: ['runtime', 'interaction', 'persistence', 'discord-write'] },
   tickets: { class: 'event', signals: ['runtime', 'interaction', 'persistence', 'discord-write'] },
   timedRoles: { class: 'scheduled', signals: ['runtime', 'scheduler', 'persistence', 'discord-write'] },
