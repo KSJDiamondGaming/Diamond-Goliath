@@ -21,10 +21,19 @@ function hasAdvancedMedia(mediaState) {
   });
 }
 
-async function shiftSingleImageAttachment(file) {
-  const name = String(file?.name || '').trim();
-  const attachment = file?.attachment;
-  if (!/^embed-panel-\d+\.png$/i.test(name) || !Buffer.isBuffer(attachment)) return file;
+function attachmentName(file, index) {
+  return String(file?.name || file?.data?.name || `embed-panel-${index + 1}.png`).trim();
+}
+
+function attachmentBuffer(file) {
+  const value = file?.attachment ?? file?.data?.attachment;
+  return Buffer.isBuffer(value) ? value : null;
+}
+
+async function shiftSingleImageAttachment(file, index) {
+  const name = attachmentName(file, index);
+  const attachment = attachmentBuffer(file);
+  if (!attachment) return file;
 
   try {
     const visible = await sharp(attachment, { failOn: 'warning' })
@@ -71,17 +80,17 @@ function installClassicSingleImagePayload(renderer) {
     const mediaState = options.media || options.mediaV2 || null;
     const payload = await originalBuildEmbedPayload(options);
 
-    // Keep Components V2 so the panel remains full width. Only compensate the
-    // visual position of a single static image inside Discord's gallery.
+    // Keep Components V2 so the panel stays at the locked full width. Adjust
+    // only the single image's transparent canvas; never shrink the container.
     if (!hasAdvancedMedia(mediaState) && Array.isArray(payload?.files) && payload.files.length) {
-      payload.files = await Promise.all(payload.files.map(shiftSingleImageAttachment));
+      payload.files = await Promise.all(payload.files.map((file, index) => shiftSingleImageAttachment(file, index)));
     }
 
     return payload;
   };
 
   renderer.__classicSingleImagePayloadInstalled = true;
-  console.log('[Embed Renderer] Full-width panel + centered single-image path installed.');
+  console.log('[Embed Renderer] Locked full-width panel + centered single-image path installed.');
   return renderer;
 }
 
