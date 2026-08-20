@@ -5,6 +5,7 @@
 // Keys are deliberately scoped by guild and concern so callers can serialize
 // conflicting work without blocking unrelated guilds.
 const tails = new Map();
+const HARDENING_PATCH_KEY = Symbol.for('goliath.roleSelector.hardeningPatchInstalled');
 
 function cleanPart(value, fallback = 'global') {
   const cleaned = String(value ?? '').trim();
@@ -58,6 +59,56 @@ function withDeploymentLock(guildId, task) {
 function pendingLockCount() {
   return tails.size;
 }
+
+function installHardeningPatch() {
+  if (globalThis[HARDENING_PATCH_KEY]) return;
+  globalThis[HARDENING_PATCH_KEY] = true;
+
+  queueMicrotask(() => {
+    try {
+      const roleSelector = require('./roleSelector');
+      const service = require('./roleSelectorService');
+      Object.assign(roleSelector, service);
+
+      // Health/Repair keeps its existing diagnostics but gains actual Discord
+      // reconciliation and an accurate managed-role count.
+      try {
+        const health = require('./roleSelectorHealth');
+        if (!health.__roleSelectorHardeningWrapped) {
+          const originalBuildHealth = health.buildHealth;
+          const originalRepair = health.repair;
+
+          health.buildHealth = async function hardenedBuildHealth(guild) {
+            const result = await originalBuildHealth(guild);
+            result.managedRoleCount = service.countManagedRoleReferences(service.getSection(guild.id));
+            const usableGroups = service.listGroups(guild.id).filter(service.isGroupMemberUsable).length;
+            if (usableGroups > service.MAX_COMPONENT_OPTIONS) {
+              result.warnings.push(`${usableGroups} member-usable selector groups exceed Discord's ${service.MAX_COMPONENT_OPTIONS}-category limit.`);
+            }
+            result.healthy = result.issues.length === 0 && result.warnings.length === 0;
+            return result;
+          };
+
+          health.repair = async function hardenedRepair(guild) {
+            await originalRepair(guild);
+            await service.reconcileAllMembers(guild);
+            await service.cleanupUnused(guild);
+            return health.buildHealth(guild);
+          };
+
+          Object.defineProperty(health, '__roleSelectorHardeningWrapped', { value: true });
+        }
+      } catch (error) {
+        console.warn('[RoleSelector] Health hardening patch failed:', error.message || error);
+      }
+    } catch (error) {
+      globalThis[HARDENING_PATCH_KEY] = false;
+      console.error('[RoleSelector] Failed to install hardening service:', error);
+    }
+  });
+}
+
+installHardeningPatch();
 
 module.exports = {
   lockKey,
