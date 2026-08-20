@@ -60,6 +60,82 @@ function assertGroupCapacity(service, guildId, input = {}) {
   }
 }
 
+async function eagerPruneUnusedManagedRoles(roleSelector, service, guild, groupId) {
+  const section = roleSelector.getSection(guild.id);
+  if (section.cleanup?.deleteUnusedRoles === false) return { deleted: 0, cleared: 0 };
+  const group = section.groups?.[groupId];
+  if (!group) return { deleted: 0, cleared: 0 };
+
+  let deleted = 0;
+  let cleared = 0;
+
+  if (group.type === 'colour') {
+    const managedRoles = JSON.parse(JSON.stringify(group.managedRoles || {}));
+    let changed = false;
+
+    for (const [hex, record] of Object.entries(managedRoles)) {
+      if (!record?.roleId) continue;
+      const role = guild.roles.cache.get(record.roleId) || await guild.roles.fetch(record.roleId).catch(() => null);
+      if (!role) {
+        delete managedRoles[hex];
+        cleared += 1;
+        changed = true;
+        continue;
+      }
+      const members = role.members.filter((member) => !member.user?.bot).size;
+      if (members > 0 || !roleSelector.canManageRole(guild, role)) continue;
+      const removed = await role.delete('Goliath Role Selector unused role after member selection change').then(() => true).catch(() => false);
+      if (!removed) continue;
+      delete managedRoles[hex];
+      deleted += 1;
+      changed = true;
+    }
+
+    if (changed) {
+      roleSelector.saveGroup(guild.id, { ...group, managedRoles }, { action: 'role_selector_eager_unused_cleanup' });
+    }
+  } else {
+    const options = JSON.parse(JSON.stringify(group.options || []));
+    let changed = false;
+
+    for (const option of options) {
+      if (!option?.roleId || option.managed === false) continue;
+      const role = guild.roles.cache.get(option.roleId) || await guild.roles.fetch(option.roleId).catch(() => null);
+      if (!role) {
+        option.roleId = null;
+        option.unusedSince = null;
+        cleared += 1;
+        changed = true;
+        continue;
+      }
+      const members = role.members.filter((member) => !member.user?.bot).size;
+      if (members > 0 || !roleSelector.canManageRole(guild, role)) continue;
+      const removed = await role.delete('Goliath Role Selector unused role after member selection change').then(() => true).catch(() => false);
+      if (!removed) continue;
+      option.roleId = null;
+      option.unusedSince = null;
+      deleted += 1;
+      changed = true;
+    }
+
+    if (changed) {
+      roleSelector.saveGroup(guild.id, { ...group, options }, { action: 'role_selector_eager_unused_cleanup' });
+    }
+  }
+
+  if (deleted > 0) {
+    roleSelector.updateSection(guild.id, (current) => ({
+      ...current,
+      analytics: {
+        ...current.analytics,
+        rolesDeleted: Number(current.analytics?.rolesDeleted || 0) + deleted,
+      },
+    }), { action: 'role_selector_eager_unused_cleanup_analytics' });
+  }
+
+  return { deleted, cleared };
+}
+
 function installHardeningPatch() {
   if (globalThis[HARDENING_PATCH_KEY]) return;
   globalThis[HARDENING_PATCH_KEY] = true;
@@ -96,7 +172,23 @@ function installHardeningPatch() {
           const hasCurrentSelectorRole = service.roleIdsForGroup(group).some((roleId) => member.roles?.cache?.has(roleId));
           if (hasCurrentSelectorRole) throw new Error('This selector does not allow clearing your selection.');
         }
-        return originalApplyStandardSelection(guild, member, groupId, optionIds);
+        const result = await originalApplyStandardSelection(guild, member, groupId, optionIds);
+        await service.withMutationLock(guild.id, () => eagerPruneUnusedManagedRoles(roleSelector, service, guild, String(groupId || '')));
+        return result;
+      };
+
+      const originalApplyColourSelection = service.applyColourSelection;
+      service.applyColourSelection = async function eagerCleanupColourSelection(guild, member, hexValue, label = null) {
+        const result = await originalApplyColourSelection(guild, member, hexValue, label);
+        await service.withMutationLock(guild.id, () => eagerPruneUnusedManagedRoles(roleSelector, service, guild, service.COLOUR_GROUP_ID));
+        return result;
+      };
+
+      const originalClearSelection = service.clearSelection;
+      service.clearSelection = async function eagerCleanupClearSelection(guild, member, groupId) {
+        const result = await originalClearSelection(guild, member, groupId);
+        await service.withMutationLock(guild.id, () => eagerPruneUnusedManagedRoles(roleSelector, service, guild, String(groupId || '')));
+        return result;
       };
 
       // Compatibility surface for modules that still import ./roleSelector. Only
