@@ -4,13 +4,10 @@ const emojiApi = require('./emojisApi');
 const emojiStore = require('./emojisStore');
 
 const MAX_APPLICATION_EMOJIS = 2000;
-const MAX_CORE_EMOJIS = 40;
+const MAX_CORE_EMOJIS = 18;
 const MAX_STUDIO_EMOJIS = MAX_APPLICATION_EMOJIS - MAX_CORE_EMOJIS;
 const CORE_EMOJI_PREFIX = 'goliath_';
 const CORE_EMOJI_ALIASES = Object.freeze([
-  'success', 'error', 'warning', 'info', 'yes', 'no',
-  'home', 'settings', 'back', 'next', 'close', 'search', 'edit', 'delete', 'save',
-  'user', 'role', 'channel', 'ticket', 'link', 'heart', 'star',
   'activision', 'blizzard', 'discord', 'epic', 'facebook', 'instagram', 'kick', 'nintendo', 'pc',
   'playstation', 'snapchat', 'steam', 'tiktok', 'twitch', 'whatsapp', 'x', 'xbox', 'youtube',
 ]);
