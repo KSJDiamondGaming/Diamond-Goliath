@@ -3,7 +3,6 @@
 const { Events } = require('discord.js');
 const guildManager = require('../../core/guild/guildManager');
 const roleSelector = require('../../modules/roleStudio/roleSelector/roleSelector');
-const { withRoleSelectorLock } = require('../../modules/roleStudio/roleSelector/roleSelectorLocks');
 const sentinelScheduler = require('../../owner/sentinel/schedulerRegistry.js');
 
 const INTERVAL_MS = 60 * 60 * 1000;
@@ -11,27 +10,10 @@ const TIMER_KEY = Symbol.for('goliath.roleSelector.maintenanceTimer');
 const SCHEDULER_ID = 'roleSelector:maintenance:global';
 
 async function maintainGuild(guild) {
-  return withRoleSelectorLock(guild.id, 'maintenance', async () => {
-    if (!guildManager.isModuleEnabled(guild.id, roleSelector.MODULE)) return { skipped: true, failures: 0 };
-
-    let failures = 0;
-    await roleSelector.syncManagedRoleAppearance(guild)
-      .catch((error) => {
-        failures += 1;
-        console.warn(`[RoleSelector] Appearance sync failed for ${guild.id}:`, error.message || error);
-      });
-    await roleSelector.syncManagedRoleHierarchy(guild)
-      .catch((error) => {
-        failures += 1;
-        console.warn(`[RoleSelector] Hierarchy sync failed for ${guild.id}:`, error.message || error);
-      });
-    await roleSelector.cleanupUnused(guild)
-      .catch((error) => {
-        failures += 1;
-        console.warn(`[RoleSelector] Cleanup failed for ${guild.id}:`, error.message || error);
-      });
-    return { skipped: false, failures };
-  });
+  if (!guildManager.isModuleEnabled(guild.id, roleSelector.MODULE)) return { skipped: true, failures: 0 };
+  const result = await roleSelector.runMaintenance(guild);
+  if (result?.failures) console.warn(`[RoleSelector] ${result.failures} maintenance operation(s) failed for ${guild.id}.`);
+  return result;
 }
 
 async function maintainAll(client) {
