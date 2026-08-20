@@ -1,11 +1,14 @@
 'use strict';
 
 const { AttachmentBuilder } = require('discord.js');
+const fetch = require('node-fetch');
 const sharp = require('sharp');
 
 const CANVAS_WIDTH = 600;
 const VISIBLE_WIDTH = 320;
 const PANEL_BG = { r: 19, g: 20, b: 22, alpha: 1 };
+const FETCH_TIMEOUT_MS = 8000;
+const MAX_SOURCE_BYTES = 8 * 1024 * 1024;
 
 function hasAdvancedMedia(mediaState) {
   const panels = Array.isArray(mediaState?.panels) ? mediaState.panels : [];
@@ -22,64 +25,79 @@ function hasAdvancedMedia(mediaState) {
   });
 }
 
-function attachmentName(file, index) {
-  return String(file?.name || file?.data?.name || `embed-panel-${index + 1}.png`).trim();
+function panelSource(mediaState, panelIndex) {
+  const panels = Array.isArray(mediaState?.panels) ? mediaState.panels : [];
+  return String(panels[panelIndex]?.gallery?.[0]?.source || '').trim();
 }
 
-function attachmentBuffer(file) {
-  const value = file?.attachment ?? file?.data?.attachment;
-  return Buffer.isBuffer(value) ? value : null;
+function attachmentName(file, fallbackIndex) {
+  return String(file?.name || file?.data?.name || `embed-panel-${fallbackIndex + 1}.png`).trim();
 }
 
-async function restoreFixedCanvasCentering(file, index) {
-  const attachment = attachmentBuffer(file);
-  if (!attachment) return file;
+function panelIndexFromAttachment(file, fallbackIndex) {
+  const match = attachmentName(file, fallbackIndex).match(/^embed-panel-(\d+)\.png$/i);
+  return match ? Math.max(0, Number(match[1]) - 1) : fallbackIndex;
+}
 
+async function fetchSourceBuffer(url) {
+  if (!/^https:\/\//i.test(String(url || ''))) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  timer.unref?.();
   try {
-    const trimmed = await sharp(attachment, { failOn: 'warning' })
-      .trim({ background: { r: 0, g: 0, b: 0, alpha: 0 } })
-      .ensureAlpha()
-      .png()
-      .toBuffer();
-
-    const meta = await sharp(trimmed).metadata();
-    const width = Number(meta.width || 0);
-    const height = Number(meta.height || 0);
-    if (!width || !height) return file;
-
-    const visible = await sharp(trimmed, { failOn: 'warning' })
-      .resize({
-        width: VISIBLE_WIDTH,
-        height: VISIBLE_WIDTH,
-        fit: 'inside',
-        withoutEnlargement: false,
-      })
-      .ensureAlpha()
-      .png()
-      .toBuffer();
-
-    const visibleMeta = await sharp(visible).metadata();
-    const visibleWidth = Number(visibleMeta.width || VISIBLE_WIDTH);
-    const visibleHeight = Number(visibleMeta.height || VISIBLE_WIDTH);
-    const left = Math.floor((CANVAS_WIDTH - visibleWidth) / 2);
-
-    const centered = await sharp({
-      create: {
-        width: CANVAS_WIDTH,
-        height: visibleHeight,
-        channels: 4,
-        background: PANEL_BG,
-      },
-    })
-      .composite([{ input: visible, left, top: 0 }])
-      .png()
-      .toBuffer();
-
-    return new AttachmentBuilder(centered, { name: attachmentName(file, index) });
-  } catch (error) {
-    console.warn('[Embed Renderer] Fixed-canvas centering failed:', error?.message || error);
-    return file;
+    const response = await fetch(url, { signal: controller.signal, redirect: 'follow' });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const type = String(response.headers.get('content-type') || '').toLowerCase();
+    if (type && !type.startsWith('image/')) throw new Error(`Unsupported type ${type}`);
+    const declared = Number(response.headers.get('content-length') || 0);
+    if (declared > MAX_SOURCE_BYTES) throw new Error('Image exceeds 8 MB.');
+    const buffer = await response.buffer();
+    if (buffer.length > MAX_SOURCE_BYTES) throw new Error('Image exceeds 8 MB.');
+    return buffer;
+  } finally {
+    clearTimeout(timer);
   }
+}
+
+async function buildCenteredGalleryAttachment(sourceUrl, name) {
+  const sourceBuffer = await fetchSourceBuffer(sourceUrl);
+  if (!sourceBuffer) return null;
+
+  const source = sharp(sourceBuffer, { failOn: 'warning' });
+  const meta = await source.metadata();
+  const width = Number(meta.width || 0);
+  const height = Number(meta.height || 0);
+  if (!width || !height) return null;
+
+  const visible = await source
+    .resize({
+      width: VISIBLE_WIDTH,
+      height: VISIBLE_WIDTH,
+      fit: 'inside',
+      withoutEnlargement: false,
+    })
+    .ensureAlpha()
+    .png()
+    .toBuffer();
+
+  const visibleMeta = await sharp(visible).metadata();
+  const visibleWidth = Number(visibleMeta.width || VISIBLE_WIDTH);
+  const visibleHeight = Number(visibleMeta.height || VISIBLE_WIDTH);
+  const left = Math.floor((CANVAS_WIDTH - visibleWidth) / 2);
+
+  const centered = await sharp({
+    create: {
+      width: CANVAS_WIDTH,
+      height: visibleHeight,
+      channels: 4,
+      background: PANEL_BG,
+    },
+  })
+    .composite([{ input: visible, left, top: 0 }])
+    .png()
+    .toBuffer();
+
+  return new AttachmentBuilder(centered, { name });
 }
 
 function installClassicSingleImagePayload(renderer) {
@@ -88,23 +106,35 @@ function installClassicSingleImagePayload(renderer) {
 
   const originalBuildEmbedPayload = renderer.buildEmbedPayload.bind(renderer);
 
-  renderer.buildEmbedPayload = async function fullWidthCenteredSingleImage(options = {}) {
+  renderer.buildEmbedPayload = async function centeredMediaManagerGallery(options = {}) {
     const mediaState = options.media || options.mediaV2 || null;
     const payload = await originalBuildEmbedPayload(options);
 
-    // Keep Components V2 so the panel width stays locked. For a simple single
-    // image, restore the old proven 600px fixed-canvas centering geometry.
+    // Media Manager single-image gallery path only. Rebuild the attachment from
+    // the stored gallery source rather than trying to mutate AttachmentBuilder
+    // internals. The Components V2 container stays untouched/full width.
     if (!hasAdvancedMedia(mediaState) && Array.isArray(payload?.files) && payload.files.length) {
-      payload.files = await Promise.all(
-        payload.files.map((file, index) => restoreFixedCanvasCentering(file, index)),
-      );
+      payload.files = await Promise.all(payload.files.map(async (file, fallbackIndex) => {
+        const panelIndex = panelIndexFromAttachment(file, fallbackIndex);
+        const sourceUrl = panelSource(mediaState, panelIndex);
+        if (!sourceUrl) return file;
+        try {
+          return await buildCenteredGalleryAttachment(
+            sourceUrl,
+            attachmentName(file, fallbackIndex),
+          ) || file;
+        } catch (error) {
+          console.warn(`[Embed Renderer] Media gallery centering failed for panel ${panelIndex + 1}:`, error?.message || error);
+          return file;
+        }
+      }));
     }
 
     return payload;
   };
 
   renderer.__classicSingleImagePayloadInstalled = true;
-  console.log('[Embed Renderer] Proven 600px fixed-canvas centering installed.');
+  console.log('[Embed Renderer] Media Manager gallery source-centering installed.');
   return renderer;
 }
 
