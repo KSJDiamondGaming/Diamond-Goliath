@@ -13,11 +13,13 @@ const {
   TextInputBuilder,
   TextInputStyle,
 } = require('discord.js');
-const temporaryRoles = require('./temporaryRoles');
+const temporaryRoles = require('./temporaryRolesService');
 const temporaryRolesHealth = require('./temporaryRolesHealth');
+const security = require('../../../core/security/securityCore');
 const { isModuleEnabled, setModuleEnabled } = require('../../../core/guild/guildManager');
 
 const PREFIX = 'admin:temporaryRoles';
+const SESSION_TTL_MS = 30 * 60 * 1000;
 const selections = new Map();
 const keyFor = (guildId, userId) => `${guildId}:${userId}`;
 const row = (...components) => new ActionRowBuilder().addComponents(...components.filter(Boolean));
@@ -29,19 +31,27 @@ function formatExpiry(value) {
   return Number.isFinite(timestamp) && timestamp > 0 ? `<t:${Math.floor(timestamp / 1000)}:R>` : 'Unknown';
 }
 
+function pruneSelections() {
+  const cutoff = Date.now() - SESSION_TTL_MS;
+  for (const [key, value] of selections.entries()) if (Number(value?.touchedAt || 0) < cutoff) selections.delete(key);
+}
+
 function getSelection(interaction) {
-  return selections.get(keyFor(interaction.guild.id, interaction.user.id)) || { memberId: null, roleId: null };
+  pruneSelections();
+  const value = selections.get(keyFor(interaction.guild.id, interaction.user.id));
+  return value ? { memberId: value.memberId || null, roleId: value.roleId || null } : { memberId: null, roleId: null };
 }
 
 function setSelection(interaction, patch) {
   const key = keyFor(interaction.guild.id, interaction.user.id);
-  selections.set(key, { ...getSelection(interaction), ...patch });
-  return selections.get(key);
+  selections.set(key, { ...getSelection(interaction), ...patch, touchedAt: Date.now() });
+  return getSelection(interaction);
 }
 
 function buildTemporaryRolesPanel(guild, userId, memberDisplayName = 'Unknown User') {
+  pruneSelections();
   const section = temporaryRoles.getSection(guild.id);
-  const enabled = isModuleEnabled(guild.id, 'temporaryRoles');
+  const enabled = isModuleEnabled(guild.id, temporaryRoles.SECTION);
   const assignments = temporaryRoles.listAssignments(guild.id, { activeOnly: true });
   const selection = selections.get(keyFor(guild.id, userId)) || { memberId: null, roleId: null };
   const lines = assignments.length
@@ -62,7 +72,7 @@ function buildTemporaryRolesPanel(guild, userId, memberDisplayName = 'Unknown Us
       '### Active assignments',
       ...lines,
       '',
-      `Assigned: \`${section.analytics.assigned || 0}\` • Expired: \`${section.analytics.expired || 0}\` • Removed early: \`${section.analytics.removed || 0}\` • Failed: \`${section.analytics.failed || 0}\``,
+      `Assigned: \`${section.analytics.assigned || 0}\` • Renewed: \`${section.analytics.renewed || 0}\` • Expired: \`${section.analytics.expired || 0}\` • Removed early: \`${section.analytics.removed || 0}\` • Failed: \`${section.analytics.failed || 0}\``,
       `Last expiry scan: ${section.analytics.lastScanAt ? formatExpiry(section.analytics.lastScanAt) : 'Never'}`,
     ].join('\n').slice(0, 4096))
     .setFooter({ text: `Requested by ${memberDisplayName}` })
@@ -120,7 +130,7 @@ function buildAssignmentPanel(guildId, assignmentId) {
         `**Status:** ${assignment.status}`,
       ].join('\n'))],
     components: [row(
-      button(`${PREFIX}:remove:${assignment.assignmentId}`, 'Remove Role Now', ButtonStyle.Danger),
+      button(`${PREFIX}:remove:${assignment.assignmentId}`, 'Remove Role Now', ButtonStyle.Danger, assignment.status !== 'active'),
       button(PREFIX, 'Back'),
       button('admin:studio:roleStudio', 'Role Studio'),
     )],
@@ -137,22 +147,19 @@ async function handleTemporaryRolesInteraction(interaction) {
   const id = String(interaction.customId || '');
   if (!id.startsWith(PREFIX)) return false;
 
-  if (id === PREFIX) return refresh(interaction);
+  const access = await security.enforceInteractionSecurity(interaction, { level: 'admin', guildOnly: true });
+  if (!access.allowed) return true;
 
+  if (id === PREFIX) return refresh(interaction);
   if (interaction.isUserSelectMenu?.() && id === `${PREFIX}:member`) {
     setSelection(interaction, { memberId: interaction.values[0] });
     return refresh(interaction);
   }
-
   if (interaction.isRoleSelectMenu?.() && id === `${PREFIX}:role`) {
     setSelection(interaction, { roleId: interaction.values[0] });
     return refresh(interaction);
   }
-
-  if (interaction.isStringSelectMenu?.() && id === `${PREFIX}:manage`) {
-    return refresh(interaction, buildAssignmentPanel(interaction.guild.id, interaction.values[0]));
-  }
-
+  if (interaction.isStringSelectMenu?.() && id === `${PREFIX}:manage`) return refresh(interaction, buildAssignmentPanel(interaction.guild.id, interaction.values[0]));
   if (id === `${PREFIX}:assign`) return interaction.showModal(buildDurationModal());
 
   if (interaction.isModalSubmit?.() && id === `${PREFIX}:assignSubmit`) {
@@ -173,25 +180,22 @@ async function handleTemporaryRolesInteraction(interaction) {
 
   if (id === `${PREFIX}:scan`) {
     await interaction.deferUpdate();
-    await temporaryRoles.scanExpired(interaction.guild, { actorId: interaction.user.id });
+    await temporaryRoles.scanExpired(interaction.guild, { actorId: interaction.user.id, action: 'temporary_roles_discord_scan' });
     return refresh(interaction);
   }
-
   if (id === `${PREFIX}:repair`) {
     await interaction.deferUpdate();
-    await temporaryRolesHealth.repair(interaction.guild, { actorId: interaction.user.id });
+    await temporaryRolesHealth.repair(interaction.guild, { actorId: interaction.user.id, action: 'temporary_roles_discord_repair' });
     return refresh(interaction);
   }
-
-  if (id === `${PREFIX}:enable`) setModuleEnabled(interaction.guild.id, 'temporaryRoles', true, { actorId: interaction.user.id, action: id });
-  if (id === `${PREFIX}:disable`) setModuleEnabled(interaction.guild.id, 'temporaryRoles', false, { actorId: interaction.user.id, action: id });
+  if (id === `${PREFIX}:enable`) setModuleEnabled(interaction.guild.id, temporaryRoles.SECTION, true, { actorId: interaction.user.id, action: id });
+  if (id === `${PREFIX}:disable`) setModuleEnabled(interaction.guild.id, temporaryRoles.SECTION, false, { actorId: interaction.user.id, action: id });
 
   if (id.startsWith(`${PREFIX}:remove:`)) {
     await interaction.deferUpdate();
     await temporaryRoles.removeAssignment(interaction.guild, id.split(':').pop(), { actorId: interaction.user.id });
     return refresh(interaction);
   }
-
   return refresh(interaction);
 }
 
