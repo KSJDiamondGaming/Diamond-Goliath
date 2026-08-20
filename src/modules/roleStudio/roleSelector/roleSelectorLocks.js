@@ -2,8 +2,6 @@
 
 // Process-local keyed queue for Role Selector mutations. Goliath currently runs
 // one PM2 process per environment, so this is the correct coordination boundary.
-// Keys are deliberately scoped by guild and concern so callers can serialize
-// conflicting work without blocking unrelated guilds.
 const tails = new Map();
 const HARDENING_PATCH_KEY = Symbol.for('goliath.roleSelector.hardeningPatchInstalled');
 
@@ -71,6 +69,11 @@ function installHardeningPatch() {
       const roleSelector = require('./roleSelector');
       const service = require('./roleSelectorService');
 
+      // Patch the service itself where additional compatibility guards are needed.
+      // Never blanket-copy service back onto roleSelector: service deliberately calls
+      // the original base primitives (saveGroup/updateSection/sync/etc.). Overwriting
+      // those primitives makes the service recursively call itself until the stack
+      // overflows.
       const originalSaveGroup = service.saveGroup;
       service.saveGroup = function capacitySafeGroupSave(guildId, input, meta = {}) {
         assertGroupCapacity(service, guildId, input);
@@ -96,29 +99,31 @@ function installHardeningPatch() {
         return originalApplyStandardSelection(guild, member, groupId, optionIds);
       };
 
-      service.handleRoleDelete = async function hardenedRoleDelete(role) {
-        return service.withMutationLock(role.guild.id, async () => {
-          service.updateSection(role.guild.id, (current) => {
-            const groups = JSON.parse(JSON.stringify(current.groups || {}));
-            for (const group of Object.values(groups)) {
-              if (group.type === 'colour') {
-                for (const [hex, record] of Object.entries(group.managedRoles || {})) {
-                  if (record.roleId === role.id) delete group.managedRoles[hex];
-                }
-              } else {
-                group.options = (group.options || []).map((option) => option.roleId === role.id ? { ...option, roleId: null, unusedSince: null } : option);
-              }
-            }
-            const identity = current.identity && typeof current.identity === 'object' ? JSON.parse(JSON.stringify(current.identity)) : {};
-            identity.retiredManagedRoles = Array.isArray(identity.retiredManagedRoles) ? identity.retiredManagedRoles.filter((entry) => entry.roleId !== role.id) : [];
-            const style = current.style?.anchorRoleId === role.id ? { ...current.style, anchorRoleId: null, anchorManaged: false } : current.style;
-            return { ...current, groups, identity, style };
-          }, { action: 'role_selector_role_deleted' });
-          return true;
-        });
-      };
-
-      Object.assign(roleSelector, service);
+      // Compatibility surface for modules that still import ./roleSelector. Only
+      // methods that do NOT depend on the same mutable base method are exposed here.
+      // Base primitives such as saveGroup, saveSection, updateSection, removeGroup,
+      // cleanupUnused, deleteManagedGroupRoles and syncManagedRole* must stay intact.
+      const safeCompatibilityMethods = [
+        'applyColourSelection',
+        'applyStandardSelection',
+        'clearSelection',
+        'countManagedRoleReferences',
+        'handleMemberRemove',
+        'handleRoleDelete',
+        'handleRoleUpdate',
+        'isGroupMemberUsable',
+        'reconcileAllMembers',
+        'reconcileMemberFromDiscord',
+        'runMaintenance',
+        'saveGroupSafe',
+        'setAnchorRole',
+        'withMaintenanceLock',
+        'withMutationLock',
+      ];
+      roleSelector.MAX_COMPONENT_OPTIONS = service.MAX_COMPONENT_OPTIONS;
+      for (const name of safeCompatibilityMethods) {
+        if (typeof service[name] === 'function') roleSelector[name] = service[name];
+      }
 
       try {
         const health = require('./roleSelectorHealth');
