@@ -3,8 +3,9 @@
 const { AttachmentBuilder } = require('discord.js');
 const sharp = require('sharp');
 
-const SINGLE_IMAGE_CANVAS_WIDTH = 900;
-const SINGLE_IMAGE_CENTER_COMPENSATION = 340;
+const CANVAS_WIDTH = 600;
+const VISIBLE_WIDTH = 320;
+const PANEL_BG = { r: 19, g: 20, b: 22, alpha: 1 };
 
 function hasAdvancedMedia(mediaState) {
   const panels = Array.isArray(mediaState?.panels) ? mediaState.panels : [];
@@ -30,42 +31,53 @@ function attachmentBuffer(file) {
   return Buffer.isBuffer(value) ? value : null;
 }
 
-async function shiftSingleImageAttachment(file, index) {
-  const name = attachmentName(file, index);
+async function restoreFixedCanvasCentering(file, index) {
   const attachment = attachmentBuffer(file);
   if (!attachment) return file;
 
   try {
-    const visible = await sharp(attachment, { failOn: 'warning' })
+    const trimmed = await sharp(attachment, { failOn: 'warning' })
       .trim({ background: { r: 0, g: 0, b: 0, alpha: 0 } })
+      .ensureAlpha()
       .png()
       .toBuffer();
-    const meta = await sharp(visible).metadata();
+
+    const meta = await sharp(trimmed).metadata();
     const width = Number(meta.width || 0);
     const height = Number(meta.height || 0);
-    if (!width || !height || width >= SINGLE_IMAGE_CANVAS_WIDTH) return file;
+    if (!width || !height) return file;
 
-    const naturalLeft = Math.floor((SINGLE_IMAGE_CANVAS_WIDTH - width) / 2);
-    const left = Math.min(
-      SINGLE_IMAGE_CANVAS_WIDTH - width,
-      Math.max(0, naturalLeft + SINGLE_IMAGE_CENTER_COMPENSATION),
-    );
+    const visible = await sharp(trimmed, { failOn: 'warning' })
+      .resize({
+        width: VISIBLE_WIDTH,
+        height: VISIBLE_WIDTH,
+        fit: 'inside',
+        withoutEnlargement: false,
+      })
+      .ensureAlpha()
+      .png()
+      .toBuffer();
+
+    const visibleMeta = await sharp(visible).metadata();
+    const visibleWidth = Number(visibleMeta.width || VISIBLE_WIDTH);
+    const visibleHeight = Number(visibleMeta.height || VISIBLE_WIDTH);
+    const left = Math.floor((CANVAS_WIDTH - visibleWidth) / 2);
 
     const centered = await sharp({
       create: {
-        width: SINGLE_IMAGE_CANVAS_WIDTH,
-        height,
+        width: CANVAS_WIDTH,
+        height: visibleHeight,
         channels: 4,
-        background: { r: 0, g: 0, b: 0, alpha: 0 },
+        background: PANEL_BG,
       },
     })
       .composite([{ input: visible, left, top: 0 }])
       .png()
       .toBuffer();
 
-    return new AttachmentBuilder(centered, { name });
+    return new AttachmentBuilder(centered, { name: attachmentName(file, index) });
   } catch (error) {
-    console.warn('[Embed Renderer] Single-image centering compensation failed:', error?.message || error);
+    console.warn('[Embed Renderer] Fixed-canvas centering failed:', error?.message || error);
     return file;
   }
 }
@@ -80,17 +92,19 @@ function installClassicSingleImagePayload(renderer) {
     const mediaState = options.media || options.mediaV2 || null;
     const payload = await originalBuildEmbedPayload(options);
 
-    // Keep Components V2 so the panel stays at the locked full width. Adjust
-    // only the single image's transparent canvas; never shrink the container.
+    // Keep Components V2 so the panel width stays locked. For a simple single
+    // image, restore the old proven 600px fixed-canvas centering geometry.
     if (!hasAdvancedMedia(mediaState) && Array.isArray(payload?.files) && payload.files.length) {
-      payload.files = await Promise.all(payload.files.map((file, index) => shiftSingleImageAttachment(file, index)));
+      payload.files = await Promise.all(
+        payload.files.map((file, index) => restoreFixedCanvasCentering(file, index)),
+      );
     }
 
     return payload;
   };
 
   renderer.__classicSingleImagePayloadInstalled = true;
-  console.log('[Embed Renderer] Locked full-width panel + centered single-image path installed.');
+  console.log('[Embed Renderer] Proven 600px fixed-canvas centering installed.');
   return renderer;
 }
 
