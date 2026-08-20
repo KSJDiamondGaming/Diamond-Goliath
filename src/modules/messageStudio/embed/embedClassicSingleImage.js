@@ -4,7 +4,7 @@ const { AttachmentBuilder } = require('discord.js');
 const sharp = require('sharp');
 
 const SINGLE_IMAGE_CANVAS_WIDTH = 900;
-const SINGLE_IMAGE_CENTER_COMPENSATION = 180;
+const SINGLE_IMAGE_CENTER_COMPENSATION = 340;
 
 function hasAdvancedMedia(mediaState) {
   const panels = Array.isArray(mediaState?.panels) ? mediaState.panels : [];
