@@ -27,10 +27,22 @@ async function buildHealth(guild) {
   const orphanedAssignmentIds = [];
   const expiredAssignmentIds = [];
   const missingRoleAssignmentIds = [];
+  const duplicateAssignmentIds = [];
+  const activePairs = new Map();
 
   const me = guild.members.me;
   if (!me?.permissions.has(PermissionFlagsBits.ManageRoles)) {
     issues.push('Goliath requires Manage Roles to assign and remove temporary roles.');
+  }
+
+  for (const assignment of activeAssignments) {
+    const pairKey = `${assignment.memberId || '?'}:${assignment.roleId || '?'}`;
+    if (activePairs.has(pairKey)) {
+      duplicateAssignmentIds.push(assignment.assignmentId);
+      warnings.push(`${assignment.assignmentId}: duplicate active assignment for the same member and role.`);
+    } else {
+      activePairs.set(pairKey, assignment.assignmentId);
+    }
   }
 
   for (const assignment of [...activeAssignments, ...failedAssignments]) {
@@ -84,6 +96,7 @@ async function buildHealth(guild) {
     orphanedAssignmentIds: [...new Set(orphanedAssignmentIds)],
     expiredAssignmentIds: [...new Set(expiredAssignmentIds)],
     missingRoleAssignmentIds: [...new Set(missingRoleAssignmentIds)],
+    duplicateAssignmentIds: [...new Set(duplicateAssignmentIds)],
     checkedAt: now(),
   };
 }
@@ -95,20 +108,25 @@ async function repair(guild, meta = {}) {
     const assignments = JSON.parse(JSON.stringify(section.assignments || {}));
     const archivedAssignmentIds = [];
     const restoredAssignmentIds = [];
+    const duplicateAssignmentIds = [];
 
-    for (const assignmentId of before.orphanedAssignmentIds) {
+    for (const assignmentId of [...before.orphanedAssignmentIds, ...before.duplicateAssignmentIds]) {
       const assignment = assignments[assignmentId];
       if (!assignment || !['active', 'failed'].includes(assignment.status)) continue;
+      const duplicate = before.duplicateAssignmentIds.includes(assignmentId);
       assignments[assignmentId] = {
         ...assignment,
         status: 'removed',
-        removalSource: 'health_repair_orphan',
-        lastError: 'Archived by Temporary Roles repair because the member, role or expiry data is invalid.',
+        removalSource: duplicate ? 'health_repair_duplicate' : 'health_repair_orphan',
+        lastError: duplicate
+          ? 'Archived by Temporary Roles repair because a newer canonical active assignment exists for this member and role.'
+          : 'Archived by Temporary Roles repair because the member, role or expiry data is invalid.',
         retryCount: 0,
         nextRetryAt: null,
         updatedAt: now(),
       };
       archivedAssignmentIds.push(assignmentId);
+      if (duplicate) duplicateAssignmentIds.push(assignmentId);
     }
 
     for (const assignmentId of before.missingRoleAssignmentIds) {
@@ -138,7 +156,7 @@ async function repair(guild, meta = {}) {
       }, { ...meta, action: meta.action || 'temporary_roles_health_repair' });
     }
 
-    return { archivedAssignmentIds, restoredAssignmentIds };
+    return { archivedAssignmentIds, duplicateAssignmentIds, restoredAssignmentIds };
   });
 
   const expiryResult = await temporaryRoles.scanExpired(guild, meta);
