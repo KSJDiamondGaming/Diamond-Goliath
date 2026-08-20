@@ -46,6 +46,7 @@ async function prepareEmojiBuffer(input, options = {}) {
   const size = normalizeSize(options.size, 512);
   const padding = Math.min(Math.floor(size / 4), Math.max(0, Math.round(Number(options.padding ?? 32))));
   const contentSize = Math.max(32, size - (padding * 2));
+  const maxBytes = Math.max(0, Math.round(Number(options.maxBytes || 0)));
   const metadata = await sharp(source, { animated: true }).metadata();
   const animated = Number(metadata.pages || 1) > 1;
 
@@ -62,32 +63,47 @@ async function prepareEmojiBuffer(input, options = {}) {
   }
 
   const transparent = { r: 0, g: 0, b: 0, alpha: 0 };
-  const buffer = await sharp(source)
+  const trimmed = await sharp(source)
     .ensureAlpha()
     .trim({ background: transparent })
-    .resize(contentSize, contentSize, {
-      fit: 'contain',
-      background: transparent,
-      withoutEnlargement: false,
-    })
-    .extend({
-      top: padding,
-      bottom: padding,
-      left: padding,
-      right: padding,
-      background: transparent,
-    })
-    .png({ compressionLevel: 9, adaptiveFiltering: true })
+    .png()
     .toBuffer();
+
+  // Prefer the full 512x512 transparent canvas. If PNG complexity pushes the
+  // payload over Discord's application-emoji byte limit, progressively reduce
+  // the artwork footprint while keeping the canvas centred and transparent.
+  const scales = [1, 0.92, 0.84, 0.76, 0.68, 0.60, 0.52, 0.44];
+  let buffer = null;
+  let finalContentSize = contentSize;
+  for (const scale of scales) {
+    finalContentSize = Math.max(32, Math.floor(contentSize * scale));
+    const left = Math.floor((size - finalContentSize) / 2);
+    const right = size - finalContentSize - left;
+    buffer = await sharp(trimmed)
+      .resize(finalContentSize, finalContentSize, {
+        fit: 'contain',
+        background: transparent,
+        withoutEnlargement: false,
+      })
+      .extend({ top: left, bottom: right, left, right, background: transparent })
+      .png({ compressionLevel: 9, adaptiveFiltering: true, palette: true, quality: 100, colours: 256, dither: 0.8 })
+      .toBuffer();
+    if (!maxBytes || buffer.length <= maxBytes) break;
+  }
+
+  if (maxBytes && buffer.length > maxBytes) {
+    throw new Error(`processed image is ${buffer.length} bytes after adaptive compression; Discord limit is ${maxBytes}`);
+  }
 
   return {
     buffer,
     processed: true,
     animated: false,
     size,
-    contentSize,
-    padding,
+    contentSize: finalContentSize,
+    padding: Math.floor((size - finalContentSize) / 2),
     format: 'png',
+    bytes: buffer.length,
   };
 }
 
