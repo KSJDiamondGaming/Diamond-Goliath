@@ -127,7 +127,7 @@ function quietHoursModal(config) {
         .setStyle(TextInputStyle.Short)
         .setMaxLength(5)
         .setRequired(true)
-        .setValue(String(quiet.start || '23:00')),
+        .setValue(String(quiet.start || '23:00'))),
       row(new TextInputBuilder()
         .setCustomId('end')
         .setLabel('End time, HH:MM')
@@ -135,7 +135,7 @@ function quietHoursModal(config) {
         .setStyle(TextInputStyle.Short)
         .setMaxLength(5)
         .setRequired(true)
-        .setValue(String(quiet.end || '08:00')),
+        .setValue(String(quiet.end || '08:00'))),
       row(new TextInputBuilder()
         .setCustomId('timezone')
         .setLabel('Timezone')
