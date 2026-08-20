@@ -8,6 +8,7 @@ const test = require('node:test');
 const ROOT = path.resolve(__dirname, '../..');
 const read = (relativePath) => fs.readFileSync(path.join(ROOT, relativePath), 'utf8');
 
+const core = read('src/modules/roleStudio/temporaryRoles/temporaryRoles.js');
 const service = read('src/modules/roleStudio/temporaryRoles/temporaryRolesService.js');
 const locks = read('src/modules/roleStudio/temporaryRoles/temporaryRolesLocks.js');
 const panel = read('src/modules/roleStudio/temporaryRoles/temporaryRolesPanel.js');
@@ -39,11 +40,14 @@ test('Temporary Roles verifies Discord state and rolls back persistence split-br
   assert.match(service, /Discord did not/);
 });
 
-test('Temporary Roles expiry failures use bounded retry backoff', () => {
+test('Temporary Roles expiry failures use bounded retry backoff and persist retry metadata', () => {
   assert.match(service, /MAX_RETRY_MS/);
   assert.match(service, /retryCount/);
   assert.match(service, /nextRetryAt/);
   assert.match(service, /retryDelay/);
+  assert.match(core, /retryCount:/);
+  assert.match(core, /nextRetryAt:/);
+  assert.match(core, /removalSource:/);
 });
 
 test('Temporary Roles dashboard requires authenticated guild management access', () => {
@@ -69,10 +73,12 @@ test('Temporary Roles reconciles member and role lifecycle events', () => {
   assert.match(service, /handleRoleDelete/);
 });
 
-test('Temporary Roles health reports warnings as unhealthy and uses hardened service', () => {
+test('Temporary Roles health reports warnings as unhealthy and repairs legacy duplicates', () => {
   assert.match(health, /temporaryRolesService/);
   assert.match(health, /healthy: issues\.length === 0 && warnings\.length === 0/);
   assert.match(health, /withTemporaryRolesLock/);
+  assert.match(health, /duplicateAssignmentIds/);
+  assert.match(health, /health_repair_duplicate/);
 });
 
 test('Sentinel contract includes Temporary Roles interactions and scheduler signals', () => {
