@@ -194,6 +194,16 @@ test('Retired managed roles are drained before cleanup', () => {
   assert.match(locks, /retiredManagedRoles/);
 });
 
+test('Member selection changes eagerly prune zero-member Goliath roles', () => {
+  assert.match(locks, /async function eagerPruneUnusedManagedRoles/);
+  assert.match(locks, /option\.managed === false/);
+  assert.match(locks, /members > 0 \|\| !roleSelector\.canManageRole/);
+  assert.match(locks, /unused role after member selection change/);
+  assert.match(locks, /eagerCleanupColourSelection/);
+  assert.match(locks, /eagerCleanupClearSelection/);
+  assert.match(locks, /role_selector_eager_unused_cleanup/);
+});
+
 test('Sentinel contract describes Role Selector as scheduled', () => {
   assert.match(contracts, /roleSelector: \{ class: 'scheduled', signals: \['runtime', 'interaction', 'scheduler', 'persistence', 'discord-write'\] \}/);
 });
