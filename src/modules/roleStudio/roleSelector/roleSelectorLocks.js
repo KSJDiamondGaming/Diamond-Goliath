@@ -18,16 +18,13 @@ function lockKey(guildId, scope = 'guild', identity = '') {
 
 async function withKeyedLock(key, task) {
   if (typeof task !== 'function') throw new TypeError('Role Selector lock task must be a function.');
-
   const safeKey = cleanPart(key);
   const previous = tails.get(safeKey) || Promise.resolve();
   let release;
   const current = new Promise((resolve) => { release = resolve; });
   const tail = previous.catch(() => undefined).then(() => current);
   tails.set(safeKey, tail);
-
   await previous.catch(() => undefined);
-
   try {
     return await task();
   } finally {
@@ -36,9 +33,7 @@ async function withKeyedLock(key, task) {
   }
 }
 
-function withRoleSelectorLock(guildId, scope, task, identity = '') {
-  return withKeyedLock(lockKey(guildId, scope, identity), task);
-}
+function withRoleSelectorLock(guildId, scope, task, identity = '') { return withKeyedLock(lockKey(guildId, scope, identity), task); }
 function withGuildLock(guildId, task) { return withRoleSelectorLock(guildId, 'guild', task); }
 function withMemberGroupLock(guildId, memberId, groupId, task) { return withRoleSelectorLock(guildId, 'member-group', task, `${cleanPart(memberId)}:${cleanPart(groupId)}`); }
 function withManagedRoleLock(guildId, identity, task) { return withRoleSelectorLock(guildId, 'managed-role', task, identity); }
@@ -59,6 +54,14 @@ async function drainRetiredManagedRoles(service, guild) {
   }
 }
 
+function assertGroupCapacity(service, guildId, input = {}) {
+  const requestedId = String(input.id || input.key || '').trim();
+  const existing = requestedId ? service.getGroup(guildId, requestedId) : null;
+  if (!existing && service.listGroups(guildId).length >= service.MAX_COMPONENT_OPTIONS) {
+    throw new Error(`Role Selector supports up to ${service.MAX_COMPONENT_OPTIONS} total categories, including Colours.`);
+  }
+}
+
 function installHardeningPatch() {
   if (globalThis[HARDENING_PATCH_KEY]) return;
   globalThis[HARDENING_PATCH_KEY] = true;
@@ -68,8 +71,15 @@ function installHardeningPatch() {
       const roleSelector = require('./roleSelector');
       const service = require('./roleSelectorService');
 
+      const originalSaveGroup = service.saveGroup;
+      service.saveGroup = function capacitySafeGroupSave(guildId, input, meta = {}) {
+        assertGroupCapacity(service, guildId, input);
+        return originalSaveGroup(guildId, input, meta);
+      };
+
       const originalSaveGroupSafe = service.saveGroupSafe;
       service.saveGroupSafe = async function fullySafeGroupSave(guild, input, meta = {}) {
+        assertGroupCapacity(service, guild.id, input);
         const result = await originalSaveGroupSafe(guild, input, meta);
         await drainRetiredManagedRoles(service, guild);
         await service.cleanupUnused(guild).catch(() => null);
@@ -110,8 +120,6 @@ function installHardeningPatch() {
 
       Object.assign(roleSelector, service);
 
-      // Health/Repair keeps its existing diagnostics but gains actual Discord
-      // reconciliation and an accurate managed-role count.
       try {
         const health = require('./roleSelectorHealth');
         if (!health.__roleSelectorHardeningWrapped) {
