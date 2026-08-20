@@ -46,7 +46,7 @@ async function prepareEmojiBuffer(input, options = {}) {
   const size = normalizeSize(options.size, 512);
   const padding = Math.min(Math.floor(size / 4), Math.max(0, Math.round(Number(options.padding ?? 32))));
   const contentSize = Math.max(32, size - (padding * 2));
-  const maxBytes = Math.max(0, Math.round(Number(options.maxBytes || 0)));
+  const maxBytes = Math.max(0, Math.round(Number(options.maxBytes ?? 262144)));
   const metadata = await sharp(source, { animated: true }).metadata();
   const animated = Number(metadata.pages || 1) > 1;
 
