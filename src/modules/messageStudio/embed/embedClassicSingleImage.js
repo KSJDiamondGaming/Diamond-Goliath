@@ -21,18 +21,25 @@ function hasAdvancedMedia(mediaState) {
   });
 }
 
-async function shiftSingleImageAttachment(file) {
-  const name = String(file?.name || '').trim();
-  const attachment = file?.attachment;
-  if (!/^embed-panel-\d+\.png$/i.test(name) || !Buffer.isBuffer(attachment)) return file;
+function attachmentName(file, index) {
+  return String(file?.name || file?.data?.name || `embed-panel-${index + 1}.png`).trim();
+}
+
+function attachmentBuffer(file) {
+  const value = file?.attachment ?? file?.data?.attachment;
+  return Buffer.isBuffer(value) ? value : null;
+}
+
+async function shiftSingleImageAttachment(file, index) {
+  const name = attachmentName(file, index);
+  const attachment = attachmentBuffer(file);
+  if (!attachment) return file;
 
   try {
-    // The Components V2 media gallery keeps the surrounding container full
-    // width but visually anchors a lone gallery image toward the left. The
-    // renderer already puts the artwork on a transparent 900px canvas. Trim
-    // back to the visible artwork, then place it farther right on the SAME
-    // 900px transparent canvas. This compensates for Discord's gallery offset
-    // without shrinking the panel, cropping the artwork, or changing aspect.
+    // Keep the Components V2 container untouched so the panel remains full
+    // width. Only move the visible artwork inside its transparent media canvas.
+    // AttachmentBuilder stores its values on .data in some discord.js builds,
+    // so read both the public getters and the backing data object.
     const visible = await sharp(attachment, { failOn: 'warning' })
       .trim({ background: { r: 0, g: 0, b: 0, alpha: 0 } })
       .png()
@@ -77,18 +84,18 @@ function installClassicSingleImagePayload(renderer) {
     const mediaState = options.media || options.mediaV2 || null;
     const payload = await originalBuildEmbedPayload(options);
 
-    // IMPORTANT: do not switch this case to a classic EmbedBuilder payload.
-    // Components V2 is what keeps the container/panel at the full width the
-    // user designed. Only compensate the single image's visual position.
+    // Never switch this case to a classic embed payload: Components V2 is what
+    // keeps the panel at the locked full width. For a simple single media image,
+    // adjust only the transparent attachment canvas so the artwork is centered.
     if (!hasAdvancedMedia(mediaState) && Array.isArray(payload?.files) && payload.files.length) {
-      payload.files = await Promise.all(payload.files.map(shiftSingleImageAttachment));
+      payload.files = await Promise.all(payload.files.map((file, index) => shiftSingleImageAttachment(file, index)));
     }
 
     return payload;
   };
 
   renderer.__classicSingleImagePayloadInstalled = true;
-  console.log('[Embed Renderer] Full-width panel + centered single-image path installed.');
+  console.log('[Embed Renderer] Locked full-width panel + centered single-image path installed.');
   return renderer;
 }
 
