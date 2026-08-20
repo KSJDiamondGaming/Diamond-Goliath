@@ -2,6 +2,7 @@
 
 const { AttachmentBuilder } = require('discord.js');
 const fetch = require('node-fetch');
+const net = require('node:net');
 const sharp = require('sharp');
 
 const CANVAS_WIDTH = 600;
@@ -39,13 +40,53 @@ function panelIndexFromAttachment(file, fallbackIndex) {
   return match ? Math.max(0, Number(match[1]) - 1) : fallbackIndex;
 }
 
+function isPrivateIpv4(hostname) {
+  const parts = hostname.split('.').map(Number);
+  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return false;
+  const [a, b] = parts;
+  return a === 10
+    || a === 127
+    || (a === 169 && b === 254)
+    || (a === 172 && b >= 16 && b <= 31)
+    || (a === 192 && b === 168)
+    || a === 0;
+}
+
+function isPrivateIpv6(hostname) {
+  const normalized = hostname.toLowerCase();
+  return normalized === '::1'
+    || normalized === '::'
+    || normalized.startsWith('fc')
+    || normalized.startsWith('fd')
+    || normalized.startsWith('fe8')
+    || normalized.startsWith('fe9')
+    || normalized.startsWith('fea')
+    || normalized.startsWith('feb');
+}
+
+function validateSourceUrl(value) {
+  let parsed;
+  try {
+    parsed = new URL(String(value || ''));
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== 'https:') return null;
+  const hostname = parsed.hostname.toLowerCase();
+  if (!hostname || hostname === 'localhost' || hostname.endsWith('.localhost')) return null;
+  const ipVersion = net.isIP(hostname);
+  if ((ipVersion === 4 && isPrivateIpv4(hostname)) || (ipVersion === 6 && isPrivateIpv6(hostname))) return null;
+  return parsed.toString();
+}
+
 async function fetchSourceBuffer(url) {
-  if (!/^https:\/\//i.test(String(url || ''))) return null;
+  const safeUrl = validateSourceUrl(url);
+  if (!safeUrl) return null;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   timer.unref?.();
   try {
-    const response = await fetch(url, { signal: controller.signal, redirect: 'follow' });
+    const response = await fetch(safeUrl, { signal: controller.signal, redirect: 'error' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const type = String(response.headers.get('content-type') || '').toLowerCase();
     if (type && !type.startsWith('image/')) throw new Error(`Unsupported type ${type}`);
