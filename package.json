@@ -6,7 +6,7 @@
   "type": "commonjs",
   "private": true,
   "scripts": {
-    "prepare": "node scripts/installGitHooks.js",
+    "prepare": "node -e \"const fs=require('fs'),{spawnSync}=require('child_process');if(fs.existsSync('.git')&&fs.existsSync('.githooks/pre-push')){const r=spawnSync('git',['config','core.hooksPath','.githooks'],{stdio:'inherit'});if(r.status!==0)process.exit(r.status||1);try{fs.chmodSync('.githooks/pre-push',0o755)}catch{}}\"",
     "dev": "concurrently -n BOT,DASHBOARD -c green,cyan \"cross-env BOT_MODE=dev node -r ./src/runtime/warningFilter.js server.js\" \"vite src/dashboard --host 0.0.0.0 --port 5175 --mode development\"",
     "beta": "concurrently -n BOT,DASHBOARD -c yellow,cyan \"cross-env BOT_MODE=beta node -r ./src/runtime/warningFilter.js server.js\" \"vite src/dashboard --host 0.0.0.0 --port 5183 --mode development\"",
     "production": "cross-env BOT_MODE=production node -r ./src/runtime/warningFilter.js server.js",
