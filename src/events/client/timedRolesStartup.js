@@ -1,7 +1,7 @@
 'use strict';
 
 const { Events } = require('discord.js');
-const timedRoles = require('../../modules/roleStudio/timedRoles/timedRoles');
+const timedRoles = require('../../modules/roleStudio/timedRoles/timedRolesService');
 
 module.exports = {
   name: Events.ClientReady,
