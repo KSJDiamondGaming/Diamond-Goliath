@@ -182,6 +182,12 @@ async function startupAutoRoles(client) {
   };
 }
 
+// Safe compatibility bridge for legacy imports used by the central member event.
+// These wrappers do not call the corresponding base methods internally.
+base.applyAutoRoles = applyAutoRoles;
+base.reapplyToGuild = reapplyToGuild;
+base.startupAutoRoles = startupAutoRoles;
+
 module.exports = {
   ...base,
   MODULE,
