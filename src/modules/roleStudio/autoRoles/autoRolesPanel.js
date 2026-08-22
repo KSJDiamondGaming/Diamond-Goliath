@@ -8,7 +8,9 @@ const {
   RoleSelectMenuBuilder,
   AttachmentBuilder,
 } = require('discord.js');
-const autoRoles = require('./autoRoles');
+const security = require('../../../core/security/securityCore');
+const { validateRoleSelection } = require('../../../core/security/goliathPermissionGuard');
+const autoRoles = require('./autoRolesService');
 
 function row(...components) {
   return new ActionRowBuilder().addComponents(...components);
@@ -77,12 +79,18 @@ async function handleAutoRolesInteraction(interaction) {
   if (!customId.startsWith('admin:autoRoles')) return false;
 
   try {
+    const allowed = await security.enforceInteractionSecurity(interaction, { level: 'admin', guildOnly: true });
+    if (!allowed) return true;
     if (customId === 'admin:autoRoles') return updatePanel(interaction);
 
     if (interaction.isRoleSelectMenu?.()) {
       const roleIds = autoRoles.cleanRoleIds(interaction.values || []);
-      if (customId === 'admin:autoRoles:joinRoles') autoRoles.setJoinRoles(interaction.guild.id, roleIds, { actorId: interaction.user.id });
-      if (customId === 'admin:autoRoles:botRoles') autoRoles.setBotRoles(interaction.guild.id, roleIds, { actorId: interaction.user.id });
+      if (roleIds.length) {
+        const validation = await validateRoleSelection(interaction.guild, roleIds, { scope: 'auto_roles.discord', requireManageable: true });
+        if (!validation.ok) throw validation.toError();
+      }
+      if (customId === 'admin:autoRoles:joinRoles') await autoRoles.setConfiguredRoles(interaction.guild, 'join', roleIds, { actorId: interaction.user.id, action: 'auto_roles_discord_join_roles' });
+      if (customId === 'admin:autoRoles:botRoles') await autoRoles.setConfiguredRoles(interaction.guild, 'bot', roleIds, { actorId: interaction.user.id, action: 'auto_roles_discord_bot_roles' });
       return updatePanel(interaction);
     }
 
@@ -108,7 +116,7 @@ async function handleAutoRolesInteraction(interaction) {
     }
     if (customId === 'admin:autoRoles:reset') {
       await interaction.deferUpdate();
-      autoRoles.resetAutoRoles(interaction.guild.id, { actorId: interaction.user.id });
+      await autoRoles.withAutoRolesLock(interaction.guild.id, () => autoRoles.resetAutoRoles(interaction.guild.id, { actorId: interaction.user.id }));
       return updatePanel(interaction);
     }
     if (customId === 'admin:autoRoles:export') {
