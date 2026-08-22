@@ -20,8 +20,6 @@ function installTimedRolesCompat() {
     return originalSaveRule(guildId, input, meta);
   };
 
-  // Safe compatibility surface: these service functions do not recurse through
-  // the corresponding base method, so legacy imports can use the hardened path.
   base.applyProgressionToMember = service.applyProgressionToMember;
   base.scanGuild = service.scanGuild;
   base.simulateGuild = service.simulateGuild;
@@ -32,28 +30,35 @@ function installTimedRolesCompat() {
     if (!panel.__timedRolesSecurityWrapped && typeof panel.handleTimedRolesInteraction === 'function') {
       const original = panel.handleTimedRolesInteraction;
       panel.handleTimedRolesInteraction = async function hardenedTimedRolesInteraction(interaction) {
-        const allowed = await security.enforceInteractionSecurity(interaction, { level: 'admin', guildOnly: true });
-        if (!allowed) return true;
+        try {
+          const allowed = await security.enforceInteractionSecurity(interaction, { level: 'admin', guildOnly: true });
+          if (!allowed) return true;
 
-        const customId = String(interaction.customId || '');
-        if (customId.startsWith('admin:timedRoles:createSubmit:')) {
-          const roleId = customId.split(':').pop();
-          const duplicate = base.listRules(interaction.guild.id).find((rule) => rule.roleId === roleId);
-          if (duplicate) throw new Error(`That Discord role is already used by the Timed Roles milestone “${duplicate.name}”.`);
-          const validation = await validateRoleSelection(interaction.guild, [roleId], { scope: 'timed_roles.discord_create', requireManageable: true });
-          if (!validation.ok) throw validation.toError();
-        }
-        if (customId.startsWith('admin:timedRoles:cleanup:') && interaction.isRoleSelectMenu?.()) {
-          const validation = await validateRoleSelection(interaction.guild, interaction.values || [], { scope: 'timed_roles.discord_cleanup', requireManageable: true });
-          if (!validation.ok) throw validation.toError();
-        }
-        if (customId.startsWith('admin:timedRoles:duplicate:')) {
-          const payload = { content: '❌ A Timed Roles milestone cannot duplicate the same award role. Choose a different role for the new milestone.', ephemeral: true };
+          const customId = String(interaction.customId || '');
+          if (customId.startsWith('admin:timedRoles:createSubmit:')) {
+            const roleId = customId.split(':').pop();
+            const duplicate = base.listRules(interaction.guild.id).find((rule) => rule.roleId === roleId);
+            if (duplicate) throw new Error(`That Discord role is already used by the Timed Roles milestone “${duplicate.name}”.`);
+            const validation = await validateRoleSelection(interaction.guild, [roleId], { scope: 'timed_roles.discord_create', requireManageable: true });
+            if (!validation.ok) throw validation.toError();
+          }
+          if (customId.startsWith('admin:timedRoles:cleanup:') && interaction.isRoleSelectMenu?.()) {
+            const validation = await validateRoleSelection(interaction.guild, interaction.values || [], { scope: 'timed_roles.discord_cleanup', requireManageable: true });
+            if (!validation.ok) throw validation.toError();
+          }
+          if (customId.startsWith('admin:timedRoles:duplicate:')) {
+            const payload = { content: '❌ A Timed Roles milestone cannot duplicate the same award role. Choose a different role for the new milestone.', ephemeral: true };
+            if (interaction.deferred || interaction.replied) await interaction.followUp(payload).catch(() => null);
+            else await interaction.reply(payload).catch(() => null);
+            return true;
+          }
+          return original(interaction);
+        } catch (error) {
+          const payload = { content: `❌ Timed Roles setup failed: ${error.message || 'Request rejected.'}`, ephemeral: true };
           if (interaction.deferred || interaction.replied) await interaction.followUp(payload).catch(() => null);
           else await interaction.reply(payload).catch(() => null);
           return true;
         }
-        return original(interaction);
       };
       Object.defineProperty(panel, '__timedRolesSecurityWrapped', { value: true });
     }
