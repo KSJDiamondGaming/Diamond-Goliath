@@ -52,6 +52,7 @@ test('Timed Roles validates duration saves and Discord role selection', () => {
   assert.match(compat, /validateRoleSelection/);
   assert.match(compat, /timed_roles\.discord_create/);
   assert.match(compat, /timed_roles\.discord_cleanup/);
+  assert.match(compat, /Timed Roles setup failed/);
 });
 
 test('Timed Roles simulation includes cleanup removals', () => {
