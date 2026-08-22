@@ -16,6 +16,7 @@ const health = read('src/modules/roleStudio/timedRoles/timedRolesHealth.js');
 const route = read('src/server/routes/modules/roleStudio/timedRoles.js');
 const startup = read('src/events/client/timedRolesStartup.js');
 const join = read('src/events/timedroles/timedRolesMemberJoin.js');
+const roleSync = read('src/events/roles/timedRolesSync.js');
 const contracts = read('src/owner/sentinel/moduleContracts.js');
 
 test('Timed Roles serializes guild progression mutations', () => {
@@ -43,6 +44,14 @@ test('Timed Roles prevents duplicate award-role milestones', () => {
   assert.match(service, /already used by the Timed Roles milestone/);
   assert.match(compat, /duplicate = base\.listRules/);
   assert.match(compat, /cannot duplicate the same award role/);
+});
+
+test('Timed Roles validates duration saves and Discord role selection', () => {
+  assert.match(compat, /Number\.isFinite\(value\)/);
+  assert.match(compat, /1_000_000/);
+  assert.match(compat, /validateRoleSelection/);
+  assert.match(compat, /timed_roles\.discord_create/);
+  assert.match(compat, /timed_roles\.discord_cleanup/);
 });
 
 test('Timed Roles simulation includes cleanup removals', () => {
@@ -74,6 +83,13 @@ test('Timed Roles health treats warnings as unhealthy and validates announcement
 test('Timed Roles member joins use hardened progression service', () => {
   assert.match(join, /timedRolesService/);
   assert.match(join, /applyProgressionToMember/);
+});
+
+test('Timed Roles reconciles deleted Discord roles immediately', () => {
+  assert.match(roleSync, /name: 'roleDelete'/);
+  assert.match(roleSync, /timed_roles_target_role_deleted/);
+  assert.match(roleSync, /timed_roles_cleanup_role_deleted/);
+  assert.match(roleSync, /withTimedRolesLock/);
 });
 
 test('Sentinel contract includes Timed Roles interaction and scheduler signals', () => {
