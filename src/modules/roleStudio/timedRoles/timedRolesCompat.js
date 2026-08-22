@@ -28,8 +28,8 @@ function installTimedRolesCompat() {
         const customId = String(interaction.customId || '');
         if (customId.startsWith('admin:timedRoles:createSubmit:')) {
           const roleId = customId.split(':').pop();
-          service.saveRule(interaction.guild.id, { ruleId: '__validation__', roleId, name: '__validation__' });
-          base.removeRule(interaction.guild.id, '__validation__', { actorId: interaction.user.id, action: 'timed_roles_validation_cleanup' });
+          const duplicate = base.listRules(interaction.guild.id).find((rule) => rule.roleId === roleId);
+          if (duplicate) throw new Error(`That Discord role is already used by the Timed Roles milestone “${duplicate.name}”.`);
         }
         if (customId.startsWith('admin:timedRoles:duplicate:')) {
           const payload = { content: '❌ A Timed Roles milestone cannot duplicate the same award role. Choose a different role for the new milestone.', ephemeral: true };
