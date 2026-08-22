@@ -23,7 +23,7 @@ const MODULE_CONTRACTS = Object.freeze({
   temporaryRoles: { class: 'scheduled', signals: ['runtime', 'interaction', 'scheduler', 'persistence', 'discord-write'] },
   tempVoice: { class: 'event', signals: ['runtime', 'interaction', 'persistence', 'discord-write'] },
   tickets: { class: 'event', signals: ['runtime', 'interaction', 'persistence', 'discord-write'] },
-  timedRoles: { class: 'scheduled', signals: ['runtime', 'scheduler', 'persistence', 'discord-write'] },
+  timedRoles: { class: 'scheduled', signals: ['runtime', 'interaction', 'scheduler', 'persistence', 'discord-write'] },
   translation: { class: 'provider', signals: ['runtime', 'provider', 'persistence', 'discord-write'] },
   verification: { class: 'event', signals: ['runtime', 'interaction', 'persistence', 'discord-write'] },
   welcome: { class: 'scheduled', signals: ['runtime', 'scheduler', 'persistence', 'discord-write'] },
