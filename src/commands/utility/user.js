@@ -2,7 +2,7 @@ const { SlashCommandBuilder } = require('discord.js');
 
 const { errorEmbed } = require('../../core/ui/embeds');
 const { enforceCommandAccess } = require('../../core/commands/commandAccess');
-const { buildUserHomePanel } = require('../../core/panels/user/userInteractions');
+const { buildUserHomePanel } = require('../../core/user/interactions');
 
 module.exports = {
   category: 'Utility',
