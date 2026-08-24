@@ -1,8 +1,11 @@
 // functions/moderation/escalationSystem.js
 
-const { getWarningsForUser, getWarningCountForUser } = require('../../logging/warnings/warningStore');
-const { createCase } = require('../../logging/cases/caseStore');
-const { sendModLog } = require('../../logging/modlogs/moderationActionLog');
+const {
+  getWarningsForUser,
+  getWarningCountForUser,
+  createCase,
+  sendModLog,
+} = require('./storage');
 const ESCALATION_CONFIG = {
   2: { action: 'timeout', duration: '10m' },
   3: { action: 'timeout', duration: '1h' },
