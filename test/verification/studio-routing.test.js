@@ -9,7 +9,7 @@ const ROOT = path.resolve(__dirname, '../..');
 const read = (relativePath) => fs.readFileSync(path.join(ROOT, relativePath), 'utf8');
 
 const interactionCreate = read('src/events/interactions/interactionCreate.js');
-const moduleAdminPanels = read('src/core/admin/functions/moduleAdminPanels.js');
+const moduleAdminPanels = read('src/core/systems/admin/modules.js');
 const giveawaysAdminPanel = read('src/modules/communityStudio/giveaways/giveawaysAdminPanel.js');
 const privateRoomsPanel = read('src/modules/utilityStudio/privateRooms/privateRoomsPanel.js');
 const birthdaysPanel = read('src/modules/communityStudio/birthdays/birthdaysPanel.js');
