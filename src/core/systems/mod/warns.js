@@ -12,12 +12,10 @@ const {
   getWarningByCaseId,
   deleteWarningByCaseId,
   purgeExpiredWarnings,
-} = require('../../../core/logging/warnings/warningStore');
-const {
   createCase,
   updateCaseStatus,
+  sendModLog,
 } = require('./storage');
-const { sendModLog } = require('../../../core/logging/modlogs/moderationActionLog');
 const { safeReply, ephemeralError } = require('../../../core/ui/interactionResponse');
 const {
   ensureActionAccess,
