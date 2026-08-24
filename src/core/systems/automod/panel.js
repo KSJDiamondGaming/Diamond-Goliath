@@ -1,4 +1,5 @@
 'use strict';
 
-// Transitional entry point while the AutoMod domain is consolidated into core/systems/automod.
-module.exports = require('../../automod/punishmentEngine');
+// AutoMod panel facade. The UI is still hosted by the Admin controller while
+// AutoMod panel functions are separated into this domain.
+module.exports = require('../../admin/functions/adminPanel');
