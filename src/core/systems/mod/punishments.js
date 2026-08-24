@@ -14,8 +14,8 @@ const {
   createCase,
   getCaseById,
   updateCaseStatus,
-} = require('../../../core/logging/cases/caseStore');
-const { applyPunishmentEngine } = require('../../../core/automod/punishmentEngine');
+} = require('./storage');
+const { applyPunishmentEngine } = require('../automod/engine');
 const { sendModLog } = require('../../../core/logging/modlogs/moderationActionLog');
 const {
   safeReply,
@@ -626,7 +626,7 @@ async function executePendingAction(discord, interaction, token, returnContext =
     });
 
     if (result.target) {
-      const { refreshDashboard } = require('./modPanel');
+      const { refreshDashboard } = require('./panel');
       if (typeof refreshDashboard === 'function') {
         await refreshDashboard(
           discord,
