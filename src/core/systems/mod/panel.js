@@ -24,7 +24,7 @@ const {
   getCaseCountForUser,
   getCasesForUser,
   getFilteredCases,
-} = require('../../../core/logging/cases/caseStore');
+} = require('./storage');
 const {
   formatCaseSummary,
   getModerationAnalytics,
