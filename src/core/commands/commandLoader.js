@@ -26,13 +26,20 @@ function getAllJsFiles(dir) {
   return files.sort((a, b) => a.localeCompare(b));
 }
 
+function getCanonicalCommandFiles() {
+  const root = process.cwd();
+  return [
+    path.join(root, 'src', 'core', 'systems', 'admin', 'command.js'),
+    path.join(root, 'src', 'commands', 'moderation', 'mod.js'),
+    path.join(root, 'src', 'commands', 'utility', 'user.js'),
+  ].filter((filePath) => fs.existsSync(filePath));
+}
+
 function loadCommands(client, options = {}) {
   const commandsPath = options.commandsPath || path.join(process.cwd(), 'src', 'commands');
-  const ownerCommandModule = path.join(process.cwd(), 'src', 'owner', 'auditIntelligence', 'auditEvents.js');
-  const files = [
-    ...getAllJsFiles(commandsPath),
-    ...(fs.existsSync(ownerCommandModule) ? [ownerCommandModule] : []),
-  ];
+  const files = options.commandsPath
+    ? getAllJsFiles(commandsPath)
+    : getCanonicalCommandFiles();
   const loaded = [];
   const skipped = [];
 
@@ -92,5 +99,6 @@ function loadCommands(client, options = {}) {
 module.exports = {
   ALLOWED_COMMAND_NAMES,
   getAllJsFiles,
+  getCanonicalCommandFiles,
   loadCommands,
 };
