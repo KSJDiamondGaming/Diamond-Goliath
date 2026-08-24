@@ -16,7 +16,7 @@ const {
   updateCaseReason,
   updateCaseNote,
   clearCaseNote,
-} = require('../../../core/logging/cases/caseStore');
+} = require('./storage');
 const { COLORS, EMOJIS } = require('../../ui/uiConfig');
 const { createEmbed } = require('../../ui/embeds');
 const { safeReply, ephemeralError } = require('../../../core/ui/interactionResponse');
