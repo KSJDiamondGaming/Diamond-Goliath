@@ -16,7 +16,7 @@ const {
 const {
   createCase,
   updateCaseStatus,
-} = require('../../../core/logging/cases/caseStore');
+} = require('./storage');
 const { sendModLog } = require('../../../core/logging/modlogs/moderationActionLog');
 const { safeReply, ephemeralError } = require('../../../core/ui/interactionResponse');
 const {
