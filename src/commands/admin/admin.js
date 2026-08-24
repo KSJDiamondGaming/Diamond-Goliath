@@ -1,6 +1,6 @@
 const { SlashCommandBuilder } = require('discord.js');
 
-const { buildAdminPanel } = require('../../core/admin/functions/adminPanel');
+const { buildAdminPanel } = require('../../core/systems/admin/panel');
 const socialStudioPanel = require('../../modules/socialStudio/socialAlerts/socialStudioPanel');
 const { errorEmbed } = require('../../core/ui/embeds');
 const { enforceCommandAccess } = require('../../core/commands/commandAccess');
@@ -50,13 +50,10 @@ module.exports = {
       if (denied) return;
 
       const payload = buildAdminPanel(interaction.guild, memberDisplayName);
-
       return await safeReply(interaction, payload);
     } catch (error) {
       if (error?.code === 10062 || error?.code === 40060) return;
-
       console.error('❌ Admin command failed:', error);
-
       return await safeReply(interaction, {
         embeds: [errorEmbed('Failed to open the admin panel. Please try again.')],
         components: [],
@@ -66,14 +63,7 @@ module.exports = {
 };
 
 async function safeReply(interaction, payload) {
-  const safePayload = {
-    ...payload,
-    flags: 64,
-  };
-
-  if (interaction.deferred || interaction.replied) {
-    return interaction.editReply(safePayload);
-  }
-
+  const safePayload = { ...payload, flags: 64 };
+  if (interaction.deferred || interaction.replied) return interaction.editReply(safePayload);
   return interaction.reply(safePayload);
 }
