@@ -10,7 +10,7 @@ const guildManager = require('../../core/guild/guildManager');
 const {
   applyPunishmentEngine,
   normalizePunishments,
-} = require('../../core/automod/punishmentEngine');
+} = require('../../core/systems/automod/engine');
 
 const AUTOMOD_MODULE = 'automod';
 const spamWindows = new Map();
