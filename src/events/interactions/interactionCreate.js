@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 
 const { Events, MessageFlags } = require('discord.js');
 
@@ -22,7 +22,8 @@ const formsInteractions = optionalRequire('forms', '../../modules/feedbackStudio
 const testSecurityCommand = optionalRequire('test security', '../../commands/admin/testsecurity');
 const embedPanel = optionalRequire('embed interactions', '../../modules/messageStudio/embed/embedInteractions');
 const duplicator = optionalRequire('duplicator', '../../owner/dev/duplicator');
-const adminPanel = optionalRequire('admin panel', '../../core/admin/functions/adminPanel');
+const adminPanel = optionalRequire('admin panel', '../../core/systems/admin/panel');
+const automodPanel = optionalRequire('automod panel', '../../core/systems/automod/panel');
 const restoreRequestManager = optionalRequire('restore requests', '../../core/security/restoreRequestManager');
 const statsAdminPanel = optionalRequire('stats admin', '../../modules/utilityStudio/stats/statsPanel');
 const reactionRolesAdminPanel = optionalRequire('reaction roles admin', '../../modules/roleStudio/reactionRoles/reactionRolesPanel');
@@ -40,9 +41,8 @@ const autorolesPanel = optionalRequire('auto roles', '../../modules/roleStudio/a
 const timedRolesPanel = optionalRequire('timed roles', '../../modules/roleStudio/timedRoles/timedRolesPanel');
 const welcomePanel = optionalRequire('welcome', '../../modules/messageStudio/welcome/welcomePanel');
 const goodbyePanel = optionalRequire('goodbye', '../../modules/messageStudio/goodbye/goodbyePanel');
-const moduleAdminPanels = optionalRequire('generic module admin', '../../core/admin/functions/moduleAdminPanels');
-const userPanelInteractions = optionalRequire('user panel', '../../core/panels/user/userInteractions');
-const modInteractions = optionalRequire('mod interactions', '../../core/panels/mod/modInteractions');
+const moduleAdminPanels = optionalRequire('generic module admin', '../../core/systems/admin/modules');
+const userPanelInteractions = optionalRequire('user panel', '../../core/systems/user/interactions');
 const roleSelectorPanel = optionalRequire(
   'role selector',
   '../../modules/roleStudio/roleSelector/roleSelectorPanel'
@@ -342,8 +342,7 @@ module.exports = {
         await command.execute(interaction, client);
         return;
       }
-      const interactionAgeMs = Math.max(0, Date.now() - Number(interaction.createdTimestamp || Date.now()));
-const customId = String(interaction.customId || '');
+      const customId = String(interaction.customId || '');
 
       if (isVerificationMemberInteraction(interaction)) {
         await handleVerificationMemberInteraction(interaction);
@@ -351,54 +350,53 @@ const customId = String(interaction.customId || '');
       }
 
       if (customId === 'admin:studio:roleStudio') {
-  interaction.customId = 'admin:roleStudio:handled';
+        interaction.customId = 'admin:roleStudio:handled';
 
-  const payload = await roleStudioPanel.buildRoleStudioPanel(
-    interaction.guild,
-    interaction.member?.displayName ||
-      interaction.user?.username ||
-      'Unknown User'
-  );
+        const payload = await roleStudioPanel.buildRoleStudioPanel(
+          interaction.guild,
+          interaction.member?.displayName ||
+            interaction.user?.username ||
+            'Unknown User'
+        );
 
-  if (interaction.deferred || interaction.replied) {
-    await interaction.editReply(payload);
-  } else {
-    await interaction.update(payload);
-  }
+        if (interaction.deferred || interaction.replied) {
+          await interaction.editReply(payload);
+        } else {
+          await interaction.update(payload);
+        }
+        return;
+      }
 
-  return;
-}
+      if (
+        customId.startsWith('admin:roleSelector') ||
+        customId.startsWith('roleSelector:') ||
+        customId.startsWith('admin:colourRoles') ||
+        customId.startsWith('colourRoles:')
+      ) {
+        await roleSelectorPanel.handleRoleSelectorInteraction(interaction);
+        return;
+      }
 
-if (
-  customId.startsWith('admin:roleSelector') ||
-  customId.startsWith('roleSelector:') ||
-  customId.startsWith('admin:colourRoles') ||
-  customId.startsWith('colourRoles:')
-) {
-  await roleSelectorPanel.handleRoleSelectorInteraction(interaction);
-  return;
-}
+      if (
+        customId.startsWith('admin:privateRooms') ||
+        customId.startsWith('user:privateRooms:') ||
+        customId.startsWith('privateRooms:')
+      ) {
+        if (customId.startsWith('admin:privateRooms')) {
+          await privateRoomsPanel.handleAdminInteraction(interaction);
+          return;
+        }
 
-if (
-  customId.startsWith('admin:privateRooms') ||
-  customId.startsWith('user:privateRooms:') ||
-  customId.startsWith('privateRooms:')
-) {
-  if (customId.startsWith('admin:privateRooms')) {
-    await privateRoomsPanel.handleAdminInteraction(interaction);
-    return;
-  }
+        if (customId.startsWith('user:privateRooms:')) {
+          await privateRoomsPanel.handleUserInteraction(interaction);
+          return;
+        }
 
-  if (customId.startsWith('user:privateRooms:')) {
-    await privateRoomsPanel.handleUserInteraction(interaction);
-    return;
-  }
-
-  if (typeof privateRoomsPanel.handleInteraction === 'function') {
-    await privateRoomsPanel.handleInteraction(interaction);
-    return;
-  }
-}
+        if (typeof privateRoomsPanel.handleInteraction === 'function') {
+          await privateRoomsPanel.handleInteraction(interaction);
+          return;
+        }
+      }
 
       const isTicketRuntimeInteraction = customId.startsWith('ticket_') || customId.startsWith('goliath_ticket_');
       if (isTicketRuntimeInteraction && interaction.guildId && guildManager.isModuleEnabled?.(interaction.guildId, 'tickets') === false) {
@@ -409,8 +407,13 @@ if (
         if (!await callHandler(restoreRequestManager, 'handleRestoreButton', interaction)) throw new Error(`Restore request handler did not handle ${customId}.`);
         return;
       }
-      if (customId.startsWith('admin:automod')) {
-        if (!await callHandler(adminPanel, 'handleAdminNavigation', interaction)) throw new Error(`AutoMod admin did not handle ${customId}.`);
+      if (
+        customId.startsWith('admin:automod') ||
+        customId === 'admin:setautomodlog' ||
+        customId === 'admin:selectautomodlog' ||
+        customId === 'admin:channel:automodlog'
+      ) {
+        if (!await callHandler(automodPanel, 'handleAutomodInteraction', interaction)) throw new Error(`AutoMod did not handle ${customId}.`);
         return;
       }
       if (customId.startsWith('admin:birthdays')) {
@@ -501,7 +504,3 @@ if (
     }
   },
 };
-
-
-
-
