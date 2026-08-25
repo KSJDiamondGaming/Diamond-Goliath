@@ -10,7 +10,7 @@ const sentinelSchedulers = require('../../owner/sentinel/schedulerRegistry');
 
 const {
   restoreLockdownReminders,
-} = require('../../core/security/lockdownSystem');
+} = require('../../core/systems/security/protection/lockdown');
 
 const {
   startBackupWorker,
