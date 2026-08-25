@@ -13,7 +13,7 @@ const {
 } = require('discord.js');
 
 const fetch = global.fetch;
-const security = require('../../core/security/securityCore');
+const security = require('../../core/systems/security/protection/core');
 const guildManager = require('../../core/guild/guildManager');
 const { createServerBackup } = require('../../core/security/serverBackup');
 
