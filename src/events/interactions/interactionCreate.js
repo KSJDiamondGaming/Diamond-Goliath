@@ -19,11 +19,11 @@ const tempVoiceInteractionHandler = optionalRequire('temp voice', '../../modules
 const suggestionsInteractions = optionalRequire('suggestions', '../../modules/feedbackStudio/suggestions/suggestionsInteractions');
 const giveawaysInteractionHandler = optionalRequire('giveaways', '../../modules/communityStudio/giveaways/giveawaysInteractionHandler');
 const formsInteractions = optionalRequire('forms', '../../modules/feedbackStudio/forms/formsInteractions');
-const testSecurityCommand = optionalRequire('test security', '../../commands/admin/testsecurity');
 const embedPanel = optionalRequire('embed interactions', '../../modules/messageStudio/embed/embedInteractions');
 const duplicator = optionalRequire('duplicator', '../../owner/dev/duplicator');
 const adminPanel = optionalRequire('admin panel', '../../core/systems/admin/panel');
 const automodPanel = optionalRequire('automod panel', '../../core/systems/automod/panel');
+const modInteractions = optionalRequire('mod interactions', '../../core/systems/mod/interactions');
 const restoreRequestManager = optionalRequire('restore requests', '../../core/security/restoreRequestManager');
 const statsAdminPanel = optionalRequire('stats admin', '../../modules/utilityStudio/stats/statsPanel');
 const reactionRolesAdminPanel = optionalRequire('reaction roles admin', '../../modules/roleStudio/reactionRoles/reactionRolesPanel');
@@ -344,6 +344,13 @@ module.exports = {
       }
       const customId = String(interaction.customId || '');
 
+      if (customId.startsWith('mod_') || customId.startsWith('mod:')) {
+        if (!await callHandler(modInteractions, 'handleModInteraction', interaction)) {
+          throw new Error(`Mod did not handle ${customId}.`);
+        }
+        return;
+      }
+
       if (isVerificationMemberInteraction(interaction)) {
         await handleVerificationMemberInteraction(interaction);
         return;
@@ -492,7 +499,6 @@ module.exports = {
       if (await callHandler(levelingInteractions, 'handleLevelingInteraction', interaction)) return;
       if (await callHandler(adminPanel, 'handleAdminNavigation', interaction)) return;
       if (await callHandler(duplicator, 'handleInteraction', interaction)) return;
-      if (interaction.isButton?.() && await callHandler(testSecurityCommand, 'handleButton', interaction)) return;
       if (interaction.isButton?.() && await callHandler(tempVoiceInteractionHandler, 'handleTempVoiceInteraction', interaction, client)) return;
       if (await callHandler(formsInteractions, 'handleFormsInteraction', interaction)) return;
       if (await callHandler(suggestionsInteractions, 'handleSuggestionsInteraction', interaction)) return;
