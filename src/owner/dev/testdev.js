@@ -4,7 +4,7 @@ const { SlashCommandBuilder, MessageFlags } = require('discord.js');
 
 const { normalizeBotMode } = require('../../config/botModes');
 const testDevOverride = require('./DevOverrideManager');
-const security = require('../../core/security/securityCore');
+const security = require('../../core/systems/security/protection/core');
 
 function modeLabel() {
   return normalizeBotMode(process.env.BOT_MODE);
