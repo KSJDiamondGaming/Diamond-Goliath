@@ -24,7 +24,7 @@ const {
 const {
   handleEscalation,
   getRepeatReasonInfo,
-} = require('./escalationSystem');
+} = require('./command');
 
 const NO_EXPIRY_VALUES = new Set(['', 'never', 'none']);
 
