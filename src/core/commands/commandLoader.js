@@ -31,7 +31,7 @@ function getCanonicalCommandFiles() {
   return [
     path.join(root, 'src', 'core', 'systems', 'admin', 'command.js'),
     path.join(root, 'src', 'commands', 'moderation', 'mod.js'),
-    path.join(root, 'src', 'commands', 'utility', 'user.js'),
+    path.join(root, 'src', 'core', 'systems', 'user', 'command.js'),
   ].filter((filePath) => fs.existsSync(filePath));
 }
 
