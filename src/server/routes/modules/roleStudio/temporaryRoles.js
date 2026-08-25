@@ -3,10 +3,10 @@
 const express = require('express');
 const { PermissionFlagsBits } = require('discord.js');
 const guildManager = require('../../../../core/guild/guildManager');
-const security = require('../../../../core/security/securityCore');
+const security = require('../../../../core/systems/security/protection/core');
 const temporaryRoles = require('../../../../modules/roleStudio/temporaryRoles/temporaryRolesService');
 const temporaryRolesHealth = require('../../../../modules/roleStudio/temporaryRoles/temporaryRolesHealth');
-const { validateRoleSelection, isGoliathPermissionError } = require('../../../../core/security/goliathPermissionGuard');
+const { validateRoleSelection, isGoliathPermissionError } = require('../../../../core/systems/security/protection/permissions');
 
 const router = express.Router();
 const ok = (res, payload = {}) => res.json({ success: true, ...payload });
@@ -106,13 +106,13 @@ async function overview(req, id) {
 }
 
 router.get('/:guildId/overview', async (req, res) => {
-  try { return ok(res, await overview(req, guildId(req))); }
+  try { return ok(res, await overview(req, getGuildId(req))); }
   catch (error) { return fail(res, error); }
 });
 
 router.patch('/:guildId/enabled', async (req, res) => {
   try {
-    const id = guildId(req);
+    const id = getGuildId(req);
     temporaryRoles.setEnabled(id, req.body?.enabled === true, { actorId: actor(req), action: 'temporary_roles_dashboard_toggle' });
     return ok(res, await overview(req, id));
   } catch (error) { return fail(res, error); }
@@ -120,7 +120,7 @@ router.patch('/:guildId/enabled', async (req, res) => {
 
 router.patch('/:guildId/settings', async (req, res) => {
   try {
-    const id = guildId(req);
+    const id = getGuildId(req);
     const current = temporaryRoles.getSection(id);
     const patch = req.body?.settings || req.body || {};
     const settings = {
@@ -135,7 +135,7 @@ router.patch('/:guildId/settings', async (req, res) => {
 
 router.post('/:guildId/assignments', async (req, res) => {
   try {
-    const id = guildId(req);
+    const id = getGuildId(req);
     const target = await guild(req, id);
     if (!target) throw new Error('Guild is unavailable.');
     const roleId = cleanDiscordId(req.body?.roleId);
@@ -158,7 +158,7 @@ router.post('/:guildId/assignments', async (req, res) => {
 
 router.post('/:guildId/assignments/:assignmentId/renew', async (req, res) => {
   try {
-    const id = guildId(req);
+    const id = getGuildId(req);
     const current = temporaryRoles.getSection(id).assignments[req.params.assignmentId];
     if (!current) return fail(res, new Error('Temporary role assignment not found.'), 404);
     if (current.status !== 'active') return fail(res, new Error('Only active assignments can be renewed.'));
@@ -181,7 +181,7 @@ router.post('/:guildId/assignments/:assignmentId/renew', async (req, res) => {
 
 router.delete('/:guildId/assignments/:assignmentId', async (req, res) => {
   try {
-    const id = guildId(req);
+    const id = getGuildId(req);
     const target = await guild(req, id);
     if (!target) throw new Error('Guild is unavailable.');
     const current = temporaryRoles.getSection(id).assignments[req.params.assignmentId];
@@ -194,7 +194,7 @@ router.delete('/:guildId/assignments/:assignmentId', async (req, res) => {
 
 router.post('/:guildId/scan', async (req, res) => {
   try {
-    const id = guildId(req);
+    const id = getGuildId(req);
     const target = await guild(req, id);
     if (!target) throw new Error('Guild is unavailable.');
     const result = await temporaryRoles.scanExpired(target, { actorId: actor(req), action: 'temporary_roles_dashboard_scan' });
@@ -204,7 +204,7 @@ router.post('/:guildId/scan', async (req, res) => {
 
 router.post('/:guildId/repair', async (req, res) => {
   try {
-    const id = guildId(req);
+    const id = getGuildId(req);
     const target = await guild(req, id);
     if (!target) throw new Error('Guild is unavailable.');
     const repair = await temporaryRolesHealth.repair(target, { actorId: actor(req), action: 'temporary_roles_dashboard_repair' });
@@ -214,7 +214,7 @@ router.post('/:guildId/repair', async (req, res) => {
 
 router.get('/:guildId/export', (req, res) => {
   try {
-    const id = guildId(req);
+    const id = getGuildId(req);
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="goliath-temporary-roles-${id}.json"`);
     return res.send(JSON.stringify(temporaryRoles.exportConfiguration(id), null, 2));
