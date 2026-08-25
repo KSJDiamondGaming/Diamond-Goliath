@@ -18,11 +18,12 @@ function fail(res, error, status = 400) {
   return res.status(status).json({ success: false, error: error.message || 'Temporary Roles request failed.' });
 }
 
-function guildId(req) {
+function getGuildId(req) {
   const id = String(req.params.guildId || '').trim();
   if (!/^\d{15,25}$/.test(id)) throw new Error('Invalid guild ID.');
   return id;
 }
+const guildId = getGuildId;
 function cleanDiscordId(value) {
   const id = String(value || '').replace(/[<@#!&>]/g, '').trim();
   return /^\d{15,25}$/.test(id) ? id : null;
