@@ -1,5 +1,5 @@
 const express = require('express');
-const security = require('../../core/security/securityCore');
+const security = require('../../core/systems/security/protection/core');
 
 const router = express.Router();
 
