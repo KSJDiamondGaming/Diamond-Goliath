@@ -8,8 +8,8 @@ const {
   RoleSelectMenuBuilder,
   AttachmentBuilder,
 } = require('discord.js');
-const security = require('../../../core/security/securityCore');
-const { validateRoleSelection } = require('../../../core/security/goliathPermissionGuard');
+const security = require('../../../core/systems/security/protection/core');
+const { validateRoleSelection } = require('../../../core/systems/security/protection/permissions');
 const autoRoles = require('./autoRolesService');
 
 function row(...components) {
