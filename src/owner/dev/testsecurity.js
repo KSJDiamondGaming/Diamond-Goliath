@@ -15,7 +15,7 @@ const {
 const {
   createServerBackup,
 } = require('../../core/security/serverBackup');
-const security = require('../../core/security/securityCore');
+const security = require('../../core/systems/security/protection/core');
 
 const BUTTON_PREFIX = 'testsecurity:';
 
