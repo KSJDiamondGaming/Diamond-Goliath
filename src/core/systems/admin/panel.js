@@ -17,7 +17,7 @@ const {
 const guildManager = require('../../guild/guildManager');
 const panelNav = require('../../ui/panelNavigation');
 const restoreRequestManager = require('../../security/restoreRequestManager');
-const security = require('../../security/securityCore');
+const security = require('../security/protection/core');
 const {
   createServerBackup,
   listServerBackups,
