@@ -15,7 +15,7 @@ const schedulerRegistry = require('../../owner/sentinel/schedulerRegistry');
 const {
   enableLockdown,
   getLockdownState,
-} = require('./lockdownSystem');
+} = require('../systems/security/protection/lockdown');
 
 // ======================================================
 // CORE CONSTANTS
