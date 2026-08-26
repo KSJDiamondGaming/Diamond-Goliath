@@ -9,7 +9,7 @@ const {
 } = require('discord.js');
 
 const guildManager = require('../../../guild/guildManager');
-const lockdown = require('../../../security/lockdownSystem');
+const lockdown = require('./lockdown');
 const quarantine = require('./quarantine');
 
 const ROOT_ID = 'security:protection';
