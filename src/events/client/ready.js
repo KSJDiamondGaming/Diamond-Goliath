@@ -14,7 +14,7 @@ const {
 
 const {
   startBackupWorker,
-} = require('../../core/systems/security/restoreBackup/worker');
+} = require('../../core/systems/security/restoreBackup/scheduler');
 
 const {
   startStatusRotation,
