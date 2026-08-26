@@ -4,22 +4,31 @@ const {
   deleteServerBackup,
 } = require('../../../security/serverBackup');
 
+const {
+  incrementSyncAttempt,
+  verifyRemoteHash,
+  markBackupSynced,
+  markBackupFailed,
+  getPendingSyncs,
+  uploadBackup,
+} = require('./sync');
+
 const guildManager = require('../../../guild/guildManager');
 const sentinelScheduler = require('../../../../owner/sentinel/schedulerRegistry.js');
 
-const CHECK_EVERY_MS = 60 * 60 * 1000; // checks hourly
+const CHECK_EVERY_MS = 60 * 60 * 1000;
 const INITIAL_DELAY_MS = 30 * 1000;
-const SCHEDULER_ID = 'serverBackups:automatic-backup:global';
+const BACKUP_SCHEDULER_ID = 'serverBackups:automatic-backup:global';
+const DEFAULT_SYNC_INTERVAL_MS = 1000 * 60 * 5;
+const SYNC_SCHEDULER_ID = 'serverBackups:remote-sync:global';
 
 let started = false;
+let workerRunning = false;
+let syncInterval = null;
 
 function getEnvNumber(name, fallback) {
   const value = Number(process.env[name]);
-
-  if (!Number.isFinite(value) || value <= 0) {
-    return fallback;
-  }
-
+  if (!Number.isFinite(value) || value <= 0) return fallback;
   return value;
 }
 
@@ -47,24 +56,18 @@ function getLastBackupAt(guildId) {
 function shouldBackup(guildId) {
   const lastBackupAt = getLastBackupAt(guildId);
   if (!lastBackupAt) return true;
-
   return Date.now() - lastBackupAt >= daysToMs(getIntervalDays());
 }
 
 function getClientGuilds(client) {
   const guilds = client?.guilds?.cache;
-
-  if (!guilds || typeof guilds.values !== 'function') {
-    return null;
-  }
-
+  if (!guilds || typeof guilds.values !== 'function') return null;
   return [...guilds.values()];
 }
 
 function cleanupOldBackups(guildId) {
   const retentionLimit = getRetentionLimit();
   const backups = listServerBackups(guildId);
-
   if (backups.length <= retentionLimit) return 0;
 
   const toDelete = backups.slice(retentionLimit);
@@ -72,10 +75,7 @@ function cleanupOldBackups(guildId) {
 
   for (const backup of toDelete) {
     const backupId = typeof backup === 'string' ? backup : backup.backupId;
-
-    if (backupId && deleteServerBackup(guildId, backupId)) {
-      deleted += 1;
-    }
+    if (backupId && deleteServerBackup(guildId, backupId)) deleted += 1;
   }
 
   return deleted;
@@ -85,19 +85,11 @@ async function backupGuild(guild) {
   if (!guild) return null;
 
   if (!guildManager.isModuleEnabled(guild.id, 'serverBackups')) {
-    return {
-      guildId: guild.id,
-      skipped: true,
-      reason: 'Server Backups module is disabled.',
-    };
+    return { guildId: guild.id, skipped: true, reason: 'Server Backups module is disabled.' };
   }
 
   if (!shouldBackup(guild.id)) {
-    return {
-      guildId: guild.id,
-      skipped: true,
-      reason: 'Backup interval not reached.',
-    };
+    return { guildId: guild.id, skipped: true, reason: 'Backup interval not reached.' };
   }
 
   const backup = await createServerBackup(guild, {
@@ -106,19 +98,17 @@ async function backupGuild(guild) {
     type: 'scheduled',
   });
 
-  const deletedOldBackups = cleanupOldBackups(guild.id);
-
   return {
     guildId: guild.id,
     guildName: guild.name,
     backupId: backup.backupId,
-    deletedOldBackups,
+    deletedOldBackups: cleanupOldBackups(guild.id),
   };
 }
 
-function registerScheduler() {
+function registerBackupScheduler() {
   return sentinelScheduler.register({
-    id: SCHEDULER_ID,
+    id: BACKUP_SCHEDULER_ID,
     module: 'serverBackups',
     component: 'automatic-backup',
     intervalMs: CHECK_EVERY_MS,
@@ -133,7 +123,7 @@ function registerScheduler() {
 async function runServerBackupCycle(client) {
   if (!isEnabled()) return [];
 
-  const schedulerId = registerScheduler();
+  const schedulerId = registerBackupScheduler();
   const guilds = getClientGuilds(client);
 
   if (!guilds) {
@@ -160,9 +150,7 @@ async function runServerBackupCycle(client) {
         console.log(`💾 Backup skipped: ${guild.name} | ${result.reason}`);
       } else if (result) {
         created += 1;
-        console.log(
-          `💾 Backup created: ${guild.name} | ${result.backupId} | old deleted: ${result.deletedOldBackups}`
-        );
+        console.log(`💾 Backup created: ${guild.name} | ${result.backupId} | old deleted: ${result.deletedOldBackups}`);
       }
     } catch (error) {
       failures += 1;
@@ -192,25 +180,172 @@ function startServerBackupScheduler(client) {
   }
 
   started = true;
-  registerScheduler();
+  registerBackupScheduler();
 
-  console.log(
-    `💾 Server backup scheduler started | every ${getIntervalDays()} day(s) | keep ${getRetentionLimit()}`
-  );
+  console.log(`💾 Server backup scheduler started | every ${getIntervalDays()} day(s) | keep ${getRetentionLimit()}`);
 
   setTimeout(() => {
     runServerBackupCycle(client).catch((error) => {
-      sentinelScheduler.fail(SCHEDULER_ID, error, { phase: 'initial-cycle' });
+      sentinelScheduler.fail(BACKUP_SCHEDULER_ID, error, { phase: 'initial-cycle' });
       console.error('❌ Initial server backup cycle failed:', error);
     });
   }, INITIAL_DELAY_MS).unref?.();
 
   setInterval(() => {
     runServerBackupCycle(client).catch((error) => {
-      sentinelScheduler.fail(SCHEDULER_ID, error, { phase: 'scheduled-cycle' });
+      sentinelScheduler.fail(BACKUP_SCHEDULER_ID, error, { phase: 'scheduled-cycle' });
       console.error('❌ Scheduled server backup cycle failed:', error);
     });
   }, CHECK_EVERY_MS).unref?.();
+}
+
+async function processSyncEntry(entry) {
+  if (!entry) return null;
+
+  try {
+    incrementSyncAttempt(entry.syncId);
+
+    const result = await uploadBackup({
+      guildId: entry.guildId,
+      backupId: entry.backupId,
+      backupPath: entry.backupPath,
+      environment: entry.environment,
+      backupType: entry.backupType,
+    });
+
+    if (!result.configured) {
+      return {
+        success: false,
+        skipped: true,
+        reason: result.reason || 'Google Drive not configured.',
+      };
+    }
+
+    if (!result.uploaded) {
+      markBackupFailed(entry.syncId, result.reason || 'Upload failed.');
+      return {
+        success: false,
+        skipped: false,
+        reason: result.reason || 'Upload failed.',
+      };
+    }
+
+    let verified = false;
+    if (result.remoteHash) {
+      const verification = verifyRemoteHash(entry.syncId, result.remoteHash);
+      verified = verification.verified === true;
+    }
+
+    markBackupSynced(entry.syncId, {
+      remoteVerified: verified,
+      remoteHash: result.remoteHash || null,
+    });
+
+    return { success: true, verified };
+  } catch (error) {
+    markBackupFailed(entry.syncId, error.message || 'Unknown sync worker failure.');
+    return { success: false, error };
+  }
+}
+
+async function processPendingSyncs() {
+  if (workerRunning) {
+    return { skipped: true, reason: 'Sync worker already running.' };
+  }
+
+  workerRunning = true;
+
+  try {
+    const pending = getPendingSyncs();
+    const results = [];
+
+    for (const entry of pending) {
+      const result = await processSyncEntry(entry);
+      results.push({
+        syncId: entry.syncId,
+        backupId: entry.backupId,
+        guildId: entry.guildId,
+        result,
+      });
+    }
+
+    return { success: true, processed: results.length, results };
+  } finally {
+    workerRunning = false;
+  }
+}
+
+function registerSyncScheduler(intervalMs) {
+  return sentinelScheduler.register({
+    id: SYNC_SCHEDULER_ID,
+    module: 'serverBackups',
+    component: 'remote-sync',
+    intervalMs,
+    staleAfterMs: Math.max(intervalMs * 3, 180_000),
+  });
+}
+
+async function runMonitoredSyncCycle(intervalMs) {
+  const schedulerId = registerSyncScheduler(intervalMs);
+
+  try {
+    const result = await processPendingSyncs();
+
+    if (result?.skipped) {
+      sentinelScheduler.beat(schedulerId, {
+        skipped: true,
+        reason: result.reason || 'already-running',
+      });
+      return result;
+    }
+
+    const failures = (result?.results || []).filter(
+      (item) => item?.result?.success === false && item?.result?.skipped !== true
+    );
+
+    const details = {
+      processed: Number(result?.processed || 0),
+      failed: failures.length,
+      skipped: (result?.results || []).filter((item) => item?.result?.skipped === true).length,
+    };
+
+    if (failures.length) {
+      sentinelScheduler.fail(schedulerId, new Error(`${failures.length} backup sync operation(s) failed.`), details);
+    } else {
+      sentinelScheduler.beat(schedulerId, details);
+    }
+
+    return result;
+  } catch (error) {
+    sentinelScheduler.fail(schedulerId, error, { phase: 'sync-cycle' });
+    throw error;
+  }
+}
+
+function startBackupWorker(options = {}) {
+  const intervalMs = Number(options.intervalMs || process.env.BACKUP_SYNC_INTERVAL_MS) || DEFAULT_SYNC_INTERVAL_MS;
+
+  if (syncInterval) {
+    return {
+      started: false,
+      reason: 'Backup sync worker already running.',
+      intervalMs,
+    };
+  }
+
+  registerSyncScheduler(intervalMs);
+
+  syncInterval = setInterval(async () => {
+    try {
+      await runMonitoredSyncCycle(intervalMs);
+    } catch (error) {
+      console.error('[Backup Sync Worker Error]', error);
+    }
+  }, intervalMs);
+
+  if (typeof syncInterval.unref === 'function') syncInterval.unref();
+
+  return { started: true, intervalMs };
 }
 
 module.exports = {
@@ -220,4 +355,5 @@ module.exports = {
   cleanupOldBackups,
   getIntervalDays,
   getRetentionLimit,
+  startBackupWorker,
 };
