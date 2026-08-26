@@ -17,7 +17,7 @@ const {
   validateBackupIntegrity,
 } = require('./backup/backupCore');
 
-const { validateBotHierarchy } = require('./securitySystem');
+const { validateBotHierarchy } = require('../systems/security/protection/system');
 
 const guildManager = require('../guild/guildManager');
 
