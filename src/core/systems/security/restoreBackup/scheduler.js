@@ -2,10 +2,10 @@ const {
   createServerBackup,
   listServerBackups,
   deleteServerBackup,
-} = require('./serverBackup');
+} = require('../../../security/serverBackup');
 
-const guildManager = require('../guild/guildManager');
-const sentinelScheduler = require('../../owner/sentinel/schedulerRegistry.js');
+const guildManager = require('../../../guild/guildManager');
+const sentinelScheduler = require('../../../../owner/sentinel/schedulerRegistry.js');
 
 const CHECK_EVERY_MS = 60 * 60 * 1000; // checks hourly
 const INITIAL_DELAY_MS = 30 * 1000;
