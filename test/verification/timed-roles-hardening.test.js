@@ -15,7 +15,7 @@ const compat = read('src/modules/roleStudio/timedRoles/timedRolesCompat.js');
 const health = read('src/modules/roleStudio/timedRoles/timedRolesHealth.js');
 const route = read('src/server/routes/modules/roleStudio/timedRoles.js');
 const startup = read('src/events/client/timedRolesStartup.js');
-const join = read('src/events/timedroles/timedRolesMemberJoin.js');
+const join = read('src/events/timedRoles/timedRolesMemberJoin.js');
 const roleSync = read('src/events/roles/timedRolesSync.js');
 const contracts = read('src/owner/sentinel/moduleContracts.js');
 
