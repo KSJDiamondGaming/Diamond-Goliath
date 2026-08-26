@@ -1,7 +1,7 @@
 'use strict';
 
 const { ChannelType } = require('discord.js');
-const guildManager = require('../guild/guildManager');
+const guildManager = require('../../../guild/guildManager');
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];

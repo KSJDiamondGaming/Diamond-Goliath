@@ -15,7 +15,7 @@ const {
 
 const {
   buildRestoreComparison,
-} = require('../../../core/security/serverRestoreCompare');
+} = require('../../../core/systems/security/restoreBackup/compare');
 
 const { requireEntitlement } = require('../../middleware/requireEntitlement');
 
