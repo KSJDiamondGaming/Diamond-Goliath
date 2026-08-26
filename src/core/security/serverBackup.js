@@ -12,9 +12,9 @@ const {
   ensureBackupDir,
   writeIntegrityFile,
   validateBackupIntegrity,
-} = require('./backup/backupCore');
+} = require('../systems/security/restoreBackup/core');
 
-const backupSync = require('./backup/backupSync');
+const backupSync = require('../systems/security/restoreBackup/sync');
 
 const BACKUPS_DIR = getBackupRoot();
 
