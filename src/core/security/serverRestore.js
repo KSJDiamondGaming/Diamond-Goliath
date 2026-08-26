@@ -15,7 +15,7 @@ const {
 
 const {
   validateBackupIntegrity,
-} = require('./backup/backupCore');
+} = require('../systems/security/restoreBackup/core');
 
 const { validateBotHierarchy } = require('../systems/security/protection/system');
 
