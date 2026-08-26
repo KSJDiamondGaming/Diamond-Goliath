@@ -16,7 +16,7 @@ const {
 const {
   isGoliathPermissionError,
   validateRoleSelection,
-} = require('../../../../core/security/goliathPermissionGuard');
+} = require('../../../../core/systems/security/protection/permissions');
 
 const router = express.Router();
 
