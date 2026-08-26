@@ -15,7 +15,7 @@ const {
 } = require('discord.js');
 const temporaryRoles = require('./temporaryRolesService');
 const temporaryRolesHealth = require('./temporaryRolesHealth');
-const security = require('../../../core/security/securityCore');
+const security = require('../../../core/systems/security/protection/core');
 const { isModuleEnabled, setModuleEnabled } = require('../../../core/guild/guildManager');
 
 const PREFIX = 'admin:temporaryRoles';
