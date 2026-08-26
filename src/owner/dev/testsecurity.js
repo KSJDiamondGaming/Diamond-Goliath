@@ -10,7 +10,7 @@ const {
   logIncident,
   SEVERITY,
   INCIDENT_TYPES,
-} = require('../../core/security/securitySystem');
+} = require('../../core/systems/security/protection/system');
 
 const {
   createServerBackup,
