@@ -3,7 +3,7 @@
 const guildManager = require('../../core/guild/guildManager');
 const {
   handleWebhookUpdate,
-} = require('../../core/security/antiNukeManager');
+} = require('../../core/systems/security/protection/antiNuke');
 
 module.exports = {
   name: 'webhookUpdate',
