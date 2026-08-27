@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 const { spawn } = require('node:child_process');
 
-const { TOOL_PRESETS } = require('./mediaConfig');
+const { TOOL_PRESETS } = require('../mediaConfig');
 
 function hasFfmpeg() {
   return new Promise((resolve) => {
