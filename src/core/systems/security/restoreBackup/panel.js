@@ -13,8 +13,8 @@ const {
   listServerBackups,
   readServerBackup,
   validateServerBackup,
-} = require('../../../security/serverBackup');
-const restoreRequestManager = require('../../../security/restoreRequestManager');
+} = require('./backup');
+const restoreRequestManager = require('./requests');
 
 const PANEL_COLOR = 0x5865F2;
 const ROOT_ID = 'security:restoreBackup';
