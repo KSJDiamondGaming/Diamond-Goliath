@@ -25,6 +25,8 @@ const {
   validateServerBackup,
 } = require('../security/restoreBackup/backup');
 const automodPanel = require('../automod/panel');
+const modPanel = require('../mod/panel');
+const moduleAdminPanels = require('./modules');
 
 const PANEL_COLOR = '#5865F2';
 
@@ -170,10 +172,7 @@ function buildAdminToolsPanel(guild, name = 'Unknown User') {
 }
 
 function buildModulesPanel(guild, name = 'Unknown User') {
-  return {
-    embeds: [createEmbed('🧩 Modules', MODULES.map(([, , title, description]) => `**${title}**\n${description}`).join('\n\n'), name)],
-    components: [...buttonRows(MODULES.map(([id, label]) => [id, label, ButtonStyle.Primary])), row(backButton('admin:modules'))],
-  };
+  return moduleAdminPanels.buildModuleListPanel(name);
 }
 
 function buildLogsPanel(guild, name = 'Unknown User') {
@@ -278,7 +277,6 @@ function panelForRoute(route, interaction, name) {
   if (route === 'admin:staffroles') return buildStaffRolesPanel(interaction.guild, name);
   if (route === 'admin:modroles') return buildModRolesPanel(interaction.guild, name);
   if (route === 'admin:autoRoles') return buildAutoRolesPanel(interaction.guild, name);
-  if (route === 'admin:modpanel') return buildComingSoonPanel('🔐 Mod Panel', 'Moderation tools will live here.', route);
   if (route === 'admin:adminsettings') return buildComingSoonPanel('⚙️ Admin Settings', 'Admin settings will live here.', route);
   if (COMING_SOON[route]) return buildComingSoonPanel(...COMING_SOON[route], route);
   return buildAdminPanel(interaction.guild, name);
@@ -324,6 +322,11 @@ async function handleAdminNavigation(interaction) {
   const id = interaction.customId;
 
   if (id === 'admin:purge') { await interaction.showModal(buildPurgeModal()); return true; }
+  if (id === 'admin:modpanel') {
+    await interaction.deferUpdate();
+    await modPanel.openModPanel(interaction);
+    return true;
+  }
   if (LOG_BUTTON_TO_TYPE[id]) return updatePanel(interaction, buildChannelPanel(LOG_BUTTON_TO_TYPE[id]), `admin:channel:${LOG_BUTTON_TO_TYPE[id]}`);
   if (id === 'admin:embed') { const { buildEmbedPanel } = require('../../../modules/messageStudio/embed/embedPanel'); return updatePanel(interaction, buildEmbedPanel(interaction, name), 'admin:embed'); }
   if (id === 'admin:tickets') { const { sendSetupPanel } = require('../../../modules/feedbackStudio/tickets/ticketsPanel'); return sendSetupPanel(interaction); }
@@ -364,7 +367,7 @@ async function handleAdminNavigation(interaction) {
   if (id === 'admin:backup:requestrestore') return restoreRequestManager.createRestoreRequest(interaction, { cooldownMs: 1800000 });
   if (['admin:backup:restore', 'admin:backup:restore:real'].includes(id)) { await interaction.reply({ content: '❌ Direct restores are disabled. Use the centralized restore approval system.', flags: 64 }); return true; }
 
-  const routes = ['admin:home', 'admin:adminpanel', 'admin:modules', 'admin:logs', 'admin:backups', 'admin:modpanel', 'admin:staffroles', 'admin:modroles', 'admin:autoRoles', 'admin:adminsettings'];
+  const routes = ['admin:home', 'admin:adminpanel', 'admin:modules', 'admin:logs', 'admin:backups', 'admin:staffroles', 'admin:modroles', 'admin:autoRoles', 'admin:adminsettings'];
   if (routes.includes(id) || COMING_SOON[id]) return openRoute(interaction, id, name);
   return false;
 }
