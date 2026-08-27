@@ -27,16 +27,22 @@ function buildAutoModDMEmbed({ guild, rule, reason, action, messageContent, chan
 }
 
 async function sendAutoModDM(user, guild, data = {}) {
-  const embed = buildAutoModDMEmbed({
-    guild,
-    rule: data.rule || 'Unknown Rule',
-    reason: data.reason || 'Rule triggered',
-    action: data.action || 'Action taken',
-    messageContent: data.messageContent || '',
-    channel: data.channel || null,
-  });
-
   try {
+    const customMessage = String(data.customMessage || '').trim();
+    if (customMessage) {
+      await user.send({ content: customMessage.slice(0, 2000) });
+      return true;
+    }
+
+    const embed = buildAutoModDMEmbed({
+      guild,
+      rule: data.rule || 'Unknown Rule',
+      reason: data.reason || 'Rule triggered',
+      action: data.action || 'Action taken',
+      messageContent: data.messageContent || '',
+      channel: data.channel || null,
+    });
+
     await user.send({ embeds: [embed] });
     return true;
   } catch {
