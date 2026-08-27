@@ -18,8 +18,9 @@ function normalizePunishments(value, fallback = ['delete']) {
   const cleaned = base
     .map((entry) => String(entry || '').trim().toLowerCase())
     .filter((entry) => VALID_PUNISHMENTS.includes(entry));
-
-  return cleaned.length ? [...new Set(cleaned)] : [...fallback];
+  const unique = [...new Set(cleaned)];
+  const compatible = unique.includes('ban') ? unique.filter((entry) => entry !== 'kick') : unique;
+  return compatible.length ? compatible : [...fallback];
 }
 
 function getContext(input = {}) {
@@ -125,7 +126,7 @@ async function safeWarnChannel(message, reason) {
 }
 
 async function sendPunishmentDm(context, options, punishments) {
-  if (!context.user || !context.guild) return false;
+  if (!context.user || !context.guild || options.dmEnabled === false) return false;
   const action = formatActionList(punishments);
   return sendAutoModDM(context.user, context.guild, {
     rule: options.rule,
@@ -133,6 +134,7 @@ async function sendPunishmentDm(context, options, punishments) {
     action,
     messageContent: options.messageContent || context.message?.content || `Moderation action: ${action}`,
     channel: context.channel,
+    customMessage: options.dmMessage || '',
   });
 }
 
@@ -156,6 +158,8 @@ async function applyPunishmentEngine(input = {}, options = {}) {
     moderator = null,
     source = 'moderation',
     messageContent = null,
+    dmEnabled = true,
+    dmMessage = '',
   } = options;
 
   const context = getContext(input);
@@ -169,8 +173,12 @@ async function applyPunishmentEngine(input = {}, options = {}) {
   };
 
   if (list.includes('dm')) {
-    result.dmSent = await sendPunishmentDm(context, { rule, reason, messageContent }, list);
-    recordOutcome(result, 'dm', result.dmSent);
+    if (dmEnabled === false) {
+      result.blockedActions.push('dm');
+    } else {
+      result.dmSent = await sendPunishmentDm(context, { rule, reason, messageContent, dmEnabled, dmMessage }, list);
+      recordOutcome(result, 'dm', result.dmSent);
+    }
   }
 
   for (const punishment of list) {
@@ -196,7 +204,7 @@ async function applyPunishmentEngine(input = {}, options = {}) {
     applied,
     failed,
     blocked,
-    testMode: blocked,
+    testMode: blockedActions.some((action) => action !== 'dm'),
     blockedActions,
     dmSent: result.dmSent,
     deleted: result.deleted,
