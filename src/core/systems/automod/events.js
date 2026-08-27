@@ -1,6 +1,6 @@
 'use strict';
 
-const { PermissionFlagsBits } = require('discord.js');
+const { EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 const guildManager = require('../../guild/guildManager');
 const { applyPunishmentEngine, normalizePunishments } = require('./engine');
 
@@ -10,6 +10,9 @@ const spamWindows = new Map();
 const DEFAULT_DM_MESSAGES = {
   antiSpam: '⚠️ **{server} AutoMod**\nSpam Protection triggered: {reason}',
   antiLinks: '⚠️ **{server} AutoMod**\nLink Protection triggered: {reason}',
+  badWords: '⚠️ **{server} AutoMod**\nBad Word Filter triggered: {reason}',
+  caps: '⚠️ **{server} AutoMod**\nCaps Protection triggered: {reason}',
+  mentions: '⚠️ **{server} AutoMod**\nMention Protection triggered: {reason}',
 };
 
 function readAutomodSection(guildId) {
@@ -36,14 +39,21 @@ function normalizeDomainList(value) {
   return [...new Set((Array.isArray(value) ? value : []).map(normalizeDomain).filter(Boolean))];
 }
 
+function normalizeStringList(value) {
+  return [...new Set((Array.isArray(value) ? value : []).map((entry) => String(entry || '').trim().toLowerCase()).filter(Boolean))];
+}
+
 function normalizeIdList(value) {
-  return Array.isArray(value) ? value.map(String) : [];
+  return Array.isArray(value) ? [...new Set(value.map(String).filter(Boolean))] : [];
 }
 
 function getAutoModConfig(guildId) {
   const config = readAutomodSection(guildId);
   const antiSpam = config.antiSpam || {};
   const antiLinks = config.antiLinks || {};
+  const badWords = config.badWords || {};
+  const caps = config.caps || {};
+  const mentions = config.mentions || {};
 
   return {
     enabled: guildManager.isModuleEnabled(guildId, AUTOMOD_MODULE),
@@ -51,6 +61,9 @@ function getAutoModConfig(guildId) {
     dmMessages: {
       antiSpam: String(config.dmMessages?.antiSpam || DEFAULT_DM_MESSAGES.antiSpam),
       antiLinks: String(config.dmMessages?.antiLinks || DEFAULT_DM_MESSAGES.antiLinks),
+      badWords: String(config.dmMessages?.badWords || DEFAULT_DM_MESSAGES.badWords),
+      caps: String(config.dmMessages?.caps || DEFAULT_DM_MESSAGES.caps),
+      mentions: String(config.dmMessages?.mentions || DEFAULT_DM_MESSAGES.mentions),
     },
     ignoredRoles: normalizeIdList(config.ignoredRoles),
     ignoredChannels: normalizeIdList(config.ignoredChannels),
@@ -66,6 +79,22 @@ function getAutoModConfig(guildId) {
       allowedDomains: normalizeDomainList(antiLinks.allowedDomains),
       deniedDomains: normalizeDomainList(antiLinks.deniedDomains),
       actions: normalizePunishments(antiLinks.actions || antiLinks.action || ['delete']),
+    },
+    badWords: {
+      enabled: badWords.enabled === true,
+      words: normalizeStringList(badWords.words),
+      actions: normalizePunishments(badWords.actions || badWords.action || ['delete']),
+    },
+    caps: {
+      enabled: caps.enabled === true,
+      percent: Math.min(100, Math.max(1, Number.parseInt(caps.percent, 10) || 70)),
+      minLength: Math.min(500, Math.max(1, Number.parseInt(caps.minLength, 10) || 12)),
+      actions: normalizePunishments(caps.actions || caps.action || ['warn']),
+    },
+    mentions: {
+      enabled: mentions.enabled === true,
+      maxMentions: Math.min(100, Math.max(1, Number.parseInt(mentions.maxMentions, 10) || 5)),
+      actions: normalizePunishments(mentions.actions || mentions.action || ['warn']),
     },
   };
 }
@@ -128,10 +157,57 @@ function evaluateLinkRule(domains, rule) {
   return null;
 }
 
-async function applyRule(message, config, ruleKey, ruleName, reason, actions) {
-  let result = null;
-  const dmMessage = renderDmMessage(config.dmMessages[ruleKey], message, reason);
+function findBadWord(content, words) {
+  const lower = String(content || '').toLowerCase();
+  return words.find((word) => lower.includes(word)) || null;
+}
 
+function evaluateCaps(content, rule) {
+  const text = String(content || '');
+  if (text.length < rule.minLength) return null;
+  const letters = text.match(/[a-z]/gi) || [];
+  if (!letters.length) return null;
+  const uppercase = letters.filter((letter) => letter === letter.toUpperCase()).length;
+  const percent = Math.round((uppercase / letters.length) * 100);
+  return percent >= rule.percent ? { percent, reason: `Capital letters reached ${percent}% (limit ${rule.percent}%)` } : null;
+}
+
+function countMentions(message) {
+  const users = message.mentions?.users?.size || 0;
+  const roles = message.mentions?.roles?.size || 0;
+  const everyone = message.mentions?.everyone ? 1 : 0;
+  return users + roles + everyone;
+}
+
+async function sendAutoModLog(message, ruleName, reason, actions, result) {
+  const channelId = typeof guildManager.getLogChannelId === 'function'
+    ? guildManager.getLogChannelId(message.guild.id, 'automod')
+    : guildManager.getGuildSection(message.guild.id, 'logs', { channels: {} })?.channels?.automod || null;
+  if (!channelId) return false;
+  const channel = message.guild.channels.cache.get(channelId) || await message.guild.channels.fetch(channelId).catch(() => null);
+  if (!channel?.isTextBased?.()) return false;
+
+  const embed = new EmbedBuilder()
+    .setColor('#ED4245')
+    .setTitle(`🤖 AutoMod · ${ruleName}`)
+    .addFields(
+      { name: 'User', value: `${message.author} (\`${message.author.id}\`)`, inline: false },
+      { name: 'Channel', value: `${message.channel}`, inline: true },
+      { name: 'Actions', value: actions.join(', ') || 'None', inline: true },
+      { name: 'Reason', value: String(reason).slice(0, 1024), inline: false },
+      { name: 'Applied', value: result?.applied?.join(', ') || 'None', inline: true },
+      { name: 'Failed', value: result?.failed?.join(', ') || 'None', inline: true },
+      { name: 'Message', value: String(message.content || '[no text content]').slice(0, 1000), inline: false },
+    )
+    .setTimestamp();
+
+  await channel.send({ embeds: [embed] }).catch(() => null);
+  return true;
+}
+
+async function applyRule(message, config, ruleKey, ruleName, reason, actions) {
+  const dmMessage = renderDmMessage(config.dmMessages[ruleKey], message, reason);
+  let result;
   try {
     result = await applyPunishmentEngine(
       {
@@ -147,26 +223,16 @@ async function applyRule(message, config, ruleKey, ruleName, reason, actions) {
         reason,
         source: 'automod',
         messageContent: message.content,
+        dmEnabled: config.dmUser,
         dmMessage,
       }
     );
   } catch (error) {
     console.error(`[AutoMod] ${ruleName} punishment engine failed:`, error?.stack || error?.message || error);
+    result = { applied: [], failed: actions };
   }
 
-  if (actions.includes('warn') && !result?.applied?.includes('warn')) {
-    const warning = await message.channel.send({ content: `⚠️ ${message.author}, your message was blocked by **${ruleName}**: ${reason}` }).catch(() => null);
-    if (warning) setTimeout(() => warning.delete().catch(() => null), 10000);
-  }
-
-  if (actions.includes('dm') && config.dmUser && !result?.applied?.includes('dm')) {
-    await message.author.send({ content: dmMessage }).catch(() => null);
-  }
-
-  if (actions.includes('delete') && !result?.applied?.includes('delete') && message.deletable) {
-    await message.delete().catch(() => null);
-  }
-
+  await sendAutoModLog(message, ruleName, reason, actions, result);
   return true;
 }
 
@@ -180,14 +246,7 @@ async function handleSpam(message, config) {
   spamWindows.set(key, timestamps);
   if (timestamps.length < config.antiSpam.maxMessages) return false;
   spamWindows.delete(key);
-  return applyRule(
-    message,
-    config,
-    'antiSpam',
-    'Spam Protection',
-    `${timestamps.length} messages sent within ${config.antiSpam.intervalSeconds} seconds`,
-    config.antiSpam.actions
-  );
+  return applyRule(message, config, 'antiSpam', 'Spam Protection', `${timestamps.length} messages sent within ${config.antiSpam.intervalSeconds} seconds`, config.antiSpam.actions);
 }
 
 async function handleLinks(message, config) {
@@ -198,13 +257,38 @@ async function handleLinks(message, config) {
   return applyRule(message, config, 'antiLinks', 'Link Protection', violation.reason, config.antiLinks.actions);
 }
 
+async function handleBadWords(message, config) {
+  if (!config.badWords.enabled || !config.badWords.words.length) return false;
+  const blocked = findBadWord(message.content, config.badWords.words);
+  if (!blocked) return false;
+  return applyRule(message, config, 'badWords', 'Bad Word Filter', `Blocked word or phrase detected: ${blocked}`, config.badWords.actions);
+}
+
+async function handleCaps(message, config) {
+  if (!config.caps.enabled) return false;
+  const violation = evaluateCaps(message.content, config.caps);
+  if (!violation) return false;
+  return applyRule(message, config, 'caps', 'Caps Protection', violation.reason, config.caps.actions);
+}
+
+async function handleMentions(message, config) {
+  if (!config.mentions.enabled) return false;
+  const count = countMentions(message);
+  if (count <= config.mentions.maxMentions) return false;
+  return applyRule(message, config, 'mentions', 'Mention Protection', `${count} mentions detected (limit ${config.mentions.maxMentions})`, config.mentions.actions);
+}
+
 async function handleAutoMod(message) {
   if (!message?.guild || !message?.member || message.author?.bot) return false;
   if (!guildManager.isModuleEnabled(message.guild.id, AUTOMOD_MODULE)) return false;
   const config = getAutoModConfig(message.guild.id);
   if (!config.enabled || isIgnored(message, config)) return false;
-  if (await handleLinks(message, config)) return true;
+
   if (await handleSpam(message, config)) return true;
+  if (await handleLinks(message, config)) return true;
+  if (await handleBadWords(message, config)) return true;
+  if (await handleCaps(message, config)) return true;
+  if (await handleMentions(message, config)) return true;
   return false;
 }
 
@@ -215,4 +299,7 @@ module.exports = {
   normalizeDomainList,
   extractDomains,
   evaluateLinkRule,
+  findBadWord,
+  evaluateCaps,
+  countMentions,
 };
