@@ -179,7 +179,7 @@ function importAudit() {
   section('Runtime imports');
   const files = [
     ...walk(absolute('src/events')),
-    ...walk(absolute('src/core/admin/functions')),
+    ...walk(absolute('src/core/systems/admin')),
     ...walk(absolute('src/server/routes')),
     ...walk(absolute('src/owner')),
   ];
