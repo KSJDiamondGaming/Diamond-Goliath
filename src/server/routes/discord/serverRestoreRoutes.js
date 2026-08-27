@@ -7,11 +7,11 @@ const {
   readServerBackup,
   createServerBackup,
   validateServerBackup,
-} = require('../../../core/security/serverBackup');
+} = require('../../../core/systems/security/restoreBackup/backup');
 
 const {
   restoreServerBackup,
-} = require('../../../core/security/serverRestore');
+} = require('../../../core/systems/security/restoreBackup/restore');
 
 const {
   buildRestoreComparison,
