@@ -2,7 +2,7 @@ const {
   createServerBackup,
   listServerBackups,
   deleteServerBackup,
-} = require('../../../security/serverBackup');
+} = require('./backup');
 
 const {
   incrementSyncAttempt,
