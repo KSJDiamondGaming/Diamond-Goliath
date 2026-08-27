@@ -12,8 +12,8 @@ const {
   removeAsset,
   findAsset,
 } = require('./mediaLibrary');
-const { createGif, getGifProcessorStatus } = require('./gifMaker/gifProcessor');
-const { createEmoji, getEmojiProcessorStatus } = require('./emojiMaker/emojiProcessor');
+const { createGif, getGifProcessorStatus } = require('./gifProcessor');
+const { createEmoji, getEmojiProcessorStatus } = require('./emojiProcessor');
 
 const ALLOWED_TOOLS = new Set(['gif', 'emoji']);
 

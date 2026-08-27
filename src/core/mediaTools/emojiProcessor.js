@@ -2,7 +2,7 @@
 
 const fs = require('node:fs');
 
-const { TOOL_PRESETS } = require('../mediaConfig');
+const { TOOL_PRESETS } = require('./mediaConfig');
 
 function optionalSharp() {
   try {
