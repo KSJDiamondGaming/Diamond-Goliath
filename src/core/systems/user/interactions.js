@@ -33,7 +33,7 @@ const {
   buildLevelingUserPanel,
   buildLevelingHistoryPanel,
   buildRolesPanel,
-} = require('./userPanel');
+} = require('./panel');
 
 const USER_MANUAL_LIVE_COOLDOWN_MS = 60 * 60 * 1000;
 const userAccountManagementSessions = new Map();
