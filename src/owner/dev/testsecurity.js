@@ -10,12 +10,12 @@ const {
   logIncident,
   SEVERITY,
   INCIDENT_TYPES,
-} = require('../../core/systems/security/protection/system');
+} = require('../../core/security/protection/system');
 
 const {
   createServerBackup,
-} = require('../../core/systems/security/restoreBackup/backup');
-const security = require('../../core/systems/security/protection/core');
+} = require('../../core/security/restoreBackup/backup');
+const security = require('../../core/security/protection/core');
 
 const BUTTON_PREFIX = 'testsecurity:';
 

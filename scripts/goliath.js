@@ -8,9 +8,9 @@ const root = path.resolve(__dirname, '..');
 const mode = process.env.BOT_MODE || 'dev';
 const JS_EXTENSIONS = ['.js', '.jsx', '.mjs', '.cjs'];
 const CANONICAL_COMMANDS = [
-  ['admin', 'src/core/systems/admin/command.js'],
-  ['mod', 'src/core/systems/mod/command.js'],
-  ['user', 'src/core/systems/user/command.js'],
+  ['admin', 'src/core/administration/admin/command.js'],
+  ['mod', 'src/core/administration/mod/command.js'],
+  ['user', 'src/core/administration/user/command.js'],
 ];
 
 const absolute = (filePath) => path.join(root, filePath);
@@ -162,7 +162,7 @@ function importAudit() {
   section('Runtime imports');
   const files = [
     ...walk(absolute('src/events')),
-    ...walk(absolute('src/core/systems/admin')),
+    ...walk(absolute('src/core/administration/admin')),
     ...walk(absolute('src/server/routes')),
     ...walk(absolute('src/owner')),
   ];

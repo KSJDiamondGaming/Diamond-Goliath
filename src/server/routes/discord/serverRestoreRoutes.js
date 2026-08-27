@@ -7,15 +7,15 @@ const {
   readServerBackup,
   createServerBackup,
   validateServerBackup,
-} = require('../../../core/systems/security/restoreBackup/backup');
+} = require('../../../core/security/restoreBackup/backup');
 
 const {
   restoreServerBackup,
-} = require('../../../core/systems/security/restoreBackup/restore');
+} = require('../../../core/security/restoreBackup/restore');
 
 const {
   buildRestoreComparison,
-} = require('../../../core/systems/security/restoreBackup/compare');
+} = require('../../../core/security/restoreBackup/compare');
 
 const { requireEntitlement } = require('../../middleware/requireEntitlement');
 

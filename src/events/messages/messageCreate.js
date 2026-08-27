@@ -6,7 +6,7 @@ const translationThreadManager = require('../../modules/utilityStudio/translatio
 const statsManager = require('../../modules/utilityStudio/stats/statsManager');
 const levelingTracking = require('../../modules/communityStudio/leveling/levelingTracking');
 const guildManager = require('../../core/guild/guildManager');
-const { handleAutoMod } = require('../../core/systems/automod/events');
+const { handleAutoMod } = require('../../core/administration/automod/events');
 
 async function runHandler(label, handler, ...args) {
   try {

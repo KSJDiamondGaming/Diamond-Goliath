@@ -3,10 +3,10 @@
 const express = require('express');
 const { PermissionFlagsBits } = require('discord.js');
 const guildManager = require('../../../../core/guild/guildManager');
-const security = require('../../../../core/systems/security/protection/core');
+const security = require('../../../../core/security/protection/core');
 const temporaryRoles = require('../../../../modules/roleStudio/temporaryRoles/temporaryRolesService');
 const temporaryRolesHealth = require('../../../../modules/roleStudio/temporaryRoles/temporaryRolesHealth');
-const { validateRoleSelection, isGoliathPermissionError } = require('../../../../core/systems/security/protection/permissions');
+const { validateRoleSelection, isGoliathPermissionError } = require('../../../../core/security/protection/permissions');
 
 const router = express.Router();
 const ok = (res, payload = {}) => res.json({ success: true, ...payload });

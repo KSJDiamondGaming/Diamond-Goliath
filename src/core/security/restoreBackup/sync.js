@@ -1,9 +1,9 @@
-// src/core/systems/security/restoreBackup/sync.js
+// src/core/security/restoreBackup/sync.js
 
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const { resolveRuntimePath } = require('../../../../config/runtimePaths');
+const { resolveRuntimePath } = require('../../../config/runtimePaths');
 
 const SYNC_MANAGER_VERSION = '1A_LOCAL_SYNC_QUEUE';
 const TRUST_MANAGER_VERSION = '1A_BACKUP_TRUST_STATUS';

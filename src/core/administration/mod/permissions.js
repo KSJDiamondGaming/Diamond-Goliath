@@ -1,5 +1,5 @@
 const { PermissionFlagsBits } = require('discord.js');
-const security = require('../security/protection/core');
+const security = require('../../security/protection/core');
 const { safeReply, ephemeralError } = require('../../../core/ui/interactionResponse');
 
 const STAFF_LEVELS = {

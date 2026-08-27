@@ -21,10 +21,10 @@ const giveawaysInteractionHandler = optionalRequire('giveaways', '../../modules/
 const formsInteractions = optionalRequire('forms', '../../modules/feedbackStudio/forms/formsInteractions');
 const embedPanel = optionalRequire('embed interactions', '../../modules/messageStudio/embed/embedInteractions');
 const duplicator = optionalRequire('duplicator', '../../owner/dev/duplicator');
-const adminPanel = optionalRequire('admin panel', '../../core/systems/admin/panel');
-const automodPanel = optionalRequire('automod panel', '../../core/systems/automod/panel');
-const modInteractions = optionalRequire('mod interactions', '../../core/systems/mod/interactions');
-const restoreRequestManager = optionalRequire('restore requests', '../../core/systems/security/restoreBackup/requests');
+const adminPanel = optionalRequire('admin panel', '../../core/administration/admin/panel');
+const automodPanel = optionalRequire('automod panel', '../../core/administration/automod/panel');
+const modInteractions = optionalRequire('mod interactions', '../../core/administration/mod/interactions');
+const restoreRequestManager = optionalRequire('restore requests', '../../core/security/restoreBackup/requests');
 const statsAdminPanel = optionalRequire('stats admin', '../../modules/utilityStudio/stats/statsPanel');
 const reactionRolesAdminPanel = optionalRequire('reaction roles admin', '../../modules/roleStudio/reactionRoles/reactionRolesPanel');
 const temporaryRolesPanel = optionalRequire('temporary roles', '../../modules/roleStudio/temporaryRoles/temporaryRolesPanel');
@@ -41,8 +41,8 @@ const autorolesPanel = optionalRequire('auto roles', '../../modules/roleStudio/a
 const timedRolesPanel = optionalRequire('timed roles', '../../modules/roleStudio/timedRoles/timedRolesPanel');
 const welcomePanel = optionalRequire('welcome', '../../modules/messageStudio/welcome/welcomePanel');
 const goodbyePanel = optionalRequire('goodbye', '../../modules/messageStudio/goodbye/goodbyePanel');
-const moduleAdminPanels = optionalRequire('generic module admin', '../../core/systems/admin/modules');
-const userPanelInteractions = optionalRequire('user panel', '../../core/systems/user/interactions');
+const moduleAdminPanels = optionalRequire('generic module admin', '../../core/administration/admin/modules');
+const userPanelInteractions = optionalRequire('user panel', '../../core/administration/user/interactions');
 const roleSelectorPanel = optionalRequire(
   'role selector',
   '../../modules/roleStudio/roleSelector/roleSelectorPanel'

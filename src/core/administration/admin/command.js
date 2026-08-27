@@ -4,7 +4,7 @@ const { buildAdminPanel } = require('./panel');
 const socialStudioPanel = require('../../../modules/socialStudio/socialAlerts/socialStudioPanel');
 const { errorEmbed } = require('../../ui/embeds');
 const { enforceCommandAccess } = require('../../commands/commandAccess');
-const security = require('../security/protection/core');
+const security = require('../../security/protection/core');
 
 module.exports = {
   category: 'Admin',

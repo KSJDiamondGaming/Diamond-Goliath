@@ -1,6 +1,6 @@
 'use strict';
 
-const schedulerRegistry = require('../../../../owner/sentinel/schedulerRegistry');
+const schedulerRegistry = require('../../../owner/sentinel/schedulerRegistry');
 
 const SEVERITY = {
   LOW: 'low',

@@ -1,4 +1,4 @@
-const handlerModule = require('../../core/systems/security/protection/system');
+const handlerModule = require('../../core/security/protection/system');
 
 module.exports = {
   name: 'guildUpdate',

@@ -33,7 +33,7 @@ const {
   guardCategoryAccess,
   isGoliathPermissionError,
   validateRoleSelection,
-} = require("../../../../core/systems/security/protection/permissions");
+} = require("../../../../core/security/protection/permissions");
 
 const router = express.Router();
 

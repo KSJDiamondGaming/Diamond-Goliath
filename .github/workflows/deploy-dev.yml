@@ -299,7 +299,7 @@ jobs:
             fi
 
             if [ -n "$OLD_SHA" ] && git cat-file -e "$OLD_SHA^{commit}" 2>/dev/null; then
-              if git diff --name-only "$OLD_SHA" "$EXPECTED_SHA" | grep -Eq '^(src/core/commands/|src/core/systems/(admin|mod|user)/command\.js$)'; then
+              if git diff --name-only "$OLD_SHA" "$EXPECTED_SHA" | grep -Eq '^(src/core/commands/|src/core/administration/(admin|mod|user)/command\.js$)'; then
                 echo "Canonical command definition or sync infrastructure changed: forcing Discord command reconciliation."
                 NEED_COMMAND_SYNC=true
               fi

@@ -10,11 +10,11 @@ const sentinelSchedulers = require('../../owner/sentinel/schedulerRegistry');
 
 const {
   restoreLockdownReminders,
-} = require('../../core/systems/security/protection/lockdown');
+} = require('../../core/security/protection/lockdown');
 
 const {
   startBackupWorker,
-} = require('../../core/systems/security/restoreBackup/scheduler');
+} = require('../../core/security/restoreBackup/scheduler');
 
 const {
   startStatusRotation,

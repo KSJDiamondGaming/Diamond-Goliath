@@ -8,9 +8,9 @@ Goliath exposes three public Discord entry commands:
 
 Command definitions are owned by their systems:
 
-- `src/core/systems/admin/command.js`
-- `src/core/systems/mod/command.js`
-- `src/core/systems/user/command.js`
+- `src/core/administration/admin/command.js`
+- `src/core/administration/mod/command.js`
+- `src/core/administration/user/command.js`
 
 Platform command loading, access control and Discord reconciliation live under `src/core/commands/`.
 

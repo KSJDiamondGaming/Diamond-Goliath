@@ -1,7 +1,7 @@
 'use strict';
 
 const { EmbedBuilder } = require('discord.js');
-const guildManager = require('../../../guild/guildManager');
+const guildManager = require('../../guild/guildManager');
 const { SEVERITY } = require('./events');
 
 function safeString(value, fallback = 'Unknown') {

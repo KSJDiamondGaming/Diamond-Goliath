@@ -16,14 +16,14 @@ const {
 
 const guildManager = require('../../guild/guildManager');
 const panelNav = require('../../ui/panelNavigation');
-const restoreRequestManager = require('../security/restoreBackup/requests');
-const security = require('../security/protection/core');
+const restoreRequestManager = require('../../security/restoreBackup/requests');
+const security = require('../../security/protection/core');
 const {
   createServerBackup,
   listServerBackups,
   readServerBackup,
   validateServerBackup,
-} = require('../security/restoreBackup/backup');
+} = require('../../security/restoreBackup/backup');
 const automodPanel = require('../automod/panel');
 const modPanel = require('../mod/panel');
 const moduleAdminPanels = require('./modules');

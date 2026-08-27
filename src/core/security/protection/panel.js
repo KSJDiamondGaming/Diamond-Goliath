@@ -8,7 +8,7 @@ const {
   MessageFlags,
 } = require('discord.js');
 
-const guildManager = require('../../../guild/guildManager');
+const guildManager = require('../../guild/guildManager');
 const lockdown = require('./lockdown');
 const quarantine = require('./quarantine');
 

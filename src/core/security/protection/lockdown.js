@@ -1,12 +1,12 @@
-// src/core/systems/security/protection/lockdown.js
+// src/core/security/protection/lockdown.js
 
 const { ChannelType } = require('discord.js');
-const guildManager = require('../../../guild/guildManager');
-const schedulerRegistry = require('../../../../owner/sentinel/schedulerRegistry');
+const guildManager = require('../../guild/guildManager');
+const schedulerRegistry = require('../../../owner/sentinel/schedulerRegistry');
 
 const {
   emitLockdownUpdate,
-} = require('../../../../server/sockets/socketHub');
+} = require('../../../server/sockets/socketHub');
 
 const activeReminderIntervals = new Map();
 

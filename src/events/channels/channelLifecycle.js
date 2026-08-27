@@ -1,8 +1,8 @@
 const { AuditLogEvent } = require('discord.js');
 
 const guildManager = require('../../core/guild/guildManager');
-const securitySystem = require('../../core/systems/security/protection/system');
-const antiNukeManager = require('../../core/systems/security/protection/antiNuke');
+const securitySystem = require('../../core/security/protection/system');
+const antiNukeManager = require('../../core/security/protection/antiNuke');
 const {
   emitSyncEvent,
 } = require('../../server/sockets/socketHub');

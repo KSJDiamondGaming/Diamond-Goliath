@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { ChannelType } = require('discord.js');
 
-const guildManager = require('../../../guild/guildManager');
+const guildManager = require('../../guild/guildManager');
 
 const {
   getBackupRoot,

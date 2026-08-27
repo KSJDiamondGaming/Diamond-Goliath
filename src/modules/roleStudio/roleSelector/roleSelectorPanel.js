@@ -13,7 +13,7 @@ const {
 } = require('discord.js');
 
 const guildManager = require('../../../core/guild/guildManager');
-const security = require('../../../core/systems/security/protection/core');
+const security = require('../../../core/security/protection/core');
 const emojis = require('../../utilityStudio/emojis/emojis');
 const roleSelector = require('./roleSelector');
 const healthService = require('./roleSelectorHealth');

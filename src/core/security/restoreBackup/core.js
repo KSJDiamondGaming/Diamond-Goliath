@@ -4,7 +4,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const { resolveBotMode, resolveRuntimePath } = require('../../../../config/runtimePaths');
+const { resolveBotMode, resolveRuntimePath } = require('../../../config/runtimePaths');
 
 const VALID_BACKUP_TYPES = new Set([
   'scheduled',

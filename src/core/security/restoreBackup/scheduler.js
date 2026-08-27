@@ -13,8 +13,8 @@ const {
   uploadBackup,
 } = require('./sync');
 
-const guildManager = require('../../../guild/guildManager');
-const sentinelScheduler = require('../../../../owner/sentinel/schedulerRegistry.js');
+const guildManager = require('../../guild/guildManager');
+const sentinelScheduler = require('../../../owner/sentinel/schedulerRegistry.js');
 
 const CHECK_EVERY_MS = 60 * 60 * 1000;
 const INITIAL_DELAY_MS = 30 * 1000;

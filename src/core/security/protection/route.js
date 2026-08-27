@@ -1,9 +1,9 @@
 const express = require('express');
 const router = express.Router();
 
-const guildManager = require('../../../guild/guildManager');
-const notifications = require('../../../notifications/notificationStore');
-const { requireEntitlement } = require('../../../../server/middleware/requireEntitlement');
+const guildManager = require('../../guild/guildManager');
+const notifications = require('../../notifications/notificationStore');
+const { requireEntitlement } = require('../../../server/middleware/requireEntitlement');
 
 function getGuildId(req) {
   return req.params.guildId || req.query.guildId || req.session?.guildId || req.session?.selectedGuildId || null;

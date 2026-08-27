@@ -855,7 +855,7 @@ let ticketGuardApi;
     guardCategoryAccess,
     syncBotToChannel,
     syncBotToCategory,
-  } = require('../../../core/systems/security/protection/permissions');
+  } = require('../../../core/security/protection/permissions');
 
   const BOT_CHANNEL_PERMISSIONS = TICKET_CHANNEL_PERMISSIONS;
 

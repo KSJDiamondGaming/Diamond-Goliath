@@ -51,16 +51,16 @@ const statusRoutes = route('status routes', './src/server/routes/status');
 const ownerRoutes = route('owner routes', './src/server/routes/owner/owner');
 const ownerDiagnosticsRoutes = route('owner diagnostics routes', './src/server/routes/owner/diagnostics');
 const ownerTranslationRoutes = route('owner translation routes', './src/server/routes/owner/translation');
-const automodRoutes = route('automod routes', './src/core/systems/automod/route');
+const automodRoutes = route('automod routes', './src/core/administration/automod/route');
 const generalSettingsRoutes = route('general settings routes', './src/server/routes/config/generalSettings');
 const logsRoutes = route('logs routes', './src/server/routes/config/logs');
 const messagesRoutes = route('messages routes', './src/server/routes/config/messages');
 const embedsRoutes = route('embeds routes', './src/server/routes/modules/messageStudio/embeds');
 const billingRoutes = route('billing routes', './src/server/routes/billing');
-const moderationCommand = safeRequire('moderation system', './src/core/systems/mod/command', { router: emptyRouter() }, { optional: false });
+const moderationCommand = safeRequire('moderation system', './src/core/administration/mod/command', { router: emptyRouter() }, { optional: false });
 const moderationRoutes = moderationCommand.router || emptyRouter();
 const serverRestoreRoutes = route('restore routes', './src/server/routes/discord/serverRestoreRoutes');
-const securityRoutes = route('security routes', './src/core/systems/security/protection/route');
+const securityRoutes = route('security routes', './src/core/security/protection/route');
 const ticketRoutes = route('ticket routes', './src/server/routes/modules/feedbackStudio/tickets');
 const formsRoutes = route('forms routes', './src/server/routes/modules/feedbackStudio/forms');
 const transcriptRoutes = route('transcript routes', './src/server/routes/modules/feedbackStudio/transcripts');
@@ -94,7 +94,7 @@ const ownerDeploymentRoutes = route('owner deployment routes', './src/server/rou
 const publicCommunityRoutes = route('public community routes', './src/server/routes/publicCommunity');
 
 const commandHandler = safeRequire('command handler', './src/core/commands/commandLoader', { loadCommands: () => null });
-const backupScheduler = safeRequire('backup scheduler', './src/core/systems/security/restoreBackup/scheduler', { startServerBackupScheduler: () => null });
+const backupScheduler = safeRequire('backup scheduler', './src/core/security/restoreBackup/scheduler', { startServerBackupScheduler: () => null });
 const guildManager = safeRequire('guild manager', './src/core/guild/guildManager', { syncGuildMeta: () => null }, { optional: false });
 const resourceManager = safeRequire('discord resource manager', './src/core/guild/discordResourceManager', { syncDiscordResources: async () => null }, { optional: false });
 const auditEvents = safeRequire('owner audit intelligence', './src/owner/auditIntelligence/auditEvents', { registerAuditEvents: () => false }, { optional: false });

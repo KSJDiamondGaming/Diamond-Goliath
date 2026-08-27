@@ -1,7 +1,7 @@
 'use strict';
 
-const security = require('../../../core/systems/security/protection/core');
-const { validateRoleSelection } = require('../../../core/systems/security/protection/permissions');
+const security = require('../../../core/security/protection/core');
+const { validateRoleSelection } = require('../../../core/security/protection/permissions');
 const base = require('./timedRoles');
 const service = require('./timedRolesService');
 

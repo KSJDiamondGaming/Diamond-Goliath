@@ -15,7 +15,7 @@ const {
 } = require('discord.js');
 const guildManager = require('../../guild/guildManager');
 const panelNav = require('../../ui/panelNavigation');
-const security = require('../security/protection/core');
+const security = require('../../security/protection/core');
 
 const PANEL_COLOR = '#5865F2';
 const ENABLED_COLOR = '#57F287';

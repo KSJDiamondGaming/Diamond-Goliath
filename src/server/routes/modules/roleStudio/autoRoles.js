@@ -2,9 +2,9 @@
 
 const express = require('express');
 const { PermissionFlagsBits } = require('discord.js');
-const security = require('../../../../core/systems/security/protection/core');
+const security = require('../../../../core/security/protection/core');
 const autoroles = require('../../../../modules/roleStudio/autoRoles/autoRolesService');
-const { validateRoleSelection, isGoliathPermissionError } = require('../../../../core/systems/security/protection/permissions');
+const { validateRoleSelection, isGoliathPermissionError } = require('../../../../core/security/protection/permissions');
 
 const router = express.Router();
 

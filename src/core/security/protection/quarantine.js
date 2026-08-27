@@ -1,9 +1,9 @@
-const guildManager = require('../../../guild/guildManager');
-const { shouldBlockOwnerDestructiveAction } = require('../../../../owner/dev/DevOverrideManager');
+const guildManager = require('../../guild/guildManager');
+const { shouldBlockOwnerDestructiveAction } = require('../../../owner/dev/DevOverrideManager');
 
 const {
   emitGuildUpdate,
-} = require('../../../../server/sockets/socketHub');
+} = require('../../../server/sockets/socketHub');
 
 function emptyQuarantineState() {
   return {

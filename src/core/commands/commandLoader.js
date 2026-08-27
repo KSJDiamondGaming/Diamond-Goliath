@@ -7,9 +7,9 @@ const CANONICAL_COMMAND_NAMES = new Set(['admin', 'mod', 'user']);
 function getCanonicalCommandFiles() {
   const root = process.cwd();
   return [
-    path.join(root, 'src', 'core', 'systems', 'admin', 'command.js'),
-    path.join(root, 'src', 'core', 'systems', 'mod', 'command.js'),
-    path.join(root, 'src', 'core', 'systems', 'user', 'command.js'),
+    path.join(root, 'src', 'core', 'administration', 'admin', 'command.js'),
+    path.join(root, 'src', 'core', 'administration', 'mod', 'command.js'),
+    path.join(root, 'src', 'core', 'administration', 'user', 'command.js'),
   ];
 }
 

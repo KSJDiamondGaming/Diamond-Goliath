@@ -3,11 +3,11 @@
 const { AuditLogEvent, PermissionFlagsBits } = require('discord.js');
 
 const securitySystem = require('./system');
-const guildManager = require('../../../guild/guildManager');
+const guildManager = require('../../guild/guildManager');
 const { enableLockdown, getLockdownState, getLockdownModeFromSeverity } = require('./lockdown');
 const { validateBotHierarchy, hasDangerousPermissions } = require('./system');
 const { quarantineMember: quarantineSystemMember } = require('./quarantine');
-const schedulerRegistry = require('../../../../owner/sentinel/schedulerRegistry');
+const schedulerRegistry = require('../../../owner/sentinel/schedulerRegistry');
 
 const {
   SEVERITY,

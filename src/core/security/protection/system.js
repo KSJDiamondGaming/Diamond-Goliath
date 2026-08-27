@@ -4,7 +4,7 @@ const core = require('./core');
 const audit = require('./audit');
 const events = require('./events');
 const { enableLockdown, getLockdownState } = require('./lockdown');
-const guildManager = require('../../../guild/guildManager');
+const guildManager = require('../../guild/guildManager');
 
 const QUARANTINE_ROLE_NAME = 'Goliath Quarantine';
 

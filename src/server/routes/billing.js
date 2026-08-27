@@ -6,7 +6,7 @@ const {
   PLAN_DEFINITIONS,
   getPlanDefinition,
 } = require('../../config/plans');
-const security = require('../../core/systems/security/protection/core');
+const security = require('../../core/security/protection/core');
 const subscriptionManager = require('../../core/billing/subscriptionManager');
 const entitlementManager = require('../../core/billing/entitlementManager');
 const redemptionManager = require('../../core/billing/redemptionManager');
