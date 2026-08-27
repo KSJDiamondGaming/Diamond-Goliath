@@ -238,6 +238,27 @@ function buildChannelPanel(type = 'logs') {
 const buildComingSoonPanel = (title, description, route) => ({ embeds: [createEmbed(title, description)], components: [row(backButton(route))] });
 const buildPurgeModal = () => new ModalBuilder().setCustomId('admin:purgeModal').setTitle('Purge Messages').addComponents(row(new TextInputBuilder().setCustomId('amount').setLabel('Amount (1-100)').setStyle(TextInputStyle.Short).setPlaceholder('25').setRequired(true)));
 
+async function executePurge(interaction) {
+  const raw = interaction.fields?.getTextInputValue?.('amount')?.trim() || '';
+  const amount = /^\d+$/.test(raw) ? Number(raw) : NaN;
+  if (!Number.isInteger(amount) || amount < 1 || amount > 100) {
+    await interaction.reply({ content: '❌ Purge amount must be a whole number from 1 to 100.', flags: 64 });
+    return true;
+  }
+  if (!interaction.channel?.bulkDelete) {
+    await interaction.reply({ content: '❌ This channel does not support bulk message deletion.', flags: 64 });
+    return true;
+  }
+  try {
+    const deleted = await interaction.channel.bulkDelete(amount, true);
+    await interaction.reply({ content: `🧹 Deleted **${deleted?.size ?? 0}** message${deleted?.size === 1 ? '' : 's'}. Messages older than 14 days are skipped by Discord.`, flags: 64 });
+  } catch (error) {
+    console.error('❌ Admin purge failed:', error);
+    await interaction.reply({ content: '❌ Failed to purge messages. Check the bot permissions and channel history.', flags: 64 });
+  }
+  return true;
+}
+
 async function updatePanel(interaction, panel, route = 'admin:home') {
   const payload = applyNavigationUI(interaction, panel, canonicalState(route));
   if (interaction.deferred || interaction.replied) await interaction.editReply(payload);
@@ -275,6 +296,7 @@ async function handleAdminNavigation(interaction) {
   }
 
   if (await automodPanel.handleAutomodInteraction(interaction)) return true;
+  if (interaction.isModalSubmit?.() && interaction.customId === 'admin:purgeModal') return executePurge(interaction);
 
   const name = getMemberDisplayName(interaction);
   if (nav?.action === 'back') {
