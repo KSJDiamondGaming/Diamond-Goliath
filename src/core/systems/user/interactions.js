@@ -17,10 +17,7 @@ const socialStudio = require('../../../modules/socialStudio/socialAlerts/socialS
 const { normalizeAccountInput, migrateAccount } = require('../../../modules/socialStudio/socialAlerts/accountNormalizer');
 const { checkGuildAccounts, forcePostCreatorLive } = require('../../../modules/socialStudio/socialAlerts/socialStudioMonitor');
 const notesUserPanel = require('../../../modules/utilityStudio/notes/notesUserPanel');
-const pingCommand = require('../../../commands/utility/ping');
-const helpCommand = require('../../../commands/utility/help');
-const serverInfoCommand = require('../../../commands/utility/serverinfo');
-const translateCommand = require('../../../commands/utility/translate');
+const userUtilities = require('./utilities');
 const profileDevelopmentPage = require('./profileDevelopmentPage');
 const {
   buildCategoryPanel,
@@ -608,6 +605,8 @@ async function handleUserPanelInteraction(interaction) {
     return true;
   }
 
+  if (customId === 'user:utility:translate:submit' && interaction.isModalSubmit?.()) return userUtilities.submitTranslate(interaction);
+
   if (customId === 'user:social:details' && interaction.isButton?.()) return handleUserManageProfile(interaction);
   if (customId === 'user:social:manage-profile:submit' && interaction.isModalSubmit?.()) return handleUserManageProfileSubmit(interaction);
   if (customId === 'user:social:manageAccount' && interaction.isButton?.()) return handleUserManageAccountOpen(interaction);
@@ -654,10 +653,10 @@ async function handleUserPanelInteraction(interaction) {
     if (moduleKey === 'birthdays') return showBirthdays(interaction);
     if (moduleKey === 'social') return updatePanel(interaction, socialStudio.user.buildLanding(interaction));
     if (moduleKey === 'leveling') return showLeveling(interaction);
-    if (moduleKey === 'ping') return executeUtilityCommand(interaction, pingCommand);
-    if (moduleKey === 'help') return executeUtilityCommand(interaction, helpCommand);
-    if (moduleKey === 'serverinfo') return executeUtilityCommand(interaction, serverInfoCommand);
-    if (moduleKey === 'translate') return executeUtilityCommand(interaction, translateCommand);
+    if (moduleKey === 'ping') return executeUtilityCommand(interaction, userUtilities.adapters.ping);
+    if (moduleKey === 'help') return executeUtilityCommand(interaction, userUtilities.adapters.help);
+    if (moduleKey === 'serverinfo') return executeUtilityCommand(interaction, userUtilities.adapters.serverinfo);
+    if (moduleKey === 'translate') return executeUtilityCommand(interaction, userUtilities.adapters.translate);
     return updatePanel(interaction, buildModulePanel(moduleKey, memberDisplayName));
   }
   const categoryMatch = customId.match(/^user:category:([a-zA-Z0-9_-]+)$/);
@@ -668,10 +667,10 @@ async function handleUserPanelInteraction(interaction) {
     if (moduleKey === 'profile') return showProfile(interaction);
     if (moduleKey === 'birthdays') return showBirthdays(interaction);
     if (moduleKey === 'leveling') return showLeveling(interaction);
-    if (moduleKey === 'ping') return executeUtilityCommand(interaction, pingCommand);
-    if (moduleKey === 'help') return executeUtilityCommand(interaction, helpCommand);
-    if (moduleKey === 'serverinfo') return executeUtilityCommand(interaction, serverInfoCommand);
-    if (moduleKey === 'translate') return executeUtilityCommand(interaction, translateCommand);
+    if (moduleKey === 'ping') return executeUtilityCommand(interaction, userUtilities.adapters.ping);
+    if (moduleKey === 'help') return executeUtilityCommand(interaction, userUtilities.adapters.help);
+    if (moduleKey === 'serverinfo') return executeUtilityCommand(interaction, userUtilities.adapters.serverinfo);
+    if (moduleKey === 'translate') return executeUtilityCommand(interaction, userUtilities.adapters.translate);
     const placeholders = {
       'role-history': ['📜 Role History — Development', 'Role history access will be designed and connected in a later stage.'],
       'security-notifications': ['🔔 Security Notifications — Development', 'Member security notifications will be designed and connected in a later stage.'],
