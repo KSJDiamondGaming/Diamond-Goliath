@@ -138,7 +138,7 @@ async function fetchAuditExecutor(guild, auditType) {
 
 async function createEmergencyBackup(guild, reason, stage) {
   try {
-    const { createServerBackup } = require('../../../security/serverBackup');
+    const { createServerBackup } = require('../restoreBackup/backup');
     if (typeof createServerBackup !== 'function') return null;
     return await createServerBackup(guild, {
       createdBy: 'Goliath Anti-Nuke',
