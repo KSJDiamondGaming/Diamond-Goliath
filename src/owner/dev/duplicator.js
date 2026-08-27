@@ -15,7 +15,7 @@ const {
 const fetch = global.fetch;
 const security = require('../../core/systems/security/protection/core');
 const guildManager = require('../../core/guild/guildManager');
-const { createServerBackup } = require('../../core/security/serverBackup');
+const { createServerBackup } = require('../../core/systems/security/restoreBackup/backup');
 
 const COPY_PREFIX = 'duplicator-copy';
 const BUILD_PREFIX = 'duplicator-build';
@@ -489,7 +489,7 @@ async function startBuild(interaction) {
   const access = assertAccess(interaction);
   if (!access.allowed) return interaction.reply({ content: `❌ ${access.reason}`, flags: MessageFlags.Ephemeral });
   templates(interaction.guild.id, interaction.guild);
-  return interaction.reply(buildPanel(interaction, makeSession(interaction, 'build')));
+  return interaction.reply(buildPanel(interaction, makeSession(interaction, 'build'));
 }
 
 async function exportTemplate(interaction) {
