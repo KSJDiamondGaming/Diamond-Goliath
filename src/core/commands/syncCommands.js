@@ -1,7 +1,10 @@
 'use strict';
 
 const fs = require('node:fs');
-const path = require('node:path');
+const {
+  CANONICAL_COMMAND_NAMES,
+  getCanonicalCommandFiles,
+} = require('./commandLoader');
 const { REST, Routes } = require('discord.js');
 const { loadEnvironment } = require('../../config/envLoader');
 const { resolveTokenDetails, getRequiredTokenEnvName } = require('../../config/tokenResolver');
@@ -9,16 +12,6 @@ const { BETA_GUILD_IDS: CONFIGURED_BETA_GUILD_IDS = [] } = require('../../config
 const auditStore = require('../../owner/auditIntelligence/auditStore');
 
 const ALLOWED_MODES = new Set(['dev', 'beta', 'production']);
-const CANONICAL_COMMAND_NAMES = new Set(['admin', 'mod', 'user']);
-
-function getCanonicalCommandFiles() {
-  const root = process.cwd();
-  return [
-    path.join(root, 'src', 'core', 'administration', 'admin', 'command.js'),
-    path.join(root, 'src', 'core', 'administration', 'mod', 'command.js'),
-    path.join(root, 'src', 'core', 'administration', 'user', 'command.js'),
-  ];
-}
 
 function resolveMode() {
   const fromArg = String(process.argv[2] || '').trim().toLowerCase();
