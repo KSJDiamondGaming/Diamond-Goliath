@@ -8,11 +8,11 @@ const {
 const { enforceCommandAccess } = require('../../commands/commandAccess');
 const { errorEmbed } = require('../../ui/embeds');
 const { safeEditReply } = require('../../ui/interactionResponse');
-const guildManager = require('../../guild/guildManager');
 const { openModPanel } = require('./panel');
 const {
   getWarningsForUser,
   getWarningCountForUser,
+  getAllCases,
   createCase,
   sendModLog,
 } = require('./storage');
@@ -35,21 +35,12 @@ function normalizeGuildId(guildId) {
   return /^\d{16,20}$/.test(id) ? id : null;
 }
 
-function getGuildModeration(guildId) {
-  const safeGuildId = normalizeGuildId(guildId);
-  if (!safeGuildId) return { enabled: true, cases: {}, analytics: {} };
-  return guildManager.getGuildSection(safeGuildId, 'moderation', {
-    enabled: true,
-    cases: {},
-    analytics: {},
-  });
-}
-
 function getGuildCases(guildId) {
-  const moderation = getGuildModeration(guildId);
-  return moderation.cases && typeof moderation.cases === 'object' && !Array.isArray(moderation.cases)
-    ? moderation.cases
-    : {};
+  const safeGuildId = normalizeGuildId(guildId);
+  if (!safeGuildId) return {};
+  return Object.fromEntries(
+    (getAllCases(safeGuildId) || []).map((entry) => [String(entry.caseId), entry])
+  );
 }
 
 function getGuildCaseEntries(guildCases, guildId) {
@@ -57,7 +48,7 @@ function getGuildCaseEntries(guildCases, guildId) {
   return Object.values(guildCases)
     .filter((entry) => entry && typeof entry === 'object')
     .map((entry) => ({ ...entry, guildId: entry.guildId || guildId }))
-    .sort((a, b) => Number(b.caseNumber || 0) - Number(a.caseNumber || 0));
+    .sort((a, b) => Number(b.caseId || 0) - Number(a.caseId || 0));
 }
 
 function getGuildWarnings(guildCases, guildId) {
