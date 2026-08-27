@@ -23,6 +23,7 @@ db.exec(`
     metadata TEXT,
     status TEXT DEFAULT 'active',
     related_case_id INTEGER,
+    note TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT
   );
@@ -52,6 +53,9 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_warnings_guild_case ON warnings(guild_id, case_id);
   CREATE INDEX IF NOT EXISTS idx_pending_guild_token ON pending_actions(guild_id, token);
 `);
+
+const caseColumns = new Set(db.pragma('table_info(cases)').map((column) => column.name));
+if (!caseColumns.has('note')) db.exec('ALTER TABLE cases ADD COLUMN note TEXT');
 
 const EVENTS = Object.freeze({
   CASE_CREATED: 'case.created',
