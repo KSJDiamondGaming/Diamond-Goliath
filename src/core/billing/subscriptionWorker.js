@@ -1,6 +1,6 @@
 'use strict';
 
-const subscriptionAdminManager = require('../../core/billing/subscriptionAdminManager');
+const subscriptionAdminManager = require('./subscriptionAdminManager');
 const sentinelScheduler = require('../../owner/sentinel/schedulerRegistry.js');
 
 const DEFAULT_INTERVAL_MS = 60 * 60 * 1000;
