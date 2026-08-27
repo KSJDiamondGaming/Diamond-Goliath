@@ -1,30 +1,8 @@
 'use strict';
 
-const fs = require('node:fs');
 const path = require('node:path');
 
-const ALLOWED_COMMAND_NAMES = new Set(['admin', 'mod', 'user']);
-
-function getAllJsFiles(dir) {
-  if (!fs.existsSync(dir)) return [];
-
-  const files = [];
-
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    const fullPath = path.join(dir, entry.name);
-
-    if (entry.isDirectory()) {
-      files.push(...getAllJsFiles(fullPath));
-      continue;
-    }
-
-    if (entry.isFile() && entry.name.endsWith('.js') && !entry.name.endsWith('.test.js') && !entry.name.endsWith('.spec.js')) {
-      files.push(fullPath);
-    }
-  }
-
-  return files.sort((a, b) => a.localeCompare(b));
-}
+const CANONICAL_COMMAND_NAMES = new Set(['admin', 'mod', 'user']);
 
 function getCanonicalCommandFiles() {
   const root = process.cwd();
@@ -32,73 +10,46 @@ function getCanonicalCommandFiles() {
     path.join(root, 'src', 'core', 'systems', 'admin', 'command.js'),
     path.join(root, 'src', 'core', 'systems', 'mod', 'command.js'),
     path.join(root, 'src', 'core', 'systems', 'user', 'command.js'),
-  ].filter((filePath) => fs.existsSync(filePath));
+  ];
 }
 
-function loadCommands(client, options = {}) {
-  const commandsPath = options.commandsPath || path.join(process.cwd(), 'src', 'commands');
-  const files = options.commandsPath
-    ? getAllJsFiles(commandsPath)
-    : getCanonicalCommandFiles();
-  const loaded = [];
-  const skipped = [];
-
+function loadCommands(client) {
   if (!client?.commands?.set) {
     throw new Error('Command collection is not available on Discord client.');
   }
 
   client.commands.clear();
+  const loaded = [];
 
-  for (const filePath of files) {
-    try {
-      delete require.cache[require.resolve(filePath)];
-      const command = require(filePath);
-      const name = command?.data?.name;
+  for (const filePath of getCanonicalCommandFiles()) {
+    delete require.cache[require.resolve(filePath)];
+    const command = require(filePath);
+    const name = String(command?.data?.name || '').trim();
 
-      if (!name || typeof command.execute !== 'function') {
-        skipped.push({ filePath, reason: 'Missing command data name or execute function.' });
-        continue;
-      }
-
-      if (!ALLOWED_COMMAND_NAMES.has(name)) {
-        skipped.push({
-          filePath,
-          reason: `Command is not part of the canonical /admin, /mod, /user surface: ${name}`,
-          intentional: true,
-        });
-        continue;
-      }
-
-      if (client.commands.has(name)) {
-        skipped.push({ filePath, reason: `Duplicate command name: ${name}` });
-        continue;
-      }
-
-      client.commands.set(name, command);
-      loaded.push(name);
-    } catch (error) {
-      skipped.push({ filePath, reason: error?.message || String(error) });
+    if (!CANONICAL_COMMAND_NAMES.has(name)) {
+      throw new Error(`Unexpected canonical command name in ${filePath}: ${name || 'missing'}`);
     }
+    if (typeof command.execute !== 'function') {
+      throw new Error(`Canonical command is missing execute(): ${filePath}`);
+    }
+    if (client.commands.has(name)) {
+      throw new Error(`Duplicate canonical command: /${name}`);
+    }
+
+    client.commands.set(name, command);
+    loaded.push(name);
   }
 
-  const unexpectedSkips = skipped.filter((item) => item.intentional !== true);
-  for (const item of unexpectedSkips) {
-    console.warn(`⚠️ Skipped command: ${item.filePath} — ${item.reason}`);
+  if (loaded.length !== CANONICAL_COMMAND_NAMES.size) {
+    throw new Error(`Expected exactly /admin, /mod and /user; loaded ${loaded.join(', ')}`);
   }
 
   console.log(`✅ commands loaded (${loaded.length}): ${loaded.join(', ')}`);
-
-  return {
-    loaded,
-    skipped,
-    count: loaded.length,
-    commandsPath,
-  };
+  return { loaded, count: loaded.length };
 }
 
 module.exports = {
-  ALLOWED_COMMAND_NAMES,
-  getAllJsFiles,
+  CANONICAL_COMMAND_NAMES,
   getCanonicalCommandFiles,
   loadCommands,
 };
