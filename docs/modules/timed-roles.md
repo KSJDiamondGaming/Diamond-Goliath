@@ -15,7 +15,7 @@ src/modules/roleStudio/timedRoles/
 
 src/server/routes/modules/roleStudio/timedRoles.js
 src/events/client/timedRolesStartup.js
-src/events/timedroles/timedRolesMemberJoin.js
+src/events/members/timedRolesMemberJoin.js
 src/events/roles/timedRolesSync.js
 src/dashboard/js/pages/modules/TimedRoles.jsx
 ```
