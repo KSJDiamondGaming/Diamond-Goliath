@@ -103,7 +103,7 @@ function canonicalState(route = 'admin:home') {
   if (route === 'admin:automod') return { history: [...home, route] };
   if (route === 'admin:automod:configure' || route.startsWith('admin:automod:rule:')) return { history: [...home, 'admin:automod', route] };
   if (route === 'admin:channel:automodlog') return { history: [...home, 'admin:automod', 'admin:automod:configure', route] };
-  if (['admin:staffroles', 'admin:modroles', 'admin:adminsettings'].includes(route)) return { history: [...home, 'admin:adminpanel', route] };
+  if (['admin:staffroles', 'admin:modroles'].includes(route)) return { history: [...home, 'admin:adminpanel', route] };
   if (route === 'admin:autoRoles' || MODULES.some(([id]) => id === route)) return { history: [...home, 'admin:modules', route] };
   return { history: [...home, route] };
 }
@@ -166,7 +166,6 @@ function buildAdminToolsPanel(guild, name = 'Unknown User') {
       ['admin:setadminlog', '🔏 Set Admin Log'],
       ['admin:staffroles', '👥 Staff Roles'],
       ['admin:modroles', '🔐 Mod Roles'],
-      ['admin:adminsettings', '⚙️ Settings'],
     ]), row(backButton('admin:adminpanel'))],
   };
 }
@@ -277,7 +276,6 @@ function panelForRoute(route, interaction, name) {
   if (route === 'admin:staffroles') return buildStaffRolesPanel(interaction.guild, name);
   if (route === 'admin:modroles') return buildModRolesPanel(interaction.guild, name);
   if (route === 'admin:autoRoles') return buildAutoRolesPanel(interaction.guild, name);
-  if (route === 'admin:adminsettings') return buildComingSoonPanel('⚙️ Admin Settings', 'Admin settings will live here.', route);
   if (COMING_SOON[route]) return buildComingSoonPanel(...COMING_SOON[route], route);
   return buildAdminPanel(interaction.guild, name);
 }
@@ -367,7 +365,7 @@ async function handleAdminNavigation(interaction) {
   if (id === 'admin:backup:requestrestore') return restoreRequestManager.createRestoreRequest(interaction, { cooldownMs: 1800000 });
   if (['admin:backup:restore', 'admin:backup:restore:real'].includes(id)) { await interaction.reply({ content: '❌ Direct restores are disabled. Use the centralized restore approval system.', flags: 64 }); return true; }
 
-  const routes = ['admin:home', 'admin:adminpanel', 'admin:modules', 'admin:logs', 'admin:backups', 'admin:staffroles', 'admin:modroles', 'admin:autoRoles', 'admin:adminsettings'];
+  const routes = ['admin:home', 'admin:adminpanel', 'admin:modules', 'admin:logs', 'admin:backups', 'admin:staffroles', 'admin:modroles', 'admin:autoRoles'];
   if (routes.includes(id) || COMING_SOON[id]) return openRoute(interaction, id, name);
   return false;
 }
