@@ -1,3 +1,8 @@
 'use strict';
 
-module.exports = require('../../core/systems/user/utilities').adapters.ping;
+const adapter = require('../../core/systems/user/utilities').adapters.ping;
+module.exports = {
+  hidden: true,
+  data: { name: 'ping', description: 'User panel status utility', toJSON: () => ({ name: 'ping', description: 'User panel status utility' }) },
+  execute: adapter.execute,
+};
