@@ -489,7 +489,7 @@ async function startBuild(interaction) {
   const access = assertAccess(interaction);
   if (!access.allowed) return interaction.reply({ content: `❌ ${access.reason}`, flags: MessageFlags.Ephemeral });
   templates(interaction.guild.id, interaction.guild);
-  return interaction.reply(buildPanel(interaction, makeSession(interaction, 'build'));
+  return interaction.reply(buildPanel(interaction, makeSession(interaction, 'build')));
 }
 
 async function exportTemplate(interaction) {
