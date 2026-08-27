@@ -61,7 +61,7 @@ const getRoleConfig = (guildId, section) => getGuildSection(guildId, section, { 
 const getAutoRolesConfig = (guildId) => getGuildSection(guildId, 'autoRoles', { enabled: false, roleIds: [] });
 const isBotOwner = (interaction) => security.isBotOwner(interaction.user.id);
 const isGuildOwner = (interaction) => interaction.guild?.ownerId === interaction.user.id;
-const canUseAdminPanel = (interaction) => isBotOwner(interaction) || isGuildOwner(interaction) || interaction.member?.permissions?.has(PermissionFlagsBits.Administrator);
+const canUseAdminPanel = (interaction) => security.hasPermission(interaction, 'admin') || isBotOwner(interaction) || isGuildOwner(interaction) || interaction.member?.permissions?.has(PermissionFlagsBits.Administrator);
 const normalizeBackupId = (backup) => typeof backup === 'string' ? backup : backup?.backupId;
 const formatRoleList = (ids) => {
   const values = [...new Set((ids || []).filter(Boolean))];
