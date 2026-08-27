@@ -1,6 +1,6 @@
 'use strict';
 
-const voiceLog = require('../../core/logging/voice/voiceLog');
+const voiceLog = require('../../core/logging/voiceLog');
 const tempVoice = require('../../modules/utilityStudio/tempVoice/tempVoice');
 const tempVoiceStore = require('../../modules/utilityStudio/tempVoice/tempVoiceStore');
 const statsManager = require('../../modules/utilityStudio/stats/statsManager');

@@ -1,4 +1,4 @@
-const channelLog = require('../../core/logging/channels/channelLog');
+const channelLog = require('../../core/logging/channelLog');
 
 module.exports = [
   {

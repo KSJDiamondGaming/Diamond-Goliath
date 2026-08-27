@@ -1,4 +1,4 @@
-const loggingService = require('../service');
+const loggingService = require('./service');
 
 async function handleChannelCreate(channel) {
   try {
