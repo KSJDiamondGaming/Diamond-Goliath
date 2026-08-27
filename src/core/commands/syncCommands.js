@@ -140,6 +140,22 @@ async function putGlobalCommands(rest, clientId, commands, dryRun) {
   console.log(`[CommandSync] Global: ${commands.map((command) => `/${command.name}`).join(', ')}`);
 }
 
+async function cleanupStaleGlobalCommands(rest, clientId, dryRun = false) {
+  const commands = await rest.get(Routes.applicationCommands(clientId));
+  const stale = (commands || []).filter((command) => !CANONICAL_COMMAND_NAMES.has(String(command?.name || '')));
+
+  for (const command of stale) {
+    if (dryRun) {
+      console.log(`[CommandSync] DRY RUN remove stale global /${command.name}`);
+      continue;
+    }
+    await rest.delete(Routes.applicationCommand(clientId, command.id));
+    console.log(`[CommandSync] Removed stale global /${command.name}`);
+  }
+
+  return stale.map((command) => command.name);
+}
+
 async function cleanupCommandCenterScope(rest, clientId, guildIds, privateGuildId, dryRun = false) {
   for (const guildId of guildIds) {
     if (!guildId || guildId === privateGuildId) continue;
@@ -177,6 +193,7 @@ async function syncCommands() {
   const guildIds = configuredGuildIds(mode);
   const privateGuildId = commandCenterGuildId();
   const rest = new REST({ version: '10', timeout: timeoutMs() }).setToken(token);
+  let removedGlobalCommands = [];
 
   if (commandMode === 'global') {
     await putGlobalCommands(rest, clientId, commands, dryRun);
@@ -186,6 +203,7 @@ async function syncCommands() {
       await putGuildCommands(rest, clientId, guildId, commands, privateGuildId, dryRun);
     }
     await cleanupCommandCenterScope(rest, clientId, guildIds, privateGuildId, dryRun);
+    removedGlobalCommands = await cleanupStaleGlobalCommands(rest, clientId, dryRun);
   }
 
   return {
@@ -194,6 +212,7 @@ async function syncCommands() {
     dryRun,
     guildIds,
     commands: commands.map((command) => command.name),
+    removedGlobalCommands,
   };
 }
 
@@ -211,6 +230,7 @@ module.exports = {
   getCanonicalCommandFiles,
   loadCanonicalCommands,
   configuredGuildIds,
+  cleanupStaleGlobalCommands,
   cleanupCommandCenterScope,
   syncCommands,
 };
