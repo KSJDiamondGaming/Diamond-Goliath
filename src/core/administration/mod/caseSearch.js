@@ -1,110 +1,33 @@
 'use strict';
 
-const {
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  ModalBuilder,
-  TextInputBuilder,
-  TextInputStyle,
-} = require('discord.js');
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, EmbedBuilder } = require('discord.js');
 const { safeReply, ephemeralError } = require('../../../core/ui/interactionResponse');
 const { COLORS, createEmbed } = require('../../../core/ui/embeds');
 const { canUseModAction } = require('./permissions');
-const { searchCases } = require('./storage');
+const { searchCases, getCaseById } = require('./storage');
 
 const ACTIONS = new Set(['warn', 'timeout', 'kick', 'ban', 'unwarn', 'remove-timeout']);
 const STATUSES = new Set(['active', 'reversed', 'expired']);
+const SEARCHES = new Map();
+const TTL = 30 * 60 * 1000;
 
 function buildCaseSearchModal() {
-  return new ModalBuilder()
-    .setCustomId('mod_submit_case_search')
-    .setTitle('Search Moderation Cases')
-    .addComponents(
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder().setCustomId('case_id').setLabel('Case ID').setStyle(TextInputStyle.Short).setPlaceholder('Optional — e.g. 123').setRequired(false).setMaxLength(12)
-      ),
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder().setCustomId('user_id').setLabel('User ID').setStyle(TextInputStyle.Short).setPlaceholder('Optional Discord user ID').setRequired(false).setMaxLength(30)
-      ),
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder().setCustomId('moderator_id').setLabel('Moderator ID').setStyle(TextInputStyle.Short).setPlaceholder('Optional Discord moderator ID').setRequired(false).setMaxLength(30)
-      ),
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder().setCustomId('action').setLabel('Action').setStyle(TextInputStyle.Short).setPlaceholder('warn, timeout, kick, ban...').setRequired(false).setMaxLength(30)
-      ),
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder().setCustomId('status').setLabel('Status').setStyle(TextInputStyle.Short).setPlaceholder('active, reversed, expired').setRequired(false).setMaxLength(20)
-      )
-    );
+  return new ModalBuilder().setCustomId('mod_submit_case_search').setTitle('Search Moderation Cases').addComponents(
+    ...[['case_id','Case ID','Optional — e.g. 123',12],['user_id','User ID','Optional Discord user ID',30],['moderator_id','Moderator ID','Optional Discord moderator ID',30],['action','Action','warn, timeout, kick, ban...',30],['status','Status','active, reversed, expired',20]].map(([id,label,placeholder,max]) => new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId(id).setLabel(label).setStyle(TextInputStyle.Short).setPlaceholder(placeholder).setRequired(false).setMaxLength(max)))
+  );
 }
-
-function readSearchInput(interaction, field) {
-  return String(interaction.fields.getTextInputValue(field) || '').trim();
-}
-
-function normalizeSearchFilters(interaction) {
-  const caseId = readSearchInput(interaction, 'case_id');
-  const userId = readSearchInput(interaction, 'user_id');
-  const moderatorId = readSearchInput(interaction, 'moderator_id');
-  const action = readSearchInput(interaction, 'action').toLowerCase();
-  const status = readSearchInput(interaction, 'status').toLowerCase();
-
-  if (caseId && !/^\d+$/.test(caseId)) return { error: 'Case ID must be a number.' };
-  if (action && !ACTIONS.has(action)) return { error: `Unknown action. Use: ${[...ACTIONS].join(', ')}.` };
-  if (status && !STATUSES.has(status)) return { error: `Unknown status. Use: ${[...STATUSES].join(', ')}.` };
-
-  return { caseId: caseId || undefined, userId: userId || undefined, moderatorId: moderatorId || undefined, action: action || undefined, status: status || undefined, page: 0, pageSize: 10 };
-}
-
-function formatSearchCase(entry) {
-  return [`**#${entry.caseId}** • ${entry.action} • ${entry.status || 'active'}`, `User: <@${entry.userId}> • Moderator: <@${entry.moderatorId}>`, `Reason: ${entry.reason || 'No reason provided'}`].join('\n');
-}
-
-function buildSearchResultsEmbed(result) {
-  const description = result.results.length ? result.results.map(formatSearchCase).join('\n\n') : 'No moderation cases matched those filters.';
-  return createEmbed({
-    title: 'Moderation Case Search',
-    description: description.slice(0, 3900),
-    color: COLORS.PRIMARY,
-    footer: `Showing ${result.total ? `${result.page * result.pageSize + 1}-${Math.min((result.page + 1) * result.pageSize, result.total)} of ${result.total}` : '0'} result${result.total === 1 ? '' : 's'}`,
-  });
-}
-
-function buildSearchButtons() {
-  return [
-    new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('mod_case_search').setLabel('New Search').setStyle(ButtonStyle.Primary)
-    ),
-  ];
-}
-
-function buildSearchPayload(result) {
-  return { embeds: [buildSearchResultsEmbed(result)], components: buildSearchButtons() };
-}
-
-async function openCaseSearch(interaction) {
-  if (!canUseModAction(interaction.member, interaction.guild, 'view_case_detail')) return safeReply(interaction, ephemeralError('No permission to search moderation cases.'));
-  await interaction.showModal(buildCaseSearchModal());
-  return true;
-}
-
-async function submitCaseSearch(interaction) {
-  if (!canUseModAction(interaction.member, interaction.guild, 'view_case_detail')) return safeReply(interaction, ephemeralError('No permission to search moderation cases.'));
-  const filters = normalizeSearchFilters(interaction);
-  if (filters.error) return safeReply(interaction, ephemeralError(filters.error));
-  const result = searchCases(interaction.guild.id, filters);
-  return safeReply(interaction, { ...buildSearchPayload(result), flags: 64 });
-}
-
-async function handleCaseSearchAction(interaction) {
-  if (String(interaction.customId || '') !== 'mod_case_search') return false;
-  return openCaseSearch(interaction);
-}
-
-async function handleCaseSearchModal(interaction) {
-  if (interaction.customId !== 'mod_submit_case_search') return false;
-  return submitCaseSearch(interaction);
-}
-
-module.exports = { openCaseSearch, submitCaseSearch, handleCaseSearchAction, handleCaseSearchModal };
+function input(i,id){return String(i.fields.getTextInputValue(id)||'').trim();}
+function filtersFrom(i){const caseId=input(i,'case_id'),userId=input(i,'user_id'),moderatorId=input(i,'moderator_id'),action=input(i,'action').toLowerCase(),status=input(i,'status').toLowerCase();if(caseId&&!/^\d+$/.test(caseId))return{error:'Case ID must be a number.'};if(action&&!ACTIONS.has(action))return{error:`Unknown action. Use: ${[...ACTIONS].join(', ')}.`};if(status&&!STATUSES.has(status))return{error:`Unknown status. Use: ${[...STATUSES].join(', ')}.`};return{caseId:caseId||undefined,userId:userId||undefined,moderatorId:moderatorId||undefined,action:action||undefined,status:status||undefined,page:0,pageSize:10};}
+function remember(guildId,filters){const token=`${String(guildId)}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`;SEARCHES.set(token,{guildId:String(guildId),filters:{...filters},createdAt:Date.now()});for(const[k,v]of SEARCHES)if(Date.now()-v.createdAt>TTL)SEARCHES.delete(k);return token;}
+function stateFor(token,guildId){const s=SEARCHES.get(token);if(!s||s.guildId!==String(guildId)||Date.now()-s.createdAt>TTL){SEARCHES.delete(token);return null;}return s;}
+function resultEmbed(r){const d=r.results.length?r.results.map(e=>`**#${e.caseId}** • ${e.action} • ${e.status||'active'}\nUser: <@${e.userId}> • Moderator: <@${e.moderatorId}>\nReason: ${e.reason||'No reason provided'}`).join('\n\n'):'No moderation cases matched those filters.';return createEmbed({title:'Moderation Case Search',description:d.slice(0,3900),color:COLORS.PRIMARY,footer:`Showing ${r.total?`${r.page*r.pageSize+1}-${Math.min((r.page+1)*r.pageSize,r.total)} of ${r.total}`:'0'} result${r.total===1?'':'s'}`});}
+function resultComponents(r,token){const rows=[];if(r.results.length)rows.push(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`mod_case_search_select:${token}`).setPlaceholder('Select a case to open Case Detail').addOptions(r.results.map(e=>({label:`Case #${e.caseId} • ${e.action}`.slice(0,100),description:`${e.status||'active'} • User ${e.userId}`.slice(0,100),value:String(e.caseId)})))));rows.push(new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`mod_case_search_page:${token}:${Math.max(0,r.page-1)}`).setLabel('◀ Previous').setStyle(ButtonStyle.Secondary).setDisabled(r.page<=0),new ButtonBuilder().setCustomId(`mod_case_search_page:${token}:${r.page+1}`).setLabel('Next ▶').setStyle(ButtonStyle.Secondary).setDisabled(r.page>=r.totalPages-1||r.totalPages===0),new ButtonBuilder().setCustomId('mod_case_search').setLabel('New Search').setStyle(ButtonStyle.Primary)));return rows;}
+function payload(r,token){return{embeds:[resultEmbed(r)],components:resultComponents(r,token)};}
+function caseDetailEmbed(c){const ts=v=>{const n=new Date(v).getTime();return Number.isFinite(n)?Math.floor(n/1000):Math.floor(Date.now()/1000);};const e=new EmbedBuilder().setColor(COLORS.PRIMARY).setTitle(`🧾 Case #${c.caseId}`).addFields({name:'Action',value:String(c.action||'unknown'),inline:true},{name:'Status',value:String(c.status||'active'),inline:true},{name:'User ID',value:String(c.userId),inline:true},{name:'Moderator ID',value:String(c.moderatorId),inline:true},{name:'Reason',value:String(c.reason||'No reason provided').slice(0,1024),inline:false},{name:'Created',value:`<t:${ts(c.createdAt)}:F>`,inline:true},{name:'Updated',value:c.updatedAt?`<t:${ts(c.updatedAt)}:F>`:'Never',inline:true});if(c.note)e.addFields({name:'Staff Note',value:String(c.note).slice(0,1024),inline:false});return e;}
+function caseDetailButtons(c){const closed=c.status==='reversed'||c.status==='expired';return[new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`mod_case_reverse_warning:${c.caseId}`).setLabel('↩️ Reverse Warning').setStyle(ButtonStyle.Secondary).setDisabled(c.action!=='warn'||closed),new ButtonBuilder().setCustomId(`mod_case_reverse_timeout:${c.caseId}`).setLabel('⏪ Reverse Timeout').setStyle(ButtonStyle.Secondary).setDisabled(c.action!=='timeout'||closed),new ButtonBuilder().setCustomId(`mod_case_note:${c.caseId}`).setLabel('📝 Add/Edit Note').setStyle(ButtonStyle.Primary))];}
+async function openCaseSearch(i){if(!canUseModAction(i.member,i.guild,'view_case_detail'))return safeReply(i,ephemeralError('No permission to search moderation cases.'));await i.showModal(buildCaseSearchModal());return true;}
+async function submitCaseSearch(i){if(!canUseModAction(i.member,i.guild,'view_case_detail'))return safeReply(i,ephemeralError('No permission to search moderation cases.'));const f=filtersFrom(i);if(f.error)return safeReply(i,ephemeralError(f.error));const token=remember(i.guild.id,f),r=searchCases(i.guild.id,f);return safeReply(i,{...payload(r,token),flags:64});}
+async function handleCaseSearchAction(i){const id=String(i.customId||'');if(id==='mod_case_search')return openCaseSearch(i);if(!id.startsWith('mod_case_search_page:'))return false;if(!canUseModAction(i.member,i.guild,'view_case_detail'))return safeReply(i,ephemeralError('No permission to search moderation cases.'));const[,token,pageRaw]=id.split(':');const s=stateFor(token,i.guild.id);if(!s)return safeReply(i,ephemeralError('This search has expired. Please start a new search.'));const r=searchCases(i.guild.id,{...s.filters,page:Math.max(0,Number(pageRaw)||0)});return i.update(payload(r,token));}
+async function handleCaseSearchSelect(i){const id=String(i.customId||'');if(!id.startsWith('mod_case_search_select:'))return false;if(!canUseModAction(i.member,i.guild,'view_case_detail'))return safeReply(i,ephemeralError('No permission to view case details.'));const[,token]=id.split(':');if(!stateFor(token,i.guild.id))return safeReply(i,ephemeralError('This search has expired. Please start a new search.'));const caseId=Number(i.values?.[0]),c=getCaseById(i.guild.id,caseId);if(!Number.isInteger(caseId)||!c)return safeReply(i,ephemeralError('Case not found.'));return i.update({embeds:[caseDetailEmbed(c)],components:caseDetailButtons(c)});}
+async function handleCaseSearchModal(i){if(i.customId!=='mod_submit_case_search')return false;return submitCaseSearch(i);}
+module.exports={openCaseSearch,submitCaseSearch,handleCaseSearchAction,handleCaseSearchSelect,handleCaseSearchModal};
