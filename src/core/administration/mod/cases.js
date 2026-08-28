@@ -6,6 +6,7 @@ const {
   ButtonStyle,
   EmbedBuilder,
   ModalBuilder,
+  PermissionFlagsBits,
   TextInputBuilder,
   TextInputStyle,
 } = require('discord.js');
@@ -33,18 +34,15 @@ const STATUS_LABELS = Object.freeze({
   reversed: '🔁 Reversed',
   expired: '⌛ Expired',
 });
-
-const TRACKED_ACTIONS = Object.freeze([
-  'warn',
-  'timeout',
-  'kick',
-  'ban',
-  'unwarn',
-  'remove-timeout',
-]);
+const TRACKED_ACTIONS = Object.freeze(['warn', 'timeout', 'kick', 'ban', 'unwarn', 'remove-timeout']);
+const APPEALABLE_ACTIONS = new Set(['warn', 'timeout', 'kick', 'ban']);
 const APPEAL_PAGE_SIZE = 5;
 const MAX_APPEALS_PER_CASE = 20;
 const APPEAL_STATUSES = new Set(['pending', 'approved', 'denied']);
+const APPEAL_RESUBMIT_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
+const APPEAL_QUEUE_TTL = 30 * 60 * 1000;
+const APPEAL_QUEUE_STATES = new Map();
+const APPEAL_REVIEW_LOCKS = new Set();
 
 function getStatus(modCase = {}) { return modCase.status || 'active'; }
 function getStatusLabel(modCase = {}) { return STATUS_LABELS[getStatus(modCase)] || STATUS_LABELS.active; }
@@ -108,15 +106,6 @@ function getCaseAppeals(modCase = {}) {
 }
 function getPendingAppeal(modCase = {}) { return getCaseAppeals(modCase).find((appeal) => appeal.status === 'pending') || null; }
 function getAppealById(modCase, appealId) { return getCaseAppeals(modCase).find((appeal) => String(appeal.id) === String(appealId)) || null; }
-function getPendingAppeals(guildId) {
-  const pending = [];
-  for (const modCase of getAllCases(guildId) || []) {
-    for (const appeal of getCaseAppeals(modCase)) {
-      if (appeal.status === 'pending') pending.push({ case: modCase, appeal });
-    }
-  }
-  return pending.sort((a, b) => String(a.appeal.submittedAt || '').localeCompare(String(b.appeal.submittedAt || '')));
-}
 function updateCaseMetadata(guildId, caseId, metadata) {
   const updatedAt = new Date().toISOString();
   const result = db.prepare('UPDATE cases SET metadata = ?, updated_at = ? WHERE guild_id = ? AND case_id = ?').run(JSON.stringify(metadata || {}), updatedAt, String(guildId), Number(caseId));
@@ -125,99 +114,208 @@ function updateCaseMetadata(guildId, caseId, metadata) {
   if (updated) emitCaseUpdated(guildId, updated);
   return updated;
 }
-function submitAppeal(guildId, caseId, { appellantId, grounds, requestedResolution }, actorId = null) {
-  const modCase = getCaseById(guildId, caseId);
+function getAppealEligibility(modCase, appellantId, nowMs = Date.now()) {
   if (!modCase) return { ok: false, error: 'Case not found.' };
+  const normalizedAppellant = String(appellantId || '').trim();
+  if (!/^\d{16,20}$/.test(normalizedAppellant)) return { ok: false, error: 'Appellant ID must be a valid Discord user ID.' };
+  if (String(modCase.userId) !== normalizedAppellant) return { ok: false, error: 'Only the user affected by this moderation case can appeal it.' };
+  if (!APPEALABLE_ACTIONS.has(String(modCase.action || '').toLowerCase())) return { ok: false, error: 'This case type is not appealable.' };
+  if (getStatus(modCase) !== 'active') return { ok: false, error: `This case is ${getStatus(modCase)} and is no longer eligible for appeal.` };
   const appeals = getCaseAppeals(modCase);
   if (appeals.length >= MAX_APPEALS_PER_CASE) return { ok: false, error: `Case appeal history is limited to ${MAX_APPEALS_PER_CASE} appeals.` };
   if (appeals.some((appeal) => appeal.status === 'pending')) return { ok: false, error: 'This case already has a pending appeal.' };
+  if (appeals.some((appeal) => appeal.status === 'approved')) return { ok: false, error: 'An appeal for this case has already been approved.' };
+  const denied = appeals.filter((appeal) => appeal.status === 'denied' && appeal.reviewedAt).sort((a, b) => String(b.reviewedAt).localeCompare(String(a.reviewedAt)))[0];
+  if (denied) {
+    const reviewedAt = new Date(denied.reviewedAt).getTime();
+    if (Number.isFinite(reviewedAt) && nowMs - reviewedAt < APPEAL_RESUBMIT_COOLDOWN_MS) {
+      const eligibleAt = reviewedAt + APPEAL_RESUBMIT_COOLDOWN_MS;
+      return { ok: false, error: `A denied appeal can be resubmitted after <t:${Math.floor(eligibleAt / 1000)}:F>.`, eligibleAt };
+    }
+  }
+  return { ok: true };
+}
+function submitAppeal(guildId, caseId, { appellantId, grounds, requestedResolution, source = 'staff' }, actorId = null) {
+  const modCase = getCaseById(guildId, caseId);
+  if (!modCase) return { ok: false, error: 'Case not found.' };
   const normalizedAppellant = String(appellantId || modCase.userId || '').trim();
-  if (!/^\d{16,20}$/.test(normalizedAppellant)) return { ok: false, error: 'Appellant ID must be a valid Discord user ID.' };
+  const eligibility = getAppealEligibility(modCase, normalizedAppellant);
+  if (!eligibility.ok) return eligibility;
   const normalizedGrounds = String(grounds || '').trim().slice(0, 1500);
   if (!normalizedGrounds) return { ok: false, error: 'Appeal grounds are required.' };
+  const appeals = getCaseAppeals(modCase);
   const appeal = {
     id: `ap_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`,
     status: 'pending',
     appellantId: normalizedAppellant,
     grounds: normalizedGrounds,
     requestedResolution: String(requestedResolution || '').trim().slice(0, 500) || null,
+    source: String(source || 'staff').slice(0, 32),
     submittedBy: actorId ? String(actorId) : null,
     submittedAt: new Date().toISOString(),
     reviewedBy: null,
     reviewedAt: null,
     reviewNote: null,
     remedy: null,
+    notification: null,
   };
   const metadata = { ...(modCase.metadata || {}), appeals: [...appeals, appeal] };
   const updated = updateCaseMetadata(guildId, caseId, metadata);
   if (!updated) return { ok: false, error: 'Failed to persist appeal.' };
-  recordCaseAudit({ guildId, caseId, actorId, event: 'case.appeal.submitted', before: null, after: { appealId: appeal.id, appellantId: appeal.appellantId, status: appeal.status, grounds: appeal.grounds, requestedResolution: appeal.requestedResolution }, metadata: { appealId: appeal.id } });
+  recordCaseAudit({ guildId, caseId, actorId, event: 'case.appeal.submitted', before: null, after: { appealId: appeal.id, appellantId: appeal.appellantId, status: appeal.status, source: appeal.source, grounds: appeal.grounds, requestedResolution: appeal.requestedResolution }, metadata: { appealId: appeal.id, source: appeal.source } });
   return { ok: true, case: updated, appeal };
 }
+function listAppeals(guildId, filters = {}) {
+  const status = String(filters.status || 'pending').trim().toLowerCase();
+  const userId = String(filters.userId || '').trim();
+  const moderatorId = String(filters.moderatorId || '').trim();
+  const caseId = Number(filters.caseId);
+  const results = [];
+  for (const modCase of getAllCases(guildId) || []) {
+    if (Number.isInteger(caseId) && caseId > 0 && Number(modCase.caseId) !== caseId) continue;
+    if (userId && String(modCase.userId) !== userId) continue;
+    if (moderatorId && String(modCase.moderatorId) !== moderatorId) continue;
+    for (const appeal of getCaseAppeals(modCase)) {
+      if (status && status !== 'all' && appeal.status !== status) continue;
+      results.push({ case: modCase, appeal });
+    }
+  }
+  return results.sort((a, b) => String(b.appeal.submittedAt || '').localeCompare(String(a.appeal.submittedAt || '')));
+}
+function getPendingAppeals(guildId) { return listAppeals(guildId, { status: 'pending' }); }
+function rememberAppealQueue(guildId, filters = {}) {
+  const token = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+  APPEAL_QUEUE_STATES.set(token, { guildId: String(guildId), filters: { status: 'pending', ...filters }, createdAt: Date.now() });
+  for (const [key, value] of APPEAL_QUEUE_STATES) if (Date.now() - value.createdAt > APPEAL_QUEUE_TTL) APPEAL_QUEUE_STATES.delete(key);
+  return token;
+}
+function getAppealQueueState(token, guildId) {
+  const state = APPEAL_QUEUE_STATES.get(token);
+  if (!state || state.guildId !== String(guildId) || Date.now() - state.createdAt > APPEAL_QUEUE_TTL) { APPEAL_QUEUE_STATES.delete(token); return null; }
+  return state;
+}
+
 async function applyApprovedAppealRemedy(interaction, modCase, fetchTarget) {
+  const guild = interaction.guild;
+  const actorId = interaction.user?.id || null;
   const reason = `Appeal approved for Case #${modCase.caseId}`;
   if (modCase.action === 'warn') {
-    const removed = deleteWarningByCaseId(interaction.guild.id, modCase.caseId);
-    updateCaseStatus(interaction.guild.id, modCase.caseId, 'reversed', interaction.user?.id || null);
+    const removed = deleteWarningByCaseId(guild.id, modCase.caseId);
+    updateCaseStatus(guild.id, modCase.caseId, 'reversed', actorId);
     return { attempted: true, action: 'remove-warning', ok: Boolean(removed), detail: removed ? 'Warning removed.' : 'Warning record was already absent.' };
   }
   if (modCase.action === 'timeout') {
-    const target = typeof fetchTarget === 'function' ? await fetchTarget(interaction.guild, modCase.userId) : null;
+    const target = typeof fetchTarget === 'function' ? await fetchTarget(guild, modCase.userId) : null;
     if (!target) {
-      updateCaseStatus(interaction.guild.id, modCase.caseId, 'reversed', interaction.user?.id || null);
+      updateCaseStatus(guild.id, modCase.caseId, 'reversed', actorId);
       return { attempted: true, action: 'remove-timeout', ok: false, detail: 'Member not available to clear timeout; case status reversed.' };
     }
     try {
       await target.timeout(null, reason);
-      updateCaseStatus(interaction.guild.id, modCase.caseId, 'reversed', interaction.user?.id || null);
+      updateCaseStatus(guild.id, modCase.caseId, 'reversed', actorId);
       return { attempted: true, action: 'remove-timeout', ok: true, detail: 'Timeout cleared.' };
     } catch (error) {
-      updateCaseStatus(interaction.guild.id, modCase.caseId, 'reversed', interaction.user?.id || null);
+      updateCaseStatus(guild.id, modCase.caseId, 'reversed', actorId);
       return { attempted: true, action: 'remove-timeout', ok: false, detail: String(error?.message || 'Failed to clear timeout.').slice(0, 300) };
     }
   }
   if (modCase.action === 'ban') {
     try {
-      await interaction.guild.bans.remove(modCase.userId, reason);
-      updateCaseStatus(interaction.guild.id, modCase.caseId, 'reversed', interaction.user?.id || null);
+      await guild.bans.remove(modCase.userId, reason);
+      updateCaseStatus(guild.id, modCase.caseId, 'reversed', actorId);
       return { attempted: true, action: 'unban', ok: true, detail: 'Ban removed.' };
     } catch (error) {
-      updateCaseStatus(interaction.guild.id, modCase.caseId, 'reversed', interaction.user?.id || null);
+      updateCaseStatus(guild.id, modCase.caseId, 'reversed', actorId);
       return { attempted: true, action: 'unban', ok: false, detail: String(error?.message || 'Failed to remove ban.').slice(0, 300) };
     }
   }
-  updateCaseStatus(interaction.guild.id, modCase.caseId, 'reversed', interaction.user?.id || null);
+  updateCaseStatus(guild.id, modCase.caseId, 'reversed', actorId);
   return { attempted: false, action: modCase.action, ok: true, detail: modCase.action === 'kick' ? 'Kick cannot be automatically undone; case status reversed.' : 'Case status reversed.' };
+}
+async function createRejoinInvite(guild, caseId) {
+  const me = guild?.members?.me;
+  if (!guild || !me) return { ok: false, error: 'Bot member is unavailable.' };
+  const candidates = [];
+  if (guild.systemChannel) candidates.push(guild.systemChannel);
+  for (const channel of guild.channels?.cache?.values?.() || []) if (!candidates.some((item) => item?.id === channel?.id)) candidates.push(channel);
+  for (const channel of candidates) {
+    if (!channel?.isTextBased?.() || typeof channel.createInvite !== 'function') continue;
+    const permissions = channel.permissionsFor?.(me);
+    if (!permissions?.has(PermissionFlagsBits.ViewChannel) || !permissions?.has(PermissionFlagsBits.CreateInstantInvite)) continue;
+    try {
+      const invite = await channel.createInvite({ maxAge: 24 * 60 * 60, maxUses: 1, unique: true, reason: `Appeal approved for Case #${caseId}` });
+      if (invite?.url) return { ok: true, url: invite.url, channelId: channel.id };
+    } catch { }
+  }
+  return { ok: false, error: 'No channel was available for a safe one-use rejoin invite.' };
+}
+async function notifyAppealOutcome(interaction, modCase, appeal) {
+  const client = interaction.client || interaction.guild?.client;
+  let invite = null;
+  if (appeal.status === 'approved' && ['ban', 'kick'].includes(modCase.action) && appeal.remedy?.ok) invite = await createRejoinInvite(interaction.guild, modCase.caseId);
+  const decision = appeal.status === 'approved' ? 'approved ✅' : 'denied ❌';
+  const lines = [
+    `Your appeal for **${interaction.guild.name}** • Case **#${modCase.caseId}** has been **${decision}**.`,
+    `Review: ${appeal.reviewNote}`,
+  ];
+  if (appeal.remedy?.detail) lines.push(`Outcome: ${appeal.remedy.detail}`);
+  if (invite?.ok) lines.push(`Rejoin link (single use, expires in 24 hours): ${invite.url}`);
+  lines.push('You can keep this DM as your appeal record.');
+  let user = null;
+  let sent = false;
+  let error = null;
+  try {
+    user = await client?.users?.fetch?.(appeal.appellantId);
+    if (!user?.send) throw new Error('Could not resolve appellant for DM delivery.');
+    await user.send({ content: lines.join('\n').slice(0, 1900), components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('mod_appeal_lookup').setLabel('Appeal Another Case').setStyle(ButtonStyle.Secondary))] });
+    sent = true;
+  } catch (deliveryError) {
+    error = String(deliveryError?.message || deliveryError || 'DM delivery failed.').slice(0, 300);
+  }
+  const notification = { sent, sentAt: new Date().toISOString(), error, invite: invite?.ok ? { url: invite.url, channelId: invite.channelId } : invite || null };
+  recordCaseAudit({ guildId: interaction.guild.id, caseId: modCase.caseId, actorId: interaction.user?.id || null, event: sent ? 'case.appeal.notification.sent' : 'case.appeal.notification.failed', before: null, after: notification, metadata: { appealId: appeal.id, appellantId: appeal.appellantId } });
+  return notification;
 }
 async function resolveAppeal(interaction, caseId, appealId, decision, reviewNote, fetchTarget) {
   if (!APPEAL_STATUSES.has(decision) || decision === 'pending') return { ok: false, error: 'Appeal decision must be approved or denied.' };
-  const modCase = getCaseById(interaction.guild.id, caseId);
-  if (!modCase) return { ok: false, error: 'Case not found.' };
-  const appeals = getCaseAppeals(modCase);
-  const index = appeals.findIndex((appeal) => String(appeal.id) === String(appealId));
-  if (index < 0) return { ok: false, error: 'Appeal not found.' };
-  if (appeals[index].status !== 'pending') return { ok: false, error: `Appeal is already ${appeals[index].status}.` };
-  const note = String(reviewNote || '').trim().slice(0, 1000);
-  if (!note) return { ok: false, error: 'A review rationale is required.' };
-  let remedy = null;
-  if (decision === 'approved') remedy = await applyApprovedAppealRemedy(interaction, modCase, fetchTarget);
-  const before = { ...appeals[index] };
-  const reviewedAt = new Date().toISOString();
-  const decided = {
-    ...before,
-    status: decision,
-    reviewedBy: interaction.user?.id ? String(interaction.user.id) : null,
-    reviewedAt,
-    reviewNote: note,
-    remedy,
-  };
-  const next = appeals.map((appeal, idx) => idx === index ? decided : appeal);
-  const current = getCaseById(interaction.guild.id, caseId) || modCase;
-  const metadata = { ...(current.metadata || {}), appeals: next };
-  const updated = updateCaseMetadata(interaction.guild.id, caseId, metadata);
-  if (!updated) return { ok: false, error: 'Failed to persist appeal decision.' };
-  recordCaseAudit({ guildId: interaction.guild.id, caseId, actorId: interaction.user?.id || null, event: decision === 'approved' ? 'case.appeal.approved' : 'case.appeal.denied', before: { appealId: before.id, status: before.status }, after: { appealId: decided.id, status: decided.status, reviewNote: decided.reviewNote, remedy }, metadata: { appealId: decided.id, appellantId: decided.appellantId } });
-  return { ok: true, case: updated, appeal: decided };
+  const lockKey = `${interaction.guild.id}:${caseId}:${appealId}`;
+  if (APPEAL_REVIEW_LOCKS.has(lockKey)) return { ok: false, error: 'This appeal is already being reviewed by another moderator.' };
+  APPEAL_REVIEW_LOCKS.add(lockKey);
+  try {
+    let modCase = getCaseById(interaction.guild.id, caseId);
+    if (!modCase) return { ok: false, error: 'Case not found.' };
+    let appeals = getCaseAppeals(modCase);
+    let index = appeals.findIndex((appeal) => String(appeal.id) === String(appealId));
+    if (index < 0) return { ok: false, error: 'Appeal not found.' };
+    if (appeals[index].status !== 'pending') return { ok: false, error: `Appeal is already ${appeals[index].status}.` };
+    const note = String(reviewNote || '').trim().slice(0, 1000);
+    if (!note) return { ok: false, error: 'A review rationale is required.' };
+    recordCaseAudit({ guildId: interaction.guild.id, caseId, actorId: interaction.user?.id || null, event: 'case.appeal.review.started', before: { appealId, status: 'pending' }, after: { reviewerId: interaction.user?.id || null }, metadata: { appealId } });
+    let remedy = null;
+    if (decision === 'approved') remedy = await applyApprovedAppealRemedy(interaction, modCase, fetchTarget);
+    modCase = getCaseById(interaction.guild.id, caseId) || modCase;
+    appeals = getCaseAppeals(modCase);
+    index = appeals.findIndex((appeal) => String(appeal.id) === String(appealId));
+    if (index < 0 || appeals[index].status !== 'pending') return { ok: false, error: 'Appeal changed while it was being reviewed. Reload the queue.' };
+    const before = { ...appeals[index] };
+    const decided = { ...before, status: decision, reviewedBy: interaction.user?.id ? String(interaction.user.id) : null, reviewedAt: new Date().toISOString(), reviewNote: note, remedy };
+    const next = appeals.map((appeal, idx) => idx === index ? decided : appeal);
+    const metadata = { ...(modCase.metadata || {}), appeals: next };
+    let updated = updateCaseMetadata(interaction.guild.id, caseId, metadata);
+    if (!updated) return { ok: false, error: 'Failed to persist appeal decision.' };
+    recordCaseAudit({ guildId: interaction.guild.id, caseId, actorId: interaction.user?.id || null, event: decision === 'approved' ? 'case.appeal.approved' : 'case.appeal.denied', before: { appealId: before.id, status: before.status }, after: { appealId: decided.id, status: decided.status, reviewNote: decided.reviewNote, remedy }, metadata: { appealId: decided.id, appellantId: decided.appellantId } });
+    const notification = await notifyAppealOutcome(interaction, updated, decided);
+    const refreshed = getCaseById(interaction.guild.id, caseId) || updated;
+    const refreshedAppeals = getCaseAppeals(refreshed);
+    const notificationIndex = refreshedAppeals.findIndex((appeal) => String(appeal.id) === String(appealId));
+    if (notificationIndex >= 0) {
+      const withNotification = refreshedAppeals.map((appeal, idx) => idx === notificationIndex ? { ...appeal, notification } : appeal);
+      updated = updateCaseMetadata(interaction.guild.id, caseId, { ...(refreshed.metadata || {}), appeals: withNotification }) || refreshed;
+    }
+    return { ok: true, case: updated, appeal: getAppealById(updated, appealId) || { ...decided, notification } };
+  } finally {
+    APPEAL_REVIEW_LOCKS.delete(lockKey);
+  }
 }
 
 function buildCaseDetailButtons(modCase) {
@@ -234,7 +332,7 @@ function buildCaseDetailButtons(modCase) {
       new ButtonBuilder().setCustomId(`mod_case_note:${modCase.caseId}`).setLabel(hasNote ? `${EMOJIS.EDIT} Edit Note` : `${EMOJIS.NOTE} Add Note`).setStyle(ButtonStyle.Primary)
     ),
     new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`mod_case_appeal_submit:${modCase.caseId}`).setLabel(pending ? '⏳ Appeal Pending' : '📨 Submit Appeal').setStyle(ButtonStyle.Primary).setDisabled(pending || appeals.length >= MAX_APPEALS_PER_CASE),
+      new ButtonBuilder().setCustomId(`mod_case_appeal_submit:${modCase.caseId}`).setLabel(pending ? '⏳ Appeal Pending' : '📨 Record Appeal').setStyle(ButtonStyle.Primary).setDisabled(pending || appeals.length >= MAX_APPEALS_PER_CASE || reversedOrExpired || !APPEALABLE_ACTIONS.has(modCase.action)),
       new ButtonBuilder().setCustomId(`mod_case_appeal_history:${modCase.caseId}:0`).setLabel(`⚖️ Appeals (${appeals.length})`).setStyle(ButtonStyle.Secondary).setDisabled(!appeals.length),
       new ButtonBuilder().setCustomId('mod_case_appeal_queue:0').setLabel('📥 Appeal Queue').setStyle(ButtonStyle.Secondary)
     ),
@@ -253,15 +351,37 @@ function buildCaseNoteModal(customId, existingNote = '') {
   return new ModalBuilder().setCustomId(customId).setTitle(existingNote ? 'Edit Case Note' : 'Add Case Note').addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('note').setLabel('Staff Note').setStyle(TextInputStyle.Paragraph).setPlaceholder('Add internal staff-only context for this case').setRequired(false).setMaxLength(1000).setValue(String(existingNote || '').slice(0, 1000))));
 }
 function buildAppealSubmitModal(modCase) {
-  return new ModalBuilder().setCustomId(`mod_submit_case_appeal:${modCase.caseId}`).setTitle(`Submit Appeal • Case #${modCase.caseId}`).addComponents(
+  return new ModalBuilder().setCustomId(`mod_submit_case_appeal:${modCase.caseId}`).setTitle(`Record Appeal • Case #${modCase.caseId}`).addComponents(
     new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('appellant_id').setLabel('Appellant User ID').setStyle(TextInputStyle.Short).setPlaceholder(modCase.userId).setRequired(false).setMaxLength(20)),
     new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('grounds').setLabel('Appeal Grounds').setStyle(TextInputStyle.Paragraph).setPlaceholder('Why this moderation action should be reviewed').setRequired(true).setMaxLength(1500)),
     new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('requested_resolution').setLabel('Requested Resolution').setStyle(TextInputStyle.Paragraph).setPlaceholder('Optional requested outcome').setRequired(false).setMaxLength(500))
   );
 }
+function buildExternalAppealModal(guildId, modCase) {
+  return new ModalBuilder().setCustomId(`mod_appeal_external_submit:${guildId}:${modCase.caseId}`).setTitle(`Appeal Case #${modCase.caseId}`).addComponents(
+    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('grounds').setLabel('Why are you appealing?').setStyle(TextInputStyle.Paragraph).setPlaceholder('Explain why the action should be reviewed').setRequired(true).setMaxLength(1500)),
+    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('requested_resolution').setLabel('Requested Resolution').setStyle(TextInputStyle.Paragraph).setPlaceholder('Optional outcome you are asking for').setRequired(false).setMaxLength(500))
+  );
+}
+function buildExternalAppealLookupModal() {
+  return new ModalBuilder().setCustomId('mod_appeal_lookup_submit').setTitle('Appeal a Moderation Case').addComponents(
+    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('guild_id').setLabel('Server ID').setStyle(TextInputStyle.Short).setPlaceholder('Discord server ID').setRequired(true).setMaxLength(20)),
+    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('case_id').setLabel('Case ID').setStyle(TextInputStyle.Short).setPlaceholder('Case number from your moderation notice').setRequired(true).setMaxLength(12)),
+    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('grounds').setLabel('Why are you appealing?').setStyle(TextInputStyle.Paragraph).setPlaceholder('Explain why the action should be reviewed').setRequired(true).setMaxLength(1500)),
+    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('requested_resolution').setLabel('Requested Resolution').setStyle(TextInputStyle.Paragraph).setPlaceholder('Optional outcome you are asking for').setRequired(false).setMaxLength(500))
+  );
+}
 function buildAppealDecisionModal(modCase, appeal, decision) {
   return new ModalBuilder().setCustomId(`mod_submit_case_appeal_decision:${modCase.caseId}:${appeal.id}:${decision}`).setTitle(`${decision === 'approved' ? 'Approve' : 'Deny'} Appeal • Case #${modCase.caseId}`).addComponents(
     new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('review_note').setLabel('Review Rationale').setStyle(TextInputStyle.Paragraph).setPlaceholder('Record why this appeal is being approved or denied').setRequired(true).setMaxLength(1000))
+  );
+}
+function buildAppealQueueFilterModal(token) {
+  return new ModalBuilder().setCustomId(`mod_submit_case_appeal_queue_filter:${token}`).setTitle('Filter Appeals').addComponents(
+    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('status').setLabel('Status').setStyle(TextInputStyle.Short).setPlaceholder('pending, approved, denied, all').setRequired(false).setMaxLength(10)),
+    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('user_id').setLabel('User ID').setStyle(TextInputStyle.Short).setPlaceholder('Optional appellant/user ID').setRequired(false).setMaxLength(20)),
+    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('case_id').setLabel('Case ID').setStyle(TextInputStyle.Short).setPlaceholder('Optional case ID').setRequired(false).setMaxLength(12)),
+    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('moderator_id').setLabel('Case Moderator ID').setStyle(TextInputStyle.Short).setPlaceholder('Optional moderator ID').setRequired(false).setMaxLength(20))
   );
 }
 function buildCaseSearchModal(customId = 'mod_submit_case_search') {
@@ -296,9 +416,7 @@ function parseCaseSearchInput(interaction) {
 }
 function buildCaseSearchResultsEmbed(result = {}, filters = {}) {
   const results = Array.isArray(result.results) ? result.results : [];
-  const description = results.length
-    ? results.map((modCase, index) => `${index + 1}. ${formatCaseSummary(modCase)}\n   <@${modCase.userId}> • ${String(modCase.reason || 'No reason provided').slice(0, 160)}`).join('\n\n')
-    : 'No moderation cases matched the supplied filters.';
+  const description = results.length ? results.map((modCase, index) => `${index + 1}. ${formatCaseSummary(modCase)}\n   <@${modCase.userId}> • ${String(modCase.reason || 'No reason provided').slice(0, 160)}`).join('\n\n') : 'No moderation cases matched the supplied filters.';
   const embed = new EmbedBuilder().setColor(COLORS.PRIMARY).setTitle('🔎 Case Search').setDescription(description.slice(0, 4096)).setFooter({ text: `${result.total || 0} result${result.total === 1 ? '' : 's'} • Page ${(Number(result.page) || 0) + 1}/${Math.max(1, Number(result.totalPages) || 1)}` }).setTimestamp();
   const activeFilters = Object.entries(filters).filter(([key, value]) => !['page', 'pageSize'].includes(key) && value !== undefined && value !== null && value !== '').map(([key, value]) => `${key}: ${value}`);
   if (activeFilters.length) embed.addFields({ name: 'Filters', value: activeFilters.join(' • ').slice(0, 1024), inline: false });
@@ -328,7 +446,12 @@ function buildCaseDetailEmbed(modCase) {
     const pending = appeals.filter((appeal) => appeal.status === 'pending').length;
     const approved = appeals.filter((appeal) => appeal.status === 'approved').length;
     const denied = appeals.filter((appeal) => appeal.status === 'denied').length;
-    embed.addFields({ name: '⚖️ Appeals', value: `Pending **${pending}** • Approved **${approved}** • Denied **${denied}** • History **${appeals.length}**`, inline: false });
+    const failedNotifications = appeals.filter((appeal) => appeal.notification && appeal.notification.sent === false).length;
+    embed.addFields({ name: '⚖️ Appeals', value: `Pending **${pending}** • Approved **${approved}** • Denied **${denied}** • History **${appeals.length}**${failedNotifications ? ` • DM failures **${failedNotifications}**` : ''}`, inline: false });
+  }
+  if (modCase.metadata?.appealNotice) {
+    const notice = modCase.metadata.appealNotice;
+    embed.addFields({ name: '📨 Appeal Notice', value: notice.sent ? `Sent ✅${notice.sentAt ? ` • <t:${getCaseTimestamp(notice.sentAt)}:R>` : ''}` : `Failed ❌${notice.error ? ` • ${String(notice.error).slice(0, 250)}` : ''}`, inline: false });
   }
   if (modCase.note && String(modCase.note).trim()) embed.addFields({ name: 'Staff Note', value: String(modCase.note).slice(0, 1024), inline: false });
   if (modCase.metadata && Object.keys(modCase.metadata).length) embed.addFields({ name: 'Metadata', value: `\`\`\`json\n${JSON.stringify(modCase.metadata, null, 2).slice(0, 900)}\n\`\`\``, inline: false });
@@ -346,12 +469,14 @@ function buildAppealHistoryEmbed(modCase, requestedPage = 0) {
     const reviewed = appeal.reviewedAt ? `<t:${getCaseTimestamp(appeal.reviewedAt)}:R>` : null;
     const lines = [
       `Status: **${String(appeal.status || 'pending').toUpperCase()}** • Appellant <@${appeal.appellantId}> • ${submitted}`,
+      `Source: **${appeal.source || 'legacy'}**`,
       `Grounds: ${String(appeal.grounds || 'No grounds recorded').slice(0, 450)}`,
     ];
     if (appeal.requestedResolution) lines.push(`Requested: ${String(appeal.requestedResolution).slice(0, 250)}`);
     if (appeal.reviewedBy) lines.push(`Reviewed by <@${appeal.reviewedBy}>${reviewed ? ` • ${reviewed}` : ''}`);
     if (appeal.reviewNote) lines.push(`Decision note: ${String(appeal.reviewNote).slice(0, 300)}`);
     if (appeal.remedy) lines.push(`Remedy: ${appeal.remedy.ok ? '✅' : '⚠️'} ${String(appeal.remedy.detail || appeal.remedy.action || 'Recorded').slice(0, 250)}`);
+    if (appeal.notification) lines.push(`Outcome DM: ${appeal.notification.sent ? '✅ sent' : `❌ failed${appeal.notification.error ? ` • ${String(appeal.notification.error).slice(0, 180)}` : ''}`}`);
     embed.addFields({ name: appeal.id, value: lines.join('\n').slice(0, 1024), inline: false });
   }
   const pending = getPendingAppeal(modCase);
@@ -366,12 +491,14 @@ function buildAppealHistoryEmbed(modCase, requestedPage = 0) {
 function buildAppealDetailPayload(modCase, appeal) {
   const embed = new EmbedBuilder().setColor(appeal.status === 'pending' ? COLORS.PRIMARY : appeal.status === 'approved' ? COLORS.SUCCESS : COLORS.ERROR).setTitle(`⚖️ Appeal ${appeal.id}`).setDescription(`Linked Case **#${modCase.caseId}** • ${String(modCase.action).toUpperCase()} • ${String(appeal.status).toUpperCase()}`).addFields(
     { name: 'Appellant', value: `<@${appeal.appellantId}>`, inline: true },
+    { name: 'Source', value: String(appeal.source || 'legacy'), inline: true },
     { name: 'Submitted', value: appeal.submittedAt ? `<t:${getCaseTimestamp(appeal.submittedAt)}:F>` : 'Unknown', inline: true },
     { name: 'Appeal Grounds', value: String(appeal.grounds || 'No grounds recorded').slice(0, 1024), inline: false }
   ).setTimestamp();
   if (appeal.requestedResolution) embed.addFields({ name: 'Requested Resolution', value: String(appeal.requestedResolution).slice(0, 1024), inline: false });
   if (appeal.reviewNote) embed.addFields({ name: 'Review Decision', value: String(appeal.reviewNote).slice(0, 1024), inline: false });
   if (appeal.remedy) embed.addFields({ name: 'Remedy', value: `${appeal.remedy.ok ? '✅' : '⚠️'} ${String(appeal.remedy.detail || appeal.remedy.action || 'Recorded').slice(0, 1000)}`, inline: false });
+  if (appeal.notification) embed.addFields({ name: 'Outcome Notification', value: appeal.notification.sent ? `DM sent ✅${appeal.notification.invite?.url ? ' • rejoin invite created' : ''}` : `DM failed ❌${appeal.notification.error ? ` • ${appeal.notification.error}` : ''}`.slice(0, 1024), inline: false });
   const components = [new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId(`mod_case_appeal_decide:${modCase.caseId}:${appeal.id}:approved`).setLabel('✅ Approve').setStyle(ButtonStyle.Success).setDisabled(appeal.status !== 'pending'),
     new ButtonBuilder().setCustomId(`mod_case_appeal_decide:${modCase.caseId}:${appeal.id}:denied`).setLabel('❌ Deny').setStyle(ButtonStyle.Danger).setDisabled(appeal.status !== 'pending'),
@@ -380,16 +507,19 @@ function buildAppealDetailPayload(modCase, appeal) {
   )];
   return { embeds: [embed], components };
 }
-function buildAppealQueuePayload(guildId, requestedPage = 0) {
-  const pending = getPendingAppeals(guildId);
-  const totalPages = Math.max(1, Math.ceil(pending.length / APPEAL_PAGE_SIZE));
+function buildAppealQueuePayload(guildId, requestedPage = 0, filters = { status: 'pending' }, token = null) {
+  const results = listAppeals(guildId, filters);
+  const totalPages = Math.max(1, Math.ceil(results.length / APPEAL_PAGE_SIZE));
   const page = Math.max(0, Math.min(Math.trunc(Number(requestedPage) || 0), totalPages - 1));
-  const slice = pending.slice(page * APPEAL_PAGE_SIZE, (page + 1) * APPEAL_PAGE_SIZE);
-  const embed = new EmbedBuilder().setColor(COLORS.PRIMARY).setTitle('📥 Pending Appeal Queue').setDescription(slice.length ? slice.map(({ case: modCase, appeal }, index) => `${page * APPEAL_PAGE_SIZE + index + 1}. **Case #${modCase.caseId}** • ${modCase.action} • <@${appeal.appellantId}>\n${String(appeal.grounds || '').replace(/\s+/g, ' ').slice(0, 180)}`).join('\n\n') : 'No pending appeals.').setFooter({ text: `${pending.length} pending appeal${pending.length === 1 ? '' : 's'} • Page ${page + 1}/${totalPages}` }).setTimestamp();
+  const slice = results.slice(page * APPEAL_PAGE_SIZE, (page + 1) * APPEAL_PAGE_SIZE);
+  const activeToken = token || rememberAppealQueue(guildId, filters);
+  const filterText = [`status:${filters.status || 'pending'}`, filters.userId ? `user:${filters.userId}` : null, filters.caseId ? `case:${filters.caseId}` : null, filters.moderatorId ? `moderator:${filters.moderatorId}` : null].filter(Boolean).join(' • ');
+  const embed = new EmbedBuilder().setColor(COLORS.PRIMARY).setTitle('📥 Appeal Queue').setDescription(slice.length ? slice.map(({ case: modCase, appeal }, index) => `${page * APPEAL_PAGE_SIZE + index + 1}. **Case #${modCase.caseId}** • ${modCase.action} • **${appeal.status}** • <@${appeal.appellantId}>\n${String(appeal.grounds || '').replace(/\s+/g, ' ').slice(0, 180)}`).join('\n\n') : 'No appeals matched these filters.').addFields({ name: 'Filters', value: filterText || 'status:pending', inline: false }).setFooter({ text: `${results.length} matching appeal${results.length === 1 ? '' : 's'} • Page ${page + 1}/${totalPages}` }).setTimestamp();
   const rows = [new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`mod_case_appeal_queue:${Math.max(0, page - 1)}`).setLabel('◀ Previous').setStyle(ButtonStyle.Secondary).setDisabled(page <= 0),
-    new ButtonBuilder().setCustomId(`mod_case_appeal_queue:${Math.min(totalPages - 1, page + 1)}`).setLabel('Next ▶').setStyle(ButtonStyle.Secondary).setDisabled(page >= totalPages - 1),
-    new ButtonBuilder().setCustomId(`mod_case_appeal_queue:${page}`).setLabel('🔄 Refresh').setStyle(ButtonStyle.Secondary)
+    new ButtonBuilder().setCustomId(`mod_case_appeal_queue:${activeToken}:${Math.max(0, page - 1)}`).setLabel('◀ Previous').setStyle(ButtonStyle.Secondary).setDisabled(page <= 0),
+    new ButtonBuilder().setCustomId(`mod_case_appeal_queue:${activeToken}:${Math.min(totalPages - 1, page + 1)}`).setLabel('Next ▶').setStyle(ButtonStyle.Secondary).setDisabled(page >= totalPages - 1),
+    new ButtonBuilder().setCustomId(`mod_case_appeal_queue_filter:${activeToken}`).setLabel('🔎 Filter').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('mod_case_appeal_queue:0').setLabel('Reset').setStyle(ButtonStyle.Secondary)
   )];
   if (slice.length) rows.push(new ActionRowBuilder().addComponents(...slice.map(({ case: modCase, appeal }) => new ButtonBuilder().setCustomId(`mod_case_appeal_open:${modCase.caseId}:${appeal.id}`).setLabel(`#${modCase.caseId}`).setStyle(ButtonStyle.Primary))));
   return { embeds: [embed], components: rows };
@@ -402,6 +532,54 @@ function setCaseNote(guildId, caseId, note, actorId = null) {
   return value ? updateCaseNote(guildId, caseId, value, actorId) : clearCaseNote(guildId, caseId, actorId);
 }
 function getTargetIdFromCustomId(customId) { const [, targetId] = String(customId || '').split(':'); return targetId || 'none'; }
+
+async function openExternalAppealFromCommand(interaction, rawReference) {
+  const raw = String(rawReference || '').trim();
+  const match = raw.match(/^(\d{16,20})\s*[:/#-]\s*(\d{1,12})$/);
+  if (!match) return safeReply(interaction, { content: '❌ Use `SERVER_ID:CASE_ID`, for example `123456789012345678:42`.' });
+  const guildId = match[1];
+  const caseId = Number(match[2]);
+  const modCase = getCaseById(guildId, caseId);
+  const eligibility = getAppealEligibility(modCase, interaction.user?.id);
+  if (!eligibility.ok) return safeReply(interaction, { content: `❌ ${eligibility.error}` });
+  await interaction.showModal(buildExternalAppealModal(guildId, modCase));
+  return true;
+}
+async function submitExternalAppeal(interaction, guildId, caseId, grounds, requestedResolution, source) {
+  const modCase = getCaseById(guildId, caseId);
+  const eligibility = getAppealEligibility(modCase, interaction.user?.id);
+  if (!eligibility.ok) return safeReply(interaction, { content: `❌ ${eligibility.error}` });
+  const result = submitAppeal(guildId, caseId, { appellantId: interaction.user.id, grounds, requestedResolution, source }, interaction.user.id);
+  if (!result.ok) return safeReply(interaction, { content: `❌ ${result.error || 'Failed to submit appeal.'}` });
+  return safeReply(interaction, { content: `✅ Appeal **${result.appeal.id}** submitted for Case **#${caseId}**.\nManagement can now review it. You will receive the outcome by DM when a decision is recorded.` });
+}
+async function handleExternalAppealInteraction(interaction) {
+  const id = String(interaction.customId || '');
+  if (id === 'mod_appeal_lookup') {
+    if (!interaction.user?.id) return false;
+    await interaction.showModal(buildExternalAppealLookupModal());
+    return true;
+  }
+  if (id.startsWith('mod_appeal_external:')) {
+    const [, guildId, caseIdRaw] = id.split(':');
+    const modCase = getCaseById(guildId, Number(caseIdRaw));
+    const eligibility = getAppealEligibility(modCase, interaction.user?.id);
+    if (!eligibility.ok) return safeReply(interaction, { content: `❌ ${eligibility.error}` });
+    await interaction.showModal(buildExternalAppealModal(guildId, modCase));
+    return true;
+  }
+  if (id.startsWith('mod_appeal_external_submit:')) {
+    const [, guildId, caseIdRaw] = id.split(':');
+    return submitExternalAppeal(interaction, guildId, Number(caseIdRaw), interaction.fields.getTextInputValue('grounds'), interaction.fields.getTextInputValue('requested_resolution'), interaction.guildId ? 'server' : 'dm');
+  }
+  if (id === 'mod_appeal_lookup_submit') {
+    const guildId = String(interaction.fields.getTextInputValue('guild_id') || '').trim();
+    const caseRaw = String(interaction.fields.getTextInputValue('case_id') || '').trim();
+    if (!/^\d{16,20}$/.test(guildId) || !/^\d{1,12}$/.test(caseRaw)) return safeReply(interaction, { content: '❌ Server ID or Case ID is invalid.' });
+    return submitExternalAppeal(interaction, guildId, Number(caseRaw), interaction.fields.getTextInputValue('grounds'), interaction.fields.getTextInputValue('requested_resolution'), interaction.guildId ? 'server-lookup' : 'dm-lookup');
+  }
+  return false;
+}
 
 async function openCaseTool(interaction) {
   const id = String(interaction.customId || '');
@@ -431,7 +609,8 @@ async function handleCaseAction(interaction, { fetchTarget, createConfirmation }
     const [, caseIdRaw] = id.split(':');
     const modCase = getCaseById(interaction.guild.id, Number(caseIdRaw));
     if (!modCase) return safeReply(interaction, ephemeralError('Case not found.'));
-    if (getPendingAppeal(modCase)) return safeReply(interaction, ephemeralError('This case already has a pending appeal.'));
+    const eligibility = getAppealEligibility(modCase, modCase.userId);
+    if (!eligibility.ok) return safeReply(interaction, ephemeralError(eligibility.error));
     await interaction.showModal(buildAppealSubmitModal(modCase));
     return true;
   }
@@ -442,10 +621,26 @@ async function handleCaseAction(interaction, { fetchTarget, createConfirmation }
     if (!modCase) return safeReply(interaction, ephemeralError('Case not found.'));
     return safeReply(interaction, { ...buildAppealHistoryEmbed(modCase, pageRaw), flags: 64 });
   }
+  if (id.startsWith('mod_case_appeal_queue_filter:')) {
+    if (!canUseModAction(interaction.member, interaction.guild, 'view_cases')) return safeReply(interaction, ephemeralError('No permission to filter appeals.'));
+    const [, token] = id.split(':');
+    const state = getAppealQueueState(token, interaction.guild.id);
+    if (!state) return safeReply(interaction, ephemeralError('This appeal queue session expired. Open the queue again.'));
+    await interaction.showModal(buildAppealQueueFilterModal(token));
+    return true;
+  }
   if (id.startsWith('mod_case_appeal_queue:')) {
     if (!canUseModAction(interaction.member, interaction.guild, 'view_cases')) return safeReply(interaction, ephemeralError('No permission to view the appeal queue.'));
-    const [, pageRaw] = id.split(':');
-    return safeReply(interaction, { ...buildAppealQueuePayload(interaction.guild.id, pageRaw), flags: 64 });
+    const parts = id.split(':');
+    if (parts.length === 2 || (parts.length === 3 && /^\d+$/.test(parts[1]))) {
+      const pageRaw = parts.length === 2 ? parts[1] : parts[2];
+      const token = rememberAppealQueue(interaction.guild.id, { status: 'pending' });
+      return safeReply(interaction, { ...buildAppealQueuePayload(interaction.guild.id, pageRaw || 0, { status: 'pending' }, token), flags: 64 });
+    }
+    const [, token, pageRaw] = parts;
+    const state = getAppealQueueState(token, interaction.guild.id);
+    if (!state) return safeReply(interaction, ephemeralError('This appeal queue session expired. Open the queue again.'));
+    return safeReply(interaction, { ...buildAppealQueuePayload(interaction.guild.id, pageRaw, state.filters, token), flags: 64 });
   }
   if (id.startsWith('mod_case_appeal_open:')) {
     if (!canUseModAction(interaction.member, interaction.guild, 'view_case_detail')) return safeReply(interaction, ephemeralError('No permission to review appeals.'));
@@ -496,26 +691,47 @@ async function handleCaseAction(interaction, { fetchTarget, createConfirmation }
   return false;
 }
 
+function parseAppealQueueFilters(interaction) {
+  const status = String(interaction.fields.getTextInputValue('status') || 'pending').trim().toLowerCase() || 'pending';
+  const userId = String(interaction.fields.getTextInputValue('user_id') || '').trim();
+  const caseRaw = String(interaction.fields.getTextInputValue('case_id') || '').trim();
+  const moderatorId = String(interaction.fields.getTextInputValue('moderator_id') || '').trim();
+  if (!['pending', 'approved', 'denied', 'all'].includes(status)) return { error: 'Status must be pending, approved, denied, or all.' };
+  if (userId && !/^\d{16,20}$/.test(userId)) return { error: 'User ID is invalid.' };
+  if (moderatorId && !/^\d{16,20}$/.test(moderatorId)) return { error: 'Moderator ID is invalid.' };
+  if (caseRaw && !/^\d{1,12}$/.test(caseRaw)) return { error: 'Case ID is invalid.' };
+  return { filters: { status, userId: userId || undefined, moderatorId: moderatorId || undefined, caseId: caseRaw ? Number(caseRaw) : undefined } };
+}
 async function submitCaseModal(interaction, { fetchTarget, refreshCasesDashboard } = {}) {
   const id = String(interaction.customId || '');
+  if (id.startsWith('mod_submit_case_appeal_queue_filter:')) {
+    if (!canUseModAction(interaction.member, interaction.guild, 'view_cases')) return safeReply(interaction, ephemeralError('No permission to filter appeals.'));
+    const [, token] = id.split(':');
+    const state = getAppealQueueState(token, interaction.guild.id);
+    if (!state) return safeReply(interaction, ephemeralError('This appeal queue session expired. Open the queue again.'));
+    const parsed = parseAppealQueueFilters(interaction);
+    if (parsed.error) return safeReply(interaction, ephemeralError(parsed.error));
+    state.filters = parsed.filters;
+    state.createdAt = Date.now();
+    return safeReply(interaction, { ...buildAppealQueuePayload(interaction.guild.id, 0, state.filters, token), flags: 64 });
+  }
   if (id.startsWith('mod_submit_case_appeal_decision:')) {
     if (!canUseModAction(interaction.member, interaction.guild, 'edit_case')) return safeReply(interaction, ephemeralError('No permission to decide appeals.'));
     const [, caseIdRaw, appealId, decision] = id.split(':');
-    const caseId = Number(caseIdRaw);
-    const result = await resolveAppeal(interaction, caseId, appealId, decision, interaction.fields.getTextInputValue('review_note'), fetchTarget);
+    const result = await resolveAppeal(interaction, Number(caseIdRaw), appealId, decision, interaction.fields.getTextInputValue('review_note'), fetchTarget);
     if (!result.ok) return safeReply(interaction, ephemeralError(result.error || 'Failed to decide appeal.'));
     return safeReply(interaction, { ...buildAppealDetailPayload(result.case, result.appeal), flags: 64 });
   }
   if (id.startsWith('mod_submit_case_appeal:')) {
     if (!canUseModAction(interaction.member, interaction.guild, 'view_case_detail')) return safeReply(interaction, ephemeralError('No permission to record appeals.'));
     const [, caseIdRaw] = id.split(':');
-    const caseId = Number(caseIdRaw);
-    const modCase = getCaseById(interaction.guild.id, caseId);
+    const modCase = getCaseById(interaction.guild.id, Number(caseIdRaw));
     if (!modCase) return safeReply(interaction, ephemeralError('Case not found.'));
-    const result = submitAppeal(interaction.guild.id, caseId, {
+    const result = submitAppeal(interaction.guild.id, modCase.caseId, {
       appellantId: interaction.fields.getTextInputValue('appellant_id') || modCase.userId,
       grounds: interaction.fields.getTextInputValue('grounds'),
       requestedResolution: interaction.fields.getTextInputValue('requested_resolution'),
+      source: 'staff-recorded',
     }, interaction.user?.id || null);
     if (!result.ok) return safeReply(interaction, ephemeralError(result.error || 'Failed to submit appeal.'));
     return safeReply(interaction, { ...buildAppealDetailPayload(result.case, result.appeal), flags: 64 });
@@ -549,11 +765,7 @@ async function submitCaseModal(interaction, { fetchTarget, refreshCasesDashboard
     const parsed = parseCaseSearchInput(interaction);
     if (parsed.error) return safeReply(interaction, ephemeralError(parsed.error));
     const result = searchCases(interaction.guild.id, parsed.filters);
-    return safeReply(interaction, {
-      embeds: [buildCaseSearchResultsEmbed(result, parsed.filters)],
-      components: [...buildCaseSearchResultButtons(result), ...buildCaseSearchPaginationButtons(result.page, result.totalPages)],
-      flags: 64,
-    });
+    return safeReply(interaction, { embeds: [buildCaseSearchResultsEmbed(result, parsed.filters)], components: [...buildCaseSearchResultButtons(result), ...buildCaseSearchPaginationButtons(result.page, result.totalPages)], flags: 64 });
   }
   if (id.startsWith('mod_submit_case_note:')) {
     const [, caseIdRaw] = id.split(':');
@@ -594,4 +806,8 @@ module.exports = {
   getBulkActionSummaryEmbed,
   getCaseAppeals,
   getPendingAppeals,
+  getAppealEligibility,
+  submitAppeal,
+  handleExternalAppealInteraction,
+  openExternalAppealFromCommand,
 };
