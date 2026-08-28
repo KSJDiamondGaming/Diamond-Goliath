@@ -162,7 +162,7 @@ async function handleCaseSearchModal(i) {
   } catch (error) {
     return safeReply(i, ephemeralError(error.message));
   }
-  state.filters = { ...state.filters, reasonQuery: reasonQuery || undefined, ...dates, page: 0 };
+  state.filters = { ...state.filters, text: reasonQuery || undefined, ...dates, page: 0 };
   state.createdAt = Date.now();
   const r = searchCases(i.guild.id, state.filters);
   return safeReply(i, { ...payload(r, token), flags: 64 });
