@@ -269,7 +269,18 @@ jobs:
             cleanup() { status=$?; restore_runtime; rm -rf "$BACKUP_DIR"; exit "$status"; }
             trap cleanup EXIT
 
-            git checkout "$TARGET_BRANCH"
+            # A previous manual/hotfix edit must never block deployment of the
+            # GitHub source of truth. Preserve it in a local stash before resetting
+            # the checkout; runtime state is already protected separately above.
+            if [ -n "$(git status --porcelain -- . ':!src/runtime/')" ]; then
+              STASH_MESSAGE="goliath-deploy-preserve-$(date -u +%Y%m%dT%H%M%SZ)-${EXPECTED_SHA:0:12}"
+              echo "Local source changes detected; preserving them in git stash: $STASH_MESSAGE"
+              git stash push --include-untracked --message "$STASH_MESSAGE"
+            fi
+
+            # Runtime files are live state and are restored from BACKUP_DIR after the
+            # checkout. Reset directly to the validated commit so a dirty worktree can
+            # never prevent deployment.
             git reset --hard "$EXPECTED_SHA"
             restore_runtime
 
