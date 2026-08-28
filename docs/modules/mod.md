@@ -50,6 +50,10 @@ The audit record is guild-scoped and must never expose events from another guild
 - [ ] Full end-to-end runtime/deployment validation
 - [ ] Audit pagination for long histories
 
+### Next implementation stage
+
+The next implementation stage is to expose paginated audit history through the existing case-detail interaction flow. The timeline must retain guild/case scoping, preserve actor attribution and avoid changing the existing case search contract.
+
 ### Future extensions
 
 The same audit contract is intended to support later moderation features such as evidence changes, case relationships, merge/split operations, appeals, bulk operations and escalation actions without creating separate history systems for each feature.
