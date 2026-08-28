@@ -4,7 +4,7 @@ const { ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, M
 const { safeReply, ephemeralError } = require('../../../core/ui/interactionResponse');
 const { COLORS, createEmbed } = require('../../../core/ui/embeds');
 const { canUseModAction } = require('./permissions');
-const { searchCases, getCaseById } = require('./storage');
+const { searchCases, getCaseById, getCaseAudit } = require('./storage');
 
 const ACTIONS = new Set(['warn', 'timeout', 'kick', 'ban', 'unwarn', 'remove-timeout']);
 const STATUSES = new Set(['active', 'reversed', 'expired']);
@@ -88,6 +88,14 @@ function resultComponents(r, token) {
 
 function payload(r, token) { return { embeds: [resultEmbed(r)], components: resultComponents(r, token) }; }
 
+function formatAuditEntry(entry) {
+  const actor = entry.actorId ? `<@${entry.actorId}>` : 'System';
+  const timestamp = new Date(entry.createdAt).getTime();
+  const time = Number.isFinite(timestamp) ? `<t:${Math.floor(timestamp / 1000)}:R>` : 'Unknown time';
+  const event = String(entry.event || 'case.updated').replace(/^case\./, '').replace(/\./g, ' ');
+  return `• **${event}** by ${actor} • ${time}`;
+}
+
 function caseDetailEmbed(c) {
   const ts = (v) => { const n = new Date(v).getTime(); return Number.isFinite(n) ? Math.floor(n / 1000) : Math.floor(Date.now() / 1000); };
   const e = new EmbedBuilder().setColor(COLORS.PRIMARY).setTitle(`🧾 Case #${c.caseId}`).addFields(
@@ -159,7 +167,10 @@ async function handleCaseSearchSelect(i) {
   if (!stateFor(token, i.guild.id)) return safeReply(i, ephemeralError('This search has expired. Please start a new search.'));
   const caseId = Number(i.values?.[0]), c = getCaseById(i.guild.id, caseId);
   if (!Number.isInteger(caseId) || !c) return safeReply(i, ephemeralError('Case not found.'));
-  return i.update({ embeds: [caseDetailEmbed(c)], components: caseDetailButtons(c, token) });
+  const audit = getCaseAudit(i.guild.id, caseId, { page: 0, pageSize: 5 });
+  const detail = caseDetailEmbed(c);
+  if (audit.results.length) detail.addFields({ name: 'Audit Timeline', value: audit.results.map(formatAuditEntry).join('\n').slice(0, 1024), inline: false });
+  return i.update({ embeds: [detail], components: caseDetailButtons(c, token) });
 }
 
 async function handleCaseSearchModal(i) {
