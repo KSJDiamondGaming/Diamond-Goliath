@@ -15,15 +15,18 @@ function projectLiveRefreshState(account) {
   const state = account.state && typeof account.state === 'object' ? account.state : null;
   if (!state) return account;
   const raw = state.lastLiveMessageUpdateAt || state.lastLiveMessageUpdatedAt;
-  if (!raw || typeof raw !== 'string') return account;
-  const parsed = Date.parse(raw);
-  if (!Number.isFinite(parsed)) return account;
+  const parsed = typeof raw === 'string' ? Date.parse(raw) : NaN;
+  const hasTrackedLiveMessage = state.isLive === true && Boolean(state.lastAlertMessageId && state.lastAlertChannelId);
+  const alertTypes = Array.isArray(account.alertTypes)
+    ? account.alertTypes.filter((type) => !(hasTrackedLiveMessage && String(type).toLowerCase() === 'ended'))
+    : account.alertTypes;
   return {
     ...account,
+    ...(Array.isArray(alertTypes) ? { alertTypes } : {}),
     state: {
       ...state,
-      ...(state.lastLiveMessageUpdateAt === raw ? { lastLiveMessageUpdateAt: new Date(parsed) } : {}),
-      ...(state.lastLiveMessageUpdatedAt === raw ? { lastLiveMessageUpdatedAt: new Date(parsed) } : {}),
+      ...(Number.isFinite(parsed) && state.lastLiveMessageUpdateAt === raw ? { lastLiveMessageUpdateAt: new Date(parsed) } : {}),
+      ...(Number.isFinite(parsed) && state.lastLiveMessageUpdatedAt === raw ? { lastLiveMessageUpdatedAt: new Date(parsed) } : {}),
     },
   };
 }
