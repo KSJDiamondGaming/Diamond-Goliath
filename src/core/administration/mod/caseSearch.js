@@ -54,7 +54,7 @@ function normalizeSearchFilters(interaction) {
   if (action && !ACTIONS.has(action)) return { error: `Unknown action. Use: ${[...ACTIONS].join(', ')}.` };
   if (status && !STATUSES.has(status)) return { error: `Unknown status. Use: ${[...STATUSES].join(', ')}.` };
 
-  return { caseId: caseId || undefined, userId: userId || undefined, moderatorId: moderatorId || undefined, action: action || undefined, status: status || undefined, page: 0, pageSize: 25 };
+  return { caseId: caseId || undefined, userId: userId || undefined, moderatorId: moderatorId || undefined, action: action || undefined, status: status || undefined, page: 0, pageSize: 10 };
 }
 
 function formatSearchCase(entry) {
@@ -65,7 +65,7 @@ function buildSearchResultsEmbed(result) {
   const description = result.results.length ? result.results.map(formatSearchCase).join('\n\n') : 'No moderation cases matched those filters.';
   return createEmbed({
     title: 'Moderation Case Search',
-    description,
+    description: description.slice(0, 3900),
     color: COLORS.PRIMARY,
     footer: `Showing ${result.total ? `${result.page * result.pageSize + 1}-${Math.min((result.page + 1) * result.pageSize, result.total)} of ${result.total}` : '0'} result${result.total === 1 ? '' : 's'}`,
   });
