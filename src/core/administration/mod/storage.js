@@ -75,6 +75,8 @@ const EVENTS = Object.freeze({
   CASE_UPDATED: 'case.updated',
   CASE_STATUS_UPDATED: 'case.status.updated',
   CASE_NOTE_UPDATED: 'case.note.updated',
+  CASE_RELATION_LINKED: 'case.relationship.linked',
+  CASE_RELATION_UNLINKED: 'case.relationship.unlinked',
 });
 
 function now() { return new Date().toISOString(); }
@@ -276,6 +278,57 @@ function clearCaseNote(guildId, caseId, actorId = null) {
   }
   return updated;
 }
+function normalizeCaseId(value) {
+  const caseId = Number(value);
+  return Number.isInteger(caseId) && caseId > 0 ? caseId : null;
+}
+function linkCases(guildId, caseId, relatedCaseId, actorId = null) {
+  const primaryId = normalizeCaseId(caseId);
+  const relatedId = normalizeCaseId(relatedCaseId);
+  if (!primaryId || !relatedId) return { ok: false, error: 'Case IDs must be positive integers.' };
+  if (primaryId === relatedId) return { ok: false, error: 'A case cannot be linked to itself.' };
+  const primary = getCaseById(guildId, primaryId);
+  const related = getCaseById(guildId, relatedId);
+  if (!primary || !related) return { ok: false, error: 'Both cases must exist in this guild.' };
+  if (primary.relatedCaseId && primary.relatedCaseId !== relatedId) return { ok: false, error: `Case #${primaryId} is already linked to Case #${primary.relatedCaseId}.` };
+  if (related.relatedCaseId && related.relatedCaseId !== primaryId) return { ok: false, error: `Case #${relatedId} is already linked to Case #${related.relatedCaseId}.` };
+  if (primary.relatedCaseId === relatedId && related.relatedCaseId === primaryId) return { ok: true, case: primary, relatedCase: related, changed: false };
+  const updatedAt = now();
+  db.transaction(() => {
+    db.prepare('UPDATE cases SET related_case_id = ?, updated_at = ? WHERE guild_id = ? AND case_id = ?').run(relatedId, updatedAt, guildId, primaryId);
+    db.prepare('UPDATE cases SET related_case_id = ?, updated_at = ? WHERE guild_id = ? AND case_id = ?').run(primaryId, updatedAt, guildId, relatedId);
+    recordCaseAudit({ guildId, caseId: primaryId, actorId, event: EVENTS.CASE_RELATION_LINKED, before: primary.relatedCaseId || null, after: relatedId, metadata: { relatedCaseId: relatedId } });
+    recordCaseAudit({ guildId, caseId: relatedId, actorId, event: EVENTS.CASE_RELATION_LINKED, before: related.relatedCaseId || null, after: primaryId, metadata: { relatedCaseId: primaryId } });
+  })();
+  const updatedPrimary = getCaseById(guildId, primaryId);
+  const updatedRelated = getCaseById(guildId, relatedId);
+  if (updatedPrimary) emitCaseUpdated(guildId, updatedPrimary);
+  if (updatedRelated) emitCaseUpdated(guildId, updatedRelated);
+  return { ok: Boolean(updatedPrimary && updatedRelated), case: updatedPrimary, relatedCase: updatedRelated, changed: true };
+}
+function unlinkCaseRelationship(guildId, caseId, actorId = null) {
+  const primaryId = normalizeCaseId(caseId);
+  if (!primaryId) return { ok: false, error: 'Case ID must be a positive integer.' };
+  const primary = getCaseById(guildId, primaryId);
+  if (!primary) return { ok: false, error: 'Case not found in this guild.' };
+  const relatedId = normalizeCaseId(primary.relatedCaseId);
+  if (!relatedId) return { ok: true, case: primary, relatedCase: null, changed: false };
+  const related = getCaseById(guildId, relatedId);
+  const updatedAt = now();
+  db.transaction(() => {
+    db.prepare('UPDATE cases SET related_case_id = NULL, updated_at = ? WHERE guild_id = ? AND case_id = ?').run(updatedAt, guildId, primaryId);
+    recordCaseAudit({ guildId, caseId: primaryId, actorId, event: EVENTS.CASE_RELATION_UNLINKED, before: relatedId, after: null, metadata: { relatedCaseId: relatedId } });
+    if (related && related.relatedCaseId === primaryId) {
+      db.prepare('UPDATE cases SET related_case_id = NULL, updated_at = ? WHERE guild_id = ? AND case_id = ?').run(updatedAt, guildId, relatedId);
+      recordCaseAudit({ guildId, caseId: relatedId, actorId, event: EVENTS.CASE_RELATION_UNLINKED, before: primaryId, after: null, metadata: { relatedCaseId: primaryId } });
+    }
+  })();
+  const updatedPrimary = getCaseById(guildId, primaryId);
+  const updatedRelated = related ? getCaseById(guildId, relatedId) : null;
+  if (updatedPrimary) emitCaseUpdated(guildId, updatedPrimary);
+  if (updatedRelated && related.relatedCaseId === primaryId) emitCaseUpdated(guildId, updatedRelated);
+  return { ok: Boolean(updatedPrimary), case: updatedPrimary, relatedCase: updatedRelated, changed: true };
+}
 
 function mapWarning(row) {
   if (!row) return null;
@@ -381,6 +434,8 @@ module.exports = {
   updateCaseStatus,
   updateCaseNote,
   clearCaseNote,
+  linkCases,
+  unlinkCaseRelationship,
   addWarning,
   getWarningById,
   getWarningsForUser,
