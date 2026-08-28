@@ -78,6 +78,8 @@ const EVENTS = Object.freeze({
   CASE_TAGS_UPDATED: 'case.tags.updated',
   CASE_LOCKED: 'case.locked',
   CASE_UNLOCKED: 'case.unlocked',
+  CASE_MERGED: 'case.merged',
+  CASE_SPLIT: 'case.split',
   CASE_RELATION_LINKED: 'case.relationship.linked',
   CASE_RELATION_UNLINKED: 'case.relationship.unlinked',
 });
@@ -177,7 +179,18 @@ function mapCase(row) {
     updatedAt: row.updated_at,
   };
 }
+function normalizeCaseId(value) {
+  const caseId = Number(value);
+  return Number.isInteger(caseId) && caseId > 0 ? caseId : null;
+}
+function getMergedIntoId(caseRecord) { return normalizeCaseId(caseRecord?.metadata?.mergedInto); }
+function getMergedCaseIds(caseRecord) {
+  const source = Array.isArray(caseRecord?.metadata?.mergedCaseIds) ? caseRecord.metadata.mergedCaseIds : [];
+  return [...new Set(source.map(normalizeCaseId).filter(Boolean))];
+}
 function isCaseLocked(caseRecord) { return Boolean(caseRecord?.metadata?.locked); }
+function isCaseMergedSource(caseRecord) { return Boolean(getMergedIntoId(caseRecord)); }
+function isCaseMutable(caseRecord) { return Boolean(caseRecord) && !isCaseLocked(caseRecord) && !isCaseMergedSource(caseRecord); }
 function createCase({ guildId, userId, moderatorId, action, reason, metadata = {}, status = 'active', relatedCaseId = null, actorId = null }) {
   const createdAt = now();
   const result = db.prepare(`INSERT INTO cases (guild_id, user_id, moderator_id, action, reason, metadata, status, related_case_id, note, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, NULL)`).run(guildId, userId, moderatorId, action, reason, JSON.stringify(metadata || {}), status, relatedCaseId, createdAt);
@@ -260,7 +273,7 @@ function updateAndEmit(guildId, caseId, sql, params, emitter, auditEvent, actorI
 }
 function updateCaseReason(guildId, caseId, newReason, actorId = null) {
   const before = getCaseById(guildId, caseId);
-  if (!before || isCaseLocked(before)) return null;
+  if (!isCaseMutable(before)) return null;
   return updateAndEmit(guildId, caseId, 'UPDATE cases SET reason = ?, updated_at = ? WHERE guild_id = ? AND case_id = ?', [newReason], emitCaseUpdated, 'case.reason.updated', actorId, before.reason || null);
 }
 function updateCaseStatus(guildId, caseId, status, actorId = null) {
@@ -269,12 +282,12 @@ function updateCaseStatus(guildId, caseId, status, actorId = null) {
 }
 function updateCaseNote(guildId, caseId, note, actorId = null) {
   const before = getCaseById(guildId, caseId);
-  if (!before || isCaseLocked(before)) return null;
+  if (!isCaseMutable(before)) return null;
   return updateAndEmit(guildId, caseId, 'UPDATE cases SET note = ?, updated_at = ? WHERE guild_id = ? AND case_id = ?', [String(note || '').trim()], emitCaseNoteUpdated, EVENTS.CASE_NOTE_UPDATED, actorId, before.note || null);
 }
 function clearCaseNote(guildId, caseId, actorId = null) {
   const before = getCaseById(guildId, caseId);
-  if (!before || isCaseLocked(before)) return null;
+  if (!isCaseMutable(before)) return null;
   const updatedAt = now();
   const result = db.prepare('UPDATE cases SET note = NULL, updated_at = ? WHERE guild_id = ? AND case_id = ?').run(updatedAt, guildId, Number(caseId));
   if (!result.changes) return null;
@@ -302,9 +315,10 @@ function normalizeCaseTags(tags) {
 }
 function updateCaseTags(guildId, caseId, tags, actorId = null) {
   const existing = getCaseById(guildId, caseId);
-  if (!existing || isCaseLocked(existing)) return null;
+  if (!isCaseMutable(existing)) return null;
   const before = normalizeCaseTags(existing.metadata?.tags || []);
   const after = normalizeCaseTags(tags);
+  if (JSON.stringify(before) === JSON.stringify(after)) return existing;
   const metadata = { ...(existing.metadata || {}) };
   if (after.length) metadata.tags = after;
   else delete metadata.tags;
@@ -320,7 +334,7 @@ function updateCaseTags(guildId, caseId, tags, actorId = null) {
 }
 function updateCaseLock(guildId, caseId, locked, actorId = null) {
   const existing = getCaseById(guildId, caseId);
-  if (!existing) return null;
+  if (!existing || isCaseMergedSource(existing)) return null;
   const before = isCaseLocked(existing);
   const after = Boolean(locked);
   if (before === after) return existing;
@@ -344,10 +358,6 @@ function updateCaseLock(guildId, caseId, locked, actorId = null) {
   }
   return updated;
 }
-function normalizeCaseId(value) {
-  const caseId = Number(value);
-  return Number.isInteger(caseId) && caseId > 0 ? caseId : null;
-}
 function linkCases(guildId, caseId, relatedCaseId, actorId = null) {
   const primaryId = normalizeCaseId(caseId);
   const relatedId = normalizeCaseId(relatedCaseId);
@@ -356,7 +366,7 @@ function linkCases(guildId, caseId, relatedCaseId, actorId = null) {
   const primary = getCaseById(guildId, primaryId);
   const related = getCaseById(guildId, relatedId);
   if (!primary || !related) return { ok: false, error: 'Both cases must exist in this guild.' };
-  if (isCaseLocked(primary) || isCaseLocked(related)) return { ok: false, error: 'Locked cases cannot have relationships changed.' };
+  if (!isCaseMutable(primary) || !isCaseMutable(related)) return { ok: false, error: 'Locked or merged cases cannot have relationships changed.' };
   if (primary.relatedCaseId && primary.relatedCaseId !== relatedId) return { ok: false, error: `Case #${primaryId} is already linked to Case #${primary.relatedCaseId}.` };
   if (related.relatedCaseId && related.relatedCaseId !== primaryId) return { ok: false, error: `Case #${relatedId} is already linked to Case #${related.relatedCaseId}.` };
   if (primary.relatedCaseId === relatedId && related.relatedCaseId === primaryId) return { ok: true, case: primary, relatedCase: related, changed: false };
@@ -381,7 +391,7 @@ function unlinkCaseRelationship(guildId, caseId, actorId = null) {
   const relatedId = normalizeCaseId(primary.relatedCaseId);
   if (!relatedId) return { ok: true, case: primary, relatedCase: null, changed: false };
   const related = getCaseById(guildId, relatedId);
-  if (isCaseLocked(primary) || isCaseLocked(related)) return { ok: false, error: 'Locked cases cannot have relationships changed.' };
+  if (!isCaseMutable(primary) || (related && !isCaseMutable(related))) return { ok: false, error: 'Locked or merged cases cannot have relationships changed.' };
   const updatedAt = now();
   db.transaction(() => {
     db.prepare('UPDATE cases SET related_case_id = NULL, updated_at = ? WHERE guild_id = ? AND case_id = ?').run(updatedAt, guildId, primaryId);
@@ -396,6 +406,133 @@ function unlinkCaseRelationship(guildId, caseId, actorId = null) {
   if (updatedPrimary) emitCaseUpdated(guildId, updatedPrimary);
   if (updatedRelated && related.relatedCaseId === primaryId) emitCaseUpdated(guildId, updatedRelated);
   return { ok: Boolean(updatedPrimary), case: updatedPrimary, relatedCase: updatedRelated, changed: true };
+}
+function mergeCases(guildId, targetCaseId, sourceCaseId, actorId = null) {
+  const targetId = normalizeCaseId(targetCaseId);
+  const sourceId = normalizeCaseId(sourceCaseId);
+  if (!targetId || !sourceId) return { ok: false, error: 'Case IDs must be positive integers.' };
+  if (targetId === sourceId) return { ok: false, error: 'A case cannot be merged into itself.' };
+  const target = getCaseById(guildId, targetId);
+  const source = getCaseById(guildId, sourceId);
+  if (!target || !source) return { ok: false, error: 'Both cases must exist in this guild.' };
+  if (isCaseLocked(target) || isCaseLocked(source)) return { ok: false, error: 'Unlock both cases before merging.' };
+  if (isCaseMergedSource(target)) return { ok: false, error: `Case #${targetId} is already merged into Case #${getMergedIntoId(target)}.` };
+  if (isCaseMergedSource(source)) return { ok: false, error: `Case #${sourceId} is already merged into Case #${getMergedIntoId(source)}.` };
+  if (getMergedCaseIds(source).length) return { ok: false, error: 'A canonical case with merged children cannot itself be merged. Split its merged cases first.' };
+  if (String(target.userId) !== String(source.userId)) return { ok: false, error: 'Only cases for the same member can be merged.' };
+  const existingMerged = getMergedCaseIds(target);
+  if (existingMerged.includes(sourceId)) return { ok: true, case: target, mergedCase: source, changed: false };
+  const mergedAt = now();
+  const targetMetadata = { ...(target.metadata || {}), mergedCaseIds: [...existingMerged, sourceId] };
+  const sourceMetadata = { ...(source.metadata || {}), mergedInto: targetId, mergedAt, mergedBy: actorId ? String(actorId) : null };
+  db.transaction(() => {
+    db.prepare('UPDATE cases SET metadata = ?, updated_at = ? WHERE guild_id = ? AND case_id = ?').run(JSON.stringify(targetMetadata), mergedAt, guildId, targetId);
+    db.prepare('UPDATE cases SET metadata = ?, updated_at = ? WHERE guild_id = ? AND case_id = ?').run(JSON.stringify(sourceMetadata), mergedAt, guildId, sourceId);
+    const preserved = ['reason', 'note', 'tags', 'relationship', 'audit'];
+    recordCaseAudit({ guildId, caseId: targetId, actorId, event: EVENTS.CASE_MERGED, before: existingMerged, after: targetMetadata.mergedCaseIds, metadata: { role: 'canonical', mergedCaseId: sourceId, preserved } });
+    recordCaseAudit({ guildId, caseId: sourceId, actorId, event: EVENTS.CASE_MERGED, before: null, after: targetId, metadata: { role: 'source', canonicalCaseId: targetId, preserved } });
+  })();
+  const updatedTarget = getCaseById(guildId, targetId);
+  const updatedSource = getCaseById(guildId, sourceId);
+  if (updatedTarget) emitCaseUpdated(guildId, updatedTarget);
+  if (updatedSource) emitCaseUpdated(guildId, updatedSource);
+  return { ok: Boolean(updatedTarget && updatedSource), case: updatedTarget, mergedCase: updatedSource, changed: true };
+}
+function splitMergedCase(guildId, targetCaseId, sourceCaseId, actorId = null) {
+  const targetId = normalizeCaseId(targetCaseId);
+  const sourceId = normalizeCaseId(sourceCaseId);
+  if (!targetId || !sourceId) return { ok: false, error: 'Case IDs must be positive integers.' };
+  if (targetId === sourceId) return { ok: false, error: 'A case cannot be split from itself.' };
+  const target = getCaseById(guildId, targetId);
+  const source = getCaseById(guildId, sourceId);
+  if (!target || !source) return { ok: false, error: 'Both cases must exist in this guild.' };
+  if (isCaseLocked(target) || isCaseLocked(source)) return { ok: false, error: 'Unlock both cases before splitting.' };
+  const mergedIds = getMergedCaseIds(target);
+  if (getMergedIntoId(source) !== targetId || !mergedIds.includes(sourceId)) return { ok: false, error: `Case #${sourceId} is not merged into Case #${targetId}.` };
+  const splitAt = now();
+  const remaining = mergedIds.filter((id) => id !== sourceId);
+  const targetMetadata = { ...(target.metadata || {}) };
+  if (remaining.length) targetMetadata.mergedCaseIds = remaining;
+  else delete targetMetadata.mergedCaseIds;
+  const sourceMetadata = { ...(source.metadata || {}) };
+  delete sourceMetadata.mergedInto;
+  delete sourceMetadata.mergedAt;
+  delete sourceMetadata.mergedBy;
+  db.transaction(() => {
+    db.prepare('UPDATE cases SET metadata = ?, updated_at = ? WHERE guild_id = ? AND case_id = ?').run(JSON.stringify(targetMetadata), splitAt, guildId, targetId);
+    db.prepare('UPDATE cases SET metadata = ?, updated_at = ? WHERE guild_id = ? AND case_id = ?').run(JSON.stringify(sourceMetadata), splitAt, guildId, sourceId);
+    recordCaseAudit({ guildId, caseId: targetId, actorId, event: EVENTS.CASE_SPLIT, before: mergedIds, after: remaining, metadata: { role: 'canonical', splitCaseId: sourceId } });
+    recordCaseAudit({ guildId, caseId: sourceId, actorId, event: EVENTS.CASE_SPLIT, before: targetId, after: null, metadata: { role: 'source', canonicalCaseId: targetId } });
+  })();
+  const updatedTarget = getCaseById(guildId, targetId);
+  const updatedSource = getCaseById(guildId, sourceId);
+  if (updatedTarget) emitCaseUpdated(guildId, updatedTarget);
+  if (updatedSource) emitCaseUpdated(guildId, updatedSource);
+  return { ok: Boolean(updatedTarget && updatedSource), case: updatedTarget, splitCase: updatedSource, changed: true };
+}
+function normalizeCaseIdList(values) {
+  const source = Array.isArray(values) ? values : String(values || '').split(/[\s,]+/);
+  const ids = [];
+  const seen = new Set();
+  for (const raw of source) {
+    if (String(raw || '').trim() === '') continue;
+    const id = normalizeCaseId(raw);
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+  }
+  return ids;
+}
+function bulkUpdateCases(guildId, caseIds, operation, value = '', actorId = null) {
+  const ids = normalizeCaseIdList(caseIds);
+  if (!ids.length) return { ok: false, error: 'Provide at least one valid case ID.', results: [] };
+  if (ids.length > 25) return { ok: false, error: 'Bulk case operations are limited to 25 cases at a time.', results: [] };
+  const op = String(operation || '').trim().toLowerCase();
+  const allowed = new Set(['add-tags', 'remove-tags', 'set-tags', 'lock', 'unlock', 'unlink']);
+  if (!allowed.has(op)) return { ok: false, error: 'Unknown bulk operation. Use add-tags, remove-tags, set-tags, lock, unlock, or unlink.', results: [] };
+  const requestedTags = normalizeCaseTags(value);
+  if ((op === 'add-tags' || op === 'remove-tags' || op === 'set-tags') && !requestedTags.length && op !== 'set-tags') return { ok: false, error: 'This bulk tag operation requires at least one tag.', results: [] };
+  const results = [];
+  for (const caseId of ids) {
+    const existing = getCaseById(guildId, caseId);
+    if (!existing) { results.push({ caseId, ok: false, changed: false, error: 'Case not found.' }); continue; }
+    let updated = null;
+    let changed = false;
+    let error = null;
+    if (op === 'lock' || op === 'unlock') {
+      if (isCaseMergedSource(existing)) error = 'Merged source cases must be split before changing their lock.';
+      else {
+        const desired = op === 'lock';
+        const before = isCaseLocked(existing);
+        updated = updateCaseLock(guildId, caseId, desired, actorId);
+        changed = Boolean(updated) && before !== desired;
+        if (!updated) error = 'Failed to update case lock.';
+      }
+    } else if (op === 'unlink') {
+      const result = unlinkCaseRelationship(guildId, caseId, actorId);
+      updated = result.case || null;
+      changed = Boolean(result.changed);
+      if (!result.ok) error = result.error || 'Failed to unlink case.';
+    } else {
+      if (!isCaseMutable(existing)) error = 'Case is locked or merged and cannot be edited.';
+      else {
+        const before = normalizeCaseTags(existing.metadata?.tags || []);
+        let next = requestedTags;
+        if (op === 'add-tags') next = normalizeCaseTags([...before, ...requestedTags]);
+        if (op === 'remove-tags') {
+          const remove = new Set(requestedTags.map((tag) => tag.toLowerCase()));
+          next = before.filter((tag) => !remove.has(tag.toLowerCase()));
+        }
+        updated = updateCaseTags(guildId, caseId, next, actorId);
+        changed = Boolean(updated) && JSON.stringify(before) !== JSON.stringify(normalizeCaseTags(updated.metadata?.tags || []));
+        if (!updated) error = 'Failed to update case tags.';
+      }
+    }
+    results.push({ caseId, ok: !error, changed, error });
+  }
+  const succeeded = results.filter((result) => result.ok).length;
+  const changed = results.filter((result) => result.ok && result.changed).length;
+  return { ok: succeeded > 0, operation: op, requested: ids.length, succeeded, failed: ids.length - succeeded, changed, results };
 }
 
 function mapWarning(row) {
@@ -499,6 +636,10 @@ module.exports = {
   getCaseById,
   getAllCases,
   isCaseLocked,
+  isCaseMergedSource,
+  isCaseMutable,
+  getMergedIntoId,
+  getMergedCaseIds,
   updateCaseReason,
   updateCaseStatus,
   updateCaseNote,
@@ -507,6 +648,9 @@ module.exports = {
   updateCaseLock,
   linkCases,
   unlinkCaseRelationship,
+  mergeCases,
+  splitMergedCase,
+  bulkUpdateCases,
   addWarning,
   getWarningById,
   getWarningsForUser,
