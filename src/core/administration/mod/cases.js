@@ -13,6 +13,7 @@ const {
 const {
   getAllCases,
   getCaseById,
+  searchCases,
   updateCaseReason,
   updateCaseNote,
   clearCaseNote,
@@ -113,6 +114,60 @@ function buildEditCaseModal(customId) {
 function buildCaseNoteModal(customId, existingNote = '') {
   return new ModalBuilder().setCustomId(customId).setTitle(existingNote ? 'Edit Case Note' : 'Add Case Note').addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('note').setLabel('Staff Note').setStyle(TextInputStyle.Paragraph).setPlaceholder('Add internal staff-only context for this case').setRequired(false).setMaxLength(1000).setValue(String(existingNote || '').slice(0, 1000))));
 }
+function buildCaseSearchModal(customId = 'mod_submit_case_search') {
+  return new ModalBuilder().setCustomId(customId).setTitle('Search Moderation Cases').addComponents(
+    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('case_or_user').setLabel('Case ID or Member/User ID').setStyle(TextInputStyle.Short).setPlaceholder('123456789012345678 or 42').setRequired(false).setMaxLength(20)),
+    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('filters').setLabel('Advanced filters').setStyle(TextInputStyle.Paragraph).setPlaceholder('moderator:123 action:warn status:active from:2026-08-01 to:2026-08-28 text:spam').setRequired(false).setMaxLength(1000))
+  );
+}
+function parseCaseSearchInput(interaction) {
+  const caseOrUser = String(interaction.fields.getTextInputValue('case_or_user') || '').trim();
+  const rawFilters = String(interaction.fields.getTextInputValue('filters') || '').trim();
+  const filters = { page: 0, pageSize: 5 };
+  if (caseOrUser) {
+    if (/^\d+$/.test(caseOrUser) && caseOrUser.length <= 10) filters.caseId = Number(caseOrUser);
+    else if (/^\d{16,20}$/.test(caseOrUser)) filters.userId = caseOrUser;
+    else return { error: 'Case ID or Member/User ID is invalid.' };
+  }
+  const tokenPattern = /(moderator|mod|action|status|from|to|text):("[^"]*"|'[^']*'|\S+)/gi;
+  let match;
+  while ((match = tokenPattern.exec(rawFilters))) {
+    const key = match[1].toLowerCase();
+    const value = String(match[2] || '').replace(/^("|')|("|')$/g, '').trim();
+    if (!value) continue;
+    if (key === 'moderator' || key === 'mod') filters.moderatorId = value;
+    else if (key === 'action') filters.action = value.toLowerCase();
+    else if (key === 'status') filters.status = value.toLowerCase();
+    else if (key === 'from') filters.createdFrom = value;
+    else if (key === 'to') filters.createdTo = value;
+    else if (key === 'text') filters.text = value;
+  }
+  return { filters };
+}
+function buildCaseSearchResultsEmbed(result = {}, filters = {}) {
+  const results = Array.isArray(result.results) ? result.results : [];
+  const description = results.length
+    ? results.map((modCase, index) => `${index + 1}. ${formatCaseSummary(modCase)}\n   <@${modCase.userId}> • ${String(modCase.reason || 'No reason provided').slice(0, 160)}`).join('\n\n')
+    : 'No moderation cases matched the supplied filters.';
+  const embed = new EmbedBuilder().setColor(COLORS.PRIMARY).setTitle('🔎 Case Search').setDescription(description.slice(0, 4096)).setFooter({ text: `${result.total || 0} result${result.total === 1 ? '' : 's'} • Page ${(Number(result.page) || 0) + 1}/${Math.max(1, Number(result.totalPages) || 1)}` }).setTimestamp();
+  const activeFilters = Object.entries(filters).filter(([key, value]) => !['page', 'pageSize'].includes(key) && value !== undefined && value !== null && value !== '').map(([key, value]) => `${key}: ${value}`);
+  if (activeFilters.length) embed.addFields({ name: 'Filters', value: activeFilters.join(' • ').slice(0, 1024), inline: false });
+  return embed;
+}
+function buildCaseSearchResultButtons(result = {}) {
+  const results = Array.isArray(result.results) ? result.results.slice(0, 5) : [];
+  if (!results.length) return [];
+  return [new ActionRowBuilder().addComponents(...results.map((modCase) => new ButtonBuilder().setCustomId(`mod_search_open:${modCase.caseId}`).setLabel(`#${modCase.caseId}`).setStyle(ButtonStyle.Secondary)))];
+}
+function buildCaseSearchPaginationButtons(page = 0, totalPages = 0) {
+  const safePage = Math.max(0, Number(page) || 0);
+  const pages = Math.max(0, Number(totalPages) || 0);
+  if (pages <= 1) return [];
+  return [new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`mod_search_page:${Math.max(0, safePage - 1)}`).setLabel(`${EMOJIS.BACK} Prev`).setStyle(ButtonStyle.Secondary).setDisabled(safePage <= 0),
+    new ButtonBuilder().setCustomId(`mod_search_page:${safePage + 1}`).setLabel(`Next ${EMOJIS.NEXT}`).setStyle(ButtonStyle.Secondary).setDisabled(safePage >= pages - 1)
+  )];
+}
 function buildCaseDetailEmbed(modCase) {
   const embed = new EmbedBuilder().setColor('#5865F2').setTitle(`🧾 Case #${modCase.caseId}`).addFields(
     { name: 'Action', value: modCase.action, inline: true }, { name: 'Status', value: getStatusLabel(modCase), inline: true }, { name: 'User ID', value: modCase.userId, inline: true }, { name: 'Moderator ID', value: modCase.moderatorId, inline: true }, { name: 'Reason', value: modCase.reason || 'No reason provided', inline: false }, { name: 'Created', value: `<t:${getCaseTimestamp(modCase.createdAt)}:F>`, inline: true }, { name: 'Updated', value: modCase.updatedAt ? `<t:${getCaseTimestamp(modCase.updatedAt)}:F>` : 'Never', inline: true }
@@ -142,6 +197,11 @@ async function openCaseTool(interaction) {
     if (targetId === 'none') return safeReply(interaction, ephemeralError('No user selected.'));
     await interaction.showModal(buildEditCaseModal(`mod_submit_edit_case:${targetId}`)); return true;
   }
+  if (id === 'mod_search_cases') {
+    if (!canUseModAction(interaction.member, interaction.guild, 'view_cases')) return safeReply(interaction, ephemeralError('No permission to search cases.'));
+    await interaction.showModal(buildCaseSearchModal());
+    return true;
+  }
   return false;
 }
 async function handleCaseAction(interaction, { fetchTarget, createConfirmation } = {}) {
@@ -153,6 +213,14 @@ async function handleCaseAction(interaction, { fetchTarget, createConfirmation }
     const modCase = getCaseById(interaction.guild.id, Number(caseIdRaw));
     if (!modCase) return safeReply(interaction, ephemeralError('Case not found.'));
     await interaction.showModal(buildCaseNoteModal(`mod_submit_case_note:${modCase.caseId}`, modCase.note || '')); return true;
+  }
+  if (id.startsWith('mod_search_open:')) {
+    if (!canUseModAction(interaction.member, interaction.guild, 'view_case_detail')) return safeReply(interaction, ephemeralError('No permission to view case details.'));
+    const [, caseIdRaw] = id.split(':');
+    if (!/^\d+$/.test(caseIdRaw)) return safeReply(interaction, ephemeralError('Case ID must be a number.'));
+    const modCase = getCaseById(interaction.guild.id, Number(caseIdRaw));
+    if (!modCase) return safeReply(interaction, ephemeralError('Case not found.'));
+    return safeReply(interaction, { embeds: [buildCaseDetailEmbed(modCase)], components: buildCaseDetailButtons(modCase), flags: 64 });
   }
   if (id.startsWith('mod_case_reverse_warning:') || id.startsWith('mod_case_reverse_timeout:')) {
     const isWarning = id.startsWith('mod_case_reverse_warning:');
@@ -195,6 +263,17 @@ async function submitCaseModal(interaction, { fetchTarget, refreshCasesDashboard
     if (target && typeof refreshCasesDashboard === 'function') await refreshCasesDashboard(interaction, target);
     return true;
   }
+  if (id.startsWith('mod_submit_case_search')) {
+    if (!canUseModAction(interaction.member, interaction.guild, 'view_cases')) return safeReply(interaction, ephemeralError('No permission to search cases.'));
+    const parsed = parseCaseSearchInput(interaction);
+    if (parsed.error) return safeReply(interaction, ephemeralError(parsed.error));
+    const result = searchCases(interaction.guild.id, parsed.filters);
+    return safeReply(interaction, {
+      embeds: [buildCaseSearchResultsEmbed(result, parsed.filters)],
+      components: [...buildCaseSearchResultButtons(result), ...buildCaseSearchPaginationButtons(result.page, result.totalPages)],
+      flags: 64,
+    });
+  }
   if (id.startsWith('mod_submit_case_note:')) {
     const [, caseIdRaw] = id.split(':');
     if (!/^\d+$/.test(caseIdRaw)) return safeReply(interaction, ephemeralError('Case ID must be a number.'));
@@ -213,4 +292,4 @@ async function submitCaseModal(interaction, { fetchTarget, refreshCasesDashboard
 }
 function getBulkActionProgressEmbed({ actionLabel, total, processed, successCount, failCount }) { return createEmbed({ title: `${EMOJIS.SETTINGS} ${EMOJIS.BULK} ${actionLabel} Progress`, description: `${EMOJIS.FIRE} Bulk moderation is currently running...`, color: COLORS.PRIMARY, fields: [{ name: '📦 Processed', value: `${processed}/${total}`, inline: true }, { name: `${EMOJIS.SUCCESS} Success`, value: String(successCount), inline: true }, { name: `${EMOJIS.ERROR} Failed`, value: String(failCount), inline: true }] }); }
 function getBulkActionSummaryEmbed({ actionLabel, total, success, failed }) { return createEmbed({ title: failed.length ? `${EMOJIS.WARNING} ${EMOJIS.BULK} ${actionLabel} Complete` : `${EMOJIS.SUCCESS} ${EMOJIS.BULK} ${actionLabel} Complete`, color: failed.length ? COLORS.ERROR : COLORS.SUCCESS, fields: [{ name: '🎯 Total Targets', value: String(total), inline: true }, { name: `${EMOJIS.SUCCESS} Successful`, value: String(success.length), inline: true }, { name: `${EMOJIS.ERROR} Failed`, value: String(failed.length), inline: true }, { name: `${EMOJIS.SUCCESS} Successes`, value: success.length ? success.join('\n').slice(0, 1024) : 'None' }, { name: `${EMOJIS.ERROR} Failures`, value: failed.length ? failed.join('\n').slice(0, 1024) : 'None' }] }); }
-module.exports = { getStatusLabel, formatCaseSummary, getModerationAnalytics, buildCaseFilterButtons, buildCasesPageButtons, openCaseTool, handleCaseAction, submitCaseModal, getBulkActionProgressEmbed, getBulkActionSummaryEmbed };
+module.exports = { getStatusLabel, formatCaseSummary, getModerationAnalytics, buildCaseFilterButtons, buildCasesPageButtons, buildCaseDetailButtons, buildCaseSearchModal, parseCaseSearchInput, buildCaseSearchResultsEmbed, buildCaseSearchResultButtons, buildCaseSearchPaginationButtons, openCaseTool, handleCaseAction, submitCaseModal, getBulkActionProgressEmbed, getBulkActionSummaryEmbed };
