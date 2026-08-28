@@ -4,7 +4,7 @@ const { ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, M
 const { safeReply, ephemeralError } = require('../../../core/ui/interactionResponse');
 const { COLORS, createEmbed } = require('../../../core/ui/embeds');
 const { canUseModAction } = require('./permissions');
-const { searchCases, getCaseById, getCaseAudit, updateCaseReason, updateCaseTags, linkCases, unlinkCaseRelationship } = require('./storage');
+const { searchCases, getCaseById, getCaseAudit, isCaseLocked, updateCaseReason, updateCaseTags, updateCaseLock, linkCases, unlinkCaseRelationship } = require('./storage');
 
 const ACTIONS = new Set(['warn', 'timeout', 'kick', 'ban', 'unwarn', 'remove-timeout']);
 const STATUSES = new Set(['active', 'reversed', 'expired']);
@@ -135,6 +135,12 @@ function caseDetailEmbed(c, audit) {
     { name: 'Created', value: `<t:${ts(c.createdAt)}:F>`, inline: true }, { name: 'Updated', value: c.updatedAt ? `<t:${ts(c.updatedAt)}:F>` : 'Never', inline: true }
   );
   if (c.relatedCaseId) e.addFields({ name: 'Related Case', value: `#${c.relatedCaseId}`, inline: true });
+  const locked = isCaseLocked(c);
+  if (locked) {
+    const lockedBy = c.metadata?.lockedBy ? `<@${c.metadata.lockedBy}>` : 'Unknown';
+    const lockedAt = c.metadata?.lockedAt ? `<t:${ts(c.metadata.lockedAt)}:R>` : 'Unknown time';
+    e.addFields({ name: '🔒 Case Lock', value: `Locked by ${lockedBy} • ${lockedAt}`, inline: false });
+  }
   const tags = Array.isArray(c.metadata?.tags) ? c.metadata.tags : [];
   if (tags.length) e.addFields({ name: 'Tags', value: tags.map((tag) => `\`${String(tag).slice(0, 32)}\``).join(' ').slice(0, 1024), inline: false });
   if (c.note) e.addFields({ name: 'Staff Note', value: String(c.note).slice(0, 1024), inline: false });
@@ -144,17 +150,19 @@ function caseDetailEmbed(c, audit) {
 
 function caseDetailButtons(c, token, audit) {
   const closed = c.status === 'reversed' || c.status === 'expired';
+  const locked = isCaseLocked(c);
   const rows = [new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId(`mod_case_search_back:${token}`).setLabel('← Back to Search').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId(`mod_case_reverse_warning:${c.caseId}`).setLabel('↩️ Reverse Warning').setStyle(ButtonStyle.Secondary).setDisabled(c.action !== 'warn' || closed),
     new ButtonBuilder().setCustomId(`mod_case_reverse_timeout:${c.caseId}`).setLabel('⏪ Reverse Timeout').setStyle(ButtonStyle.Secondary).setDisabled(c.action !== 'timeout' || closed),
-    new ButtonBuilder().setCustomId(`mod_case_note:${c.caseId}`).setLabel('📝 Add/Edit Note').setStyle(ButtonStyle.Primary)
+    new ButtonBuilder().setCustomId(`mod_case_note:${c.caseId}`).setLabel('📝 Add/Edit Note').setStyle(ButtonStyle.Primary).setDisabled(locked),
+    new ButtonBuilder().setCustomId(`mod_case_lock:${token}:${c.caseId}`).setLabel(locked ? '🔓 Unlock Case' : '🔒 Lock Case').setStyle(locked ? ButtonStyle.Success : ButtonStyle.Danger)
   )];
   rows.push(new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`mod_case_reason:${token}:${c.caseId}`).setLabel('✏️ Edit Reason').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId(`mod_case_tags:${token}:${c.caseId}`).setLabel('🏷️ Edit Tags').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId(`mod_case_link:${token}:${c.caseId}`).setLabel('🔗 Link Case').setStyle(ButtonStyle.Secondary).setDisabled(Boolean(c.relatedCaseId)),
-    new ButtonBuilder().setCustomId(`mod_case_unlink:${token}:${c.caseId}`).setLabel('Unlink Case').setStyle(ButtonStyle.Secondary).setDisabled(!c.relatedCaseId),
+    new ButtonBuilder().setCustomId(`mod_case_reason:${token}:${c.caseId}`).setLabel('✏️ Edit Reason').setStyle(ButtonStyle.Primary).setDisabled(locked),
+    new ButtonBuilder().setCustomId(`mod_case_tags:${token}:${c.caseId}`).setLabel('🏷️ Edit Tags').setStyle(ButtonStyle.Primary).setDisabled(locked),
+    new ButtonBuilder().setCustomId(`mod_case_link:${token}:${c.caseId}`).setLabel('🔗 Link Case').setStyle(ButtonStyle.Secondary).setDisabled(locked || Boolean(c.relatedCaseId)),
+    new ButtonBuilder().setCustomId(`mod_case_unlink:${token}:${c.caseId}`).setLabel('Unlink Case').setStyle(ButtonStyle.Secondary).setDisabled(locked || !c.relatedCaseId),
     new ButtonBuilder().setCustomId(`mod_case_related_open:${token}:${c.caseId}`).setLabel('Open Related').setStyle(ButtonStyle.Secondary).setDisabled(!c.relatedCaseId)
   ));
   if (audit?.totalPages > 1) rows.push(new ActionRowBuilder().addComponents(
@@ -181,12 +189,24 @@ async function submitCaseSearch(i) {
 async function handleCaseSearchAction(i) {
   const id = String(i.customId || '');
   if (id === 'mod_case_search') return openCaseSearch(i);
+  if (id.startsWith('mod_case_lock:')) {
+    if (!canUseModAction(i.member, i.guild, 'edit_case')) return safeReply(i, ephemeralError('No permission to lock or unlock cases.'));
+    const [, token, caseIdRaw] = id.split(':');
+    if (!stateFor(token, i.guild.id)) return safeReply(i, ephemeralError('This search has expired. Please start a new search.'));
+    const caseId = Number(caseIdRaw), c = getCaseById(i.guild.id, caseId);
+    if (!Number.isInteger(caseId) || !c) return safeReply(i, ephemeralError('Case not found.'));
+    const updated = updateCaseLock(i.guild.id, caseId, !isCaseLocked(c), i.user?.id || null);
+    if (!updated) return safeReply(i, ephemeralError('Failed to update case lock.'));
+    const audit = getCaseAudit(i.guild.id, caseId, { page: 0, pageSize: AUDIT_PAGE_SIZE });
+    return i.update({ embeds: [caseDetailEmbed(updated, audit)], components: caseDetailButtons(updated, token, audit) });
+  }
   if (id.startsWith('mod_case_reason:')) {
     if (!canUseModAction(i.member, i.guild, 'edit_case')) return safeReply(i, ephemeralError('No permission to edit cases.'));
     const [, token, caseIdRaw] = id.split(':');
     if (!stateFor(token, i.guild.id)) return safeReply(i, ephemeralError('This search has expired. Please start a new search.'));
     const caseId = Number(caseIdRaw), c = getCaseById(i.guild.id, caseId);
     if (!Number.isInteger(caseId) || !c) return safeReply(i, ephemeralError('Case not found.'));
+    if (isCaseLocked(c)) return safeReply(i, ephemeralError('This case is locked. Unlock it before editing the reason.'));
     await i.showModal(buildCaseReasonModal(token, c));
     return true;
   }
@@ -196,6 +216,7 @@ async function handleCaseSearchAction(i) {
     if (!stateFor(token, i.guild.id)) return safeReply(i, ephemeralError('This search has expired. Please start a new search.'));
     const caseId = Number(caseIdRaw), c = getCaseById(i.guild.id, caseId);
     if (!Number.isInteger(caseId) || !c) return safeReply(i, ephemeralError('Case not found.'));
+    if (isCaseLocked(c)) return safeReply(i, ephemeralError('This case is locked. Unlock it before editing tags.'));
     await i.showModal(buildCaseTagsModal(token, c));
     return true;
   }
@@ -218,6 +239,7 @@ async function handleCaseSearchAction(i) {
     if (!stateFor(token, i.guild.id)) return safeReply(i, ephemeralError('This search has expired. Please start a new search.'));
     const caseId = Number(caseIdRaw), c = getCaseById(i.guild.id, caseId);
     if (!Number.isInteger(caseId) || !c) return safeReply(i, ephemeralError('Case not found.'));
+    if (isCaseLocked(c)) return safeReply(i, ephemeralError('This case is locked. Unlock it before changing relationships.'));
     if (c.relatedCaseId) return safeReply(i, ephemeralError(`Case #${caseId} is already linked to Case #${c.relatedCaseId}.`));
     await i.showModal(buildCaseLinkModal(token, caseId));
     return true;
@@ -228,6 +250,7 @@ async function handleCaseSearchAction(i) {
     if (!stateFor(token, i.guild.id)) return safeReply(i, ephemeralError('This search has expired. Please start a new search.'));
     const caseId = Number(caseIdRaw), c = getCaseById(i.guild.id, caseId);
     if (!Number.isInteger(caseId) || !c) return safeReply(i, ephemeralError('Case not found.'));
+    if (isCaseLocked(c)) return safeReply(i, ephemeralError('This case is locked. Unlock it before changing relationships.'));
     const result = unlinkCaseRelationship(i.guild.id, caseId, i.user?.id || null);
     if (!result.ok) return safeReply(i, ephemeralError(result.error || 'Failed to unlink cases.'));
     const updated = getCaseById(i.guild.id, caseId);
@@ -292,6 +315,7 @@ async function handleCaseSearchModal(i) {
     if (!reason) return safeReply(i, ephemeralError('Case reason cannot be empty.'));
     const existing = getCaseById(i.guild.id, caseId);
     if (!existing) return safeReply(i, ephemeralError('Case not found.'));
+    if (isCaseLocked(existing)) return safeReply(i, ephemeralError('This case was locked before the edit was submitted. Unlock it and try again.'));
     const updated = updateCaseReason(i.guild.id, caseId, reason, i.user?.id || null);
     if (!updated) return safeReply(i, ephemeralError('Failed to update case reason.'));
     const audit = getCaseAudit(i.guild.id, caseId, { page: 0, pageSize: AUDIT_PAGE_SIZE });
@@ -305,6 +329,7 @@ async function handleCaseSearchModal(i) {
     if (!Number.isInteger(caseId) || caseId <= 0) return safeReply(i, ephemeralError('Case ID must be a positive integer.'));
     const existing = getCaseById(i.guild.id, caseId);
     if (!existing) return safeReply(i, ephemeralError('Case not found.'));
+    if (isCaseLocked(existing)) return safeReply(i, ephemeralError('This case was locked before the edit was submitted. Unlock it and try again.'));
     const updated = updateCaseTags(i.guild.id, caseId, input(i, 'tags'), i.user?.id || null);
     if (!updated) return safeReply(i, ephemeralError('Failed to update case tags.'));
     const audit = getCaseAudit(i.guild.id, caseId, { page: 0, pageSize: AUDIT_PAGE_SIZE });
@@ -317,6 +342,9 @@ async function handleCaseSearchModal(i) {
     const caseId = Number(caseIdRaw);
     const relatedRaw = input(i, 'related_case_id');
     if (!Number.isInteger(caseId) || !/^\d+$/.test(relatedRaw)) return safeReply(i, ephemeralError('Case IDs must be positive integers.'));
+    const existing = getCaseById(i.guild.id, caseId);
+    if (!existing) return safeReply(i, ephemeralError('Case not found.'));
+    if (isCaseLocked(existing)) return safeReply(i, ephemeralError('This case was locked before the relationship was submitted. Unlock it and try again.'));
     const relatedCaseId = Number(relatedRaw);
     const result = linkCases(i.guild.id, caseId, relatedCaseId, i.user?.id || null);
     if (!result.ok) return safeReply(i, ephemeralError(result.error || 'Failed to link cases.'));
