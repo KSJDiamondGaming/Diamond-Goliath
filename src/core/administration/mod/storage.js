@@ -47,11 +47,24 @@ db.exec(`
     created_at TEXT NOT NULL,
     expires_at TEXT NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS case_audit (
+    audit_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    guild_id TEXT NOT NULL,
+    case_id INTEGER NOT NULL,
+    actor_id TEXT,
+    event TEXT NOT NULL,
+    before_value TEXT,
+    after_value TEXT,
+    metadata TEXT,
+    created_at TEXT NOT NULL
+  );
   CREATE INDEX IF NOT EXISTS idx_cases_guild_user ON cases(guild_id, user_id);
   CREATE INDEX IF NOT EXISTS idx_cases_guild_case ON cases(guild_id, case_id);
   CREATE INDEX IF NOT EXISTS idx_warnings_guild_user ON warnings(guild_id, user_id);
   CREATE INDEX IF NOT EXISTS idx_warnings_guild_case ON warnings(guild_id, case_id);
   CREATE INDEX IF NOT EXISTS idx_pending_guild_token ON pending_actions(guild_id, token);
+  CREATE INDEX IF NOT EXISTS idx_case_audit_guild_case ON case_audit(guild_id, case_id, audit_id DESC);
+  CREATE INDEX IF NOT EXISTS idx_case_audit_guild_actor ON case_audit(guild_id, actor_id, audit_id DESC);
 `);
 
 const caseColumns = new Set(db.pragma('table_info(cases)').map((column) => column.name));
@@ -100,6 +113,48 @@ function parseMetadata(value) {
     return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
   } catch { return {}; }
 }
+function serializeAuditValue(value) {
+  if (value === undefined || value === null) return null;
+  if (typeof value === 'string') return value;
+  try { return JSON.stringify(value); } catch { return String(value); }
+}
+function parseAuditValue(value) {
+  if (value === null || value === undefined || value === '') return null;
+  try { return JSON.parse(value); } catch { return value; }
+}
+function mapAudit(row) {
+  if (!row) return null;
+  return {
+    auditId: row.audit_id,
+    guildId: row.guild_id,
+    caseId: row.case_id,
+    actorId: row.actor_id || null,
+    event: row.event,
+    before: parseAuditValue(row.before_value),
+    after: parseAuditValue(row.after_value),
+    metadata: parseMetadata(row.metadata),
+    createdAt: row.created_at,
+  };
+}
+function recordCaseAudit({ guildId, caseId, actorId = null, event, before = null, after = null, metadata = {} }) {
+  if (!guildId || !caseId || !event) return null;
+  const result = db.prepare(`INSERT INTO case_audit (guild_id, case_id, actor_id, event, before_value, after_value, metadata, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    String(guildId), Number(caseId), actorId ? String(actorId) : null, String(event), serializeAuditValue(before), serializeAuditValue(after), JSON.stringify(metadata || {}), now()
+  );
+  return mapAudit(db.prepare('SELECT * FROM case_audit WHERE audit_id = ?').get(result.lastInsertRowid));
+}
+function getCaseAudit(guildId, caseId, { page = 0, pageSize = 25 } = {}) {
+  const normalizedGuildId = String(guildId || '').trim();
+  const normalizedCaseId = Number(caseId);
+  if (!normalizedGuildId || !Number.isInteger(normalizedCaseId) || normalizedCaseId <= 0) return { results: [], total: 0, page: 0, pageSize: 25, totalPages: 0 };
+  const safePageSize = Math.min(100, Math.max(1, Number(pageSize) || 25));
+  const total = db.prepare('SELECT COUNT(*) AS count FROM case_audit WHERE guild_id = ? AND case_id = ?').get(normalizedGuildId, normalizedCaseId).count;
+  const totalPages = Math.ceil(total / safePageSize);
+  const safePage = Math.max(0, Math.min(Math.trunc(Number(page) || 0), Math.max(0, totalPages - 1)));
+  const rows = db.prepare('SELECT * FROM case_audit WHERE guild_id = ? AND case_id = ? ORDER BY audit_id DESC LIMIT ? OFFSET ?').all(normalizedGuildId, normalizedCaseId, safePageSize, safePage * safePageSize);
+  return { results: rows.map(mapAudit), total, page: safePage, pageSize: safePageSize, totalPages };
+}
+
 function mapCase(row) {
   if (!row) return null;
   return {
@@ -117,11 +172,14 @@ function mapCase(row) {
     updatedAt: row.updated_at,
   };
 }
-function createCase({ guildId, userId, moderatorId, action, reason, metadata = {}, status = 'active', relatedCaseId = null }) {
+function createCase({ guildId, userId, moderatorId, action, reason, metadata = {}, status = 'active', relatedCaseId = null, actorId = null }) {
   const createdAt = now();
   const result = db.prepare(`INSERT INTO cases (guild_id, user_id, moderator_id, action, reason, metadata, status, related_case_id, note, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, NULL)`).run(guildId, userId, moderatorId, action, reason, JSON.stringify(metadata || {}), status, relatedCaseId, createdAt);
   const created = getCaseById(guildId, result.lastInsertRowid);
-  if (created) emitCaseCreated(guildId, created);
+  if (created) {
+    recordCaseAudit({ guildId, caseId: created.caseId, actorId: actorId || moderatorId, event: EVENTS.CASE_CREATED, before: null, after: created, metadata: { action } });
+    emitCaseCreated(guildId, created);
+  }
   return created;
 }
 function getCaseById(guildId, caseId) { return mapCase(db.prepare('SELECT * FROM cases WHERE guild_id = ? AND case_id = ?').get(guildId, Number(caseId))); }
@@ -147,11 +205,9 @@ function searchCaseIds(guildId, partial = '') {
 function searchCases(guildId, filters = {}) {
   const normalizedGuildId = String(guildId || '').trim();
   if (!normalizedGuildId) return { results: [], total: 0, page: 0, pageSize: 25, totalPages: 0 };
-
   const conditions = ['guild_id = ?'];
   const params = [normalizedGuildId];
   const addValue = (condition, value) => { conditions.push(condition); params.push(value); };
-
   if (filters.caseId !== undefined && filters.caseId !== null && String(filters.caseId).trim() !== '') {
     const caseId = Number(filters.caseId);
     if (Number.isInteger(caseId) && caseId > 0) addValue('case_id = ?', caseId);
@@ -161,14 +217,12 @@ function searchCases(guildId, filters = {}) {
   if (filters.moderatorId) addValue('moderator_id = ?', String(filters.moderatorId).trim());
   if (filters.action) addValue('action = ?', String(filters.action).trim());
   if (filters.status) addValue('status = ?', String(filters.status).trim());
-
   const text = String(filters.text || '').trim();
   if (text) {
     const pattern = `%${text.replace(/[\\%_]/g, '\\$&')}%`;
     conditions.push("(COALESCE(reason, '') LIKE ? ESCAPE '\\' OR COALESCE(note, '') LIKE ? ESCAPE '\\')");
     params.push(pattern, pattern);
   }
-
   const createdFrom = filters.createdFrom ? String(filters.createdFrom).trim() : '';
   const createdTo = filters.createdTo ? String(filters.createdTo).trim() : '';
   const updatedFrom = filters.updatedFrom ? String(filters.updatedFrom).trim() : '';
@@ -177,7 +231,6 @@ function searchCases(guildId, filters = {}) {
   if (createdTo) addValue('created_at <= ?', createdTo);
   if (updatedFrom) addValue('updated_at >= ?', updatedFrom);
   if (updatedTo) addValue('updated_at <= ?', updatedTo);
-
   const where = conditions.join(' AND ');
   const total = db.prepare(`SELECT COUNT(*) AS count FROM cases WHERE ${where}`).get(...params).count;
   const pageSize = Math.min(100, Math.max(1, Number(filters.pageSize) || 25));
@@ -185,27 +238,42 @@ function searchCases(guildId, filters = {}) {
   const page = Math.max(0, Math.min(Math.trunc(Number(filters.page) || 0), Math.max(0, totalPages - 1)));
   const offset = page * pageSize;
   const rows = db.prepare(`SELECT * FROM cases WHERE ${where} ORDER BY case_id DESC LIMIT ? OFFSET ?`).all(...params, pageSize, offset);
-
   return { results: rows.map(mapCase), total, page, pageSize, totalPages };
 }
 function getCaseCountForUser(guildId, userId) { return db.prepare('SELECT COUNT(*) AS count FROM cases WHERE guild_id = ? AND user_id = ?').get(guildId, userId).count; }
-function updateAndEmit(guildId, caseId, sql, params, emitter) {
+function updateAndEmit(guildId, caseId, sql, params, emitter, auditEvent, actorId = null, before = null) {
   const updatedAt = now();
   const result = db.prepare(sql).run(...params, updatedAt, guildId, Number(caseId));
   if (!result.changes) return null;
   const updated = getCaseById(guildId, caseId);
-  if (updated) emitter(guildId, updated);
+  if (updated) {
+    recordCaseAudit({ guildId, caseId, actorId, event: auditEvent, before, after: updated, metadata: {} });
+    emitter(guildId, updated);
+  }
   return updated;
 }
-function updateCaseReason(guildId, caseId, newReason) { return updateAndEmit(guildId, caseId, 'UPDATE cases SET reason = ?, updated_at = ? WHERE guild_id = ? AND case_id = ?', [newReason], emitCaseUpdated); }
-function updateCaseStatus(guildId, caseId, status) { return updateAndEmit(guildId, caseId, 'UPDATE cases SET status = ?, updated_at = ? WHERE guild_id = ? AND case_id = ?', [status], emitCaseStatusUpdated); }
-function updateCaseNote(guildId, caseId, note) { return updateAndEmit(guildId, caseId, 'UPDATE cases SET note = ?, updated_at = ? WHERE guild_id = ? AND case_id = ?', [String(note || '').trim()], emitCaseNoteUpdated); }
-function clearCaseNote(guildId, caseId) {
+function updateCaseReason(guildId, caseId, newReason, actorId = null) {
+  const before = getCaseById(guildId, caseId);
+  return updateAndEmit(guildId, caseId, 'UPDATE cases SET reason = ?, updated_at = ? WHERE guild_id = ? AND case_id = ?', [newReason], emitCaseUpdated, 'case.reason.updated', actorId, before ? before.reason : null);
+}
+function updateCaseStatus(guildId, caseId, status, actorId = null) {
+  const before = getCaseById(guildId, caseId);
+  return updateAndEmit(guildId, caseId, 'UPDATE cases SET status = ?, updated_at = ? WHERE guild_id = ? AND case_id = ?', [status], emitCaseStatusUpdated, EVENTS.CASE_STATUS_UPDATED, actorId, before ? before.status : null);
+}
+function updateCaseNote(guildId, caseId, note, actorId = null) {
+  const before = getCaseById(guildId, caseId);
+  return updateAndEmit(guildId, caseId, 'UPDATE cases SET note = ?, updated_at = ? WHERE guild_id = ? AND case_id = ?', [String(note || '').trim()], emitCaseNoteUpdated, EVENTS.CASE_NOTE_UPDATED, actorId, before ? before.note : null);
+}
+function clearCaseNote(guildId, caseId, actorId = null) {
+  const before = getCaseById(guildId, caseId);
   const updatedAt = now();
   const result = db.prepare('UPDATE cases SET note = NULL, updated_at = ? WHERE guild_id = ? AND case_id = ?').run(updatedAt, guildId, Number(caseId));
   if (!result.changes) return null;
   const updated = getCaseById(guildId, caseId);
-  if (updated) emitCaseNoteUpdated(guildId, updated);
+  if (updated) {
+    recordCaseAudit({ guildId, caseId, actorId, event: EVENTS.CASE_NOTE_UPDATED, before: before ? before.note : null, after: null, metadata: { cleared: true } });
+    emitCaseNoteUpdated(guildId, updated);
+  }
   return updated;
 }
 
@@ -298,6 +366,8 @@ module.exports = {
   emitCaseUpdated,
   emitCaseStatusUpdated,
   emitCaseNoteUpdated,
+  recordCaseAudit,
+  getCaseAudit,
   createCase,
   getCasesForUser,
   getFilteredCases,
