@@ -89,9 +89,10 @@ function caseDetailEmbed(c) {
   return e;
 }
 
-function caseDetailButtons(c) {
+function caseDetailButtons(c, token) {
   const closed = c.status === 'reversed' || c.status === 'expired';
   return [new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`mod_case_search_back:${token}`).setLabel('← Back to Search').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId(`mod_case_reverse_warning:${c.caseId}`).setLabel('↩️ Reverse Warning').setStyle(ButtonStyle.Secondary).setDisabled(c.action !== 'warn' || closed),
     new ButtonBuilder().setCustomId(`mod_case_reverse_timeout:${c.caseId}`).setLabel('⏪ Reverse Timeout').setStyle(ButtonStyle.Secondary).setDisabled(c.action !== 'timeout' || closed),
     new ButtonBuilder().setCustomId(`mod_case_note:${c.caseId}`).setLabel('📝 Add/Edit Note').setStyle(ButtonStyle.Primary)
@@ -122,6 +123,14 @@ async function handleCaseSearchAction(i) {
     await i.showModal(buildAdvancedCaseSearchModal(token));
     return true;
   }
+  if (id.startsWith('mod_case_search_back:')) {
+    if (!canUseModAction(i.member, i.guild, 'view_case_detail')) return safeReply(i, ephemeralError('No permission to search moderation cases.'));
+    const [, token] = id.split(':');
+    const state = stateFor(token, i.guild.id);
+    if (!state) return safeReply(i, ephemeralError('This search has expired. Please start a new search.'));
+    const r = searchCases(i.guild.id, state.filters);
+    return i.update(payload(r, token));
+  }
   if (!id.startsWith('mod_case_search_page:')) return false;
   if (!canUseModAction(i.member, i.guild, 'view_case_detail')) return safeReply(i, ephemeralError('No permission to search moderation cases.'));
   const [, token, pageRaw] = id.split(':');
@@ -139,7 +148,7 @@ async function handleCaseSearchSelect(i) {
   if (!stateFor(token, i.guild.id)) return safeReply(i, ephemeralError('This search has expired. Please start a new search.'));
   const caseId = Number(i.values?.[0]), c = getCaseById(i.guild.id, caseId);
   if (!Number.isInteger(caseId) || !c) return safeReply(i, ephemeralError('Case not found.'));
-  return i.update({ embeds: [caseDetailEmbed(c)], components: caseDetailButtons(c) });
+  return i.update({ embeds: [caseDetailEmbed(c)], components: caseDetailButtons(c, token) });
 }
 
 async function handleCaseSearchModal(i) {
