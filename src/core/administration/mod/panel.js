@@ -159,6 +159,7 @@ function buildToolsRows(targetId, member, guild) {
     bulkTimeout: canUseModAction(member, guild, 'bulk_timeout'),
     bulkKick: canUseModAction(member, guild, 'bulk_kick'),
     bulkBan: canUseModAction(member, guild, 'bulk_ban'),
+    searchCases: canUseModAction(member, guild, 'view_case_detail'),
   };
 
   return [
@@ -169,9 +170,12 @@ function buildToolsRows(targetId, member, guild) {
       createSecondaryButton(`mod_edit_case:${id}`, 'Edit Case', getEmoji('EDIT', '✏️'), !targetId || !permissions.editCase)
     ),
     new ActionRowBuilder().addComponents(
+      createSecondaryButton('mod_case_search', 'Search Cases', getEmoji('SEARCH', '🔎'), !permissions.searchCases),
       createSecondaryButton('mod_bulk_warn', 'Bulk Warn', getEmoji('WARNING', '⚠️'), !permissions.bulkWarn),
       createSecondaryButton('mod_bulk_timeout', 'Bulk Timeout', getEmoji('TIMEOUT', '⏳'), !permissions.bulkTimeout),
-      createSecondaryButton('mod_bulk_kick', 'Bulk Kick', getEmoji('KICK', '👢'), !permissions.bulkKick),
+      createSecondaryButton('mod_bulk_kick', 'Bulk Kick', getEmoji('KICK', '👢'), !permissions.bulkKick)
+    ),
+    new ActionRowBuilder().addComponents(
       createDangerButton('mod_bulk_ban', 'Bulk Ban', getEmoji('BAN', '🔨'), !permissions.bulkBan)
     ),
   ];
@@ -215,7 +219,7 @@ function buildCasesEmbed(target, cases = [], page = 0, totalPages = 1, actionFil
 function buildToolsEmbed(interaction) {
   return baseEmbed(interaction.client, COLORS.PRIMARY)
     .setTitle('`🧰` Moderation Tools')
-    .setDescription(['`⚙️` Utility actions and bulk moderation controls.', '', '`👤` Select a user to inspect cases or edit moderation history.', '`📦` Bulk tools are permission-gated for staff safety.'].join('\n'));
+    .setDescription(['`⚙️` Utility actions and bulk moderation controls.', '', '`👤` Select a user to inspect cases or edit moderation history.', '`🔎` Search the full moderation case history.', '`📦` Bulk tools are permission-gated for staff safety.'].join('\n'));
 }
 
 function buildAnalyticsEmbed(guild, analytics = {}) {
