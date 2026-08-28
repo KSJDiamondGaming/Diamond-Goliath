@@ -10,6 +10,7 @@ const ACTIONS = new Set(['warn', 'timeout', 'kick', 'ban', 'unwarn', 'remove-tim
 const STATUSES = new Set(['active', 'reversed', 'expired']);
 const SEARCHES = new Map();
 const TTL = 30 * 60 * 1000;
+const SNOWFLAKE = /^\d{16,20}$/;
 
 function buildCaseSearchModal() {
   return new ModalBuilder().setCustomId('mod_submit_case_search').setTitle('Search Moderation Cases').addComponents(
@@ -37,9 +38,19 @@ function parseDate(value, label, endOfDay = false) {
   return parsed.toISOString();
 }
 
+function validateSnowflake(value, label) {
+  if (!value) return null;
+  if (!SNOWFLAKE.test(value)) return `${label} must be a valid Discord user ID.`;
+  return null;
+}
+
 function filtersFrom(i) {
   const caseId = input(i, 'case_id'), userId = input(i, 'user_id'), moderatorId = input(i, 'moderator_id'), action = input(i, 'action').toLowerCase(), status = input(i, 'status').toLowerCase();
   if (caseId && !/^\d+$/.test(caseId)) return { error: 'Case ID must be a number.' };
+  const userError = validateSnowflake(userId, 'User ID');
+  if (userError) return { error: userError };
+  const moderatorError = validateSnowflake(moderatorId, 'Moderator ID');
+  if (moderatorError) return { error: moderatorError };
   if (action && !ACTIONS.has(action)) return { error: `Unknown action. Use: ${[...ACTIONS].join(', ')}.` };
   if (status && !STATUSES.has(status)) return { error: `Unknown status. Use: ${[...STATUSES].join(', ')}.` };
   return { caseId: caseId || undefined, userId: userId || undefined, moderatorId: moderatorId || undefined, action: action || undefined, status: status || undefined, page: 0, pageSize: 10 };
