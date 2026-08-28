@@ -154,7 +154,8 @@ function caseDetailButtons(c, token, audit) {
     new ButtonBuilder().setCustomId(`mod_case_reason:${token}:${c.caseId}`).setLabel('✏️ Edit Reason').setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId(`mod_case_tags:${token}:${c.caseId}`).setLabel('🏷️ Edit Tags').setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId(`mod_case_link:${token}:${c.caseId}`).setLabel('🔗 Link Case').setStyle(ButtonStyle.Secondary).setDisabled(Boolean(c.relatedCaseId)),
-    new ButtonBuilder().setCustomId(`mod_case_unlink:${token}:${c.caseId}`).setLabel('Unlink Case').setStyle(ButtonStyle.Secondary).setDisabled(!c.relatedCaseId)
+    new ButtonBuilder().setCustomId(`mod_case_unlink:${token}:${c.caseId}`).setLabel('Unlink Case').setStyle(ButtonStyle.Secondary).setDisabled(!c.relatedCaseId),
+    new ButtonBuilder().setCustomId(`mod_case_related_open:${token}:${c.caseId}`).setLabel('Open Related').setStyle(ButtonStyle.Secondary).setDisabled(!c.relatedCaseId)
   ));
   if (audit?.totalPages > 1) rows.push(new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId(`mod_case_audit_page:${token}:${c.caseId}:${Math.max(0, audit.page - 1)}`).setLabel('◀ Audit').setStyle(ButtonStyle.Secondary).setDisabled(audit.page <= 0),
@@ -197,6 +198,19 @@ async function handleCaseSearchAction(i) {
     if (!Number.isInteger(caseId) || !c) return safeReply(i, ephemeralError('Case not found.'));
     await i.showModal(buildCaseTagsModal(token, c));
     return true;
+  }
+  if (id.startsWith('mod_case_related_open:')) {
+    if (!canUseModAction(i.member, i.guild, 'view_case_detail')) return safeReply(i, ephemeralError('No permission to view case details.'));
+    const [, token, caseIdRaw] = id.split(':');
+    if (!stateFor(token, i.guild.id)) return safeReply(i, ephemeralError('This search has expired. Please start a new search.'));
+    const caseId = Number(caseIdRaw), c = getCaseById(i.guild.id, caseId);
+    if (!Number.isInteger(caseId) || !c) return safeReply(i, ephemeralError('Case not found.'));
+    const relatedCaseId = Number(c.relatedCaseId);
+    if (!Number.isInteger(relatedCaseId) || relatedCaseId <= 0) return safeReply(i, ephemeralError('This case does not have a related case.'));
+    const related = getCaseById(i.guild.id, relatedCaseId);
+    if (!related) return safeReply(i, ephemeralError(`Related Case #${relatedCaseId} could not be found.`));
+    const audit = getCaseAudit(i.guild.id, relatedCaseId, { page: 0, pageSize: AUDIT_PAGE_SIZE });
+    return i.update({ embeds: [caseDetailEmbed(related, audit)], components: caseDetailButtons(related, token, audit) });
   }
   if (id.startsWith('mod_case_link:')) {
     if (!canUseModAction(i.member, i.guild, 'edit_case')) return safeReply(i, ephemeralError('No permission to edit case relationships.'));
