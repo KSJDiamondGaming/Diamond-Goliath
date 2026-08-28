@@ -144,6 +144,50 @@ function getAllCases(guildId) { return db.prepare('SELECT * FROM cases WHERE gui
 function searchCaseIds(guildId, partial = '') {
   return db.prepare('SELECT case_id, action, status, user_id FROM cases WHERE guild_id = ? AND CAST(case_id AS TEXT) LIKE ? ORDER BY case_id DESC LIMIT 25').all(guildId, `%${partial}%`).map((row) => ({ caseId: row.case_id, action: row.action, status: row.status, userId: row.user_id }));
 }
+function searchCases(guildId, filters = {}) {
+  const normalizedGuildId = String(guildId || '').trim();
+  if (!normalizedGuildId) return { results: [], total: 0, page: 0, pageSize: 25, totalPages: 0 };
+
+  const conditions = ['guild_id = ?'];
+  const params = [normalizedGuildId];
+  const addValue = (condition, value) => { conditions.push(condition); params.push(value); };
+
+  if (filters.caseId !== undefined && filters.caseId !== null && String(filters.caseId).trim() !== '') {
+    const caseId = Number(filters.caseId);
+    if (Number.isInteger(caseId) && caseId > 0) addValue('case_id = ?', caseId);
+    else return { results: [], total: 0, page: 0, pageSize: 25, totalPages: 0 };
+  }
+  if (filters.userId) addValue('user_id = ?', String(filters.userId).trim());
+  if (filters.moderatorId) addValue('moderator_id = ?', String(filters.moderatorId).trim());
+  if (filters.action) addValue('action = ?', String(filters.action).trim());
+  if (filters.status) addValue('status = ?', String(filters.status).trim());
+
+  const text = String(filters.text || '').trim();
+  if (text) {
+    const pattern = `%${text.replace(/[\\%_]/g, '\\$&')}%`;
+    conditions.push("(COALESCE(reason, '') LIKE ? ESCAPE '\\' OR COALESCE(note, '') LIKE ? ESCAPE '\\')");
+    params.push(pattern, pattern);
+  }
+
+  const createdFrom = filters.createdFrom ? String(filters.createdFrom).trim() : '';
+  const createdTo = filters.createdTo ? String(filters.createdTo).trim() : '';
+  const updatedFrom = filters.updatedFrom ? String(filters.updatedFrom).trim() : '';
+  const updatedTo = filters.updatedTo ? String(filters.updatedTo).trim() : '';
+  if (createdFrom) addValue('created_at >= ?', createdFrom);
+  if (createdTo) addValue('created_at <= ?', createdTo);
+  if (updatedFrom) addValue('updated_at >= ?', updatedFrom);
+  if (updatedTo) addValue('updated_at <= ?', updatedTo);
+
+  const where = conditions.join(' AND ');
+  const total = db.prepare(`SELECT COUNT(*) AS count FROM cases WHERE ${where}`).get(...params).count;
+  const pageSize = Math.min(100, Math.max(1, Number(filters.pageSize) || 25));
+  const totalPages = Math.ceil(total / pageSize);
+  const page = Math.max(0, Math.min(Math.trunc(Number(filters.page) || 0), Math.max(0, totalPages - 1)));
+  const offset = page * pageSize;
+  const rows = db.prepare(`SELECT * FROM cases WHERE ${where} ORDER BY case_id DESC LIMIT ? OFFSET ?`).all(...params, pageSize, offset);
+
+  return { results: rows.map(mapCase), total, page, pageSize, totalPages };
+}
 function getCaseCountForUser(guildId, userId) { return db.prepare('SELECT COUNT(*) AS count FROM cases WHERE guild_id = ? AND user_id = ?').get(guildId, userId).count; }
 function updateAndEmit(guildId, caseId, sql, params, emitter) {
   const updatedAt = now();
@@ -259,6 +303,7 @@ module.exports = {
   getFilteredCases,
   getCasesByModerator,
   searchCaseIds,
+  searchCases,
   getCaseCountForUser,
   getCaseById,
   getAllCases,
