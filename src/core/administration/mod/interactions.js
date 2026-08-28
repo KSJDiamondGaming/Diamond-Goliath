@@ -30,6 +30,11 @@ const {
   submitCaseModal,
 } = require('./cases');
 const {
+  openCaseSearch,
+  handleCaseSearchAction,
+  handleCaseSearchModal,
+} = require('./caseSearch');
+const {
   refreshCasesDashboard,
   handleDashboardNavigation,
   handleUserSelectMenu,
@@ -117,6 +122,8 @@ async function handleOpenActionButton(interaction) {
 async function handleCaseToolButton(interaction) {
   const caseResult = await openCaseTool(interaction);
   if (caseResult) return caseResult;
+  const searchResult = await handleCaseSearchAction(interaction);
+  if (searchResult) return searchResult;
   const id = String(interaction.customId || '');
   const targetId = getTargetIdFromCustomId(id);
   if (id.startsWith('mod_remove_warning:')) return routeActionRequest(interaction, 'remove-warning', targetId);
@@ -204,6 +211,7 @@ async function routeModModal(interaction) {
   if (denied) return denied;
   await syncExpiredWarningsToCases(interaction.guild.id);
   return routeHandlers(interaction, [
+    handleCaseSearchModal,
     (value) => submitCaseModal(value, { fetchTarget, refreshCasesDashboard }),
     handleBulkModal,
     handleActionModal,
