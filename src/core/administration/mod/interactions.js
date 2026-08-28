@@ -5,7 +5,7 @@ const { safeReply } = require('../../../core/ui/interactionResponse');
 const { fetchTarget, ensurePanelAccess, ensureActionAccess, requireModeratableTarget } = require('./permissions');
 const { buildPunishmentModal, buildBulkModal, submitPunishmentRequest, submitBulkModal, createConfirmation, executePendingAction } = require('./punishments');
 const { syncExpiredWarningsToCases, showWarningModal, showRemoveWarningModal, submitWarningModal, submitRemoveWarningRequest } = require('./warns');
-const { openCaseTool, handleCaseAction, submitCaseModal } = require('./cases');
+const { openCaseTool, handleCaseAction, submitCaseModal, handleExternalAppealInteraction } = require('./cases');
 const { openCaseSearch, handleCaseSearchAction, handleCaseSearchSelect, handleCaseSearchModal } = require('./caseSearch');
 const { refreshCasesDashboard, handleDashboardNavigation, handleUserSelectMenu, handleSelectUserButton } = require('./panel');
 
@@ -13,6 +13,7 @@ const PUNISHMENT_ACTIONS = new Set(['timeout', 'kick', 'ban']);
 const BULK_ACTIONS = new Set(['warn', 'timeout', 'kick', 'ban']);
 const OPEN_ACTIONS = new Set(['warn', ...PUNISHMENT_ACTIONS]);
 function isModCustomId(customId) { const id = String(customId || ''); return id.startsWith('mod_') || id.startsWith('mod:'); }
+function isExternalAppealCustomId(customId) { const id = String(customId || ''); return id === 'mod_appeal_lookup' || id === 'mod_appeal_lookup_submit' || id.startsWith('mod_appeal_external:') || id.startsWith('mod_appeal_external_submit:'); }
 function getTargetIdFromCustomId(customId) { return String(customId || '').split(':')[1] || 'none'; }
 function getPrefixedAction(customId, prefix, allowedActions) { const id = String(customId || '').split(':')[0]; if (!id.startsWith(prefix)) return null; const action = id.slice(prefix.length); return allowedActions.has(action) ? action : null; }
 function getPunishmentSubmitAction(customId) { return getPrefixedAction(customId, 'mod_submit_', PUNISHMENT_ACTIONS); }
@@ -32,5 +33,11 @@ async function handleActionModal(i) { const id = String(i.customId || ''); const
 async function routeHandlers(i, handlers) { for (const handler of handlers) { const result = await handler(i); if (result) return result; } return false; }
 async function routeButtonsAndSelects(i) { const denied = ensurePanelAccess(i); if (denied) return denied; if (i.isUserSelectMenu?.()) return handleUserSelectMenu(i); if (i.isStringSelectMenu?.()) return routeHandlers(i, [handleCaseSearchSelect, handleActionSelectMenu]); if (!i.isButton?.()) return false; return routeHandlers(i, [handleConfirmButton, value => handleCaseAction(value, { fetchTarget, createConfirmation }), handleDashboardNavigation, handleCancelButton, handleSelectUserButton, handleBulkButton, handleOpenActionButton, handleCaseToolButton]); }
 async function routeModModal(i) { if (!i?.customId?.startsWith('mod_')) return false; const denied = ensurePanelAccess(i); if (denied) return denied; await syncExpiredWarningsToCases(i.guild.id); return routeHandlers(i, [handleCaseSearchModal, value => submitCaseModal(value, { fetchTarget, refreshCasesDashboard }), handleBulkModal, handleActionModal]); }
-async function handleModInteraction(i) { if (!i?.customId || !isModCustomId(i.customId)) return false; if (i.customId.startsWith('nav|')) return false; if (i.isModalSubmit?.()) return routeModModal(i); return routeButtonsAndSelects(i); }
+async function handleModInteraction(i) {
+  if (!i?.customId || !isModCustomId(i.customId)) return false;
+  if (i.customId.startsWith('nav|')) return false;
+  if (isExternalAppealCustomId(i.customId)) return handleExternalAppealInteraction(i);
+  if (i.isModalSubmit?.()) return routeModModal(i);
+  return routeButtonsAndSelects(i);
+}
 module.exports = { handleModInteraction };
