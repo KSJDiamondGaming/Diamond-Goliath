@@ -75,6 +75,7 @@ const EVENTS = Object.freeze({
   CASE_UPDATED: 'case.updated',
   CASE_STATUS_UPDATED: 'case.status.updated',
   CASE_NOTE_UPDATED: 'case.note.updated',
+  CASE_TAGS_UPDATED: 'case.tags.updated',
   CASE_RELATION_LINKED: 'case.relationship.linked',
   CASE_RELATION_UNLINKED: 'case.relationship.unlinked',
 });
@@ -278,6 +279,39 @@ function clearCaseNote(guildId, caseId, actorId = null) {
   }
   return updated;
 }
+function normalizeCaseTags(tags) {
+  const source = Array.isArray(tags) ? tags : String(tags || '').split(',');
+  const seen = new Set();
+  const normalized = [];
+  for (const raw of source) {
+    const tag = String(raw || '').trim().replace(/\s+/g, ' ').slice(0, 32);
+    if (!tag) continue;
+    const key = tag.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    normalized.push(tag);
+    if (normalized.length >= 10) break;
+  }
+  return normalized;
+}
+function updateCaseTags(guildId, caseId, tags, actorId = null) {
+  const existing = getCaseById(guildId, caseId);
+  if (!existing) return null;
+  const before = normalizeCaseTags(existing.metadata?.tags || []);
+  const after = normalizeCaseTags(tags);
+  const metadata = { ...(existing.metadata || {}) };
+  if (after.length) metadata.tags = after;
+  else delete metadata.tags;
+  const updatedAt = now();
+  const result = db.prepare('UPDATE cases SET metadata = ?, updated_at = ? WHERE guild_id = ? AND case_id = ?').run(JSON.stringify(metadata), updatedAt, guildId, Number(caseId));
+  if (!result.changes) return null;
+  const updated = getCaseById(guildId, caseId);
+  if (updated) {
+    recordCaseAudit({ guildId, caseId, actorId, event: EVENTS.CASE_TAGS_UPDATED, before, after, metadata: { tagCount: after.length } });
+    emitCaseUpdated(guildId, updated);
+  }
+  return updated;
+}
 function normalizeCaseId(value) {
   const caseId = Number(value);
   return Number.isInteger(caseId) && caseId > 0 ? caseId : null;
@@ -434,6 +468,7 @@ module.exports = {
   updateCaseStatus,
   updateCaseNote,
   clearCaseNote,
+  updateCaseTags,
   linkCases,
   unlinkCaseRelationship,
   addWarning,
