@@ -4,7 +4,7 @@ const { ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, M
 const { safeReply, ephemeralError } = require('../../../core/ui/interactionResponse');
 const { COLORS, createEmbed } = require('../../../core/ui/embeds');
 const { canUseModAction } = require('./permissions');
-const { searchCases, getCaseById, getCaseAudit, linkCases, unlinkCaseRelationship } = require('./storage');
+const { searchCases, getCaseById, getCaseAudit, updateCaseReason, linkCases, unlinkCaseRelationship } = require('./storage');
 
 const ACTIONS = new Set(['warn', 'timeout', 'kick', 'ban', 'unwarn', 'remove-timeout']);
 const STATUSES = new Set(['active', 'reversed', 'expired']);
@@ -32,6 +32,12 @@ function buildAdvancedCaseSearchModal(token) {
 function buildCaseLinkModal(token, caseId) {
   return new ModalBuilder().setCustomId(`mod_case_link_submit:${token}:${caseId}`).setTitle(`Link Case #${caseId}`).addComponents(
     new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('related_case_id').setLabel('Related Case ID').setStyle(TextInputStyle.Short).setPlaceholder('Enter the case ID to link').setRequired(true).setMaxLength(12))
+  );
+}
+
+function buildCaseReasonModal(token, c) {
+  return new ModalBuilder().setCustomId(`mod_case_reason_submit:${token}:${c.caseId}`).setTitle(`Edit Case #${c.caseId} Reason`).addComponents(
+    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('reason').setLabel('Moderation Reason').setStyle(TextInputStyle.Paragraph).setPlaceholder('Enter the updated moderation reason').setRequired(true).setMaxLength(500).setValue(String(c.reason || '').slice(0, 500)))
   );
 }
 
@@ -136,6 +142,7 @@ function caseDetailButtons(c, token, audit) {
     new ButtonBuilder().setCustomId(`mod_case_note:${c.caseId}`).setLabel('📝 Add/Edit Note').setStyle(ButtonStyle.Primary)
   )];
   rows.push(new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`mod_case_reason:${token}:${c.caseId}`).setLabel('✏️ Edit Reason').setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId(`mod_case_link:${token}:${c.caseId}`).setLabel('🔗 Link Case').setStyle(ButtonStyle.Secondary).setDisabled(Boolean(c.relatedCaseId)),
     new ButtonBuilder().setCustomId(`mod_case_unlink:${token}:${c.caseId}`).setLabel('Unlink Case').setStyle(ButtonStyle.Secondary).setDisabled(!c.relatedCaseId)
   ));
@@ -163,6 +170,15 @@ async function submitCaseSearch(i) {
 async function handleCaseSearchAction(i) {
   const id = String(i.customId || '');
   if (id === 'mod_case_search') return openCaseSearch(i);
+  if (id.startsWith('mod_case_reason:')) {
+    if (!canUseModAction(i.member, i.guild, 'edit_case')) return safeReply(i, ephemeralError('No permission to edit cases.'));
+    const [, token, caseIdRaw] = id.split(':');
+    if (!stateFor(token, i.guild.id)) return safeReply(i, ephemeralError('This search has expired. Please start a new search.'));
+    const caseId = Number(caseIdRaw), c = getCaseById(i.guild.id, caseId);
+    if (!Number.isInteger(caseId) || !c) return safeReply(i, ephemeralError('Case not found.'));
+    await i.showModal(buildCaseReasonModal(token, c));
+    return true;
+  }
   if (id.startsWith('mod_case_link:')) {
     if (!canUseModAction(i.member, i.guild, 'edit_case')) return safeReply(i, ephemeralError('No permission to edit case relationships.'));
     const [, token, caseIdRaw] = id.split(':');
@@ -191,11 +207,9 @@ async function handleCaseSearchAction(i) {
     if (!stateFor(token, i.guild.id)) return safeReply(i, ephemeralError('This search has expired. Please start a new search.'));
     const caseId = Number(caseIdRaw), c = getCaseById(i.guild.id, caseId);
     if (!Number.isInteger(caseId) || !c) return safeReply(i, ephemeralError('Case not found.'));
-    const requestedPage = Math.max(0, Number(pageRaw) || 0);
+    const requestedPage = Math.max(0, Math.trunc(Number(pageRaw) || 0));
     const audit = getCaseAudit(i.guild.id, caseId, { page: requestedPage, pageSize: AUDIT_PAGE_SIZE });
-    const page = audit.totalPages ? Math.min(requestedPage, audit.totalPages - 1) : 0;
-    const resolvedAudit = page === requestedPage ? audit : getCaseAudit(i.guild.id, caseId, { page, pageSize: AUDIT_PAGE_SIZE });
-    return i.update({ embeds: [caseDetailEmbed(c, resolvedAudit)], components: caseDetailButtons(c, token, resolvedAudit) });
+    return i.update({ embeds: [caseDetailEmbed(c, audit)], components: caseDetailButtons(c, token, audit) });
   }
   if (id.startsWith('mod_case_search_advanced:')) {
     if (!canUseModAction(i.member, i.guild, 'view_case_detail')) return safeReply(i, ephemeralError('No permission to search moderation cases.'));
@@ -217,7 +231,7 @@ async function handleCaseSearchAction(i) {
   const [, token, pageRaw] = id.split(':');
   const s = stateFor(token, i.guild.id);
   if (!s) return safeReply(i, ephemeralError('This search has expired. Please start a new search.'));
-  const r = searchCases(i.guild.id, { ...s.filters, page: Math.max(0, Number(pageRaw) || 0) });
+  const r = searchCases(i.guild.id, { ...s.filters, page: Math.max(0, Math.trunc(Number(pageRaw) || 0)) });
   return i.update(payload(r, token));
 }
 
@@ -235,6 +249,21 @@ async function handleCaseSearchSelect(i) {
 
 async function handleCaseSearchModal(i) {
   if (i.customId === 'mod_submit_case_search') return submitCaseSearch(i);
+  if (i.customId.startsWith('mod_case_reason_submit:')) {
+    if (!canUseModAction(i.member, i.guild, 'edit_case')) return safeReply(i, ephemeralError('No permission to edit cases.'));
+    const [, token, caseIdRaw] = i.customId.split(':');
+    if (!stateFor(token, i.guild.id)) return safeReply(i, ephemeralError('This search has expired. Please start a new search.'));
+    const caseId = Number(caseIdRaw);
+    const reason = input(i, 'reason');
+    if (!Number.isInteger(caseId) || caseId <= 0) return safeReply(i, ephemeralError('Case ID must be a positive integer.'));
+    if (!reason) return safeReply(i, ephemeralError('Case reason cannot be empty.'));
+    const existing = getCaseById(i.guild.id, caseId);
+    if (!existing) return safeReply(i, ephemeralError('Case not found.'));
+    const updated = updateCaseReason(i.guild.id, caseId, reason, i.user?.id || null);
+    if (!updated) return safeReply(i, ephemeralError('Failed to update case reason.'));
+    const audit = getCaseAudit(i.guild.id, caseId, { page: 0, pageSize: AUDIT_PAGE_SIZE });
+    return i.update({ embeds: [caseDetailEmbed(updated, audit)], components: caseDetailButtons(updated, token, audit) });
+  }
   if (i.customId.startsWith('mod_case_link_submit:')) {
     if (!canUseModAction(i.member, i.guild, 'edit_case')) return safeReply(i, ephemeralError('No permission to edit case relationships.'));
     const [, token, caseIdRaw] = i.customId.split(':');
