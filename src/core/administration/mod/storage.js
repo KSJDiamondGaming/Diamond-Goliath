@@ -2,7 +2,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { EmbedBuilder } = require('discord.js');
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
 const Database = require('better-sqlite3');
 const { resolveRuntimePath } = require('../../../config/runtimePaths');
 const guildManager = require('../../guild/guildManager');
@@ -83,6 +83,7 @@ const EVENTS = Object.freeze({
   CASE_RELATION_LINKED: 'case.relationship.linked',
   CASE_RELATION_UNLINKED: 'case.relationship.unlinked',
 });
+const APPEAL_NOTICE_ACTIONS = new Set(['warn', 'timeout', 'kick', 'ban']);
 
 function now() { return new Date().toISOString(); }
 function createPayload(event, guildId, data = {}) {
@@ -145,7 +146,7 @@ function mapAudit(row) {
 }
 function recordCaseAudit({ guildId, caseId, actorId = null, event, before = null, after = null, metadata = {} }) {
   if (!guildId || !caseId || !event) return null;
-  const result = db.prepare(`INSERT INTO case_audit (guild_id, case_id, actor_id, event, before_value, after_value, metadata, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(
+  const result = db.prepare('INSERT INTO case_audit (guild_id, case_id, actor_id, event, before_value, after_value, metadata, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(
     String(guildId), Number(caseId), actorId ? String(actorId) : null, String(event), serializeAuditValue(before), serializeAuditValue(after), JSON.stringify(metadata || {}), now()
   );
   return mapAudit(db.prepare('SELECT * FROM case_audit WHERE audit_id = ?').get(result.lastInsertRowid));
@@ -193,7 +194,7 @@ function isCaseMergedSource(caseRecord) { return Boolean(getMergedIntoId(caseRec
 function isCaseMutable(caseRecord) { return Boolean(caseRecord) && !isCaseLocked(caseRecord) && !isCaseMergedSource(caseRecord); }
 function createCase({ guildId, userId, moderatorId, action, reason, metadata = {}, status = 'active', relatedCaseId = null, actorId = null }) {
   const createdAt = now();
-  const result = db.prepare(`INSERT INTO cases (guild_id, user_id, moderator_id, action, reason, metadata, status, related_case_id, note, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, NULL)`).run(guildId, userId, moderatorId, action, reason, JSON.stringify(metadata || {}), status, relatedCaseId, createdAt);
+  const result = db.prepare('INSERT INTO cases (guild_id, user_id, moderator_id, action, reason, metadata, status, related_case_id, note, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, NULL)').run(guildId, userId, moderatorId, action, reason, JSON.stringify(metadata || {}), status, relatedCaseId, createdAt);
   const created = getCaseById(guildId, result.lastInsertRowid);
   if (created) {
     recordCaseAudit({ guildId, caseId: created.caseId, actorId: actorId || moderatorId, event: EVENTS.CASE_CREATED, before: null, after: created, metadata: { action } });
@@ -614,7 +615,59 @@ async function logModerationAction({ guild, action, user = null, target = null, 
     return false;
   }
 }
-async function sendModLog(payload = {}) { return logModerationAction({ ...payload, user: payload.user || payload.target || null, logType: payload.logType || 'mod' }); }
+function persistAppealNotice(guildId, caseId, notice) {
+  const modCase = getCaseById(guildId, caseId);
+  if (!modCase) return null;
+  const metadata = { ...(modCase.metadata || {}), appealNotice: notice };
+  const updatedAt = now();
+  const result = db.prepare('UPDATE cases SET metadata = ?, updated_at = ? WHERE guild_id = ? AND case_id = ?').run(JSON.stringify(metadata), updatedAt, String(guildId), Number(caseId));
+  if (!result.changes) return null;
+  const updated = getCaseById(guildId, caseId);
+  if (updated) emitCaseUpdated(guildId, updated);
+  return updated;
+}
+async function sendCaseAppealNotice({ guild, target = null, user = null, caseId = null }) {
+  const normalizedCaseId = normalizeCaseId(caseId);
+  if (!guild?.id || !normalizedCaseId) return { attempted: false, sent: false, error: 'Missing guild or case ID.' };
+  const modCase = getCaseById(guild.id, normalizedCaseId);
+  if (!modCase || !APPEAL_NOTICE_ACTIONS.has(String(modCase.action || '').toLowerCase()) || modCase.status !== 'active') return { attempted: false, sent: false, skipped: true };
+  if (modCase.metadata?.appealNotice?.attemptedAt) return { ...modCase.metadata.appealNotice, duplicateSkipped: true };
+  const recipient = target?.user || target || user?.user || user;
+  const attemptedAt = now();
+  let sent = false;
+  let error = null;
+  try {
+    if (!recipient?.send) throw new Error('Could not resolve user DM target.');
+    const action = String(modCase.action || 'moderation action').toUpperCase();
+    const content = [
+      `⚖️ **Moderation notice from ${guild.name}**`,
+      `Action: **${action}** • Case **#${modCase.caseId}**`,
+      `Reason: ${String(modCase.reason || 'No reason provided').slice(0, 700)}`,
+      '',
+      'If you believe this action was incorrect, you can appeal it even if you are no longer in the server.',
+      `If this button is unavailable later, DM Goliath and use: \`/mod appeal:${guild.id}:${modCase.caseId}\``,
+    ].join('\n');
+    await recipient.send({
+      content: content.slice(0, 1900),
+      components: [new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`mod_appeal_external:${guild.id}:${modCase.caseId}`).setLabel('⚖️ Appeal This Case').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId('mod_appeal_lookup').setLabel('Appeal Another Case').setStyle(ButtonStyle.Secondary)
+      )],
+    });
+    sent = true;
+  } catch (deliveryError) {
+    error = String(deliveryError?.message || deliveryError || 'DM delivery failed.').slice(0, 300);
+  }
+  const notice = { attempted: true, attemptedAt, sent, sentAt: sent ? now() : null, error };
+  persistAppealNotice(guild.id, modCase.caseId, notice);
+  recordCaseAudit({ guildId: guild.id, caseId: modCase.caseId, actorId: null, event: sent ? 'case.appeal.notice.sent' : 'case.appeal.notice.failed', before: null, after: notice, metadata: { userId: modCase.userId, action: modCase.action } });
+  return notice;
+}
+async function sendModLog(payload = {}) {
+  const logged = await logModerationAction({ ...payload, user: payload.user || payload.target || null, logType: payload.logType || 'mod' });
+  const notice = await sendCaseAppealNotice({ guild: payload.guild, target: payload.target || payload.user || null, user: payload.user || null, caseId: payload.caseId });
+  return Boolean(logged || notice.sent);
+}
 
 module.exports = {
   db,
@@ -659,5 +712,6 @@ module.exports = {
   deleteWarningByCaseId,
   purgeExpiredWarnings,
   logModerationAction,
+  sendCaseAppealNotice,
   sendModLog,
 };
