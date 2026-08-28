@@ -27,3 +27,7 @@ Long-history pagination remains the next UI enhancement. It must use the same gu
 - [x] Case Detail renders the latest audit page.
 - [ ] Case Detail exposes Previous/Next audit-page controls.
 - [ ] End-to-end pagination is validated against a case with more than one page of events.
+
+## Implementation guardrails
+
+Audit-page controls must be rendered only when the case has more than one audit page. Previous and Next actions must clamp to the valid page range, preserve the case-search token, re-check guild-scoped permissions, and query the canonical audit storage API. The controls must not mutate the case or create audit records merely by navigating history.
