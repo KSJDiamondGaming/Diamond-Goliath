@@ -88,12 +88,22 @@ function resultComponents(r, token) {
 
 function payload(r, token) { return { embeds: [resultEmbed(r)], components: resultComponents(r, token) }; }
 
+function formatAuditValue(value) {
+  if (value === null || value === undefined || value === '') return '—';
+  if (typeof value === 'object') {
+    try { return JSON.stringify(value); } catch { return String(value); }
+  }
+  return String(value);
+}
+
 function formatAuditEntry(entry) {
   const actor = entry.actorId ? `<@${entry.actorId}>` : 'System';
   const timestamp = new Date(entry.createdAt).getTime();
   const time = Number.isFinite(timestamp) ? `<t:${Math.floor(timestamp / 1000)}:R>` : 'Unknown time';
   const event = String(entry.event || 'case.updated').replace(/^case\./, '').replace(/\./g, ' ');
-  return `• **${event}** by ${actor} • ${time}`;
+  const before = formatAuditValue(entry.before).replace(/\s+/g, ' ').slice(0, 180);
+  const after = formatAuditValue(entry.after).replace(/\s+/g, ' ').slice(0, 180);
+  return `• **${event}** by ${actor} • ${time}\n  Before: ${before}\n  After: ${after}`;
 }
 
 function caseDetailEmbed(c) {
