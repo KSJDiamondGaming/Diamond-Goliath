@@ -11,6 +11,7 @@ const STATUSES = new Set(['active', 'reversed', 'expired']);
 const SEARCHES = new Map();
 const TTL = 30 * 60 * 1000;
 const SNOWFLAKE = /^\d{16,20}$/;
+const AUDIT_PAGE_SIZE = 5;
 
 function buildCaseSearchModal() {
   return new ModalBuilder().setCustomId('mod_submit_case_search').setTitle('Search Moderation Cases').addComponents(
@@ -106,7 +107,7 @@ function formatAuditEntry(entry) {
   return `• **${event}** by ${actor} • ${time}\n  Before: ${before}\n  After: ${after}`;
 }
 
-function caseDetailEmbed(c) {
+function caseDetailEmbed(c, audit) {
   const ts = (v) => { const n = new Date(v).getTime(); return Number.isFinite(n) ? Math.floor(n / 1000) : Math.floor(Date.now() / 1000); };
   const e = new EmbedBuilder().setColor(COLORS.PRIMARY).setTitle(`🧾 Case #${c.caseId}`).addFields(
     { name: 'Action', value: String(c.action || 'unknown'), inline: true }, { name: 'Status', value: String(c.status || 'active'), inline: true },
@@ -115,17 +116,28 @@ function caseDetailEmbed(c) {
     { name: 'Created', value: `<t:${ts(c.createdAt)}:F>`, inline: true }, { name: 'Updated', value: c.updatedAt ? `<t:${ts(c.updatedAt)}:F>` : 'Never', inline: true }
   );
   if (c.note) e.addFields({ name: 'Staff Note', value: String(c.note).slice(0, 1024), inline: false });
+  if (audit?.results?.length) e.addFields({ name: `Audit Timeline • Page ${audit.page + 1}/${audit.totalPages}`, value: audit.results.map(formatAuditEntry).join('\n').slice(0, 1024), inline: false });
   return e;
 }
 
-function caseDetailButtons(c, token) {
+function caseDetailButtons(c, token, audit) {
   const closed = c.status === 'reversed' || c.status === 'expired';
-  return [new ActionRowBuilder().addComponents(
+  const rows = [new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId(`mod_case_search_back:${token}`).setLabel('← Back to Search').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId(`mod_case_reverse_warning:${c.caseId}`).setLabel('↩️ Reverse Warning').setStyle(ButtonStyle.Secondary).setDisabled(c.action !== 'warn' || closed),
     new ButtonBuilder().setCustomId(`mod_case_reverse_timeout:${c.caseId}`).setLabel('⏪ Reverse Timeout').setStyle(ButtonStyle.Secondary).setDisabled(c.action !== 'timeout' || closed),
     new ButtonBuilder().setCustomId(`mod_case_note:${c.caseId}`).setLabel('📝 Add/Edit Note').setStyle(ButtonStyle.Primary)
   )];
+  if (audit?.totalPages > 1) rows.push(new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`mod_case_audit_page:${token}:${c.caseId}:${Math.max(0, audit.page - 1)}`).setLabel('◀ Audit').setStyle(ButtonStyle.Secondary).setDisabled(audit.page <= 0),
+    new ButtonBuilder().setCustomId(`mod_case_audit_page:${token}:${c.caseId}:${Math.min(audit.totalPages - 1, audit.page + 1)}`).setLabel('Audit ▶').setStyle(ButtonStyle.Secondary).setDisabled(audit.page >= audit.totalPages - 1)
+  ));
+  return rows;
+}
+
+function caseDetailPayload(c, token, auditPage = 0) {
+  const audit = getCaseAudit(c.guildId, c.caseId, { page: Math.max(0, auditPage), pageSize: AUDIT_PAGE_SIZE });
+  return { embeds: [caseDetailEmbed(c, audit)], components: caseDetailButtons(c, token, audit) };
 }
 
 async function openCaseSearch(i) {
@@ -145,6 +157,18 @@ async function submitCaseSearch(i) {
 async function handleCaseSearchAction(i) {
   const id = String(i.customId || '');
   if (id === 'mod_case_search') return openCaseSearch(i);
+  if (id.startsWith('mod_case_audit_page:')) {
+    if (!canUseModAction(i.member, i.guild, 'view_case_detail')) return safeReply(i, ephemeralError('No permission to view case details.'));
+    const [, token, caseIdRaw, pageRaw] = id.split(':');
+    if (!stateFor(token, i.guild.id)) return safeReply(i, ephemeralError('This search has expired. Please start a new search.'));
+    const caseId = Number(caseIdRaw), c = getCaseById(i.guild.id, caseId);
+    if (!Number.isInteger(caseId) || !c) return safeReply(i, ephemeralError('Case not found.'));
+    const requestedPage = Math.max(0, Number(pageRaw) || 0);
+    const audit = getCaseAudit(i.guild.id, caseId, { page: requestedPage, pageSize: AUDIT_PAGE_SIZE });
+    const page = audit.totalPages ? Math.min(requestedPage, audit.totalPages - 1) : 0;
+    const resolvedAudit = page === requestedPage ? audit : getCaseAudit(i.guild.id, caseId, { page, pageSize: AUDIT_PAGE_SIZE });
+    return i.update({ embeds: [caseDetailEmbed(c, resolvedAudit)], components: caseDetailButtons(c, token, resolvedAudit) });
+  }
   if (id.startsWith('mod_case_search_advanced:')) {
     if (!canUseModAction(i.member, i.guild, 'view_case_detail')) return safeReply(i, ephemeralError('No permission to search moderation cases.'));
     const [, token] = id.split(':');
@@ -177,10 +201,8 @@ async function handleCaseSearchSelect(i) {
   if (!stateFor(token, i.guild.id)) return safeReply(i, ephemeralError('This search has expired. Please start a new search.'));
   const caseId = Number(i.values?.[0]), c = getCaseById(i.guild.id, caseId);
   if (!Number.isInteger(caseId) || !c) return safeReply(i, ephemeralError('Case not found.'));
-  const audit = getCaseAudit(i.guild.id, caseId, { page: 0, pageSize: 5 });
-  const detail = caseDetailEmbed(c);
-  if (audit.results.length) detail.addFields({ name: 'Audit Timeline', value: audit.results.map(formatAuditEntry).join('\n').slice(0, 1024), inline: false });
-  return i.update({ embeds: [detail], components: caseDetailButtons(c, token) });
+  const audit = getCaseAudit(i.guild.id, caseId, { page: 0, pageSize: AUDIT_PAGE_SIZE });
+  return i.update({ embeds: [caseDetailEmbed(c, audit)], components: caseDetailButtons(c, token, audit) });
 }
 
 async function handleCaseSearchModal(i) {
