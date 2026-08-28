@@ -135,11 +135,6 @@ function caseDetailButtons(c, token, audit) {
   return rows;
 }
 
-function caseDetailPayload(c, token, auditPage = 0) {
-  const audit = getCaseAudit(c.guildId, c.caseId, { page: Math.max(0, auditPage), pageSize: AUDIT_PAGE_SIZE });
-  return { embeds: [caseDetailEmbed(c, audit)], components: caseDetailButtons(c, token, audit) };
-}
-
 async function openCaseSearch(i) {
   if (!canUseModAction(i.member, i.guild, 'view_case_detail')) return safeReply(i, ephemeralError('No permission to search moderation cases.'));
   await i.showModal(buildCaseSearchModal());
