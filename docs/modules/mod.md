@@ -19,7 +19,7 @@ Live case socket events remain separate from the persistent audit record. They a
 
 ### Actor attribution
 
-Mutation callers should pass the Discord user ID of the moderator performing the action. The original case moderator must not be substituted for the actor performing a later edit or reversal.
+Mutation callers must pass the Discord user ID of the moderator performing the action. The original case moderator must not be substituted for the actor performing a later edit or reversal.
 
 ### Case detail timeline
 
@@ -33,6 +33,22 @@ Case detail can present the audit records with:
 - Relevant metadata
 
 The audit record is guild-scoped and must never expose events from another guild.
+
+### Acceptance checklist
+
+- [x] Persistent `case_audit` storage
+- [x] Guild/case and guild/actor indexes
+- [x] Case creation audit
+- [x] Reason-change audit
+- [x] Status-change audit
+- [x] Note add/edit/clear audit
+- [x] Warning reversal audit
+- [x] Timeout reversal audit
+- [x] Actor attribution on supported mutation paths
+- [x] Before/after values
+- [x] Case-detail audit presentation
+- [ ] Full end-to-end runtime/deployment validation
+- [ ] Audit pagination for long histories
 
 ### Future extensions
 
