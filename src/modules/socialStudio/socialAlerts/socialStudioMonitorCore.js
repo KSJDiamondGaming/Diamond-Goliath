@@ -751,7 +751,11 @@ async function buildEventPayload(client, guildId, config, account, creator, even
 
   const embed = new EmbedBuilder()
     .setColor(embedColor)
-    .setTitle(clean(render(template.title, vars), 256) || `${creatorName} update`)
+    .setTitle(
+      account.platform === 'kick' && liveStatus === 'OFFLINE'
+        ? clean(`🔴 ${creatorName} is OFFLINE`, 256)
+        : clean(render(template.title, vars), 256) || `${creatorName} update`
+    )
     .setDescription(clean(stripTrailingDivider(baseDescription) + embedCallToAction, 4096))
     .setFooter({ text: clean(render(template.footer || `Social Studio • ${platform.label}`, vars), 2048) || `Social Studio • ${platform.label}` })
     .setTimestamp();
@@ -795,6 +799,7 @@ async function buildEventPayload(client, guildId, config, account, creator, even
 
     if (account.platform === 'kick') {
       const kickName = clean(event.kickUsername || account.username, 100);
+      const kickOffline = liveStatus === 'OFFLINE';
 
       if (kickName) {
         fields.push({
@@ -804,42 +809,85 @@ async function buildEventPayload(client, guildId, config, account, creator, even
         });
       }
 
-      if (vars.viewers) {
-        fields.push({
-          name: '👥 Viewers',
-          value: vars.viewers,
-          inline: true
-        });
-      }      if (started) {
-        fields.push({
-          name: '🕐 Started',
-          value: started,
-          inline: true
-        });
-      }
+      if (kickOffline) {
+        const peak = Number(
+          account.state?.peakViewers ||
+          vars.peakViewers ||
+          event.viewerCount ||
+          0
+        );
 
-if (durationText) {
-        fields.push({
-          name: '⏱️ Live For',
-          value: durationText,
-          inline: true
-        });
-      }
+        if (peak > 0) {
+          fields.push({
+            name: '📈 Peak Viewers',
+            value: intText(peak),
+            inline: true
+          });
+        }
 
-      if (event.language) {
-        fields.push({
-          name: '🌐 Language',
-          value: clean(String(event.language).toUpperCase(), 100),
-          inline: true
-        });
-      }
+        if (started) {
+          fields.push({
+            name: '🕐 Started',
+            value: started,
+            inline: true
+          });
+        }
 
-      if (event.hasMatureContent === true) {
-        fields.push({
-          name: '🔞 Mature',
-          value: 'Yes',
-          inline: true
-        });
+        if (durationText) {
+          fields.push({
+            name: '⏱️ Streamed For',
+            value: durationText,
+            inline: true
+          });
+        }
+
+        if (ended) {
+          fields.push({
+            name: '⚫ Ended',
+            value: ended,
+            inline: true
+          });
+        }
+      } else {
+        if (vars.viewers) {
+          fields.push({
+            name: '👥 Viewers',
+            value: vars.viewers,
+            inline: true
+          });
+        }
+
+        if (started) {
+          fields.push({
+            name: '🕐 Started',
+            value: started,
+            inline: true
+          });
+        }
+
+        if (durationText) {
+          fields.push({
+            name: '⏱️ Live For',
+            value: durationText,
+            inline: true
+          });
+        }
+
+        if (event.language) {
+          fields.push({
+            name: '🌐 Language',
+            value: clean(String(event.language).toUpperCase(), 100),
+            inline: true
+          });
+        }
+
+        if (event.hasMatureContent === true) {
+          fields.push({
+            name: '🔞 Mature',
+            value: 'Yes',
+            inline: true
+          });
+        }
       }
     } else {
       if (vars.viewers) {
@@ -872,10 +920,30 @@ if (durationText) {
     if (started) fields.push({ name: '⏲️ Started', value: started, inline: true });
   }
 
-  if (event.type !== 'ended' && vars.peakViewers) fields.push({ name: '📈 Peak', value: vars.peakViewers, inline: true });
+  if (
+    event.type !== 'ended' &&
+    vars.peakViewers &&
+    !(account.platform === 'kick' && liveStatus === 'OFFLINE')
+  ) {
+    fields.push({
+      name: '📈 Peak',
+      value: vars.peakViewers,
+      inline: true
+    });
+  }
   if (Number(event.viewCount) > 0) fields.push({ name: '👁️ Views', value: intText(event.viewCount), inline: true });
   if (event.type !== 'ended' && account.platform !== 'kick' && durationText) fields.push({ name: '⏱️ Duration', value: durationText, inline: true });
-  if (event.type !== 'ended' && ended) fields.push({ name: '⚫ Ended', value: ended, inline: true });
+  if (
+    event.type !== 'ended' &&
+    ended &&
+    !(account.platform === 'kick' && liveStatus === 'OFFLINE')
+  ) {
+    fields.push({
+      name: '⚫ Ended',
+      value: ended,
+      inline: true
+    });
+  }
   if (published) fields.push({ name: '📅 Published', value: published, inline: true });
   if (event.type === 'live' && /^https?:\/\//i.test(previousVod?.url || '')) {
     const vodTitle = clean(previousVod.title || 'Previous stream replay', 180);
