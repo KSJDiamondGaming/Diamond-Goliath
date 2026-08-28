@@ -4,7 +4,23 @@ const { ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, M
 const { safeReply, ephemeralError } = require('../../../core/ui/interactionResponse');
 const { COLORS, createEmbed } = require('../../../core/ui/embeds');
 const { canUseModAction } = require('./permissions');
-const { searchCases, getCaseById, getCaseAudit, isCaseLocked, updateCaseReason, updateCaseTags, updateCaseLock, linkCases, unlinkCaseRelationship } = require('./storage');
+const {
+  searchCases,
+  getCaseById,
+  getCaseAudit,
+  isCaseLocked,
+  isCaseMergedSource,
+  getMergedIntoId,
+  getMergedCaseIds,
+  updateCaseReason,
+  updateCaseTags,
+  updateCaseLock,
+  linkCases,
+  unlinkCaseRelationship,
+  mergeCases,
+  splitMergedCase,
+  bulkUpdateCases,
+} = require('./storage');
 
 const ACTIONS = new Set(['warn', 'timeout', 'kick', 'ban', 'unwarn', 'remove-timeout']);
 const STATUSES = new Set(['active', 'reversed', 'expired']);
@@ -48,7 +64,29 @@ function buildCaseTagsModal(token, c) {
   );
 }
 
+function buildCaseMergeModal(token, c) {
+  return new ModalBuilder().setCustomId(`mod_case_merge_submit:${token}:${c.caseId}`).setTitle(`Merge Into Case #${c.caseId}`).addComponents(
+    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('source_case_id').setLabel('Case ID To Merge').setStyle(TextInputStyle.Short).setPlaceholder('Case must belong to the same member').setRequired(true).setMaxLength(12))
+  );
+}
+
+function buildCaseSplitModal(token, c) {
+  const merged = getMergedCaseIds(c);
+  return new ModalBuilder().setCustomId(`mod_case_split_submit:${token}:${c.caseId}`).setTitle(`Split From Case #${c.caseId}`).addComponents(
+    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('source_case_id').setLabel('Merged Case ID To Split').setStyle(TextInputStyle.Short).setPlaceholder(merged.length ? `Merged: ${merged.map((id) => `#${id}`).join(', ')}`.slice(0, 100) : 'Enter merged case ID').setRequired(true).setMaxLength(12))
+  );
+}
+
+function buildCaseBulkModal(token, c) {
+  return new ModalBuilder().setCustomId(`mod_case_bulk_submit:${token}:${c.caseId}`).setTitle('Bulk Case Editing').addComponents(
+    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('case_ids').setLabel('Case IDs').setStyle(TextInputStyle.Paragraph).setPlaceholder('Comma or space separated, maximum 25 cases').setRequired(true).setMaxLength(300).setValue(String(c.caseId))),
+    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('operation').setLabel('Operation').setStyle(TextInputStyle.Short).setPlaceholder('add-tags, remove-tags, set-tags, lock, unlock, unlink').setRequired(true).setMaxLength(20)),
+    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('value').setLabel('Tags / Value').setStyle(TextInputStyle.Paragraph).setPlaceholder('Tags for tag operations; leave blank for other operations').setRequired(false).setMaxLength(400))
+  );
+}
+
 function input(i, id) { return String(i.fields.getTextInputValue(id) || '').trim(); }
+function isCaseReadOnly(c) { return isCaseLocked(c) || isCaseMergedSource(c); }
 
 function parseDate(value, label, endOfDay = false) {
   if (!value) return null;
@@ -90,13 +128,19 @@ function stateFor(token, guildId) {
 }
 
 function resultEmbed(r) {
-  const d = r.results.length ? r.results.map((e) => `**#${e.caseId}** • ${e.action} • ${e.status || 'active'}\nUser: <@${e.userId}> • Moderator: <@${e.moderatorId}>\nReason: ${e.reason || 'No reason provided'}`).join('\n\n') : 'No moderation cases matched those filters.';
+  const d = r.results.length ? r.results.map((e) => {
+    const state = [e.status || 'active'];
+    if (isCaseLocked(e)) state.push('🔒 locked');
+    if (getMergedIntoId(e)) state.push(`merged → #${getMergedIntoId(e)}`);
+    if (getMergedCaseIds(e).length) state.push(`${getMergedCaseIds(e).length} merged`);
+    return `**#${e.caseId}** • ${e.action} • ${state.join(' • ')}\nUser: <@${e.userId}> • Moderator: <@${e.moderatorId}>\nReason: ${e.reason || 'No reason provided'}`;
+  }).join('\n\n') : 'No moderation cases matched those filters.';
   return createEmbed({ title: 'Moderation Case Search', description: d.slice(0, 3900), color: COLORS.PRIMARY, footer: `Showing ${r.total ? `${r.page * r.pageSize + 1}-${Math.min((r.page + 1) * r.pageSize, r.total)} of ${r.total}` : '0'} result${r.total === 1 ? '' : 's'}` });
 }
 
 function resultComponents(r, token) {
   const rows = [];
-  if (r.results.length) rows.push(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`mod_case_search_select:${token}`).setPlaceholder('Select a case to open Case Detail').addOptions(r.results.map((e) => ({ label: `Case #${e.caseId} • ${e.action}`.slice(0, 100), description: `${e.status || 'active'} • User ${e.userId}`.slice(0, 100), value: String(e.caseId) })))));
+  if (r.results.length) rows.push(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`mod_case_search_select:${token}`).setPlaceholder('Select a case to open Case Detail').addOptions(r.results.map((e) => ({ label: `Case #${e.caseId} • ${e.action}`.slice(0, 100), description: `${e.status || 'active'}${isCaseLocked(e) ? ' • locked' : ''}${getMergedIntoId(e) ? ` • merged into #${getMergedIntoId(e)}` : ''} • User ${e.userId}`.slice(0, 100), value: String(e.caseId) })))));
   rows.push(new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId(`mod_case_search_page:${token}:${Math.max(0, r.page - 1)}`).setLabel('◀ Previous').setStyle(ButtonStyle.Secondary).setDisabled(r.page <= 0),
     new ButtonBuilder().setCustomId(`mod_case_search_page:${token}:${r.page + 1}`).setLabel('Next ▶').setStyle(ButtonStyle.Secondary).setDisabled(r.page >= r.totalPages - 1 || r.totalPages === 0),
@@ -135,8 +179,11 @@ function caseDetailEmbed(c, audit) {
     { name: 'Created', value: `<t:${ts(c.createdAt)}:F>`, inline: true }, { name: 'Updated', value: c.updatedAt ? `<t:${ts(c.updatedAt)}:F>` : 'Never', inline: true }
   );
   if (c.relatedCaseId) e.addFields({ name: 'Related Case', value: `#${c.relatedCaseId}`, inline: true });
-  const locked = isCaseLocked(c);
-  if (locked) {
+  const mergedInto = getMergedIntoId(c);
+  const mergedCases = getMergedCaseIds(c);
+  if (mergedInto) e.addFields({ name: '↪️ Merged Into', value: `Case #${mergedInto} • this source case is read-only until split`, inline: false });
+  if (mergedCases.length) e.addFields({ name: '🧩 Merged Cases', value: mergedCases.map((id) => `#${id}`).join(', ').slice(0, 1024), inline: false });
+  if (isCaseLocked(c)) {
     const lockedBy = c.metadata?.lockedBy ? `<@${c.metadata.lockedBy}>` : 'Unknown';
     const lockedAt = c.metadata?.lockedAt ? `<t:${ts(c.metadata.lockedAt)}:R>` : 'Unknown time';
     e.addFields({ name: '🔒 Case Lock', value: `Locked by ${lockedBy} • ${lockedAt}`, inline: false });
@@ -151,25 +198,42 @@ function caseDetailEmbed(c, audit) {
 function caseDetailButtons(c, token, audit) {
   const closed = c.status === 'reversed' || c.status === 'expired';
   const locked = isCaseLocked(c);
+  const mergedSource = isCaseMergedSource(c);
+  const readOnly = locked || mergedSource;
+  const mergedCases = getMergedCaseIds(c);
   const rows = [new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId(`mod_case_search_back:${token}`).setLabel('← Back to Search').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId(`mod_case_reverse_warning:${c.caseId}`).setLabel('↩️ Reverse Warning').setStyle(ButtonStyle.Secondary).setDisabled(c.action !== 'warn' || closed),
     new ButtonBuilder().setCustomId(`mod_case_reverse_timeout:${c.caseId}`).setLabel('⏪ Reverse Timeout').setStyle(ButtonStyle.Secondary).setDisabled(c.action !== 'timeout' || closed),
-    new ButtonBuilder().setCustomId(`mod_case_note:${c.caseId}`).setLabel('📝 Add/Edit Note').setStyle(ButtonStyle.Primary).setDisabled(locked),
-    new ButtonBuilder().setCustomId(`mod_case_lock:${token}:${c.caseId}`).setLabel(locked ? '🔓 Unlock Case' : '🔒 Lock Case').setStyle(locked ? ButtonStyle.Success : ButtonStyle.Danger)
+    new ButtonBuilder().setCustomId(`mod_case_note:${c.caseId}`).setLabel('📝 Add/Edit Note').setStyle(ButtonStyle.Primary).setDisabled(readOnly),
+    new ButtonBuilder().setCustomId(`mod_case_lock:${token}:${c.caseId}`).setLabel(locked ? '🔓 Unlock Case' : '🔒 Lock Case').setStyle(locked ? ButtonStyle.Success : ButtonStyle.Danger).setDisabled(mergedSource)
   )];
   rows.push(new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`mod_case_reason:${token}:${c.caseId}`).setLabel('✏️ Edit Reason').setStyle(ButtonStyle.Primary).setDisabled(locked),
-    new ButtonBuilder().setCustomId(`mod_case_tags:${token}:${c.caseId}`).setLabel('🏷️ Edit Tags').setStyle(ButtonStyle.Primary).setDisabled(locked),
-    new ButtonBuilder().setCustomId(`mod_case_link:${token}:${c.caseId}`).setLabel('🔗 Link Case').setStyle(ButtonStyle.Secondary).setDisabled(locked || Boolean(c.relatedCaseId)),
-    new ButtonBuilder().setCustomId(`mod_case_unlink:${token}:${c.caseId}`).setLabel('Unlink Case').setStyle(ButtonStyle.Secondary).setDisabled(locked || !c.relatedCaseId),
+    new ButtonBuilder().setCustomId(`mod_case_reason:${token}:${c.caseId}`).setLabel('✏️ Edit Reason').setStyle(ButtonStyle.Primary).setDisabled(readOnly),
+    new ButtonBuilder().setCustomId(`mod_case_tags:${token}:${c.caseId}`).setLabel('🏷️ Edit Tags').setStyle(ButtonStyle.Primary).setDisabled(readOnly),
+    new ButtonBuilder().setCustomId(`mod_case_link:${token}:${c.caseId}`).setLabel('🔗 Link Case').setStyle(ButtonStyle.Secondary).setDisabled(readOnly || Boolean(c.relatedCaseId)),
+    new ButtonBuilder().setCustomId(`mod_case_unlink:${token}:${c.caseId}`).setLabel('Unlink Case').setStyle(ButtonStyle.Secondary).setDisabled(readOnly || !c.relatedCaseId),
     new ButtonBuilder().setCustomId(`mod_case_related_open:${token}:${c.caseId}`).setLabel('Open Related').setStyle(ButtonStyle.Secondary).setDisabled(!c.relatedCaseId)
+  ));
+  rows.push(new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`mod_case_merge:${token}:${c.caseId}`).setLabel('🧩 Merge Case').setStyle(ButtonStyle.Secondary).setDisabled(readOnly),
+    new ButtonBuilder().setCustomId(`mod_case_split:${token}:${c.caseId}`).setLabel('↔️ Split Case').setStyle(ButtonStyle.Secondary).setDisabled(locked || (!mergedSource && !mergedCases.length)),
+    new ButtonBuilder().setCustomId(`mod_case_bulk:${token}:${c.caseId}`).setLabel('📚 Bulk Edit').setStyle(ButtonStyle.Primary)
   ));
   if (audit?.totalPages > 1) rows.push(new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId(`mod_case_audit_page:${token}:${c.caseId}:${Math.max(0, audit.page - 1)}`).setLabel('◀ Audit').setStyle(ButtonStyle.Secondary).setDisabled(audit.page <= 0),
     new ButtonBuilder().setCustomId(`mod_case_audit_page:${token}:${c.caseId}:${Math.min(audit.totalPages - 1, audit.page + 1)}`).setLabel('Audit ▶').setStyle(ButtonStyle.Secondary).setDisabled(audit.page >= audit.totalPages - 1)
   ));
   return rows;
+}
+
+function bulkSummaryEmbed(result) {
+  const lines = result.results.map((entry) => `${entry.ok ? (entry.changed ? '✅' : '➖') : '❌'} **#${entry.caseId}**${entry.error ? ` — ${entry.error}` : entry.changed ? ' — changed' : ' — no change'}`);
+  return createEmbed({
+    title: `Bulk Case Update • ${result.operation}`,
+    description: [`Requested: **${result.requested}** • Succeeded: **${result.succeeded}** • Failed: **${result.failed}** • Changed: **${result.changed}**`, '', ...lines].join('\n').slice(0, 3900),
+    color: result.failed ? COLORS.WARNING || COLORS.PRIMARY : COLORS.SUCCESS || COLORS.PRIMARY,
+  });
 }
 
 async function openCaseSearch(i) {
@@ -195,10 +259,49 @@ async function handleCaseSearchAction(i) {
     if (!stateFor(token, i.guild.id)) return safeReply(i, ephemeralError('This search has expired. Please start a new search.'));
     const caseId = Number(caseIdRaw), c = getCaseById(i.guild.id, caseId);
     if (!Number.isInteger(caseId) || !c) return safeReply(i, ephemeralError('Case not found.'));
+    if (isCaseMergedSource(c)) return safeReply(i, ephemeralError('Split this merged source case before changing its lock.'));
     const updated = updateCaseLock(i.guild.id, caseId, !isCaseLocked(c), i.user?.id || null);
     if (!updated) return safeReply(i, ephemeralError('Failed to update case lock.'));
     const audit = getCaseAudit(i.guild.id, caseId, { page: 0, pageSize: AUDIT_PAGE_SIZE });
     return i.update({ embeds: [caseDetailEmbed(updated, audit)], components: caseDetailButtons(updated, token, audit) });
+  }
+  if (id.startsWith('mod_case_merge:')) {
+    if (!canUseModAction(i.member, i.guild, 'edit_case')) return safeReply(i, ephemeralError('No permission to merge cases.'));
+    const [, token, caseIdRaw] = id.split(':');
+    if (!stateFor(token, i.guild.id)) return safeReply(i, ephemeralError('This search has expired. Please start a new search.'));
+    const caseId = Number(caseIdRaw), c = getCaseById(i.guild.id, caseId);
+    if (!Number.isInteger(caseId) || !c) return safeReply(i, ephemeralError('Case not found.'));
+    if (isCaseReadOnly(c)) return safeReply(i, ephemeralError('Locked or already-merged source cases cannot be used as a merge target.'));
+    await i.showModal(buildCaseMergeModal(token, c));
+    return true;
+  }
+  if (id.startsWith('mod_case_split:')) {
+    if (!canUseModAction(i.member, i.guild, 'edit_case')) return safeReply(i, ephemeralError('No permission to split merged cases.'));
+    const [, token, caseIdRaw] = id.split(':');
+    if (!stateFor(token, i.guild.id)) return safeReply(i, ephemeralError('This search has expired. Please start a new search.'));
+    const caseId = Number(caseIdRaw), c = getCaseById(i.guild.id, caseId);
+    if (!Number.isInteger(caseId) || !c) return safeReply(i, ephemeralError('Case not found.'));
+    if (isCaseLocked(c)) return safeReply(i, ephemeralError('Unlock this case before splitting merged cases.'));
+    const mergedInto = getMergedIntoId(c);
+    if (mergedInto) {
+      const result = splitMergedCase(i.guild.id, mergedInto, caseId, i.user?.id || null);
+      if (!result.ok) return safeReply(i, ephemeralError(result.error || 'Failed to split case.'));
+      const updated = getCaseById(i.guild.id, caseId);
+      const audit = getCaseAudit(i.guild.id, caseId, { page: 0, pageSize: AUDIT_PAGE_SIZE });
+      return i.update({ embeds: [caseDetailEmbed(updated, audit)], components: caseDetailButtons(updated, token, audit) });
+    }
+    if (!getMergedCaseIds(c).length) return safeReply(i, ephemeralError('This case has no merged cases to split.'));
+    await i.showModal(buildCaseSplitModal(token, c));
+    return true;
+  }
+  if (id.startsWith('mod_case_bulk:')) {
+    if (!canUseModAction(i.member, i.guild, 'edit_case')) return safeReply(i, ephemeralError('No permission to bulk edit cases.'));
+    const [, token, caseIdRaw] = id.split(':');
+    if (!stateFor(token, i.guild.id)) return safeReply(i, ephemeralError('This search has expired. Please start a new search.'));
+    const caseId = Number(caseIdRaw), c = getCaseById(i.guild.id, caseId);
+    if (!Number.isInteger(caseId) || !c) return safeReply(i, ephemeralError('Case not found.'));
+    await i.showModal(buildCaseBulkModal(token, c));
+    return true;
   }
   if (id.startsWith('mod_case_reason:')) {
     if (!canUseModAction(i.member, i.guild, 'edit_case')) return safeReply(i, ephemeralError('No permission to edit cases.'));
@@ -206,7 +309,7 @@ async function handleCaseSearchAction(i) {
     if (!stateFor(token, i.guild.id)) return safeReply(i, ephemeralError('This search has expired. Please start a new search.'));
     const caseId = Number(caseIdRaw), c = getCaseById(i.guild.id, caseId);
     if (!Number.isInteger(caseId) || !c) return safeReply(i, ephemeralError('Case not found.'));
-    if (isCaseLocked(c)) return safeReply(i, ephemeralError('This case is locked. Unlock it before editing the reason.'));
+    if (isCaseReadOnly(c)) return safeReply(i, ephemeralError('This case is locked or merged. Split/unlock it before editing the reason.'));
     await i.showModal(buildCaseReasonModal(token, c));
     return true;
   }
@@ -216,7 +319,7 @@ async function handleCaseSearchAction(i) {
     if (!stateFor(token, i.guild.id)) return safeReply(i, ephemeralError('This search has expired. Please start a new search.'));
     const caseId = Number(caseIdRaw), c = getCaseById(i.guild.id, caseId);
     if (!Number.isInteger(caseId) || !c) return safeReply(i, ephemeralError('Case not found.'));
-    if (isCaseLocked(c)) return safeReply(i, ephemeralError('This case is locked. Unlock it before editing tags.'));
+    if (isCaseReadOnly(c)) return safeReply(i, ephemeralError('This case is locked or merged. Split/unlock it before editing tags.'));
     await i.showModal(buildCaseTagsModal(token, c));
     return true;
   }
@@ -239,7 +342,7 @@ async function handleCaseSearchAction(i) {
     if (!stateFor(token, i.guild.id)) return safeReply(i, ephemeralError('This search has expired. Please start a new search.'));
     const caseId = Number(caseIdRaw), c = getCaseById(i.guild.id, caseId);
     if (!Number.isInteger(caseId) || !c) return safeReply(i, ephemeralError('Case not found.'));
-    if (isCaseLocked(c)) return safeReply(i, ephemeralError('This case is locked. Unlock it before changing relationships.'));
+    if (isCaseReadOnly(c)) return safeReply(i, ephemeralError('This case is locked or merged. Split/unlock it before changing relationships.'));
     if (c.relatedCaseId) return safeReply(i, ephemeralError(`Case #${caseId} is already linked to Case #${c.relatedCaseId}.`));
     await i.showModal(buildCaseLinkModal(token, caseId));
     return true;
@@ -250,7 +353,7 @@ async function handleCaseSearchAction(i) {
     if (!stateFor(token, i.guild.id)) return safeReply(i, ephemeralError('This search has expired. Please start a new search.'));
     const caseId = Number(caseIdRaw), c = getCaseById(i.guild.id, caseId);
     if (!Number.isInteger(caseId) || !c) return safeReply(i, ephemeralError('Case not found.'));
-    if (isCaseLocked(c)) return safeReply(i, ephemeralError('This case is locked. Unlock it before changing relationships.'));
+    if (isCaseReadOnly(c)) return safeReply(i, ephemeralError('This case is locked or merged. Split/unlock it before changing relationships.'));
     const result = unlinkCaseRelationship(i.guild.id, caseId, i.user?.id || null);
     if (!result.ok) return safeReply(i, ephemeralError(result.error || 'Failed to unlink cases.'));
     const updated = getCaseById(i.guild.id, caseId);
@@ -305,6 +408,46 @@ async function handleCaseSearchSelect(i) {
 
 async function handleCaseSearchModal(i) {
   if (i.customId === 'mod_submit_case_search') return submitCaseSearch(i);
+  if (i.customId.startsWith('mod_case_merge_submit:')) {
+    if (!canUseModAction(i.member, i.guild, 'edit_case')) return safeReply(i, ephemeralError('No permission to merge cases.'));
+    const [, token, targetCaseIdRaw] = i.customId.split(':');
+    if (!stateFor(token, i.guild.id)) return safeReply(i, ephemeralError('This search has expired. Please start a new search.'));
+    const targetCaseId = Number(targetCaseIdRaw), sourceRaw = input(i, 'source_case_id');
+    if (!Number.isInteger(targetCaseId) || targetCaseId <= 0 || !/^\d+$/.test(sourceRaw)) return safeReply(i, ephemeralError('Case IDs must be positive integers.'));
+    const target = getCaseById(i.guild.id, targetCaseId);
+    if (!target) return safeReply(i, ephemeralError('Merge target case not found.'));
+    if (isCaseReadOnly(target)) return safeReply(i, ephemeralError('The merge target was locked or merged before submission.'));
+    const result = mergeCases(i.guild.id, targetCaseId, Number(sourceRaw), i.user?.id || null);
+    if (!result.ok) return safeReply(i, ephemeralError(result.error || 'Failed to merge cases.'));
+    const updated = getCaseById(i.guild.id, targetCaseId);
+    const audit = getCaseAudit(i.guild.id, targetCaseId, { page: 0, pageSize: AUDIT_PAGE_SIZE });
+    return i.update({ embeds: [caseDetailEmbed(updated, audit)], components: caseDetailButtons(updated, token, audit) });
+  }
+  if (i.customId.startsWith('mod_case_split_submit:')) {
+    if (!canUseModAction(i.member, i.guild, 'edit_case')) return safeReply(i, ephemeralError('No permission to split merged cases.'));
+    const [, token, targetCaseIdRaw] = i.customId.split(':');
+    if (!stateFor(token, i.guild.id)) return safeReply(i, ephemeralError('This search has expired. Please start a new search.'));
+    const targetCaseId = Number(targetCaseIdRaw), sourceRaw = input(i, 'source_case_id');
+    if (!Number.isInteger(targetCaseId) || targetCaseId <= 0 || !/^\d+$/.test(sourceRaw)) return safeReply(i, ephemeralError('Case IDs must be positive integers.'));
+    const result = splitMergedCase(i.guild.id, targetCaseId, Number(sourceRaw), i.user?.id || null);
+    if (!result.ok) return safeReply(i, ephemeralError(result.error || 'Failed to split case.'));
+    const updated = getCaseById(i.guild.id, targetCaseId);
+    const audit = getCaseAudit(i.guild.id, targetCaseId, { page: 0, pageSize: AUDIT_PAGE_SIZE });
+    return i.update({ embeds: [caseDetailEmbed(updated, audit)], components: caseDetailButtons(updated, token, audit) });
+  }
+  if (i.customId.startsWith('mod_case_bulk_submit:')) {
+    if (!canUseModAction(i.member, i.guild, 'edit_case')) return safeReply(i, ephemeralError('No permission to bulk edit cases.'));
+    const [, token, contextCaseIdRaw] = i.customId.split(':');
+    if (!stateFor(token, i.guild.id)) return safeReply(i, ephemeralError('This search has expired. Please start a new search.'));
+    const contextCaseId = Number(contextCaseIdRaw);
+    if (!Number.isInteger(contextCaseId) || contextCaseId <= 0) return safeReply(i, ephemeralError('Context case ID is invalid.'));
+    const result = bulkUpdateCases(i.guild.id, input(i, 'case_ids'), input(i, 'operation'), input(i, 'value'), i.user?.id || null);
+    if (result.error) return safeReply(i, ephemeralError(result.error));
+    const context = getCaseById(i.guild.id, contextCaseId);
+    if (!context) return safeReply(i, ephemeralError('The case you opened bulk editing from could not be found.'));
+    const audit = getCaseAudit(i.guild.id, contextCaseId, { page: 0, pageSize: AUDIT_PAGE_SIZE });
+    return i.update({ embeds: [bulkSummaryEmbed(result), caseDetailEmbed(context, audit)], components: caseDetailButtons(context, token, audit) });
+  }
   if (i.customId.startsWith('mod_case_reason_submit:')) {
     if (!canUseModAction(i.member, i.guild, 'edit_case')) return safeReply(i, ephemeralError('No permission to edit cases.'));
     const [, token, caseIdRaw] = i.customId.split(':');
@@ -315,7 +458,7 @@ async function handleCaseSearchModal(i) {
     if (!reason) return safeReply(i, ephemeralError('Case reason cannot be empty.'));
     const existing = getCaseById(i.guild.id, caseId);
     if (!existing) return safeReply(i, ephemeralError('Case not found.'));
-    if (isCaseLocked(existing)) return safeReply(i, ephemeralError('This case was locked before the edit was submitted. Unlock it and try again.'));
+    if (isCaseReadOnly(existing)) return safeReply(i, ephemeralError('This case became locked or merged before the edit was submitted.'));
     const updated = updateCaseReason(i.guild.id, caseId, reason, i.user?.id || null);
     if (!updated) return safeReply(i, ephemeralError('Failed to update case reason.'));
     const audit = getCaseAudit(i.guild.id, caseId, { page: 0, pageSize: AUDIT_PAGE_SIZE });
@@ -329,7 +472,7 @@ async function handleCaseSearchModal(i) {
     if (!Number.isInteger(caseId) || caseId <= 0) return safeReply(i, ephemeralError('Case ID must be a positive integer.'));
     const existing = getCaseById(i.guild.id, caseId);
     if (!existing) return safeReply(i, ephemeralError('Case not found.'));
-    if (isCaseLocked(existing)) return safeReply(i, ephemeralError('This case was locked before the edit was submitted. Unlock it and try again.'));
+    if (isCaseReadOnly(existing)) return safeReply(i, ephemeralError('This case became locked or merged before the edit was submitted.'));
     const updated = updateCaseTags(i.guild.id, caseId, input(i, 'tags'), i.user?.id || null);
     if (!updated) return safeReply(i, ephemeralError('Failed to update case tags.'));
     const audit = getCaseAudit(i.guild.id, caseId, { page: 0, pageSize: AUDIT_PAGE_SIZE });
@@ -344,7 +487,7 @@ async function handleCaseSearchModal(i) {
     if (!Number.isInteger(caseId) || !/^\d+$/.test(relatedRaw)) return safeReply(i, ephemeralError('Case IDs must be positive integers.'));
     const existing = getCaseById(i.guild.id, caseId);
     if (!existing) return safeReply(i, ephemeralError('Case not found.'));
-    if (isCaseLocked(existing)) return safeReply(i, ephemeralError('This case was locked before the relationship was submitted. Unlock it and try again.'));
+    if (isCaseReadOnly(existing)) return safeReply(i, ephemeralError('This case became locked or merged before the relationship was submitted.'));
     const relatedCaseId = Number(relatedRaw);
     const result = linkCases(i.guild.id, caseId, relatedCaseId, i.user?.id || null);
     if (!result.ok) return safeReply(i, ephemeralError(result.error || 'Failed to link cases.'));
