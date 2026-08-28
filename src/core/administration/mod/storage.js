@@ -76,6 +76,8 @@ const EVENTS = Object.freeze({
   CASE_STATUS_UPDATED: 'case.status.updated',
   CASE_NOTE_UPDATED: 'case.note.updated',
   CASE_TAGS_UPDATED: 'case.tags.updated',
+  CASE_LOCKED: 'case.locked',
+  CASE_UNLOCKED: 'case.unlocked',
   CASE_RELATION_LINKED: 'case.relationship.linked',
   CASE_RELATION_UNLINKED: 'case.relationship.unlinked',
 });
@@ -175,6 +177,7 @@ function mapCase(row) {
     updatedAt: row.updated_at,
   };
 }
+function isCaseLocked(caseRecord) { return Boolean(caseRecord?.metadata?.locked); }
 function createCase({ guildId, userId, moderatorId, action, reason, metadata = {}, status = 'active', relatedCaseId = null, actorId = null }) {
   const createdAt = now();
   const result = db.prepare(`INSERT INTO cases (guild_id, user_id, moderator_id, action, reason, metadata, status, related_case_id, note, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, NULL)`).run(guildId, userId, moderatorId, action, reason, JSON.stringify(metadata || {}), status, relatedCaseId, createdAt);
@@ -257,7 +260,8 @@ function updateAndEmit(guildId, caseId, sql, params, emitter, auditEvent, actorI
 }
 function updateCaseReason(guildId, caseId, newReason, actorId = null) {
   const before = getCaseById(guildId, caseId);
-  return updateAndEmit(guildId, caseId, 'UPDATE cases SET reason = ?, updated_at = ? WHERE guild_id = ? AND case_id = ?', [newReason], emitCaseUpdated, 'case.reason.updated', actorId, before ? before.reason : null);
+  if (!before || isCaseLocked(before)) return null;
+  return updateAndEmit(guildId, caseId, 'UPDATE cases SET reason = ?, updated_at = ? WHERE guild_id = ? AND case_id = ?', [newReason], emitCaseUpdated, 'case.reason.updated', actorId, before.reason || null);
 }
 function updateCaseStatus(guildId, caseId, status, actorId = null) {
   const before = getCaseById(guildId, caseId);
@@ -265,16 +269,18 @@ function updateCaseStatus(guildId, caseId, status, actorId = null) {
 }
 function updateCaseNote(guildId, caseId, note, actorId = null) {
   const before = getCaseById(guildId, caseId);
-  return updateAndEmit(guildId, caseId, 'UPDATE cases SET note = ?, updated_at = ? WHERE guild_id = ? AND case_id = ?', [String(note || '').trim()], emitCaseNoteUpdated, EVENTS.CASE_NOTE_UPDATED, actorId, before ? before.note : null);
+  if (!before || isCaseLocked(before)) return null;
+  return updateAndEmit(guildId, caseId, 'UPDATE cases SET note = ?, updated_at = ? WHERE guild_id = ? AND case_id = ?', [String(note || '').trim()], emitCaseNoteUpdated, EVENTS.CASE_NOTE_UPDATED, actorId, before.note || null);
 }
 function clearCaseNote(guildId, caseId, actorId = null) {
   const before = getCaseById(guildId, caseId);
+  if (!before || isCaseLocked(before)) return null;
   const updatedAt = now();
   const result = db.prepare('UPDATE cases SET note = NULL, updated_at = ? WHERE guild_id = ? AND case_id = ?').run(updatedAt, guildId, Number(caseId));
   if (!result.changes) return null;
   const updated = getCaseById(guildId, caseId);
   if (updated) {
-    recordCaseAudit({ guildId, caseId, actorId, event: EVENTS.CASE_NOTE_UPDATED, before: before ? before.note : null, after: null, metadata: { cleared: true } });
+    recordCaseAudit({ guildId, caseId, actorId, event: EVENTS.CASE_NOTE_UPDATED, before: before.note || null, after: null, metadata: { cleared: true } });
     emitCaseNoteUpdated(guildId, updated);
   }
   return updated;
@@ -296,7 +302,7 @@ function normalizeCaseTags(tags) {
 }
 function updateCaseTags(guildId, caseId, tags, actorId = null) {
   const existing = getCaseById(guildId, caseId);
-  if (!existing) return null;
+  if (!existing || isCaseLocked(existing)) return null;
   const before = normalizeCaseTags(existing.metadata?.tags || []);
   const after = normalizeCaseTags(tags);
   const metadata = { ...(existing.metadata || {}) };
@@ -308,6 +314,32 @@ function updateCaseTags(guildId, caseId, tags, actorId = null) {
   const updated = getCaseById(guildId, caseId);
   if (updated) {
     recordCaseAudit({ guildId, caseId, actorId, event: EVENTS.CASE_TAGS_UPDATED, before, after, metadata: { tagCount: after.length } });
+    emitCaseUpdated(guildId, updated);
+  }
+  return updated;
+}
+function updateCaseLock(guildId, caseId, locked, actorId = null) {
+  const existing = getCaseById(guildId, caseId);
+  if (!existing) return null;
+  const before = isCaseLocked(existing);
+  const after = Boolean(locked);
+  if (before === after) return existing;
+  const metadata = { ...(existing.metadata || {}) };
+  if (after) {
+    metadata.locked = true;
+    metadata.lockedAt = now();
+    metadata.lockedBy = actorId ? String(actorId) : null;
+  } else {
+    delete metadata.locked;
+    delete metadata.lockedAt;
+    delete metadata.lockedBy;
+  }
+  const updatedAt = now();
+  const result = db.prepare('UPDATE cases SET metadata = ?, updated_at = ? WHERE guild_id = ? AND case_id = ?').run(JSON.stringify(metadata), updatedAt, guildId, Number(caseId));
+  if (!result.changes) return null;
+  const updated = getCaseById(guildId, caseId);
+  if (updated) {
+    recordCaseAudit({ guildId, caseId, actorId, event: after ? EVENTS.CASE_LOCKED : EVENTS.CASE_UNLOCKED, before, after, metadata: { lockedBy: after ? (actorId ? String(actorId) : null) : null } });
     emitCaseUpdated(guildId, updated);
   }
   return updated;
@@ -324,6 +356,7 @@ function linkCases(guildId, caseId, relatedCaseId, actorId = null) {
   const primary = getCaseById(guildId, primaryId);
   const related = getCaseById(guildId, relatedId);
   if (!primary || !related) return { ok: false, error: 'Both cases must exist in this guild.' };
+  if (isCaseLocked(primary) || isCaseLocked(related)) return { ok: false, error: 'Locked cases cannot have relationships changed.' };
   if (primary.relatedCaseId && primary.relatedCaseId !== relatedId) return { ok: false, error: `Case #${primaryId} is already linked to Case #${primary.relatedCaseId}.` };
   if (related.relatedCaseId && related.relatedCaseId !== primaryId) return { ok: false, error: `Case #${relatedId} is already linked to Case #${related.relatedCaseId}.` };
   if (primary.relatedCaseId === relatedId && related.relatedCaseId === primaryId) return { ok: true, case: primary, relatedCase: related, changed: false };
@@ -348,6 +381,7 @@ function unlinkCaseRelationship(guildId, caseId, actorId = null) {
   const relatedId = normalizeCaseId(primary.relatedCaseId);
   if (!relatedId) return { ok: true, case: primary, relatedCase: null, changed: false };
   const related = getCaseById(guildId, relatedId);
+  if (isCaseLocked(primary) || isCaseLocked(related)) return { ok: false, error: 'Locked cases cannot have relationships changed.' };
   const updatedAt = now();
   db.transaction(() => {
     db.prepare('UPDATE cases SET related_case_id = NULL, updated_at = ? WHERE guild_id = ? AND case_id = ?').run(updatedAt, guildId, primaryId);
@@ -464,11 +498,13 @@ module.exports = {
   getCaseCountForUser,
   getCaseById,
   getAllCases,
+  isCaseLocked,
   updateCaseReason,
   updateCaseStatus,
   updateCaseNote,
   clearCaseNote,
   updateCaseTags,
+  updateCaseLock,
   linkCases,
   unlinkCaseRelationship,
   addWarning,
