@@ -8,6 +8,7 @@ const {
   ChannelSelectMenuBuilder,
   ChannelType,
   RoleSelectMenuBuilder,
+  StringSelectMenuBuilder,
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
@@ -30,7 +31,7 @@ const moduleAdminPanels = require('./modules');
 
 const PANEL_COLOR = '#5865F2';
 const AUTHORITY_SECTION = 'goliathAuthority';
-const AUTHORITY_VERSION = 1;
+const AUTHORITY_VERSION = 2;
 const AUTHORITY_PER_PAGE = 10;
 
 const LOG_TYPES = {
@@ -45,19 +46,23 @@ const AUTHORITY_TIERS = {
   administrator: {
     label: 'Administrator',
     emoji: '👑',
+    rank: 300,
     description: 'Guild administrators who can manage the Goliath systems explicitly granted below.',
   },
   moderator: {
     label: 'Moderator',
     emoji: '🛡️',
+    rank: 200,
     description: 'Moderators with configurable moderation and limited administration access.',
   },
   juniorModerator: {
     label: 'Junior Moderator',
     emoji: '🔰',
+    rank: 100,
     description: 'Restricted or trial moderators with only explicitly granted capabilities.',
   },
 };
+const AUTHORITY_TIER_ORDER = Object.keys(AUTHORITY_TIERS).sort((a, b) => AUTHORITY_TIERS[b].rank - AUTHORITY_TIERS[a].rank);
 
 // Guild-manageable permissions only. Goliath-owner/root capabilities must never be added here.
 const GUILD_PERMISSION_CATALOG = [
@@ -154,14 +159,23 @@ const formatRoleList = (ids) => {
   return values.length ? values.map((id) => `<@&${id}>`).join(', ') : 'None';
 };
 
+function normalizePermissionMap(source, defaults) {
+  const permissions = { ...defaults };
+  for (const [key, value] of Object.entries(source || {})) {
+    if (GUILD_PERMISSION_KEYS.has(key)) permissions[key] = Boolean(value);
+  }
+  return permissions;
+}
+
 function createDefaultAuthorityConfig() {
   return {
     version: AUTHORITY_VERSION,
     configured: false,
-    tiers: Object.fromEntries(Object.keys(AUTHORITY_TIERS).map((key) => [key, {
+    tiers: Object.fromEntries(AUTHORITY_TIER_ORDER.map((key) => [key, {
       roleIds: [],
       permissions: { ...DEFAULT_TIER_PERMISSIONS[key] },
     }])),
+    roleProfiles: {},
   };
 }
 
@@ -169,19 +183,34 @@ function normalizeAuthorityConfig(raw) {
   const defaults = createDefaultAuthorityConfig();
   const source = raw && typeof raw === 'object' ? raw : {};
   const tiers = {};
-  for (const tierKey of Object.keys(AUTHORITY_TIERS)) {
+  const seenRoles = new Set();
+
+  for (const tierKey of AUTHORITY_TIER_ORDER) {
     const tier = source.tiers?.[tierKey] || {};
-    const permissions = { ...DEFAULT_TIER_PERMISSIONS[tierKey] };
-    for (const [key, value] of Object.entries(tier.permissions || {})) {
-      if (GUILD_PERMISSION_KEYS.has(key)) permissions[key] = Boolean(value);
-    }
+    const roleIds = [...new Set((tier.roleIds || [])
+      .map(String)
+      .filter((id) => /^\d{15,25}$/.test(id) && !seenRoles.has(id)))];
+    roleIds.forEach((id) => seenRoles.add(id));
     tiers[tierKey] = {
-      roleIds: [...new Set((tier.roleIds || []).filter((id) => /^\d{15,25}$/.test(String(id))))],
-      permissions,
+      roleIds,
+      permissions: normalizePermissionMap(tier.permissions, DEFAULT_TIER_PERMISSIONS[tierKey]),
     };
   }
-  const configured = source.configured === true || Object.values(tiers).some((tier) => tier.roleIds.length > 0);
-  return { ...defaults, version: AUTHORITY_VERSION, configured, tiers };
+
+  const roleProfiles = {};
+  for (const tierKey of AUTHORITY_TIER_ORDER) {
+    for (const roleId of tiers[tierKey].roleIds) {
+      const existing = source.roleProfiles?.[roleId];
+      const sameTier = existing?.tier === tierKey;
+      roleProfiles[roleId] = {
+        tier: tierKey,
+        permissions: normalizePermissionMap(sameTier ? existing.permissions : null, tiers[tierKey].permissions),
+      };
+    }
+  }
+
+  const configured = source.configured === true || seenRoles.size > 0;
+  return { ...defaults, version: AUTHORITY_VERSION, configured, tiers, roleProfiles };
 }
 
 function getAuthorityConfig(guildId) {
@@ -196,14 +225,36 @@ function getMemberRoleIds(interaction) {
   if (!interaction?.member?.roles) return [];
   const cache = interaction.member.roles.cache;
   if (cache?.keys) return [...cache.keys()];
-  return Array.isArray(interaction.member.roles) ? interaction.member.roles : [];
+  return Array.isArray(interaction.member.roles) ? interaction.member.roles.map(String) : [];
+}
+
+function getMatchedAuthorityProfiles(interaction, config = null) {
+  if (!interaction?.guild) return [];
+  const authority = config || getAuthorityConfig(interaction.guild.id);
+  return getMemberRoleIds(interaction)
+    .map((roleId) => ({ roleId, ...(authority.roleProfiles?.[roleId] || {}) }))
+    .filter((profile) => AUTHORITY_TIERS[profile.tier] && profile.permissions)
+    .sort((a, b) => AUTHORITY_TIERS[b.tier].rank - AUTHORITY_TIERS[a.tier].rank);
 }
 
 function getMatchedAuthorityTiers(interaction, config = null) {
-  if (!interaction?.guild) return [];
-  const authority = config || getAuthorityConfig(interaction.guild.id);
-  const roleIds = new Set(getMemberRoleIds(interaction));
-  return Object.keys(AUTHORITY_TIERS).filter((tierKey) => authority.tiers[tierKey].roleIds.some((roleId) => roleIds.has(roleId)));
+  return [...new Set(getMatchedAuthorityProfiles(interaction, config).map((profile) => profile.tier))];
+}
+
+function getAuthorityContext(interaction) {
+  if (isBotOwner(interaction)) return { source: 'goliathOwner', highestTier: null, profiles: [], permissions: new Set(GUILD_PERMISSION_KEYS) };
+  if (isGuildOwner(interaction)) return { source: 'guildOwner', highestTier: 'guildOwner', profiles: [], permissions: new Set(GUILD_PERMISSION_KEYS) };
+  if (!interaction?.guild || !interaction?.member) return { source: 'none', highestTier: null, profiles: [], permissions: new Set() };
+  const authority = getAuthorityConfig(interaction.guild.id);
+  if (!authority.configured) return { source: 'legacy', highestTier: null, profiles: [], permissions: new Set() };
+  const profiles = getMatchedAuthorityProfiles(interaction, authority);
+  const permissions = new Set();
+  for (const profile of profiles) {
+    for (const [key, allowed] of Object.entries(profile.permissions || {})) {
+      if (allowed === true && GUILD_PERMISSION_KEYS.has(key)) permissions.add(key);
+    }
+  }
+  return { source: 'configured', highestTier: profiles[0]?.tier || null, profiles, permissions };
 }
 
 function hasGuildPermission(interaction, permissionKey) {
@@ -218,8 +269,8 @@ function hasGuildPermission(interaction, permissionKey) {
     return security.hasPermission(interaction, 'mod');
   }
 
-  return getMatchedAuthorityTiers(interaction, authority)
-    .some((tierKey) => authority.tiers[tierKey].permissions[permissionKey] === true);
+  return getMatchedAuthorityProfiles(interaction, authority)
+    .some((profile) => profile.permissions[permissionKey] === true);
 }
 
 function canManageGuildAuthority(interaction) {
@@ -287,6 +338,7 @@ function routeLabel(route) {
     'admin:autoRoles': 'Join Roles',
   };
   if (route?.startsWith('admin:automod:rule:')) return automodPanel.AUTOMOD_RULES?.[route.split(':').pop()]?.title || 'AutoMod Rule';
+  if (route?.startsWith('admin:authority:profile:')) return 'Role Profile';
   return labels[route] || String(route || 'admin:home').replace('admin:', '').replaceAll(':', ' › ');
 }
 
@@ -348,6 +400,7 @@ function buildAdminToolsPanel(guild, name = 'Unknown User', interaction = null) 
     '',
     ...Object.entries(AUTHORITY_TIERS).map(([key, tier]) => `${tier.emoji} **${tier.label}** — ${formatRoleList(authority.tiers[key].roleIds)}`),
     '',
+    'Each mapped role has its own permission profile. Authority tiers provide defaults and hierarchy only.',
     'Guild authority controls Goliath access only. Goliath-owner/root authority is separate and is never exposed here.',
   ].join('\n');
 
@@ -370,6 +423,9 @@ function buildAuthorityPanel(guild, name = 'Unknown User') {
       '**Guild Owner** — implicit full guild authority; cannot be removed here.',
       ...Object.entries(AUTHORITY_TIERS).map(([key, tier]) => `${tier.emoji} **${tier.label}:** ${formatRoleList(config.tiers[key].roleIds)}`),
       '',
+      '**How it works** — tiers define hierarchy and starting templates; every mapped Discord role receives its own independent permission profile.',
+      'If a member has several mapped roles, Goliath combines allowed guild capabilities while retaining the highest mapped hierarchy level.',
+      '',
       config.configured
         ? 'Configured role mappings are active. Goliath now resolves guild access from these mappings.'
         : 'No mappings yet. Existing Discord Administrator/Moderator fallback remains active until you configure roles.',
@@ -388,9 +444,9 @@ function buildAuthorityPanel(guild, name = 'Unknown User') {
         button('admin:authority:roles:juniorModerator', '🔰 Junior Mod Roles'),
       ),
       row(
-        button('admin:authority:permissions:administrator:0', '👑 Admin Powers', ButtonStyle.Secondary),
-        button('admin:authority:permissions:moderator:0', '🛡️ Mod Powers', ButtonStyle.Secondary),
-        button('admin:authority:permissions:juniorModerator:0', '🔰 Junior Powers', ButtonStyle.Secondary),
+        button('admin:authority:permissions:administrator:0', '👑 Admin Template', ButtonStyle.Secondary),
+        button('admin:authority:permissions:moderator:0', '🛡️ Mod Template', ButtonStyle.Secondary),
+        button('admin:authority:permissions:juniorModerator:0', '🔰 Junior Template', ButtonStyle.Secondary),
       ),
       row(backButton('admin:authority')),
     ],
@@ -401,16 +457,34 @@ function buildAuthorityRolesPanel(guild, tierKey, name = 'Unknown User') {
   const tier = AUTHORITY_TIERS[tierKey];
   if (!tier) return buildAuthorityPanel(guild, name);
   const config = getAuthorityConfig(guild.id);
+  const mapped = config.tiers[tierKey].roleIds;
+  const components = [
+    row(new RoleSelectMenuBuilder()
+      .setCustomId(`admin:authority:roles:select:${tierKey}`)
+      .setPlaceholder(`Select ${tier.label} roles`)
+      .setMinValues(0)
+      .setMaxValues(10)),
+  ];
+
+  if (mapped.length) {
+    components.push(row(new StringSelectMenuBuilder()
+      .setCustomId(`admin:authority:profile:select:${tierKey}`)
+      .setPlaceholder('Edit a mapped role permission profile')
+      .addOptions(mapped.slice(0, 25).map((roleId) => ({
+        label: String(guild.roles?.cache?.get(roleId)?.name || `Role ${roleId}`).slice(0, 100),
+        value: roleId,
+        description: `${tier.label} role profile`.slice(0, 100),
+      }))));
+  }
+
+  components.push(row(button(`admin:authority:roles:clear:${tierKey}`, 'Clear Roles', ButtonStyle.Danger), backButton(`admin:authority:roles:${tierKey}`)));
   return {
-    embeds: [createEmbed(`${tier.emoji} ${tier.label} Roles`, `${tier.description}\n\n**Mapped roles:**\n${formatRoleList(config.tiers[tierKey].roleIds)}\n\nSelect any roles this guild uses for this authority tier.`, name)],
-    components: [
-      row(new RoleSelectMenuBuilder()
-        .setCustomId(`admin:authority:roles:select:${tierKey}`)
-        .setPlaceholder(`Select ${tier.label} roles`)
-        .setMinValues(0)
-        .setMaxValues(10)),
-      row(button(`admin:authority:roles:clear:${tierKey}`, 'Clear Roles', ButtonStyle.Danger), backButton(`admin:authority:roles:${tierKey}`)),
-    ],
+    embeds: [createEmbed(
+      `${tier.emoji} ${tier.label} Roles`,
+      `${tier.description}\n\n**Mapped roles:**\n${formatRoleList(mapped)}\n\nSelect roles for this hierarchy tier. Every mapped role gets an independent permission profile initialized from the ${tier.label} template.`,
+      name,
+    )],
+    components,
   };
 }
 
@@ -425,8 +499,8 @@ function buildAuthorityPermissionsPanel(guild, tierKey, page = 0, name = 'Unknow
   const permissionMap = config.tiers[tierKey].permissions;
 
   const embed = createEmbed(
-    `${tier.emoji} ${tier.label} Powers`,
-    `${tier.description}\n\nToggle each guild-manageable capability independently. Page **${safePage + 1}/${totalPages}**.`,
+    `${tier.emoji} ${tier.label} Permission Template`,
+    `${tier.description}\n\nThis is the starting template for newly mapped ${tier.label} roles. Existing role profiles remain independently configurable. Page **${safePage + 1}/${totalPages}**.`,
     name,
   ).addFields(entries.map((entry) => ({
     name: `${permissionMap[entry.key] ? '✅' : '❌'} ${entry.label}`,
@@ -452,6 +526,47 @@ function buildAuthorityPermissionsPanel(guild, tierKey, page = 0, name = 'Unknow
   nav.push(backButton(`admin:authority:permissions:${tierKey}:${safePage}`));
   if (safePage < totalPages - 1) nav.push(button(`admin:authority:permissions:${tierKey}:${safePage + 1}`, 'Next ➡️', ButtonStyle.Secondary));
   return { embeds: [embed], components: [...toggleRows, row(...nav)].slice(0, 5) };
+}
+
+function buildAuthorityRoleProfilePanel(guild, roleId, page = 0, name = 'Unknown User') {
+  const config = getAuthorityConfig(guild.id);
+  const profile = config.roleProfiles?.[roleId];
+  if (!profile || !AUTHORITY_TIERS[profile.tier]) return buildAuthorityPanel(guild, name);
+  const tier = AUTHORITY_TIERS[profile.tier];
+  const roleName = guild.roles?.cache?.get(roleId)?.name || roleId;
+  const totalPages = Math.max(1, Math.ceil(GUILD_PERMISSION_CATALOG.length / AUTHORITY_PER_PAGE));
+  const safePage = Math.max(0, Math.min(Number(page) || 0, totalPages - 1));
+  const start = safePage * AUTHORITY_PER_PAGE;
+  const entries = GUILD_PERMISSION_CATALOG.slice(start, start + AUTHORITY_PER_PAGE);
+
+  const embed = createEmbed(
+    `🎛️ ${roleName} — Goliath Permissions`,
+    `Hierarchy: ${tier.emoji} **${tier.label}**\nRole: <@&${roleId}>\n\nThese permissions apply only to this Discord role. Members with multiple mapped roles receive the combined allowed capabilities. Page **${safePage + 1}/${totalPages}**.`,
+    name,
+  ).addFields(entries.map((entry) => ({
+    name: `${profile.permissions[entry.key] ? '✅' : '❌'} ${entry.label}`,
+    value: `${entry.group} · \`${entry.key}\``,
+    inline: true,
+  })));
+
+  const toggleRows = [];
+  for (let index = 0; index < entries.length; index += 5) {
+    toggleRows.push(row(...entries.slice(index, index + 5).map((entry, offset) => {
+      const absolute = start + index + offset;
+      const enabled = profile.permissions[entry.key] === true;
+      return button(
+        `admin:authority:profile:toggle:${roleId}:${absolute}:${safePage}`,
+        `${enabled ? '✅' : '❌'} ${entry.label}`.slice(0, 80),
+        enabled ? ButtonStyle.Success : ButtonStyle.Secondary,
+      );
+    })));
+  }
+
+  const nav = [];
+  if (safePage > 0) nav.push(button(`admin:authority:profile:${roleId}:${safePage - 1}`, '⬅️ Previous', ButtonStyle.Secondary));
+  nav.push(button(`admin:authority:profile:reset:${roleId}:${safePage}`, '↩️ Reset Template', ButtonStyle.Danger));
+  if (safePage < totalPages - 1) nav.push(button(`admin:authority:profile:${roleId}:${safePage + 1}`, 'Next ➡️', ButtonStyle.Secondary));
+  return { embeds: [embed], components: [...toggleRows, row(...nav), row(backButton(`admin:authority:roles:${profile.tier}`))].slice(0, 5) };
 }
 
 function buildModulesPanel(guild, name = 'Unknown User') {
@@ -565,6 +680,8 @@ function panelForRoute(route, interaction, name) {
   if (authorityRoles) return buildAuthorityRolesPanel(interaction.guild, authorityRoles[1], name);
   const authorityPermissions = route.match(/^admin:authority:permissions:(administrator|moderator|juniorModerator):(\d+)$/);
   if (authorityPermissions) return buildAuthorityPermissionsPanel(interaction.guild, authorityPermissions[1], Number(authorityPermissions[2]), name);
+  const authorityProfile = route.match(/^admin:authority:profile:(\d{15,25}):(\d+)$/);
+  if (authorityProfile) return buildAuthorityRoleProfilePanel(interaction.guild, authorityProfile[1], Number(authorityProfile[2]), name);
   if (route === 'admin:modules') return buildModulesPanel(interaction.guild, name);
   if (route === 'admin:logs') return buildLogsPanel(interaction.guild, name);
   if (route === 'admin:backups') return buildBackupsPanel(interaction.guild, name, interaction);
@@ -610,7 +727,23 @@ async function handleAdminNavigation(interaction) {
       if (!canManageGuildAuthority(interaction)) return deny(interaction);
       const tierKey = authorityRoleSelect[1];
       const config = getAuthorityConfig(interaction.guild.id);
-      config.tiers[tierKey].roleIds = [...new Set(interaction.values || [])];
+      const selected = [...new Set((interaction.values || []).map(String))];
+
+      for (const otherTier of AUTHORITY_TIER_ORDER) {
+        config.tiers[otherTier].roleIds = config.tiers[otherTier].roleIds.filter((roleId) => !selected.includes(roleId));
+      }
+      config.tiers[tierKey].roleIds = selected;
+
+      for (const [roleId, profile] of Object.entries(config.roleProfiles || {})) {
+        if (profile.tier === tierKey && !selected.includes(roleId)) delete config.roleProfiles[roleId];
+      }
+      for (const roleId of selected) {
+        const existing = config.roleProfiles?.[roleId];
+        config.roleProfiles[roleId] = existing?.tier === tierKey
+          ? existing
+          : { tier: tierKey, permissions: { ...config.tiers[tierKey].permissions } };
+      }
+
       config.configured = Object.values(config.tiers).some((tier) => tier.roleIds.length > 0);
       saveAuthorityConfig(interaction.guild.id, config);
       return openRoute(interaction, `admin:authority:roles:${tierKey}`, name);
@@ -622,6 +755,16 @@ async function handleAdminNavigation(interaction) {
     const current = section === 'autoRoles' ? getAutoRolesConfig(interaction.guild.id) : getRoleConfig(interaction.guild.id, section);
     replaceGuildSection(interaction.guild.id, section, { ...current, roleIds: [...new Set(interaction.values || [])] });
     return openRoute(interaction, section === 'staffRoles' ? 'admin:staffroles' : section === 'modRoles' ? 'admin:modroles' : 'admin:autoRoles', name);
+  }
+
+  if (interaction.isStringSelectMenu?.()) {
+    const profileSelect = id.match(/^admin:authority:profile:select:(administrator|moderator|juniorModerator)$/);
+    if (profileSelect) {
+      const roleId = String(interaction.values?.[0] || '');
+      const config = getAuthorityConfig(interaction.guild.id);
+      if (!config.roleProfiles?.[roleId] || config.roleProfiles[roleId].tier !== profileSelect[1]) return openRoute(interaction, `admin:authority:roles:${profileSelect[1]}`, name);
+      return openRoute(interaction, `admin:authority:profile:${roleId}:0`, name);
+    }
   }
 
   if (interaction.isChannelSelectMenu?.()) {
@@ -640,6 +783,7 @@ async function handleAdminNavigation(interaction) {
   if (authorityRoleClear) {
     const tierKey = authorityRoleClear[1];
     const config = getAuthorityConfig(interaction.guild.id);
+    for (const roleId of config.tiers[tierKey].roleIds) delete config.roleProfiles[roleId];
     config.tiers[tierKey].roleIds = [];
     config.configured = Object.values(config.tiers).some((tier) => tier.roleIds.length > 0);
     saveAuthorityConfig(interaction.guild.id, config);
@@ -658,6 +802,32 @@ async function handleAdminNavigation(interaction) {
     config.tiers[tierKey].permissions[entry.key] = !config.tiers[tierKey].permissions[entry.key];
     saveAuthorityConfig(interaction.guild.id, config);
     return openRoute(interaction, `admin:authority:permissions:${tierKey}:${Number(pageRaw) || 0}`, name);
+  }
+
+  const authorityProfileOpen = id.match(/^admin:authority:profile:(\d{15,25}):(\d+)$/);
+  if (authorityProfileOpen) return openRoute(interaction, id, name);
+
+  const authorityProfileToggle = id.match(/^admin:authority:profile:toggle:(\d{15,25}):(\d+):(\d+)$/);
+  if (authorityProfileToggle) {
+    const [, roleId, permissionIndexRaw, pageRaw] = authorityProfileToggle;
+    const entry = GUILD_PERMISSION_CATALOG[Number(permissionIndexRaw)];
+    const config = getAuthorityConfig(interaction.guild.id);
+    const profile = config.roleProfiles?.[roleId];
+    if (!entry || !profile) return openRoute(interaction, 'admin:authority', name);
+    profile.permissions[entry.key] = !profile.permissions[entry.key];
+    saveAuthorityConfig(interaction.guild.id, config);
+    return openRoute(interaction, `admin:authority:profile:${roleId}:${Number(pageRaw) || 0}`, name);
+  }
+
+  const authorityProfileReset = id.match(/^admin:authority:profile:reset:(\d{15,25}):(\d+)$/);
+  if (authorityProfileReset) {
+    const [, roleId, pageRaw] = authorityProfileReset;
+    const config = getAuthorityConfig(interaction.guild.id);
+    const profile = config.roleProfiles?.[roleId];
+    if (!profile || !config.tiers[profile.tier]) return openRoute(interaction, 'admin:authority', name);
+    profile.permissions = { ...config.tiers[profile.tier].permissions };
+    saveAuthorityConfig(interaction.guild.id, config);
+    return openRoute(interaction, `admin:authority:profile:${roleId}:${Number(pageRaw) || 0}`, name);
   }
 
   if (id === 'admin:purge') {
@@ -744,6 +914,7 @@ module.exports = {
   buildAuthorityPanel,
   buildAuthorityRolesPanel,
   buildAuthorityPermissionsPanel,
+  buildAuthorityRoleProfilePanel,
   buildBackupsPanel,
   buildStaffRolesPanel,
   buildModRolesPanel,
@@ -755,7 +926,9 @@ module.exports = {
   buildPurgeModal,
   getAuthorityConfig,
   saveAuthorityConfig,
+  getMatchedAuthorityProfiles,
   getMatchedAuthorityTiers,
+  getAuthorityContext,
   hasGuildPermission,
   canManageGuildAuthority,
   getLogChannelId,
