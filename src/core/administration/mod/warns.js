@@ -7,20 +7,22 @@ const {
   ActionRowBuilder,
 } = require('discord.js');
 const {
+  db,
   addWarning,
-  getWarningsForUser,
-  getWarningCountForUser,
-  getWarningByCaseId,
+  getWarningsForUser: getStoredWarningsForUser,
+  getWarningCountForUser: getStoredWarningCountForUser,
+  getWarningByCaseId: getStoredWarningByCaseId,
   deleteWarningByCaseId,
-  purgeExpiredWarnings,
   createCase,
   getCaseById,
   updateCaseStatus,
   recordCaseAudit,
+  emitCaseCreated,
+  emitCaseStatusUpdated,
   sendModLog,
 } = require('./storage');
 const { safeReply, ephemeralError } = require('../../../core/ui/interactionResponse');
-const { ensureActionAccess, requireModeratableTarget } = require('./permissions');
+const { ensureActionAccess, requireModeratableTarget, recordModerationSystemEvent } = require('./permissions');
 
 const NO_EXPIRY_VALUES = new Set(['', 'never', 'none']);
 const MIN_STRIKE_WEIGHT = 1;
@@ -66,6 +68,62 @@ function getCaseStrikeWeight(guildId, warning) {
   const modCase = warning?.caseId ? getCaseById(guildId, warning.caseId) : null;
   const raw = Number(modCase?.metadata?.strikeWeight ?? DEFAULT_STRIKE_WEIGHT);
   return Number.isFinite(raw) ? Math.min(MAX_STRIKE_WEIGHT, Math.max(MIN_STRIKE_WEIGHT, Math.trunc(raw))) : DEFAULT_STRIKE_WEIGHT;
+}
+
+function mapExpiredWarning(row) {
+  return {
+    id: row.id,
+    guildId: row.guild_id,
+    userId: row.user_id,
+    moderatorId: row.moderator_id,
+    reason: row.reason,
+    caseId: row.case_id,
+    createdAt: row.created_at,
+    expiresAt: row.expires_at,
+  };
+}
+
+function syncExpiredWarningsToCases(guildId) {
+  const normalizedGuildId = String(guildId || '').trim();
+  if (!normalizedGuildId) return [];
+  const nowIso = new Date().toISOString();
+  const expiredWarnings = db.prepare('SELECT * FROM warnings WHERE guild_id = ? AND expires_at IS NOT NULL AND expires_at <= ? ORDER BY id ASC').all(normalizedGuildId, nowIso).map(mapExpiredWarning);
+  if (!expiredWarnings.length) return [];
+  const changedCaseIds = [];
+  db.transaction(() => {
+    for (const warning of expiredWarnings) {
+      if (warning.caseId) {
+        const currentCase = getCaseById(normalizedGuildId, warning.caseId);
+        if (currentCase && currentCase.status === 'active') {
+          const result = db.prepare('UPDATE cases SET status = ?, updated_at = ? WHERE guild_id = ? AND case_id = ? AND status = ?').run('expired', nowIso, normalizedGuildId, Number(warning.caseId), 'active');
+          if (result.changes) {
+            changedCaseIds.push(Number(warning.caseId));
+            recordCaseAudit({ guildId: normalizedGuildId, caseId: warning.caseId, actorId: null, event: 'case.status.updated', before: 'active', after: 'expired', metadata: { automatic: true, warningExpiry: true } });
+            recordCaseAudit({ guildId: normalizedGuildId, caseId: warning.caseId, actorId: null, event: 'case.strike.expired', before: getCaseStrikeWeight(normalizedGuildId, warning), after: 0, metadata: { automatic: true, expiresAt: warning.expiresAt } });
+          }
+        }
+      }
+    }
+    db.prepare('DELETE FROM warnings WHERE guild_id = ? AND expires_at IS NOT NULL AND expires_at <= ?').run(normalizedGuildId, nowIso);
+  })();
+  for (const caseId of changedCaseIds) {
+    const updated = getCaseById(normalizedGuildId, caseId);
+    if (updated) emitCaseStatusUpdated(normalizedGuildId, updated);
+  }
+  return expiredWarnings;
+}
+
+function getWarningsForUser(guildId, userId) {
+  syncExpiredWarningsToCases(guildId);
+  return getStoredWarningsForUser(guildId, userId);
+}
+function getWarningCountForUser(guildId, userId) {
+  syncExpiredWarningsToCases(guildId);
+  return getStoredWarningCountForUser(guildId, userId);
+}
+function getWarningByCaseId(guildId, caseId) {
+  syncExpiredWarningsToCases(guildId);
+  return getStoredWarningByCaseId(guildId, caseId);
 }
 
 function getActiveStrikeProfile(guildId, userId) {
@@ -190,24 +248,36 @@ async function handleEscalation({ guild, member, moderator, reason, previousStri
     return null;
   } catch (error) {
     console.error('❌ Escalation error:', error);
+    recordModerationSystemEvent({ guildId: guild.id, actorId: moderator.id, event: 'moderation.escalation.failed', action: escalation.action, targetId: member.id, reason: error?.message || error, metadata: { sourceWarningCaseId, strikeScore: currentScore, threshold: escalation.threshold || null, stack: String(error?.stack || '').slice(0, 1500) } });
     return null;
   }
 }
 
-async function syncExpiredWarningsToCases(guildId) {
-  const expiredWarnings = purgeExpiredWarnings(guildId) || [];
-  for (const warning of expiredWarnings) {
-    if (!warning?.caseId) continue;
-    updateCaseStatus(guildId, warning.caseId, 'expired', null);
-    recordCaseAudit({ guildId, caseId: warning.caseId, actorId: null, event: 'case.strike.expired', before: 'active', after: 'expired', metadata: { automatic: true } });
-  }
-  return expiredWarnings;
+function createWarningCaseAtomic({ guildId, userId, moderatorId, reason = 'No reason provided', expiresAt = null, strikeWeight = DEFAULT_STRIKE_WEIGHT, metadata = {}, actorId = null }) {
+  const normalizedGuildId = String(guildId);
+  const normalizedUserId = String(userId);
+  const normalizedModeratorId = String(moderatorId);
+  const createdAt = new Date().toISOString();
+  const caseMetadata = { expiresAt: expiresAt || null, strikeWeight, strikeSystem: 'weighted-v1', ...(metadata || {}) };
+  const result = db.transaction(() => {
+    const insert = db.prepare('INSERT INTO cases (guild_id, user_id, moderator_id, action, reason, metadata, status, related_case_id, note, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, NULL)').run(normalizedGuildId, normalizedUserId, normalizedModeratorId, 'warn', reason, JSON.stringify(caseMetadata), 'active', createdAt);
+    const caseId = Number(insert.lastInsertRowid);
+    const warning = addWarning({ guildId: normalizedGuildId, userId: normalizedUserId, moderatorId: normalizedModeratorId, reason, caseId, expiresAt });
+    return { caseId, warning };
+  })();
+  const modCase = getCaseById(normalizedGuildId, result.caseId);
+  if (!modCase) throw new Error('Failed to load warning case after atomic creation.');
+  recordCaseAudit({ guildId: normalizedGuildId, caseId: modCase.caseId, actorId: actorId || normalizedModeratorId, event: 'case.created', before: null, after: modCase, metadata: { action: 'warn', atomic: true } });
+  emitCaseCreated(normalizedGuildId, modCase);
+  return { modCase, warning: result.warning };
 }
+
 function createWarning({ guildId, userId, moderatorId, reason = 'No reason provided', caseId, expiresAt = null }) {
   return addWarning({ guildId, userId, moderatorId, reason, caseId, expiresAt });
 }
 function removeWarningByCaseId(guildId, caseId, actorId = null) {
-  const warning = getWarningByCaseId(guildId, caseId);
+  syncExpiredWarningsToCases(guildId);
+  const warning = getStoredWarningByCaseId(guildId, caseId);
   if (!warning) return null;
   const strikeWeight = getCaseStrikeWeight(guildId, warning);
   const removed = deleteWarningByCaseId(guildId, caseId);
@@ -226,7 +296,11 @@ async function getWarningContext({ guildId, userId, reason }) {
 }
 async function runWarningEscalation({ guild, member, moderator, reason, previousStrikeScore = null, sourceWarningCaseId = null }) {
   try { return await handleEscalation({ guild, member, moderator, reason, previousStrikeScore, sourceWarningCaseId }); }
-  catch (error) { console.error('❌ Warning escalation failed:', error); return null; }
+  catch (error) {
+    console.error('❌ Warning escalation failed:', error);
+    recordModerationSystemEvent({ guildId: guild?.id || 'system', actorId: moderator?.id || null, event: 'moderation.escalation.failed', targetId: member?.id || null, reason: error?.message || error, metadata: { sourceWarningCaseId, stack: String(error?.stack || '').slice(0, 1500) } });
+    return null;
+  }
 }
 
 function buildWarnModal(targetId) {
@@ -256,28 +330,39 @@ async function showRemoveWarningModal(interaction, targetId) {
 }
 
 async function submitWarning(interaction, target) {
-  if (!interaction?.guild || !interaction?.user || !target) return safeReply(interaction, ephemeralError('Could not resolve the warning target.'));
+  if (!interaction?.guild || !interaction?.user || !target) {
+    const error = 'Could not resolve the warning target.';
+    await safeReply(interaction, ephemeralError(error));
+    return { ok: false, target, error };
+  }
   const reason = interaction.fields.getTextInputValue('reason').trim();
   const expiryRaw = interaction.fields.getTextInputValue('warn_expiry') || 'never';
   const weightRaw = interaction.fields.getTextInputValue('strike_weight') || '';
   const strikeWeight = parseStrikeWeight(weightRaw);
-  if (!strikeWeight) return safeReply(interaction, ephemeralError('Strike weight must be a whole number from 1 to 5.'));
+  if (!strikeWeight) {
+    const error = 'Strike weight must be a whole number from 1 to 5.';
+    await safeReply(interaction, ephemeralError(error));
+    return { ok: false, target, error };
+  }
   const normalizedExpiry = expiryRaw.trim().toLowerCase();
   const expiresAt = parseWarningExpiry(expiryRaw);
-  if (!NO_EXPIRY_VALUES.has(normalizedExpiry) && !expiresAt) return safeReply(interaction, ephemeralError('Invalid warning expiry. Use `7d`, `2w`, `1m`, or `never`.'));
+  if (!NO_EXPIRY_VALUES.has(normalizedExpiry) && !expiresAt) {
+    const error = 'Invalid warning expiry. Use `7d`, `2w`, `1m`, or `never`.';
+    await safeReply(interaction, ephemeralError(error));
+    return { ok: false, target, error };
+  }
   try {
-    await syncExpiredWarningsToCases(interaction.guild.id);
+    syncExpiredWarningsToCases(interaction.guild.id);
     const beforeProfile = getActiveStrikeProfile(interaction.guild.id, target.id);
-    const modCase = createCase({
+    const { modCase } = createWarningCaseAtomic({
       guildId: interaction.guild.id,
       userId: target.id,
       moderatorId: interaction.user.id,
-      action: 'warn',
       reason,
-      metadata: { expiresAt, strikeWeight, strikeSystem: 'weighted-v1' },
+      expiresAt,
+      strikeWeight,
       actorId: interaction.user.id,
     });
-    createWarning({ guildId: interaction.guild.id, userId: target.id, moderatorId: interaction.user.id, reason, caseId: modCase.caseId, expiresAt });
     const warningContext = await getWarningContext({ guildId: interaction.guild.id, userId: target.id, reason });
     recordCaseAudit({
       guildId: interaction.guild.id,
@@ -343,10 +428,10 @@ async function submitWarning(interaction, target) {
 
 async function submitWarningModal(interaction, targetId, refreshDashboard = null) {
   const target = await requireModeratableTarget(interaction, targetId, 'warn');
-  if (!target) return true;
+  if (!target) return { ok: false, handled: true, target: null, error: 'Warning target unavailable or denied.' };
   const result = await submitWarning(interaction, target);
   if (result?.ok && typeof refreshDashboard === 'function') await refreshDashboard(interaction, target);
-  return true;
+  return result;
 }
 async function submitRemoveWarningRequest(interaction, targetId, createConfirmation) {
   const raw = interaction.fields.getTextInputValue('case_id').trim();
@@ -364,6 +449,7 @@ async function submitRemoveWarningRequest(interaction, targetId, createConfirmat
 module.exports = {
   syncExpiredWarningsToCases,
   createWarning,
+  createWarningCaseAtomic,
   removeWarningByCaseId,
   getWarningContext,
   getActiveStrikeProfile,
