@@ -24,6 +24,7 @@ const {
   handleExportInteraction,
   presetIdFromSubmission,
   markPresetUsed,
+  getModerationPreset,
 } = require('./panel');
 
 const PUNISHMENT_ACTIONS = new Set(['timeout', 'kick', 'ban']);
@@ -39,6 +40,44 @@ function getBulkAction(customId) { return getPrefixedAction(customId, 'mod_submi
 function parseConfirmActionContext(customId) { const parts = String(customId || '').split(':'); const requestedPage = Number(parts[5]); return { token: parts[1] || null, context: { view: parts[2] || 'overview', actionFilter: parts[3] || 'all', statusFilter: parts[4] || 'all', page: Number.isFinite(requestedPage) ? Math.max(0, Math.trunc(requestedPage)) : 0 } }; }
 function fieldValue(i, key) { try { return String(i.fields?.getTextInputValue?.(key) || '').trim(); } catch { return ''; } }
 function auditFailure(i, event, action, targetId, reason, metadata = {}) { return recordModerationSystemEvent({ interaction: i, event, action, targetId, reason, metadata }); }
+function setInputValueIfPresent(input, value, maxLength) {
+  const text = String(value || '').slice(0, maxLength);
+  return text ? input.setValue(text) : input;
+}
+function buildSafePresetEditorModal(preset = null, targetId = 'none') {
+  const { ActionRowBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = Discord;
+  const action = String(preset?.action || 'warn').toLowerCase();
+  const secondary = action === 'warn' ? String(preset?.warnExpiry || 'never') : action === 'timeout' ? String(preset?.duration || '1h') : '';
+  const numeric = action === 'warn' ? String(preset?.strikeWeight || 1) : action === 'ban' ? String(preset?.deleteDays ?? 0) : '';
+  const nameInput = setInputValueIfPresent(new TextInputBuilder().setCustomId('name').setLabel('Preset Name').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(80), preset?.name, 80);
+  const actionInput = new TextInputBuilder().setCustomId('action').setLabel('Action: warn / timeout / kick / ban').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(10).setValue(action);
+  const reasonInput = setInputValueIfPresent(new TextInputBuilder().setCustomId('reason').setLabel('Reason').setStyle(TextInputStyle.Paragraph).setRequired(true).setMaxLength(500), preset?.reason, 500);
+  const secondaryInput = setInputValueIfPresent(new TextInputBuilder().setCustomId('secondary').setLabel('Warn expiry OR timeout duration').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(10).setPlaceholder('warn: 7d/2w/1m/never • timeout: 1h'), secondary, 10);
+  const numericInput = setInputValueIfPresent(new TextInputBuilder().setCustomId('numeric').setLabel('Warn weight (1-5) OR ban delete days (0-7)').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(1), numeric, 1);
+  return new ModalBuilder().setCustomId(`mod_preset_save:${preset?.id || 'new'}:${targetId}`).setTitle(preset ? 'Edit Moderation Preset' : 'Create Moderation Preset').addComponents(
+    new ActionRowBuilder().addComponents(nameInput),
+    new ActionRowBuilder().addComponents(actionInput),
+    new ActionRowBuilder().addComponents(reasonInput),
+    new ActionRowBuilder().addComponents(secondaryInput),
+    new ActionRowBuilder().addComponents(numericInput)
+  );
+}
+async function handlePresetEditorButton(i) {
+  const id = String(i.customId || '');
+  if (id.startsWith('mod_preset_create:')) {
+    const [, targetId = 'none'] = id.split(':');
+    await i.showModal(buildSafePresetEditorModal(null, targetId));
+    return true;
+  }
+  if (id.startsWith('mod_preset_edit:')) {
+    const [, presetId, targetId = 'none'] = id.split(':');
+    const preset = getModerationPreset(i.guild.id, presetId);
+    if (!preset) return safeReply(i, { content: '❌ Preset not found.', flags: 64 });
+    await i.showModal(buildSafePresetEditorModal(preset, targetId));
+    return true;
+  }
+  return false;
+}
 
 async function showPunishmentModal(i, action, targetId) { if (!PUNISHMENT_ACTIONS.has(action)) return false; const target = await requireModeratableTarget(i, targetId, action); if (!target) return true; await i.showModal(buildPunishmentModal(action, target.id)); return true; }
 async function requestRemoveTimeout(i, targetId) { const target = await requireModeratableTarget(i, targetId, 'remove_timeout'); if (!target) return true; return createConfirmation(i, target.id, 'remove-timeout', {}, `✅ Remove timeout from **${target.user.tag}**?`); }
@@ -136,7 +175,7 @@ async function routeButtonsAndSelects(i) {
   if (i.isUserSelectMenu?.()) return handleUserSelectMenu(i);
   if (i.isStringSelectMenu?.()) return routeHandlers(i, [handlePresetInteraction, handleCaseSearchSelect, handleActionSelectMenu]);
   if (!i.isButton?.()) return false;
-  return routeHandlers(i, [handleExportInteraction, handlePresetInteraction, handleConfirmButton, value => handleCaseAction(value, { fetchTarget, createConfirmation }), handleDashboardNavigation, handleCancelButton, handleSelectUserButton, handleBulkButton, handleOpenActionButton, handleCaseToolButton]);
+  return routeHandlers(i, [handleExportInteraction, handlePresetEditorButton, handlePresetInteraction, handleConfirmButton, value => handleCaseAction(value, { fetchTarget, createConfirmation }), handleDashboardNavigation, handleCancelButton, handleSelectUserButton, handleBulkButton, handleOpenActionButton, handleCaseToolButton]);
 }
 async function routeModModal(i) {
   if (!i?.customId?.startsWith('mod_')) return false;
