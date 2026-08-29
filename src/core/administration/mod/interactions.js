@@ -2,6 +2,7 @@
 
 const Discord = require('discord.js');
 const { safeReply } = require('../../../core/ui/interactionResponse');
+const { db } = require('./storage');
 const {
   fetchTarget,
   ensurePanelAccess,
@@ -71,7 +72,11 @@ async function handleConfirmButton(i) {
 }
 async function handleCancelButton(i) {
   if (i.customId !== 'mod_cancel_action') return false;
-  recordModerationSystemEvent({ interaction: i, event: 'moderation.action.cancelled' });
+  let removed = 0;
+  if (i.guild?.id && i.user?.id) {
+    removed = db.prepare('DELETE FROM pending_actions WHERE guild_id = ? AND moderator_id = ?').run(String(i.guild.id), String(i.user.id)).changes;
+  }
+  recordModerationSystemEvent({ interaction: i, event: 'moderation.action.cancelled', metadata: { pendingActionsRemoved: removed } });
   if (i.message && typeof i.update === 'function') { await i.update({ content: '❌ Cancelled.', embeds: [], components: [] }); return true; }
   return safeReply(i, { content: '❌ Cancelled.', flags: 64 });
 }
@@ -87,9 +92,9 @@ async function handleActionModal(i) {
   const id = String(i.customId || ''); const targetId = getTargetIdFromCustomId(id);
   if (id.startsWith('mod_submit_warn:')) {
     const result = await submitWarningModal(i, targetId, refreshCasesDashboard);
-    if (result?.ok === false) auditFailure(i, 'moderation.action.failed', 'warn', targetId, result.error?.message || result.error || 'Warning submission failed.');
-    else trackPresetSubmission(i);
-    return result;
+    if (result?.ok) trackPresetSubmission(i);
+    else auditFailure(i, 'moderation.action.failed', 'warn', targetId, result?.error?.message || result?.error || 'Warning submission failed.');
+    return result || true;
   }
   if (id.startsWith('mod_submit_remove_warning:')) return submitRemoveWarningRequest(i, targetId, createConfirmation);
   const action = getPunishmentSubmitAction(id); if (!action) return false;
