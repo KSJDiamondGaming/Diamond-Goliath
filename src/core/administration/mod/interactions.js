@@ -14,6 +14,7 @@ const {
   handleSelectUserButton,
   handlePresetInteraction,
   handlePresetModal,
+  handleExportInteraction,
   presetIdFromSubmission,
   markPresetUsed,
 } = require('./panel');
@@ -53,9 +54,9 @@ async function routeButtonsAndSelects(i) {
   if (i.isUserSelectMenu?.()) return handleUserSelectMenu(i);
   if (i.isStringSelectMenu?.()) return routeHandlers(i, [handlePresetInteraction, handleCaseSearchSelect, handleActionSelectMenu]);
   if (!i.isButton?.()) return false;
-  return routeHandlers(i, [handlePresetInteraction, handleConfirmButton, value => handleCaseAction(value, { fetchTarget, createConfirmation }), handleDashboardNavigation, handleCancelButton, handleSelectUserButton, handleBulkButton, handleOpenActionButton, handleCaseToolButton]);
+  return routeHandlers(i, [handleExportInteraction, handlePresetInteraction, handleConfirmButton, value => handleCaseAction(value, { fetchTarget, createConfirmation }), handleDashboardNavigation, handleCancelButton, handleSelectUserButton, handleBulkButton, handleOpenActionButton, handleCaseToolButton]);
 }
-async function routeModModal(i) { if (!i?.customId?.startsWith('mod_')) return false; const denied = ensurePanelAccess(i); if (denied) return denied; await syncExpiredWarningsToCases(i.guild.id); return routeHandlers(i, [handlePresetModal, handleCaseSearchModal, value => submitCaseModal(value, { fetchTarget, refreshCasesDashboard }), handleBulkModal, handleActionModal]); }
+async function routeModModal(i) { if (!i?.customId?.startsWith('mod_')) return false; const denied = ensurePanelAccess(i); if (denied) return denied; await syncExpiredWarningsToCases(i.guild.id); return routeHandlers(i, [handleExportInteraction, handlePresetModal, handleCaseSearchModal, value => submitCaseModal(value, { fetchTarget, refreshCasesDashboard }), handleBulkModal, handleActionModal]); }
 async function handleModInteraction(i) {
   if (!i?.customId || !isModCustomId(i.customId)) return false;
   if (i.customId.startsWith('nav|')) return false;
