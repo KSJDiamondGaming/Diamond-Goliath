@@ -4,6 +4,7 @@ const crypto = require('node:crypto');
 const Discord = require('discord.js');
 const {
   ActionRowBuilder,
+  AttachmentBuilder,
   ButtonBuilder,
   ButtonStyle,
   ModalBuilder,
@@ -51,6 +52,12 @@ const DEFAULT_CASES_CONTEXT = Object.freeze({ view: 'cases', actionFilter: 'all'
 const DEFAULT_ANALYTICS_CONTEXT = Object.freeze({ view: 'analytics', analyticsWindow: '30d', analyticsMode: 'overview', analyticsModeratorId: null });
 const PRESET_ACTIONS = new Set(['warn', 'timeout', 'kick', 'ban']);
 const MAX_PRESETS = 20;
+const EXPORT_SCOPES = new Set(['all', 'user', 'moderator', 'case']);
+const EXPORT_FORMATS = new Set(['json', 'csv']);
+const EXPORT_INCLUDE_KEYS = new Set(['core', 'metadata', 'appeals', 'evidence', 'audit']);
+const MAX_EXPORT_CASES = 10000;
+const MAX_EXPORT_FILE_BYTES = 7 * 1024 * 1024;
+const MAX_EXPORT_ATTACHMENTS = 10;
 
 function canOpenModPanel(interaction) { return Boolean(interaction?.guild && interaction?.member && hasModPermission(interaction.member)); }
 function noAccessPayload() { return { content: '❌ You do not have permission to use the moderation panel.', flags: 64 }; }
@@ -263,12 +270,12 @@ function buildPresetEditorModal(preset = null, targetId = 'none') {
 }
 function buildPresetExecutionModal(preset, targetId) {
   const suffix = `:preset:${preset.id}`;
-  if (preset.action === 'warn') return new ModalBuilder().setCustomId(`mod_submit_warn:${targetId}${suffix}`).setTitle(`Warn • ${preset.name}`).addComponents(
+  if (preset.action === 'warn') return new ModalBuilder().setCustomId(`mod_submit_warn:${targetId}${suffix}`).setTitle(`Warn • ${preset.name}`.slice(0, 45)).addComponents(
     new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('strike_weight').setLabel('Strike weight (1-5)').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(1).setValue(String(preset.strikeWeight))),
     new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('warn_expiry').setLabel('Warn expiry (7d, 2w, 1m, or never)').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(10).setValue(preset.warnExpiry)),
     new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('reason').setLabel('Reason').setStyle(TextInputStyle.Paragraph).setRequired(true).setMaxLength(500).setValue(preset.reason))
   );
-  const modal = new ModalBuilder().setCustomId(`mod_submit_${preset.action}:${targetId}${suffix}`).setTitle(`${preset.action[0].toUpperCase()}${preset.action.slice(1)} • ${preset.name}`);
+  const modal = new ModalBuilder().setCustomId(`mod_submit_${preset.action}:${targetId}${suffix}`).setTitle(`${preset.action[0].toUpperCase()}${preset.action.slice(1)} • ${preset.name}`.slice(0, 45));
   const rows = [];
   if (preset.action === 'ban') rows.push(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('days').setLabel('Delete message days (0-7)').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(1).setValue(String(preset.deleteDays))));
   if (preset.action === 'timeout') rows.push(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('duration').setLabel('Duration (10m, 1h, 1d)').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(10).setValue(preset.duration)));
@@ -276,6 +283,194 @@ function buildPresetExecutionModal(preset, targetId) {
   return modal.addComponents(...rows);
 }
 function presetIdFromSubmission(customId) { const match = String(customId || '').match(/:preset:([a-f0-9]{6,24})$/i); return match ? match[1] : null; }
+
+function parseJsonValue(value) {
+  if (value === null || value === undefined || value === '') return null;
+  try { return JSON.parse(value); } catch { return value; }
+}
+function normalizeExportInclude(raw) {
+  const tokens = String(raw || 'all').toLowerCase().split(/[\s,;]+/).map((value) => value.trim()).filter(Boolean);
+  if (!tokens.length || tokens.includes('all')) return new Set(EXPORT_INCLUDE_KEYS);
+  const invalid = tokens.filter((value) => !EXPORT_INCLUDE_KEYS.has(value));
+  if (invalid.length) return { error: `Unknown include option: ${invalid.join(', ')}` };
+  const include = new Set(tokens);
+  include.add('core');
+  return include;
+}
+function parseExportDate(raw, endOfDay = false) {
+  const value = String(raw || '').trim();
+  if (!value) return null;
+  const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(value);
+  const parsed = new Date(dateOnly && endOfDay ? `${value}T23:59:59.999Z` : dateOnly ? `${value}T00:00:00.000Z` : value);
+  return Number.isFinite(parsed.getTime()) ? parsed.getTime() : NaN;
+}
+function parseExportFilters(raw) {
+  const filters = {};
+  const pattern = /(action|status|from|to):("[^"]*"|'[^']*'|\S+)/gi;
+  let match;
+  while ((match = pattern.exec(String(raw || '')))) {
+    const key = match[1].toLowerCase();
+    const value = String(match[2] || '').replace(/^("|')|("|')$/g, '').trim();
+    if (value) filters[key] = value;
+  }
+  if (filters.from) { filters.fromMs = parseExportDate(filters.from, false); if (!Number.isFinite(filters.fromMs)) return { error: 'Export `from` date is invalid.' }; }
+  if (filters.to) { filters.toMs = parseExportDate(filters.to, true); if (!Number.isFinite(filters.toMs)) return { error: 'Export `to` date is invalid.' }; }
+  if (filters.fromMs && filters.toMs && filters.fromMs > filters.toMs) return { error: '`from` date must be before `to` date.' };
+  return { filters };
+}
+function buildExportModal(targetId = 'none') {
+  const hasTarget = targetId && targetId !== 'none';
+  return new ModalBuilder().setCustomId(`mod_export_submit:${targetId || 'none'}`).setTitle('Export Moderation Data').addComponents(
+    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('scope').setLabel('Scope: all / user / moderator / case').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(12).setValue(hasTarget ? 'user' : 'all')),
+    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('reference').setLabel('User / moderator / case ID').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(20).setValue(hasTarget ? targetId : '')),
+    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('filters').setLabel('Optional filters').setStyle(TextInputStyle.Paragraph).setRequired(false).setMaxLength(500).setPlaceholder('action:warn status:active from:2026-08-01 to:2026-08-29')),
+    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('format').setLabel('Format: json / csv').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(4).setValue('json')),
+    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('include').setLabel('Include: all or comma-separated sections').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(60).setPlaceholder('core,metadata,appeals,evidence,audit').setValue('all'))
+  );
+}
+function parseExportRequest(interaction) {
+  const scope = String(interaction.fields.getTextInputValue('scope') || '').trim().toLowerCase();
+  const reference = String(interaction.fields.getTextInputValue('reference') || '').trim();
+  const format = String(interaction.fields.getTextInputValue('format') || '').trim().toLowerCase();
+  if (!EXPORT_SCOPES.has(scope)) return { error: 'Scope must be `all`, `user`, `moderator`, or `case`.' };
+  if (!EXPORT_FORMATS.has(format)) return { error: 'Format must be `json` or `csv`.' };
+  if (scope === 'case' && !/^\d{1,12}$/.test(reference)) return { error: 'Case scope requires a numeric Case ID.' };
+  if ((scope === 'user' || scope === 'moderator') && !/^\d{16,20}$/.test(reference)) return { error: `${scope} scope requires a valid Discord ID.` };
+  const parsedFilters = parseExportFilters(interaction.fields.getTextInputValue('filters'));
+  if (parsedFilters.error) return parsedFilters;
+  const include = normalizeExportInclude(interaction.fields.getTextInputValue('include'));
+  if (include?.error) return include;
+  return { scope, reference, format, filters: parsedFilters.filters, include };
+}
+function selectExportCases(guildId, request) {
+  let cases = getAllCases(guildId) || [];
+  if (request.scope === 'user') cases = cases.filter((entry) => String(entry.userId) === request.reference);
+  if (request.scope === 'moderator') cases = cases.filter((entry) => String(entry.moderatorId) === request.reference);
+  if (request.scope === 'case') cases = cases.filter((entry) => Number(entry.caseId) === Number(request.reference));
+  if (request.filters.action) cases = cases.filter((entry) => String(entry.action || '').toLowerCase() === request.filters.action.toLowerCase());
+  if (request.filters.status) cases = cases.filter((entry) => String(entry.status || 'active').toLowerCase() === request.filters.status.toLowerCase());
+  if (request.filters.fromMs) cases = cases.filter((entry) => getCaseTime(entry) >= request.filters.fromMs);
+  if (request.filters.toMs) cases = cases.filter((entry) => getCaseTime(entry) <= request.filters.toMs);
+  return cases.sort((a, b) => Number(a.caseId) - Number(b.caseId));
+}
+function exportAuditMap(guildId, caseIds) {
+  const wanted = new Set(caseIds.map(Number));
+  const map = new Map();
+  if (!wanted.size) return map;
+  try {
+    const rows = db.prepare('SELECT * FROM case_audit WHERE guild_id = ? ORDER BY audit_id ASC').all(String(guildId));
+    for (const row of rows) {
+      if (!wanted.has(Number(row.case_id))) continue;
+      const value = {
+        auditId: row.audit_id,
+        actorId: row.actor_id || null,
+        event: row.event,
+        before: parseJsonValue(row.before_value),
+        after: parseJsonValue(row.after_value),
+        metadata: parseJsonValue(row.metadata) || {},
+        createdAt: row.created_at,
+      };
+      if (!map.has(Number(row.case_id))) map.set(Number(row.case_id), []);
+      map.get(Number(row.case_id)).push(value);
+    }
+  } catch (error) { console.error('❌ Moderation export audit query failed:', error); }
+  return map;
+}
+function buildExportRecords(guildId, cases, include) {
+  const auditMap = include.has('audit') ? exportAuditMap(guildId, cases.map((entry) => entry.caseId)) : new Map();
+  return cases.map((entry) => {
+    const record = {
+      caseId: entry.caseId,
+      guildId: entry.guildId,
+      userId: entry.userId,
+      moderatorId: entry.moderatorId,
+      action: entry.action,
+      reason: entry.reason,
+      status: entry.status || 'active',
+      relatedCaseId: entry.relatedCaseId || null,
+      note: entry.note || null,
+      createdAt: entry.createdAt,
+      updatedAt: entry.updatedAt || null,
+    };
+    if (include.has('metadata')) record.metadata = entry.metadata || {};
+    if (include.has('appeals')) record.appeals = getCaseAppeals(entry);
+    if (include.has('evidence')) record.evidence = Array.isArray(entry?.metadata?.evidence) ? entry.metadata.evidence : [];
+    if (include.has('audit')) record.audit = auditMap.get(Number(entry.caseId)) || [];
+    return record;
+  });
+}
+function csvEscape(value) {
+  if (value === null || value === undefined) return '';
+  const text = typeof value === 'string' ? value : JSON.stringify(value);
+  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+function exportCsvRows(records, include) {
+  const columns = ['caseId', 'guildId', 'userId', 'moderatorId', 'action', 'status', 'reason', 'relatedCaseId', 'note', 'createdAt', 'updatedAt'];
+  if (include.has('metadata')) columns.push('metadata');
+  if (include.has('appeals')) columns.push('appeals');
+  if (include.has('evidence')) columns.push('evidence');
+  if (include.has('audit')) columns.push('audit');
+  const header = columns.join(',');
+  return { header, rows: records.map((record) => columns.map((column) => csvEscape(record[column])).join(',')) };
+}
+function safeExportName(guildId, format, part, total) {
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  return `goliath-mod-export-${guildId}-${stamp}${total > 1 ? `-part-${part}` : ''}.${format}`;
+}
+function makeExportAttachments(guildId, format, records, include, request) {
+  const chunks = [];
+  if (format === 'csv') {
+    const { header, rows } = exportCsvRows(records, include);
+    let current = `${header}\n`;
+    for (const row of rows) {
+      const next = `${row}\n`;
+      if (Buffer.byteLength(next, 'utf8') > MAX_EXPORT_FILE_BYTES) return { error: 'A single export row exceeds the attachment size limit. Narrow the export scope.' };
+      if (Buffer.byteLength(current + next, 'utf8') > MAX_EXPORT_FILE_BYTES && current !== `${header}\n`) { chunks.push(current); current = `${header}\n${next}`; }
+      else current += next;
+    }
+    chunks.push(current);
+  } else {
+    const header = { version: 1, generatedAt: new Date().toISOString(), guildId: String(guildId), request: { scope: request.scope, reference: request.reference || null, filters: request.filters, include: [...include] } };
+    let currentRecords = [];
+    for (const record of records) {
+      const candidate = JSON.stringify({ ...header, records: [...currentRecords, record] }, null, 2);
+      if (Buffer.byteLength(JSON.stringify(record), 'utf8') > MAX_EXPORT_FILE_BYTES) return { error: 'A single case record exceeds the attachment size limit. Exclude audit/evidence or narrow the export.' };
+      if (Buffer.byteLength(candidate, 'utf8') > MAX_EXPORT_FILE_BYTES && currentRecords.length) {
+        chunks.push(JSON.stringify({ ...header, records: currentRecords }, null, 2));
+        currentRecords = [record];
+      } else currentRecords.push(record);
+    }
+    chunks.push(JSON.stringify({ ...header, records: currentRecords }, null, 2));
+  }
+  if (chunks.length > MAX_EXPORT_ATTACHMENTS) return { error: `Export requires ${chunks.length} attachments. Narrow the scope or exclude audit/evidence (maximum ${MAX_EXPORT_ATTACHMENTS}).` };
+  return { attachments: chunks.map((content, index) => new AttachmentBuilder(Buffer.from(content, 'utf8'), { name: safeExportName(guildId, format, index + 1, chunks.length) })) };
+}
+async function handleExportInteraction(interaction) {
+  const id = String(interaction.customId || '');
+  if (interaction.isButton?.() && id.startsWith('mod_export_cases:')) {
+    if (!canUseModAction(interaction.member, interaction.guild, 'export_cases')) return safeReply(interaction, ephemeralError('No permission to export moderation data.'));
+    const [, targetId = 'none'] = id.split(':');
+    await interaction.showModal(buildExportModal(targetId));
+    return true;
+  }
+  if (interaction.isModalSubmit?.() && id.startsWith('mod_export_submit:')) {
+    if (!canUseModAction(interaction.member, interaction.guild, 'export_cases')) return safeReply(interaction, ephemeralError('No permission to export moderation data.'));
+    const request = parseExportRequest(interaction);
+    if (request.error) return safeReply(interaction, ephemeralError(request.error));
+    const cases = selectExportCases(interaction.guild.id, request);
+    if (!cases.length) return safeReply(interaction, ephemeralError('No moderation cases matched the export request.'));
+    if (cases.length > MAX_EXPORT_CASES) return safeReply(interaction, ephemeralError(`Export matched ${cases.length} cases. Narrow the scope to ${MAX_EXPORT_CASES} cases or fewer.`));
+    const records = buildExportRecords(interaction.guild.id, cases, request.include);
+    const generated = makeExportAttachments(interaction.guild.id, request.format, records, request.include, request);
+    if (generated.error) return safeReply(interaction, ephemeralError(generated.error));
+    return safeReply(interaction, {
+      content: `📤 Export ready • **${records.length}** case${records.length === 1 ? '' : 's'} • **${request.format.toUpperCase()}** • ${generated.attachments.length} attachment${generated.attachments.length === 1 ? '' : 's'}\nGenerated in memory only; no export file was persisted by Goliath.`,
+      files: generated.attachments,
+      flags: 64,
+    });
+  }
+  return false;
+}
 
 function buildDashboardNav(targetId, activeView = DEFAULT_VIEW) {
   const items = [['overview', 'Overview'], ['actions', 'Actions'], ['cases', 'Cases'], ['tools', 'Tools'], ['analytics', 'Analytics']];
@@ -292,13 +487,22 @@ function buildActionsRows(targetId, member, guild) {
   ), new ActionRowBuilder().addComponents(createSecondaryButton(`mod_remove_warning:${id}`, 'Remove Warning', getEmoji('DELETE', '🗑️'), !targetId || !permissions.removeWarning), createSecondaryButton(`mod_remove_timeout:${id}`, 'Remove Timeout', getEmoji('SUCCESS', '✅'), !targetId || !permissions.removeTimeout), createSuccessButton(`mod_refresh:${id}:overview`, 'Refresh', getEmoji('REFRESH', '🔄')))];
 }
 function buildToolsRows(targetId, member, guild) {
-  const id = targetId || 'none'; const permissions = { viewCaseDetail: canUseModAction(member, guild, 'view_case_detail'), editCase: canUseModAction(member, guild, 'edit_case'), bulkWarn: canUseModAction(member, guild, 'bulk_warn'), bulkTimeout: canUseModAction(member, guild, 'bulk_timeout'), bulkKick: canUseModAction(member, guild, 'bulk_kick'), bulkBan: canUseModAction(member, guild, 'bulk_ban'), searchCases: canUseModAction(member, guild, 'view_case_detail') };
-  return [buildUserSelectRow(), new ActionRowBuilder().addComponents(createPrimaryButton('mod_select_user', 'Select User', getEmoji('USER', '👤')), createSecondaryButton(`mod_case_detail:${id}`, 'Case Detail', getEmoji('SEARCH', '🔎'), !targetId || !permissions.viewCaseDetail), createSecondaryButton(`mod_edit_case:${id}`, 'Edit Case', getEmoji('EDIT', '✏️'), !targetId || !permissions.editCase), createSecondaryButton(`mod_presets:${id}`, 'Presets', '📋')), new ActionRowBuilder().addComponents(createSecondaryButton('mod_case_search', 'Search Cases', getEmoji('SEARCH', '🔎'), !permissions.searchCases), createSecondaryButton('mod_bulk_warn', 'Bulk Warn', getEmoji('WARNING', '⚠️'), !permissions.bulkWarn), createSecondaryButton('mod_bulk_timeout', 'Bulk Timeout', getEmoji('TIMEOUT', '⏳'), !permissions.bulkTimeout), createSecondaryButton('mod_bulk_kick', 'Bulk Kick', getEmoji('KICK', '👢'), !permissions.bulkKick)), new ActionRowBuilder().addComponents(createDangerButton('mod_bulk_ban', 'Bulk Ban', getEmoji('BAN', '🔨'), !permissions.bulkBan))];
+  const id = targetId || 'none';
+  const permissions = {
+    viewCaseDetail: canUseModAction(member, guild, 'view_case_detail'), editCase: canUseModAction(member, guild, 'edit_case'), exportCases: canUseModAction(member, guild, 'export_cases'),
+    bulkWarn: canUseModAction(member, guild, 'bulk_warn'), bulkTimeout: canUseModAction(member, guild, 'bulk_timeout'), bulkKick: canUseModAction(member, guild, 'bulk_kick'), bulkBan: canUseModAction(member, guild, 'bulk_ban'), searchCases: canUseModAction(member, guild, 'view_case_detail'),
+  };
+  return [
+    buildUserSelectRow(),
+    new ActionRowBuilder().addComponents(createPrimaryButton('mod_select_user', 'Select User', getEmoji('USER', '👤')), createSecondaryButton(`mod_case_detail:${id}`, 'Case Detail', getEmoji('SEARCH', '🔎'), !targetId || !permissions.viewCaseDetail), createSecondaryButton(`mod_edit_case:${id}`, 'Edit Case', getEmoji('EDIT', '✏️'), !targetId || !permissions.editCase), createSecondaryButton(`mod_presets:${id}`, 'Presets', '📋')),
+    new ActionRowBuilder().addComponents(createSecondaryButton('mod_case_search', 'Search Cases', getEmoji('SEARCH', '🔎'), !permissions.searchCases), createSecondaryButton('mod_bulk_warn', 'Bulk Warn', getEmoji('WARNING', '⚠️'), !permissions.bulkWarn), createSecondaryButton('mod_bulk_timeout', 'Bulk Timeout', getEmoji('TIMEOUT', '⏳'), !permissions.bulkTimeout), createSecondaryButton('mod_bulk_kick', 'Bulk Kick', getEmoji('KICK', '👢'), !permissions.bulkKick)),
+    new ActionRowBuilder().addComponents(createDangerButton('mod_bulk_ban', 'Bulk Ban', getEmoji('BAN', '🔨'), !permissions.bulkBan), createSecondaryButton(`mod_export_cases:${id}`, 'Export', '📤', !permissions.exportCases)),
+  ];
 }
 function buildOverviewEmbed(guild, moderator, target, stats = {}, staffDisplay = null) { return createEmbed({ title: 'Moderation Command Centre', description: target ? `Target: ${target.user}` : 'No target selected.', color: COLORS.PRIMARY, fields: [{ name: 'Staff', value: staffDisplay || String(moderator || 'Unknown'), inline: false }, { name: 'Warnings', value: String(stats.warningCount ?? 0), inline: true }, { name: 'Cases', value: String(stats.caseCount ?? 0), inline: true }, { name: 'Latest Case', value: stats.lastCaseSummary || 'No cases found.', inline: false }] }); }
 function buildActionsEmbed(interaction, target) { return baseEmbed(interaction.client, COLORS.PRIMARY).setTitle('`🔐` Moderation Actions').setDescription(target ? [`\`👤\` **Target:** ${target.user}`, `\`🆔\` **User ID:** \`${target.id}\``, `\`🏷️\` **User Tag:** \`${target.user.tag}\``, '', '`⚡` Choose a moderation action below.'].join('\n') : ['`⚠️` **No user selected**', '', 'Use the user selector below to choose any member in this server.'].join('\n')); }
 function buildCasesEmbed(target, cases = [], page = 0, totalPages = 1, actionFilter = 'all', statusFilter = 'all') { const description = cases.length ? cases.map((entry) => `#${entry.caseId} - ${entry.action} - ${getStatusLabel(entry)}\nReason: ${entry.reason || 'No reason provided'}`).join('\n\n') : 'No cases found for this user.'; return createEmbed({ title: target?.user?.tag ? `Cases - ${target.user.tag}` : 'Cases', description, color: COLORS.PRIMARY, footer: `Action: ${actionFilter} | Status: ${statusFilter} | Page ${page + 1} of ${totalPages}` }); }
-function buildToolsEmbed(interaction) { return baseEmbed(interaction.client, COLORS.PRIMARY).setTitle('`🧰` Moderation Tools').setDescription(['`⚙️` Utility actions, presets and bulk moderation controls.', '', '`📋` Presets save reusable reasons and action settings without bypassing normal safeguards.', '`👤` Select a user to inspect cases or apply presets.', '`🔎` Search the full moderation case history.', '`📦` Bulk tools remain permission-gated.'].join('\n')); }
+function buildToolsEmbed(interaction) { return baseEmbed(interaction.client, COLORS.PRIMARY).setTitle('`🧰` Moderation Tools').setDescription(['`⚙️` Utility actions, presets, exports and bulk moderation controls.', '', '`📋` Presets save reusable reasons and action settings without bypassing normal safeguards.', '`📤` Export filtered moderation history as JSON or CSV without persisting export files.', '`👤` Select a user to inspect cases or apply presets.', '`🔎` Search the full moderation case history.', '`📦` Bulk tools remain permission-gated.'].join('\n')); }
 function buildAnalyticsOverviewEmbed(guild, analytics) {
   const trend = analytics.trend.map((entry) => `${entry.label}: **${entry.count}**`).join(' • '); const topModerators = analytics.topModerators.length ? analytics.topModerators.map(([id, count], index) => `${index + 1}. <@${id}> — **${count}**`).join('\n') : 'No moderator activity.'; const topUsers = analytics.topUsers.length ? analytics.topUsers.map(([id, count], index) => `${index + 1}. <@${id}> — **${count}**`).join('\n') : 'No moderated users.'; const appeal = analytics.appealCounts; const changeText = analytics.change === null ? 'No previous-period baseline' : `${analytics.change >= 0 ? '+' : ''}${analytics.change}% vs previous period`;
   return createEmbed({ title: `📊 Moderation Analytics • ${analytics.windowLabel}`, description: `Stats for **${guild?.name || 'this server'}**\n${changeText}`, color: COLORS.PRIMARY, fields: [
@@ -376,6 +580,6 @@ async function openModPanel(interaction, options = {}) { if (!canOpenModPanel(in
 
 module.exports = {
   openModPanel, refreshDashboard, refreshCasesDashboard, handleDashboardNavigation, handleUserSelectMenu, handleSelectUserButton,
-  handlePresetInteraction, handlePresetModal, presetIdFromSubmission, markPresetUsed,
+  handlePresetInteraction, handlePresetModal, handleExportInteraction, presetIdFromSubmission, markPresetUsed,
   getModerationAnalytics, getModeratorAnalytics, getModerationPresets, getModerationPreset,
 };
