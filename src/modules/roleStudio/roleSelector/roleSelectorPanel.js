@@ -88,6 +88,12 @@ async function resolveMemberPayload(guild, payload = {}) {
     components: await resolveComponentShortcodes(guild, payload.components || []),
   };
 }
+async function freshMember(interaction) {
+  return interaction.guild.members.fetch(interaction.user.id).catch(() => interaction.member);
+}
+async function freshMemberGroupPayload(interaction, groupId) {
+  return resolveMemberPayload(interaction.guild, memberGroupPayload(interaction.guild, await freshMember(interaction), groupId));
+}
 function customGroups(guildId) { return roleSelector.listGroups(guildId).filter((group) => !group.builtIn); }
 function customGroupSelect(guildId, selectedId = null, customId = 'admin:roleSelector:groupSelect') {
   const groups = customGroups(guildId).slice(0, 25);
@@ -97,6 +103,18 @@ function customGroupSelect(guildId, selectedId = null, customId = 'admin:roleSel
     label: `${group.emoji || '🏷️'} ${group.name}`.slice(0, 100),
     value: group.id,
     description: `${group.selectionMode === 'multiple' ? 'Multiple choices' : 'Single choice'} · ${group.options?.length || 0} options`.slice(0, 100),
+    default: group.id === selectedId,
+  })));
+  return row(menu);
+}
+function memberCategorySelect(guild, selectedId = null, customId = 'roleSelector:switchGroup') {
+  const groups = roleSelector.listGroups(guild.id).filter(roleSelector.isGroupMemberUsable).slice(0, 25);
+  const menu = new StringSelectMenuBuilder().setCustomId(customId).setPlaceholder('Choose a category').setMinValues(1).setMaxValues(1);
+  if (!groups.length) return row(menu.setDisabled(true).addOptions({ label: 'No selectors available', value: '__none__' }));
+  menu.addOptions(groups.map((group) => ({
+    label: `${group.emoji || '🏷️'} ${group.name}`.slice(0, 100),
+    value: group.id,
+    description: (group.description || (group.selectionMode === 'multiple' ? 'Choose one or more' : 'Choose one')).slice(0, 100),
     default: group.id === selectedId,
   })));
   return row(menu);
@@ -113,13 +131,9 @@ function memberDisabledPayload() {
 }
 function memberLauncherPayload(guild) {
   if (!guildManager.isModuleEnabled(guild.id, roleSelector.MODULE)) return memberDisabledPayload();
-  const groups = roleSelector.listGroups(guild.id).filter(roleSelector.isGroupMemberUsable).slice(0, 25);
-  const menu = new StringSelectMenuBuilder().setCustomId('roleSelector:openGroup').setPlaceholder('Choose a category').setMinValues(1).setMaxValues(1);
-  if (groups.length) menu.addOptions(groups.map((group) => ({ label: `${group.emoji || '🏷️'} ${group.name}`.slice(0, 100), value: group.id, description: (group.description || (group.selectionMode === 'multiple' ? 'Choose one or more' : 'Choose one')).slice(0, 100) })));
-  else menu.setDisabled(true).addOptions({ label: 'No selectors available', value: '__none__' });
   return {
     embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('🎭 Choose Your Roles').setDescription('Choose a category below. Each category manages only its own roles, so changing one selection never removes roles from another category.')],
-    components: [row(menu)],
+    components: [memberCategorySelect(guild, null, 'roleSelector:openGroup')],
   };
 }
 function memberGroupPayload(guild, member, groupId) {
@@ -127,9 +141,12 @@ function memberGroupPayload(guild, member, groupId) {
   const group = roleSelector.getGroup(guild.id, groupId);
   if (!group || !roleSelector.isGroupMemberUsable(group)) throw new Error('That selector is unavailable.');
   const embed = new EmbedBuilder().setColor(0x5865F2).setTitle(`${group.emoji || '🏷️'} ${group.name}`).setDescription([group.description || 'Choose your role.', group.selectionMode === 'multiple' ? 'Select every option that applies.' : 'Select one option.', group.allowRemove ? 'You may clear this category at any time.' : null].filter(Boolean).join('\n'));
-  const components = [];
+  const components = [memberCategorySelect(guild, group.id)];
   if (group.type === 'colour') {
-    const options = group.palette.filter((item) => item.enabled).sort((a, b) => a.order - b.order).slice(0, 24).map((item) => ({ label: item.label, value: item.hex, emoji: item.emoji || undefined, description: `${item.hex} · ${item.family}`.slice(0, 100) }));
+    const options = group.palette.filter((item) => item.enabled).sort((a, b) => a.order - b.order).slice(0, 24).map((item) => {
+      const managedRoleId = group.managedRoles?.[item.hex]?.roleId;
+      return { label: item.label, value: item.hex, emoji: item.emoji || undefined, description: `${item.hex} · ${item.family}`.slice(0, 100), default: Boolean(managedRoleId && member?.roles?.cache?.has(managedRoleId)) };
+    });
     if (options.length) components.push(row(new StringSelectMenuBuilder().setCustomId('roleSelector:colourChoose').setPlaceholder('Choose a colour').setMinValues(1).setMaxValues(1).addOptions(options)));
     components.push(row(group.customHexEnabled ? button('roleSelector:customHex', '🎨 Pick Your Own', ButtonStyle.Primary) : null, group.allowRemove ? button('roleSelector:clear:colours', '🧹 Clear Selection') : null));
   } else {
@@ -345,12 +362,36 @@ async function handleRoleSelectorInteraction(interaction) {
     }
 
     if (id.startsWith('roleSelector:')) roleSelector.assertModuleEnabled(interaction.guildId);
-    if (id === 'roleSelector:openGroup') { if (interaction.values?.[0] === '__none__') return interaction.reply({ content: 'No selector groups are available.', flags: 64 }); return interaction.reply({ ...(await resolveMemberPayload(interaction.guild, memberGroupPayload(interaction.guild, interaction.member, interaction.values[0]))), flags: 64 }); }
-    if (id === 'roleSelector:colourChoose') { await roleSelector.applyColourSelection(interaction.guild, interaction.member, interaction.values[0]); return interaction.reply({ content: '✅ Your colour has been updated.', flags: 64 }); }
+    if (id === 'roleSelector:openGroup') {
+      if (interaction.values?.[0] === '__none__') return interaction.reply({ content: 'No selector groups are available.', flags: 64 });
+      return interaction.reply({ ...(await freshMemberGroupPayload(interaction, interaction.values[0])), flags: 64 });
+    }
+    if (id === 'roleSelector:switchGroup') {
+      if (interaction.values?.[0] === '__none__') return interaction.update(memberDisabledPayload());
+      return interaction.update(await freshMemberGroupPayload(interaction, interaction.values[0]));
+    }
+    if (id === 'roleSelector:colourChoose') {
+      await roleSelector.applyColourSelection(interaction.guild, interaction.member, interaction.values[0]);
+      await interaction.update(await freshMemberGroupPayload(interaction, roleSelector.COLOUR_GROUP_ID));
+      await interaction.followUp({ content: '✅ Your colour has been updated.', flags: 64 });
+      return true;
+    }
     if (id === 'roleSelector:customHex') { await interaction.showModal(hexModal()); return true; }
     if (id === 'roleSelector:customHexSubmit') { await roleSelector.applyColourSelection(interaction.guild, interaction.member, interaction.fields.getTextInputValue('hex'), interaction.fields.getTextInputValue('label')); return interaction.reply({ content: '✅ Your custom colour has been applied.', flags: 64 }); }
-    if (id.startsWith('roleSelector:choose:')) { await roleSelector.applyStandardSelection(interaction.guild, interaction.member, id.split(':').slice(2).join(':'), interaction.values || []); return interaction.reply({ content: '✅ Your role selection has been updated.', flags: 64 }); }
-    if (id.startsWith('roleSelector:clear:')) { await roleSelector.clearSelection(interaction.guild, interaction.member, id.split(':').slice(2).join(':')); return interaction.reply({ content: '✅ Your selection has been cleared.', flags: 64 }); }
+    if (id.startsWith('roleSelector:choose:')) {
+      const groupId = id.split(':').slice(2).join(':');
+      await roleSelector.applyStandardSelection(interaction.guild, interaction.member, groupId, interaction.values || []);
+      await interaction.update(await freshMemberGroupPayload(interaction, groupId));
+      await interaction.followUp({ content: '✅ Your role selection has been updated.', flags: 64 });
+      return true;
+    }
+    if (id.startsWith('roleSelector:clear:')) {
+      const groupId = id.split(':').slice(2).join(':');
+      await roleSelector.clearSelection(interaction.guild, interaction.member, groupId);
+      await interaction.update(await freshMemberGroupPayload(interaction, groupId));
+      await interaction.followUp({ content: '✅ Your selection has been cleared.', flags: 64 });
+      return true;
+    }
 
     if (id.startsWith('colourRoles:')) roleSelector.assertModuleEnabled(interaction.guildId);
     if (id === 'colourRoles:choose') { await roleSelector.applyColourSelection(interaction.guild, interaction.member, interaction.values[0]); return interaction.reply({ content: '✅ Your colour has been updated.', flags: 64 }); }
