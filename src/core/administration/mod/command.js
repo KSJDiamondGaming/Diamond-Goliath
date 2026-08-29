@@ -9,6 +9,7 @@ const { errorEmbed } = require('../../ui/embeds');
 const { safeEditReply } = require('../../ui/interactionResponse');
 const { openModPanel } = require('./panel');
 const { openExternalAppealFromCommand } = require('./cases');
+const { recordModerationSystemEvent, getModerationDoctorStatus } = require('./permissions');
 
 const MOD_COMMAND_PERMISSIONS = PermissionFlagsBits.ModerateMembers | PermissionFlagsBits.KickMembers | PermissionFlagsBits.BanMembers;
 
@@ -25,25 +26,35 @@ const command = {
     const appealReference = interaction.options?.getString?.('appeal') || null;
     if (appealReference) {
       try {
-        return openExternalAppealFromCommand(interaction, appealReference);
+        const result = await openExternalAppealFromCommand(interaction, appealReference);
+        recordModerationSystemEvent({ interaction, guildId: interaction.guild?.id || 'dm', event: 'moderation.appeal.command', action: 'appeal', metadata: { handled: Boolean(result), referenceProvided: true } });
+        return result;
       } catch (error) {
         if (error?.code === 10062 || error?.code === 40060) return;
         console.error('❌ Appeal command fallback failed:', error);
+        recordModerationSystemEvent({ interaction, guildId: interaction.guild?.id || 'dm', event: 'moderation.appeal.command.failed', action: 'appeal', reason: error?.message || error, metadata: { stack: String(error?.stack || '').slice(0, 1500) } });
         if (!interaction.deferred && !interaction.replied) return interaction.reply({ content: '❌ Failed to open the appeal form.' }).catch(() => null);
         return safeEditReply(interaction, { content: '❌ Failed to open the appeal form.', embeds: [], components: [] });
       }
     }
     const denied = await enforceCommandAccess(interaction, command);
-    if (denied) return;
+    if (denied) {
+      recordModerationSystemEvent({ interaction, event: 'moderation.command.denied', action: 'view_dashboard', reason: 'Command access policy denied the moderation hub.' });
+      return;
+    }
     try {
       if (!interaction.guild) {
+        recordModerationSystemEvent({ interaction, guildId: 'dm', event: 'moderation.command.invalid_context', action: 'view_dashboard', reason: 'Moderation panel requested outside a guild.' });
         return safeEditReply(interaction, { embeds: [errorEmbed('Use `/mod appeal:SERVER_ID:CASE_ID` in DM to appeal a moderation case. The moderation panel itself can only be used inside a server.')] });
       }
+      const doctor = getModerationDoctorStatus();
+      if (!doctor.ok) recordModerationSystemEvent({ interaction, event: 'moderation.doctor.warning', action: 'view_dashboard', after: doctor });
       if (!interaction.deferred && !interaction.replied) await interaction.deferReply({ flags: 64 });
       return openModPanel(interaction);
     } catch (error) {
       if (error?.code === 10062 || error?.code === 40060) return;
       console.error('❌ Mod command failed:', error);
+      recordModerationSystemEvent({ interaction, event: 'moderation.command.failed', action: 'view_dashboard', reason: error?.message || error, metadata: { stack: String(error?.stack || '').slice(0, 1500) } });
       return safeEditReply(interaction, {
         embeds: [errorEmbed('Failed to open the moderation hub. Please try again.')],
         components: [],
