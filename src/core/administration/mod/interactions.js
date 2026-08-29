@@ -2,7 +2,7 @@
 
 const Discord = require('discord.js');
 const { safeReply } = require('../../../core/ui/interactionResponse');
-const { db } = require('./storage');
+const { db, getCaseById, updateCaseStatus, recordCaseAudit } = require('./storage');
 const {
   fetchTarget,
   ensurePanelAccess,
@@ -73,9 +73,7 @@ async function handleConfirmButton(i) {
 async function handleCancelButton(i) {
   if (i.customId !== 'mod_cancel_action') return false;
   let removed = 0;
-  if (i.guild?.id && i.user?.id) {
-    removed = db.prepare('DELETE FROM pending_actions WHERE guild_id = ? AND moderator_id = ?').run(String(i.guild.id), String(i.user.id)).changes;
-  }
+  if (i.guild?.id && i.user?.id) removed = db.prepare('DELETE FROM pending_actions WHERE guild_id = ? AND moderator_id = ?').run(String(i.guild.id), String(i.user.id)).changes;
   recordModerationSystemEvent({ interaction: i, event: 'moderation.action.cancelled', metadata: { pendingActionsRemoved: removed } });
   if (i.message && typeof i.update === 'function') { await i.update({ content: '❌ Cancelled.', embeds: [], components: [] }); return true; }
   return safeReply(i, { content: '❌ Cancelled.', flags: 64 });
@@ -105,6 +103,33 @@ async function handleActionModal(i) {
   if (action === 'timeout' && result?.ok) await refreshCasesDashboard(i, target);
   return true;
 }
+async function hardenAppealDecisionResult(i, result) {
+  const match = String(i.customId || '').match(/^mod_submit_case_appeal_decision:(\d+):([^:]+):(approved|denied)$/);
+  if (!match || match[3] !== 'approved' || !i.guild?.id) return result;
+  const caseId = Number(match[1]);
+  const appealId = match[2];
+  let modCase = getCaseById(i.guild.id, caseId);
+  if (!modCase) return result;
+  const appeal = Array.isArray(modCase.metadata?.appeals) ? modCase.metadata.appeals.find((entry) => String(entry?.id) === appealId) : null;
+  const remedy = appeal?.remedy || null;
+  if (remedy?.ok === false && modCase.status === 'reversed') {
+    modCase = updateCaseStatus(i.guild.id, caseId, 'active', i.user?.id || null) || modCase;
+    recordCaseAudit({ guildId: i.guild.id, caseId, actorId: i.user?.id || null, event: 'case.appeal.remedy.status_restored', before: 'reversed', after: 'active', metadata: { appealId, remedyAction: remedy.action || null, reason: remedy.detail || 'Approved appeal remedy failed.' } });
+    recordModerationSystemEvent({ interaction: i, event: 'moderation.appeal.remedy.failed', action: remedy.action || modCase.action, targetId: modCase.userId, reason: remedy.detail || 'Approved appeal remedy failed.', metadata: { caseId, appealId, caseStatusRestored: true } });
+  }
+  if (modCase.action === 'warn' && remedy?.ok === true) {
+    const existing = db.prepare('SELECT audit_id FROM case_audit WHERE guild_id = ? AND case_id = ? AND event = ? LIMIT 1').get(String(i.guild.id), caseId, 'case.strike.removed');
+    if (!existing) {
+      const strikeWeight = Math.max(1, Math.min(5, Number(modCase.metadata?.strikeWeight) || 1));
+      recordCaseAudit({ guildId: i.guild.id, caseId, actorId: i.user?.id || null, event: 'case.strike.removed', before: strikeWeight, after: 0, metadata: { strikeWeight, appealId, appealRemedy: true } });
+    }
+  }
+  return result;
+}
+async function handleCaseModal(i) {
+  const result = await submitCaseModal(i, { fetchTarget, refreshCasesDashboard });
+  return hardenAppealDecisionResult(i, result);
+}
 async function routeHandlers(i, handlers) { for (const handler of handlers) { const result = await handler(i); if (result) return result; } return false; }
 async function routeButtonsAndSelects(i) {
   const denied = ensurePanelAccess(i); if (denied) return denied;
@@ -126,7 +151,7 @@ async function routeModModal(i) {
       return result;
     }
   }
-  return routeHandlers(i, [handleExportInteraction, handlePresetModal, handleCaseSearchModal, value => submitCaseModal(value, { fetchTarget, refreshCasesDashboard }), handleBulkModal, handleActionModal]);
+  return routeHandlers(i, [handleExportInteraction, handlePresetModal, handleCaseSearchModal, handleCaseModal, handleBulkModal, handleActionModal]);
 }
 async function handleModInteraction(i) {
   if (!i?.customId || !isModCustomId(i.customId)) return false;
