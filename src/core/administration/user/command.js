@@ -26,6 +26,10 @@ module.exports = {
       .setDescription('Quickly find an emoji from Goliath Core or this server')
       .setAutocomplete(true)
       .setRequired(false))
+    .addBooleanOption((option) => option
+      .setName('emoji_browser')
+      .setDescription('Open your searchable Emoji Studio browser')
+      .setRequired(false))
     .setDMPermission(false),
 
   async autocomplete(interaction) {
@@ -41,6 +45,10 @@ module.exports = {
         return await safeReply(interaction, {
           embeds: [errorEmbed('This command can only be used inside a server.')],
         });
+      }
+
+      if (interaction.options.getBoolean('emoji_browser') === true) {
+        return await safeReply(interaction, await emojisUserPanel.buildPanel(interaction));
       }
 
       const emojiId = interaction.options.getString('emoji');
