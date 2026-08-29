@@ -2,7 +2,7 @@
 
 const { SlashCommandBuilder } = require('discord.js');
 
-const { buildAdminPanel } = require('./panel');
+const adminPanel = require('./panel');
 const socialStudioPanel = require('../../../modules/socialStudio/socialAlerts/socialStudioPanel');
 const { errorEmbed } = require('../../ui/embeds');
 const { safeEditReply } = require('../../ui/interactionResponse');
@@ -42,22 +42,30 @@ const command = {
         interaction.user?.username ||
         'Unknown User';
 
-      const isFullAdmin = security.hasPermission(interaction, 'admin');
+      const isLegacyAdmin = security.hasPermission(interaction, 'admin');
+      const hasConfiguredAdminAccess =
+        adminPanel.hasGuildPermission(interaction, 'admin.dashboard.view');
+      const canManageAuthority = adminPanel.canManageGuildAuthority(interaction);
       const canManageSocial =
         typeof socialStudioPanel.canManageSocialStudio === 'function' &&
         socialStudioPanel.canManageSocialStudio(interaction);
 
-      if (!isFullAdmin && canManageSocial) {
+      if (!isLegacyAdmin && !hasConfiguredAdminAccess && !canManageAuthority && canManageSocial) {
         return safeEditReply(
           interaction,
           socialStudioPanel.buildSocialAdminPanel(interaction.guild, memberDisplayName),
         );
       }
 
-      const denied = await enforceCommandAccess(interaction, command);
-      if (denied) return;
+      if (!isLegacyAdmin && !hasConfiguredAdminAccess && !canManageAuthority) {
+        const denied = await enforceCommandAccess(interaction, command);
+        if (denied) return;
+      }
 
-      return safeEditReply(interaction, buildAdminPanel(interaction.guild, memberDisplayName));
+      return safeEditReply(
+        interaction,
+        adminPanel.buildAdminPanel(interaction.guild, memberDisplayName, interaction),
+      );
     } catch (error) {
       if (error?.code === 10062 || error?.code === 40060) return;
       console.error('❌ Admin command failed:', error);
