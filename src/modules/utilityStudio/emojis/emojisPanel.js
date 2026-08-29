@@ -69,13 +69,13 @@ router.delete('/:guildId/bank/:emojiId', async (req, res) => { try { const id = 
 
 function mainEmbed(overview, interaction, notice = '') {
   return new EmbedBuilder().setColor(overview.enabled ? 0x57F287 : PANEL_COLOR).setTitle('😀 Emoji Studio').setDescription([
-    'Manage the extra emojis available to this server. Goliath\'s built-in emojis are always available and do not use your server selection limit.',
+    'Add extra emojis to this server without using Discord\'s emoji slots. Goliath\'s built-in emojis are always available.',
     '',
     `**Studio:** ${overview.enabled ? 'Enabled ✅' : 'Disabled ❌'}`,
-    `**Your server emojis:** ${overview.guildCapacity.used}/${overview.guildCapacity.max} selected`,
-    `**Shared emoji library:** ${overview.studioCapacity.used} emoji${overview.studioCapacity.used === 1 ? '' : 's'} available`,
-    `**Built-in Goliath emojis:** ${overview.coreCapacity.used}/${overview.coreCapacity.max} ready`,
-    `**System status:** ${overview.health?.healthy ? 'Healthy ✅' : 'Needs attention ⚠️'}`,
+    `**Extra emojis:** ${overview.guildCapacity.used} of ${overview.guildCapacity.max} selected`,
+    `**Shared Library:** ${overview.studioCapacity.used} emoji${overview.studioCapacity.used === 1 ? '' : 's'} available`,
+    `**Built-in emojis:** ${overview.coreCapacity.used} ready`,
+    `**Status:** ${overview.health?.healthy ? 'Everything working ✅' : 'Needs attention ⚠️'}`,
     notice ? `\n${notice}` : '',
   ].filter(Boolean).join('\n')).setFooter({ text: `Requested by ${memberName(interaction)}` }).setTimestamp();
 }
@@ -84,17 +84,32 @@ async function buildDiscordPanel(interaction, notice = '') {
   const overview = await discordOverview(interaction);
   return { embeds: [mainEmbed(overview, interaction, notice)], components: [
     row(
-      button('admin:module:emojis:guild', '⭐ Manage Server Emojis', ButtonStyle.Primary),
+      button('admin:module:emojis:guild', '⭐ Manage Extra Emojis', ButtonStyle.Primary).setDisabled(!overview.enabled),
       button('admin:module:emojis:search-open', '🔎 Find New Emojis', ButtonStyle.Primary).setDisabled(!overview.enabled),
-      button('admin:module:emojis:import-url-open', '🔗 Add from URL', ButtonStyle.Primary).setDisabled(!overview.enabled),
+      button('admin:module:emojis:import-url-open', '🔗 Import from URL', ButtonStyle.Primary).setDisabled(!overview.enabled),
     ),
     row(
       button('admin:module:emojis:bank', '🌐 Shared Emoji Library', ButtonStyle.Secondary),
       button('admin:module:emojis:core', '💠 Built-in Emojis', ButtonStyle.Secondary),
-      button('admin:module:emojis:tools', '🧰 Tools & Health', ButtonStyle.Secondary),
     ),
+    row(
+      button('admin:studio:utilityStudio', '⬅️ Back', ButtonStyle.Secondary),
+      button('admin:module:emojis:settings', '⚙️ Settings', ButtonStyle.Secondary),
+    ),
+  ] };
+}
+
+function settingsPanel(overview, interaction, notice = '') {
+  return { embeds: [new EmbedBuilder().setColor(overview.enabled ? 0x57F287 : PANEL_COLOR).setTitle('⚙️ Emoji Studio Settings').setDescription([
+    'Manage Emoji Studio itself, check its health, and access maintenance tools.',
+    '',
+    `**Emoji Studio:** ${overview.enabled ? 'Enabled ✅' : 'Disabled ❌'}`,
+    `**Status:** ${overview.health?.healthy ? 'Everything working ✅' : 'Needs attention ⚠️'}`,
+    notice ? `\n${notice}` : '',
+  ].filter(Boolean).join('\n')).setFooter({ text: `Requested by ${memberName(interaction)}` }).setTimestamp()], components: [
+    row(button('admin:module:emojis:tools', '🧰 Tools & Health', ButtonStyle.Secondary)),
     row(button('admin:module:emojis:toggle', overview.enabled ? '⏸️ Turn Off Emoji Studio' : '▶️ Turn On Emoji Studio', overview.enabled ? ButtonStyle.Secondary : ButtonStyle.Success)),
-    row(button('admin:studio:utilityStudio', '⬅️ Back to Utility Studio', ButtonStyle.Secondary)),
+    row(button('admin:module:emojis:panel', '⬅️ Back', ButtonStyle.Secondary)),
   ] };
 }
 
@@ -140,11 +155,11 @@ function toolsPanel(overview) {
   const health = overview.health || {};
   return { embeds: [new EmbedBuilder().setColor(health.healthy ? 0x57F287 : 0xFEE75C).setTitle('🧰 Emoji Tools & Health').setDescription([
     `**Overall status:** ${health.healthy ? 'Healthy ✅' : 'Needs attention ⚠️'}`, `**Application space:** ${overview.forecast?.used || 0}/${overview.forecast?.max || 2000} used`, `**Items needing attention:** ${(health.brokenFavourites?.length || 0) + (health.brokenAliases?.length || 0) + (health.brokenPackEntries?.length || 0) + (health.expiredTemporary?.length || 0)}`, '', '**Most used emojis**', ...(top.length ? top.map((entry) => `• \`:${entry.emoji.alias || entry.emoji.name}:\` — ${entry.count} uses`) : ['No usage has been tracked yet.']),
-  ].join('\n'))], components: [row(button('admin:module:emojis:analytics', '📊 Usage', ButtonStyle.Primary), button('admin:module:emojis:health', '🩺 Health Check', ButtonStyle.Secondary), button('admin:module:emojis:cleanup', '🧹 Find Unused', ButtonStyle.Secondary)), row(button('admin:module:emojis:duplicates', '🧬 Find Duplicates', ButtonStyle.Secondary), button('admin:module:emojis:export', '📦 Export Settings', ButtonStyle.Secondary)), row(button('admin:module:emojis:panel', '⬅️ Back to Emoji Studio', ButtonStyle.Secondary))] };
+  ].join('\n'))], components: [row(button('admin:module:emojis:analytics', '📊 Usage', ButtonStyle.Primary), button('admin:module:emojis:health', '🩺 Health Check', ButtonStyle.Secondary), button('admin:module:emojis:cleanup', '🧹 Find Unused', ButtonStyle.Secondary)), row(button('admin:module:emojis:duplicates', '🧬 Find Duplicates', ButtonStyle.Secondary), button('admin:module:emojis:export', '📦 Export Settings', ButtonStyle.Secondary)), row(button('admin:module:emojis:settings', '⬅️ Back', ButtonStyle.Secondary))] };
 }
 
 function searchModal() { return new ModalBuilder().setCustomId('admin:module:emojis:search-submit').setTitle('Find Emojis on Emoji.gg').addComponents(row(new TextInputBuilder().setCustomId('query').setLabel('What are you looking for?').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(80))); }
-function urlImportModal() { return new ModalBuilder().setCustomId('admin:module:emojis:import-url-submit').setTitle('Add Emoji from URL').addComponents(row(new TextInputBuilder().setCustomId('imageUrl').setLabel('Image URL').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(1000)), row(new TextInputBuilder().setCustomId('name').setLabel('Emoji name (optional)').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(32))); }
+function urlImportModal() { return new ModalBuilder().setCustomId('admin:module:emojis:import-url-submit').setTitle('Import Emoji from URL').addComponents(row(new TextInputBuilder().setCustomId('imageUrl').setLabel('Image URL').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(1000)), row(new TextInputBuilder().setCustomId('name').setLabel('Emoji name (optional)').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(32))); }
 function pickerSearchModal() { return new ModalBuilder().setCustomId('admin:module:emojis:picker-search-submit').setTitle('Filter Emojis').addComponents(row(new TextInputBuilder().setCustomId('query').setLabel('Name, alias, tag or category').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(80))); }
 function bulkUploadModal() { const upload = new FileUploadBuilder().setCustomId('files').setMinValues(1).setMaxValues(10).setRequired(true); return new ModalBuilder().setCustomId('admin:module:emojis:bulk-submit').setTitle('Upload Emoji Files').addComponents(new LabelBuilder().setLabel('Emoji files').setDescription('Upload up to 10 images. Names are created from the filenames.').setFileUploadComponent(upload)); }
 
@@ -169,7 +184,8 @@ async function handleDiscordInteraction(interaction) {
   const guildId = interaction.guild?.id;
 
   if (id === 'admin:module:emojis:panel') { await sendPanel(interaction, await buildDiscordPanel(interaction)); return true; }
-  if (id === 'admin:module:emojis:toggle') { const current = emojiStore.getSection(guildId).enabled; guildManager.setModuleEnabled(guildId, 'emojis', !current, { actorId: interaction.user?.id, action: 'emoji_discord_toggle' }); await sendPanel(interaction, await buildDiscordPanel(interaction, `Emoji Studio ${!current ? 'enabled' : 'disabled'}. Built-in emojis remain available.`)); return true; }
+  if (id === 'admin:module:emojis:settings') { await sendPanel(interaction, settingsPanel(await discordOverview(interaction), interaction)); return true; }
+  if (id === 'admin:module:emojis:toggle') { const current = emojiStore.getSection(guildId).enabled; guildManager.setModuleEnabled(guildId, 'emojis', !current, { actorId: interaction.user?.id, action: 'emoji_discord_toggle' }); await sendPanel(interaction, settingsPanel(await discordOverview(interaction), interaction, `Emoji Studio ${!current ? 'enabled' : 'disabled'}. Built-in emojis remain available.`)); return true; }
   if (id === 'admin:module:emojis:core') { await sendPanel(interaction, corePanel(await discordOverview(interaction), interaction)); return true; }
   if (id === 'admin:module:emojis:core-preview') { await sendPanel(interaction, corePreviewPanel(await discordOverview(interaction), interaction)); return true; }
   if (id === 'admin:module:emojis:bank') { await sendPanel(interaction, bankPanel(await discordOverview(interaction), interaction)); return true; }
