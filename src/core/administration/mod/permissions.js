@@ -103,10 +103,14 @@ function runModerationDoctor({ record = true } = {}) {
     checks.expiredPendingPurged = expired;
     checks.pendingActions = db.prepare('SELECT COUNT(*) AS count FROM pending_actions').get().count;
     checks.orphanWarnings = db.prepare('SELECT COUNT(*) AS count FROM warnings w LEFT JOIN cases c ON c.guild_id = w.guild_id AND c.case_id = w.case_id WHERE c.case_id IS NULL').get().count;
+    checks.activeWarningCasesMissingStrike = db.prepare("SELECT COUNT(*) AS count FROM cases c LEFT JOIN warnings w ON w.guild_id = c.guild_id AND w.case_id = c.case_id WHERE c.action = 'warn' AND c.status = 'active' AND w.id IS NULL").get().count;
+    checks.warningRowsOnNonWarningCases = db.prepare("SELECT COUNT(*) AS count FROM warnings w JOIN cases c ON c.guild_id = w.guild_id AND c.case_id = w.case_id WHERE c.action <> 'warn'").get().count;
     checks.invalidStatuses = db.prepare("SELECT COUNT(*) AS count FROM cases WHERE status NOT IN ('active','reversed','expired') OR status IS NULL").get().count;
     checks.systemAuditRows = db.prepare('SELECT COUNT(*) AS count FROM case_audit WHERE case_id = 0').get().count;
     checks.indexCount = db.prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'index' AND tbl_name IN ('cases','warnings','pending_actions','case_audit')").get().count;
     if (checks.orphanWarnings) warnings.push(`${checks.orphanWarnings} warning record(s) reference missing cases`);
+    if (checks.activeWarningCasesMissingStrike) warnings.push(`${checks.activeWarningCasesMissingStrike} active warning case(s) have no strike row`);
+    if (checks.warningRowsOnNonWarningCases) warnings.push(`${checks.warningRowsOnNonWarningCases} warning row(s) reference non-warning cases`);
     if (checks.invalidStatuses) warnings.push(`${checks.invalidStatuses} case(s) use unexpected status values`);
   } catch (error) {
     errors.push(String(error?.message || error));
