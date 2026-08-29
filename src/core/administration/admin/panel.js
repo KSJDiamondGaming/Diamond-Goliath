@@ -474,7 +474,7 @@ function buildAuthorityRolesPanel(guild, tierKey, name = 'Unknown User') {
         label: String(guild.roles?.cache?.get(roleId)?.name || `Role ${roleId}`).slice(0, 100),
         value: roleId,
         description: `${tier.label} role profile`.slice(0, 100),
-      }))));
+      })))));
   }
 
   components.push(row(button(`admin:authority:roles:clear:${tierKey}`, 'Clear Roles', ButtonStyle.Danger), backButton(`admin:authority:roles:${tierKey}`)));
