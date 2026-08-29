@@ -2,41 +2,10 @@ const { PermissionFlagsBits } = require('discord.js');
 const security = require('../../security/protection/core');
 const { safeReply, ephemeralError } = require('../../../core/ui/interactionResponse');
 
-const STAFF_LEVELS = {
-  NONE: 'none',
-  HELPER: 'helper',
-  JUNIOR_MOD: 'junior_mod',
-  MOD: 'mod',
-  ADMIN: 'admin',
-  OWNER: 'owner',
-};
-
-const STAFF_LEVEL_RANKS = {
-  [STAFF_LEVELS.NONE]: 0,
-  [STAFF_LEVELS.HELPER]: 1,
-  [STAFF_LEVELS.JUNIOR_MOD]: 2,
-  [STAFF_LEVELS.MOD]: 3,
-  [STAFF_LEVELS.ADMIN]: 4,
-  [STAFF_LEVELS.OWNER]: 5,
-};
-
-const STAFF_LEVEL_LABELS = {
-  [STAFF_LEVELS.NONE]: 'No Access',
-  [STAFF_LEVELS.HELPER]: 'Helper',
-  [STAFF_LEVELS.JUNIOR_MOD]: 'Junior Mod',
-  [STAFF_LEVELS.MOD]: 'Moderator',
-  [STAFF_LEVELS.ADMIN]: 'Admin',
-  [STAFF_LEVELS.OWNER]: 'Owner',
-};
-
-const STAFF_BADGES = {
-  [STAFF_LEVELS.NONE]: '🚫',
-  [STAFF_LEVELS.HELPER]: '🪪',
-  [STAFF_LEVELS.JUNIOR_MOD]: '🗝️',
-  [STAFF_LEVELS.MOD]: '🔐',
-  [STAFF_LEVELS.ADMIN]: '🔏',
-  [STAFF_LEVELS.OWNER]: '👑',
-};
+const STAFF_LEVELS = { NONE: 'none', HELPER: 'helper', JUNIOR_MOD: 'junior_mod', MOD: 'mod', ADMIN: 'admin', OWNER: 'owner' };
+const STAFF_LEVEL_RANKS = { [STAFF_LEVELS.NONE]: 0, [STAFF_LEVELS.HELPER]: 1, [STAFF_LEVELS.JUNIOR_MOD]: 2, [STAFF_LEVELS.MOD]: 3, [STAFF_LEVELS.ADMIN]: 4, [STAFF_LEVELS.OWNER]: 5 };
+const STAFF_LEVEL_LABELS = { [STAFF_LEVELS.NONE]: 'No Access', [STAFF_LEVELS.HELPER]: 'Helper', [STAFF_LEVELS.JUNIOR_MOD]: 'Junior Mod', [STAFF_LEVELS.MOD]: 'Moderator', [STAFF_LEVELS.ADMIN]: 'Admin', [STAFF_LEVELS.OWNER]: 'Owner' };
+const STAFF_BADGES = { [STAFF_LEVELS.NONE]: '🚫', [STAFF_LEVELS.HELPER]: '🪪', [STAFF_LEVELS.JUNIOR_MOD]: '🗝️', [STAFF_LEVELS.MOD]: '🔐', [STAFF_LEVELS.ADMIN]: '🔏', [STAFF_LEVELS.OWNER]: '👑' };
 
 const ACTION_REQUIREMENTS = {
   view_dashboard: STAFF_LEVELS.JUNIOR_MOD,
@@ -50,6 +19,7 @@ const ACTION_REQUIREMENTS = {
   ban: STAFF_LEVELS.ADMIN,
   remove_warning: STAFF_LEVELS.ADMIN,
   edit_case: STAFF_LEVELS.ADMIN,
+  export_cases: STAFF_LEVELS.ADMIN,
   bulk_warn: STAFF_LEVELS.ADMIN,
   bulk_timeout: STAFF_LEVELS.ADMIN,
   bulk_remove_timeout: STAFF_LEVELS.ADMIN,
@@ -69,17 +39,10 @@ const ACTION_DISCORD_PERMISSIONS = {
   bulk_ban: PermissionFlagsBits.BanMembers,
 };
 
-function getId(memberOrUserId) {
-  return typeof memberOrUserId === 'string' ? memberOrUserId : memberOrUserId?.id;
-}
-function isGuildOwner(memberOrUserId, guildOwnerId) {
-  const id = getId(memberOrUserId);
-  return Boolean(id && guildOwnerId && String(id) === String(guildOwnerId));
-}
+function getId(memberOrUserId) { return typeof memberOrUserId === 'string' ? memberOrUserId : memberOrUserId?.id; }
+function isGuildOwner(memberOrUserId, guildOwnerId) { const id = getId(memberOrUserId); return Boolean(id && guildOwnerId && String(id) === String(guildOwnerId)); }
 function hasPermission(member, permission) { return Boolean(member?.permissions?.has(permission)); }
-function hasModPermission(member) {
-  return security.isBotOwner(getId(member)) || hasPermission(member, PermissionFlagsBits.ModerateMembers) || hasPermission(member, PermissionFlagsBits.KickMembers) || hasPermission(member, PermissionFlagsBits.BanMembers) || hasPermission(member, PermissionFlagsBits.Administrator);
-}
+function hasModPermission(member) { return security.isBotOwner(getId(member)) || hasPermission(member, PermissionFlagsBits.ModerateMembers) || hasPermission(member, PermissionFlagsBits.KickMembers) || hasPermission(member, PermissionFlagsBits.BanMembers) || hasPermission(member, PermissionFlagsBits.Administrator); }
 function getStaffLevel(member, guild) {
   if (!member || !guild) return STAFF_LEVELS.NONE;
   if (security.isBotOwner(getId(member)) || isGuildOwner(member, guild.ownerId)) return STAFF_LEVELS.OWNER;
@@ -110,9 +73,7 @@ function canUseModAction(member, guild, action) {
   const requiredLevel = getRequiredStaffLevel(action);
   return getStaffLevelRank(staffLevel) >= getStaffLevelRank(requiredLevel) && hasNativeActionPermission(member, guild, action);
 }
-function getModActionDeniedMessage(action) {
-  return `❌ You do not have permission to use this action. Required level: ${getStaffLevelLabel(getRequiredStaffLevel(action))}.`;
-}
+function getModActionDeniedMessage(action) { return `❌ You do not have permission to use this action. Required level: ${getStaffLevelLabel(getRequiredStaffLevel(action))}.`; }
 function getHighestRolePosition(member) { return member?.roles?.highest?.position ?? 0; }
 function canActOnTarget(actorMember, targetMember, guildOwnerId) {
   if (!actorMember || !targetMember || isGuildOwner(targetMember, guildOwnerId) || actorMember.id === targetMember.id) return false;
@@ -171,15 +132,4 @@ async function requireModeratableTarget(interaction, targetId, action) {
   return target;
 }
 
-module.exports = {
-  hasModPermission,
-  getStaffDisplay,
-  canUseModAction,
-  getModActionDeniedMessage,
-  checkHierarchy,
-  checkHierarchyForBulk,
-  fetchTarget,
-  ensurePanelAccess,
-  ensureActionAccess,
-  requireModeratableTarget,
-};
+module.exports = { hasModPermission, getStaffDisplay, canUseModAction, getModActionDeniedMessage, checkHierarchy, checkHierarchyForBulk, fetchTarget, ensurePanelAccess, ensureActionAccess, requireModeratableTarget };
