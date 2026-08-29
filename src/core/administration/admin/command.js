@@ -42,6 +42,7 @@ const command = {
         interaction.user?.username ||
         'Unknown User';
 
+      const isGoliathOwner = security.isBotOwner(interaction.user?.id);
       const isLegacyAdmin = security.hasPermission(interaction, 'admin');
       const hasConfiguredAdminAccess =
         adminPanel.hasGuildPermission(interaction, 'admin.dashboard.view');
@@ -62,9 +63,17 @@ const command = {
         if (denied) return;
       }
 
+      // The Goliath Owner must always retain the complete Admin Hub while the
+      // guild-configurable authority layer is being built and tested. Passing
+      // no viewer filter keeps every guild-manageable control visible without
+      // exposing or delegating any Goliath-owner-only capability.
       return safeEditReply(
         interaction,
-        adminPanel.buildAdminPanel(interaction.guild, memberDisplayName, interaction),
+        adminPanel.buildAdminPanel(
+          interaction.guild,
+          memberDisplayName,
+          isGoliathOwner ? null : interaction,
+        ),
       );
     } catch (error) {
       if (error?.code === 10062 || error?.code === 40060) return;
