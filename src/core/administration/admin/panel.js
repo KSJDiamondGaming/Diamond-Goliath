@@ -29,6 +29,9 @@ const modPanel = require('../mod/panel');
 const moduleAdminPanels = require('./modules');
 
 const PANEL_COLOR = '#5865F2';
+const AUTHORITY_SECTION = 'goliathAuthority';
+const AUTHORITY_VERSION = 1;
+const AUTHORITY_PER_PAGE = 10;
 
 const LOG_TYPES = {
   automodlog: { key: 'automod', customId: 'admin:setautomodlog', selectId: 'admin:selectautomodlog', title: '🤖 Set AutoMod Log Channel', label: '🤖 AutoMod Log' },
@@ -38,21 +41,103 @@ const LOG_TYPES = {
   memberlog: { key: 'member', customId: 'admin:setmemberlog', selectId: 'admin:selectmemberlog', title: '👥 Set Member Log Channel', label: '👥 Member Log' },
 };
 
+const AUTHORITY_TIERS = {
+  administrator: {
+    label: 'Administrator',
+    emoji: '👑',
+    description: 'Guild administrators who can manage the Goliath systems explicitly granted below.',
+  },
+  moderator: {
+    label: 'Moderator',
+    emoji: '🛡️',
+    description: 'Moderators with configurable moderation and limited administration access.',
+  },
+  juniorModerator: {
+    label: 'Junior Moderator',
+    emoji: '🔰',
+    description: 'Restricted or trial moderators with only explicitly granted capabilities.',
+  },
+};
+
+// Guild-manageable permissions only. Goliath-owner/root capabilities must never be added here.
+const GUILD_PERMISSION_CATALOG = [
+  { key: 'admin.dashboard.view', label: 'View Admin Hub', group: 'Administration' },
+  { key: 'admin.automod.manage', label: 'Manage AutoMod', group: 'Administration' },
+  { key: 'admin.modules.manage', label: 'Manage Studios & Modules', group: 'Administration' },
+  { key: 'admin.logs.manage', label: 'Manage Log Channels', group: 'Administration' },
+  { key: 'admin.backups.view', label: 'View Backups', group: 'Administration' },
+  { key: 'admin.backups.create', label: 'Create Backups', group: 'Administration' },
+  { key: 'admin.backups.requestRestore', label: 'Request Restore', group: 'Administration' },
+  { key: 'admin.purge', label: 'Purge Messages', group: 'Administration' },
+  { key: 'mod.panel.view', label: 'View Moderation Hub', group: 'Moderation' },
+  { key: 'mod.warn', label: 'Warn Members', group: 'Moderation' },
+  { key: 'mod.timeout', label: 'Timeout Members', group: 'Moderation' },
+  { key: 'mod.timeout.remove', label: 'Remove Timeouts', group: 'Moderation' },
+  { key: 'mod.kick', label: 'Kick Members', group: 'Moderation' },
+  { key: 'mod.ban', label: 'Ban Members', group: 'Moderation' },
+  { key: 'mod.unban', label: 'Unban Members', group: 'Moderation' },
+  { key: 'mod.cases.view', label: 'View Cases', group: 'Cases' },
+  { key: 'mod.cases.manage', label: 'Manage Cases', group: 'Cases' },
+  { key: 'mod.evidence.manage', label: 'Manage Evidence', group: 'Cases' },
+  { key: 'mod.appeals.decide', label: 'Decide Appeals', group: 'Cases' },
+  { key: 'mod.bulk', label: 'Bulk Moderation', group: 'Moderation' },
+  { key: 'mod.analytics.view', label: 'View Moderation Analytics', group: 'Moderation' },
+];
+const GUILD_PERMISSION_KEYS = new Set(GUILD_PERMISSION_CATALOG.map((entry) => entry.key));
+
+const DEFAULT_TIER_PERMISSIONS = {
+  administrator: Object.fromEntries(GUILD_PERMISSION_CATALOG.map(({ key }) => [key, true])),
+  moderator: {
+    'admin.dashboard.view': false,
+    'admin.automod.manage': false,
+    'admin.modules.manage': false,
+    'admin.logs.manage': false,
+    'admin.backups.view': false,
+    'admin.backups.create': false,
+    'admin.backups.requestRestore': false,
+    'admin.purge': false,
+    'mod.panel.view': true,
+    'mod.warn': true,
+    'mod.timeout': true,
+    'mod.timeout.remove': true,
+    'mod.kick': true,
+    'mod.ban': false,
+    'mod.unban': false,
+    'mod.cases.view': true,
+    'mod.cases.manage': true,
+    'mod.evidence.manage': true,
+    'mod.appeals.decide': false,
+    'mod.bulk': false,
+    'mod.analytics.view': true,
+  },
+  juniorModerator: {
+    'admin.dashboard.view': false,
+    'admin.automod.manage': false,
+    'admin.modules.manage': false,
+    'admin.logs.manage': false,
+    'admin.backups.view': false,
+    'admin.backups.create': false,
+    'admin.backups.requestRestore': false,
+    'admin.purge': false,
+    'mod.panel.view': true,
+    'mod.warn': true,
+    'mod.timeout': true,
+    'mod.timeout.remove': false,
+    'mod.kick': false,
+    'mod.ban': false,
+    'mod.unban': false,
+    'mod.cases.view': true,
+    'mod.cases.manage': false,
+    'mod.evidence.manage': false,
+    'mod.appeals.decide': false,
+    'mod.bulk': false,
+    'mod.analytics.view': false,
+  },
+};
+
 const LOG_SELECT_TO_TYPE = Object.fromEntries(Object.entries(LOG_TYPES).map(([key, value]) => [value.selectId, key]));
 const LOG_BUTTON_TO_TYPE = Object.fromEntries(Object.entries(LOG_TYPES).map(([key, value]) => [value.customId, key]));
-
-const MODULES = [
-  ['admin:embed', '🎨 Embed', '🎨 Embed Studio', 'Create and send custom embeds'],
-  ['admin:autoRoles', '🎭 Join Roles', '🎭 Join Roles', 'Auto roles when members join'],
-  ['admin:stats', '📊 Stats', '📊 Stats', 'Server stats counters'],
-  ['admin:sticky', '📌 Sticky Notes', '📌 Sticky Notes', 'Persistent channel notes'],
-  ['admin:suggestions', '💡 Suggestions', '💡 Suggestions', 'Suggestion system'],
-  ['admin:tickets', '🎟️ Tickets', '🎟️ Tickets', 'Support ticket system'],
-  ['admin:giveaways', '🎉 Giveaways', '🎉 Giveaways', 'Giveaway tools'],
-  ['admin:fun', '🎮 Fun', '🎮 Fun', 'Fun commands and extras'],
-  ['admin:polls', '📊 Polls', '📊 Polls', 'Poll system'],
-];
-const COMING_SOON = Object.fromEntries(MODULES.slice(2).filter(([id]) => id !== 'admin:tickets').map(([id, , title, description]) => [id, [title, `${description} are coming soon.`]]));
+const MODULE_ROUTES = new Set((moduleAdminPanels.MODULE_CATALOG || []).map((entry) => entry.route));
 
 const row = (...components) => new ActionRowBuilder().addComponents(...components);
 const button = (id, label, style = ButtonStyle.Primary, disabled = false) => new ButtonBuilder().setCustomId(id).setLabel(label).setStyle(style).setDisabled(disabled);
@@ -61,14 +146,90 @@ const getGuildSection = (guildId, section, fallback) => guildManager.getGuildSec
 const replaceGuildSection = (guildId, section, data) => guildManager.replaceGuildSection(guildId, section, data);
 const getRoleConfig = (guildId, section) => getGuildSection(guildId, section, { roleIds: [] });
 const getAutoRolesConfig = (guildId) => getGuildSection(guildId, 'autoRoles', { enabled: false, roleIds: [] });
-const isBotOwner = (interaction) => security.isBotOwner(interaction.user.id);
-const isGuildOwner = (interaction) => interaction.guild?.ownerId === interaction.user.id;
-const canUseAdminPanel = (interaction) => security.hasPermission(interaction, 'admin') || isBotOwner(interaction) || isGuildOwner(interaction) || interaction.member?.permissions?.has(PermissionFlagsBits.Administrator);
+const isBotOwner = (interaction) => Boolean(interaction?.user?.id && security.isBotOwner(interaction.user.id));
+const isGuildOwner = (interaction) => Boolean(interaction?.guild?.ownerId && interaction.guild.ownerId === interaction.user?.id);
 const normalizeBackupId = (backup) => typeof backup === 'string' ? backup : backup?.backupId;
 const formatRoleList = (ids) => {
   const values = [...new Set((ids || []).filter(Boolean))];
   return values.length ? values.map((id) => `<@&${id}>`).join(', ') : 'None';
 };
+
+function createDefaultAuthorityConfig() {
+  return {
+    version: AUTHORITY_VERSION,
+    configured: false,
+    tiers: Object.fromEntries(Object.keys(AUTHORITY_TIERS).map((key) => [key, {
+      roleIds: [],
+      permissions: { ...DEFAULT_TIER_PERMISSIONS[key] },
+    }])),
+  };
+}
+
+function normalizeAuthorityConfig(raw) {
+  const defaults = createDefaultAuthorityConfig();
+  const source = raw && typeof raw === 'object' ? raw : {};
+  const tiers = {};
+  for (const tierKey of Object.keys(AUTHORITY_TIERS)) {
+    const tier = source.tiers?.[tierKey] || {};
+    const permissions = { ...DEFAULT_TIER_PERMISSIONS[tierKey] };
+    for (const [key, value] of Object.entries(tier.permissions || {})) {
+      if (GUILD_PERMISSION_KEYS.has(key)) permissions[key] = Boolean(value);
+    }
+    tiers[tierKey] = {
+      roleIds: [...new Set((tier.roleIds || []).filter((id) => /^\d{15,25}$/.test(String(id))))],
+      permissions,
+    };
+  }
+  const configured = source.configured === true || Object.values(tiers).some((tier) => tier.roleIds.length > 0);
+  return { ...defaults, version: AUTHORITY_VERSION, configured, tiers };
+}
+
+function getAuthorityConfig(guildId) {
+  return normalizeAuthorityConfig(getGuildSection(guildId, AUTHORITY_SECTION, createDefaultAuthorityConfig()));
+}
+
+function saveAuthorityConfig(guildId, config) {
+  return replaceGuildSection(guildId, AUTHORITY_SECTION, normalizeAuthorityConfig(config));
+}
+
+function getMemberRoleIds(interaction) {
+  if (!interaction?.member?.roles) return [];
+  const cache = interaction.member.roles.cache;
+  if (cache?.keys) return [...cache.keys()];
+  return Array.isArray(interaction.member.roles) ? interaction.member.roles : [];
+}
+
+function getMatchedAuthorityTiers(interaction, config = null) {
+  if (!interaction?.guild) return [];
+  const authority = config || getAuthorityConfig(interaction.guild.id);
+  const roleIds = new Set(getMemberRoleIds(interaction));
+  return Object.keys(AUTHORITY_TIERS).filter((tierKey) => authority.tiers[tierKey].roleIds.some((roleId) => roleIds.has(roleId)));
+}
+
+function hasGuildPermission(interaction, permissionKey) {
+  if (!GUILD_PERMISSION_KEYS.has(permissionKey)) return false;
+  if (isBotOwner(interaction) || isGuildOwner(interaction)) return true;
+  if (!interaction?.guild || !interaction?.member) return false;
+
+  const authority = getAuthorityConfig(interaction.guild.id);
+  if (!authority.configured) {
+    if (permissionKey.startsWith('admin.')) return Boolean(interaction.member.permissions?.has(PermissionFlagsBits.Administrator));
+    if (permissionKey === 'mod.panel.view') return security.hasPermission(interaction, 'mod');
+    return security.hasPermission(interaction, 'mod');
+  }
+
+  return getMatchedAuthorityTiers(interaction, authority)
+    .some((tierKey) => authority.tiers[tierKey].permissions[permissionKey] === true);
+}
+
+function canManageGuildAuthority(interaction) {
+  // Deliberately not delegated to configurable guild roles: prevents self-escalation.
+  return isBotOwner(interaction) || isGuildOwner(interaction);
+}
+
+function canUseAdminPanel(interaction) {
+  return hasGuildPermission(interaction, 'admin.dashboard.view') || isBotOwner(interaction) || isGuildOwner(interaction);
+}
 
 function createEmbed(title, description, memberDisplayName, color = PANEL_COLOR) {
   const embed = new EmbedBuilder().setColor(color).setTitle(title).setTimestamp();
@@ -103,21 +264,24 @@ function canonicalState(route = 'admin:home') {
   if (route === 'admin:automod') return { history: [...home, route] };
   if (route === 'admin:automod:configure' || route.startsWith('admin:automod:rule:')) return { history: [...home, 'admin:automod', route] };
   if (route === 'admin:channel:automodlog') return { history: [...home, 'admin:automod', 'admin:automod:configure', route] };
+  if (route === 'admin:authority') return { history: [...home, 'admin:adminpanel', route] };
+  if (route.startsWith('admin:authority:')) return { history: [...home, 'admin:adminpanel', 'admin:authority', route] };
   if (['admin:staffroles', 'admin:modroles'].includes(route)) return { history: [...home, 'admin:adminpanel', route] };
-  if (route === 'admin:autoRoles' || MODULES.some(([id]) => id === route)) return { history: [...home, 'admin:modules', route] };
+  if (route === 'admin:autoRoles' || MODULE_ROUTES.has(route)) return { history: [...home, 'admin:modules', route] };
   return { history: [...home, route] };
 }
 
 function routeLabel(route) {
   const labels = {
-    'admin:home': 'Admin Hub',
-    'admin:automod': 'AutoMod',
+    'admin:home': 'Administration',
+    'admin:automod': 'Security & AutoMod',
     'admin:automod:configure': 'Settings',
-    'admin:modules': 'Modules',
-    'admin:logs': 'Logs',
-    'admin:backups': 'Backups',
-    'admin:adminpanel': 'Admin Panel',
-    'admin:modpanel': 'Mod Panel',
+    'admin:modules': 'Studios & Modules',
+    'admin:logs': 'Logs & Audit',
+    'admin:backups': 'Backup & Recovery',
+    'admin:adminpanel': 'Staff & Permissions',
+    'admin:modpanel': 'Moderation Hub',
+    'admin:authority': 'Authority Control',
     'admin:staffroles': 'Staff Roles',
     'admin:modroles': 'Mod Roles',
     'admin:autoRoles': 'Join Roles',
@@ -136,38 +300,158 @@ function applyNavigationUI(interaction, panel, state = canonicalState()) {
 
 const backButton = (route) => button(panelNav.buildCustomId(canonicalState(route), 'back'), '⬅️ Back', ButtonStyle.Secondary);
 
-function buildAdminPanel(guild, name = 'Unknown User') {
+function buildAdminPanel(guild, name = 'Unknown User', interaction = null) {
+  const can = (key) => !interaction || hasGuildPermission(interaction, key);
+  const fields = [];
+  const actions = [];
+
+  if (can('admin.automod.manage')) {
+    fields.push({ name: '🛡️ Security & AutoMod', value: 'Protection rules and automated enforcement', inline: true });
+    actions.push(['admin:automod', '🛡️ Security', ButtonStyle.Primary]);
+  }
+  if (can('admin.modules.manage')) {
+    fields.push({ name: '🧩 Studios & Modules', value: 'Configure guild features and module systems', inline: true });
+    actions.push(['admin:modules', '🧩 Studios', ButtonStyle.Primary]);
+  }
+  if (can('admin.logs.manage')) {
+    fields.push({ name: '📋 Logs & Audit', value: `${Object.values(LOG_TYPES).filter((value) => getLogChannelId(guild.id, value.key)).length}/5 log channels configured`, inline: true });
+    actions.push(['admin:logs', '📋 Logs', ButtonStyle.Primary]);
+  }
+  if (can('admin.backups.view')) {
+    fields.push({ name: '🧱 Backup & Recovery', value: 'Server backup visibility and recovery requests', inline: true });
+    actions.push(['admin:backups', '🧱 Backups', ButtonStyle.Secondary]);
+  }
+  if (can('mod.panel.view')) {
+    fields.push({ name: '🔐 Moderation Hub', value: 'Moderation cases, actions and tooling', inline: true });
+    actions.push(['admin:modpanel', '🔐 Moderation', ButtonStyle.Primary]);
+  }
+  if (can('admin.purge')) {
+    fields.push({ name: '🧹 Server Utilities', value: 'Controlled server maintenance actions', inline: true });
+    actions.push(['admin:purge', '🧹 Purge', ButtonStyle.Danger]);
+  }
+  if (!interaction || canManageGuildAuthority(interaction)) {
+    fields.unshift({ name: '👥 Staff & Permissions', value: 'Map guild roles to Goliath authority and control exact powers', inline: true });
+    actions.unshift(['admin:adminpanel', '👥 Permissions', ButtonStyle.Success]);
+  }
+
+  const embed = createEmbed('🛠️ Goliath Administration', 'Only controls you are authorized to use are shown.', name);
+  if (fields.length) embed.addFields(fields);
+  else embed.setDescription('No guild-manageable administration controls are currently assigned to your roles.');
+  return { embeds: [embed], components: buttonRows(actions) };
+}
+
+function buildAdminToolsPanel(guild, name = 'Unknown User', interaction = null) {
+  const authority = getAuthorityConfig(guild.id);
+  const description = [
+    '**Guild Authority Control**',
+    authority.configured ? 'Status: **Configured ✅**' : 'Status: **Legacy access fallback ⚠️**',
+    '',
+    ...Object.entries(AUTHORITY_TIERS).map(([key, tier]) => `${tier.emoji} **${tier.label}** — ${formatRoleList(authority.tiers[key].roleIds)}`),
+    '',
+    'Guild authority controls Goliath access only. Goliath-owner/root authority is separate and is never exposed here.',
+  ].join('\n');
+
+  const components = canManageGuildAuthority(interaction)
+    ? [...buttonRows([
+      ['admin:authority', '⚙️ Authority Control', ButtonStyle.Success],
+      ['admin:setadminlog', '📋 Set Admin Log', ButtonStyle.Secondary],
+    ], 2), row(backButton('admin:adminpanel'))]
+    : [row(backButton('admin:adminpanel'))];
+  return { embeds: [createEmbed('👥 Staff & Permissions', description, name)], components };
+}
+
+function buildAuthorityPanel(guild, name = 'Unknown User') {
+  const config = getAuthorityConfig(guild.id);
+  const embed = createEmbed(
+    '⚙️ Guild Authority Control',
+    [
+      'Map this guild’s Discord roles to Goliath authority tiers. Role names do not matter.',
+      '',
+      '**Guild Owner** — implicit full guild authority; cannot be removed here.',
+      ...Object.entries(AUTHORITY_TIERS).map(([key, tier]) => `${tier.emoji} **${tier.label}:** ${formatRoleList(config.tiers[key].roleIds)}`),
+      '',
+      config.configured
+        ? 'Configured role mappings are active. Goliath now resolves guild access from these mappings.'
+        : 'No mappings yet. Existing Discord Administrator/Moderator fallback remains active until you configure roles.',
+      '',
+      '🔒 Goliath-owner/root permissions are not part of this system.',
+    ].join('\n'),
+    name,
+  );
+
   return {
-    embeds: [createEmbed('🛠️ Admin Hub', 'Control your server systems from one place.', name).addFields(
-      { name: '🤖 AutoMod', value: 'Auto Protection', inline: true },
-      { name: '🔏 Admin', value: 'Admin tools', inline: true },
-      { name: '🔐 Mod Panel', value: 'Moderation tools', inline: true },
-      { name: '🧩 Modules', value: 'Embeds, tickets, fun, etc.', inline: true },
-      { name: '📋 Logs', value: `${Object.values(LOG_TYPES).filter((value) => getLogChannelId(guild.id, value.key)).length}/5 configured`, inline: true },
-      { name: '🧱 Backups', value: 'Disaster recovery', inline: true },
-      { name: '🧹 Purge', value: 'Bulk delete messages', inline: true },
-    )],
-    components: buttonRows([
-      ['admin:automod', '⚙️ AutoMod', ButtonStyle.Primary],
-      ['admin:adminpanel', '🔏 Admin', ButtonStyle.Primary],
-      ['admin:modpanel', '🔐 Mod Panel', ButtonStyle.Primary],
-      ['admin:modules', '🧩 Modules', ButtonStyle.Primary],
-      ['admin:logs', '📋 Logs', ButtonStyle.Primary],
-      ['admin:backups', '🧱 Backups', ButtonStyle.Secondary],
-      ['admin:purge', '🧹 Purge', ButtonStyle.Danger],
-    ]),
+    embeds: [embed],
+    components: [
+      row(
+        button('admin:authority:roles:administrator', '👑 Admin Roles'),
+        button('admin:authority:roles:moderator', '🛡️ Mod Roles'),
+        button('admin:authority:roles:juniorModerator', '🔰 Junior Mod Roles'),
+      ),
+      row(
+        button('admin:authority:permissions:administrator:0', '👑 Admin Powers', ButtonStyle.Secondary),
+        button('admin:authority:permissions:moderator:0', '🛡️ Mod Powers', ButtonStyle.Secondary),
+        button('admin:authority:permissions:juniorModerator:0', '🔰 Junior Powers', ButtonStyle.Secondary),
+      ),
+      row(backButton('admin:authority')),
+    ],
   };
 }
 
-function buildAdminToolsPanel(guild, name = 'Unknown User') {
+function buildAuthorityRolesPanel(guild, tierKey, name = 'Unknown User') {
+  const tier = AUTHORITY_TIERS[tierKey];
+  if (!tier) return buildAuthorityPanel(guild, name);
+  const config = getAuthorityConfig(guild.id);
   return {
-    embeds: [createEmbed('👑 Admin Panel', `**Staff Roles**\n${formatRoleList(getRoleConfig(guild.id, 'staffRoles').roleIds)}\n\n**Mod Roles**\n${formatRoleList(getRoleConfig(guild.id, 'modRoles').roleIds)}`, name)],
-    components: [...buttonRows([
-      ['admin:setadminlog', '🔏 Set Admin Log'],
-      ['admin:staffroles', '👥 Staff Roles'],
-      ['admin:modroles', '🔐 Mod Roles'],
-    ]), row(backButton('admin:adminpanel'))],
+    embeds: [createEmbed(`${tier.emoji} ${tier.label} Roles`, `${tier.description}\n\n**Mapped roles:**\n${formatRoleList(config.tiers[tierKey].roleIds)}\n\nSelect any roles this guild uses for this authority tier.`, name)],
+    components: [
+      row(new RoleSelectMenuBuilder()
+        .setCustomId(`admin:authority:roles:select:${tierKey}`)
+        .setPlaceholder(`Select ${tier.label} roles`)
+        .setMinValues(0)
+        .setMaxValues(10)),
+      row(button(`admin:authority:roles:clear:${tierKey}`, 'Clear Roles', ButtonStyle.Danger), backButton(`admin:authority:roles:${tierKey}`)),
+    ],
   };
+}
+
+function buildAuthorityPermissionsPanel(guild, tierKey, page = 0, name = 'Unknown User') {
+  const tier = AUTHORITY_TIERS[tierKey];
+  if (!tier) return buildAuthorityPanel(guild, name);
+  const config = getAuthorityConfig(guild.id);
+  const totalPages = Math.max(1, Math.ceil(GUILD_PERMISSION_CATALOG.length / AUTHORITY_PER_PAGE));
+  const safePage = Math.max(0, Math.min(Number(page) || 0, totalPages - 1));
+  const start = safePage * AUTHORITY_PER_PAGE;
+  const entries = GUILD_PERMISSION_CATALOG.slice(start, start + AUTHORITY_PER_PAGE);
+  const permissionMap = config.tiers[tierKey].permissions;
+
+  const embed = createEmbed(
+    `${tier.emoji} ${tier.label} Powers`,
+    `${tier.description}\n\nToggle each guild-manageable capability independently. Page **${safePage + 1}/${totalPages}**.`,
+    name,
+  ).addFields(entries.map((entry) => ({
+    name: `${permissionMap[entry.key] ? '✅' : '❌'} ${entry.label}`,
+    value: `${entry.group} · \`${entry.key}\``,
+    inline: true,
+  })));
+
+  const toggleRows = [];
+  for (let index = 0; index < entries.length; index += 5) {
+    toggleRows.push(row(...entries.slice(index, index + 5).map((entry, offset) => {
+      const absolute = start + index + offset;
+      const enabled = permissionMap[entry.key] === true;
+      return button(
+        `admin:authority:toggle:${tierKey}:${absolute}:${safePage}`,
+        `${enabled ? '✅' : '❌'} ${entry.label}`.slice(0, 80),
+        enabled ? ButtonStyle.Success : ButtonStyle.Secondary,
+      );
+    })));
+  }
+
+  const nav = [];
+  if (safePage > 0) nav.push(button(`admin:authority:permissions:${tierKey}:${safePage - 1}`, '⬅️ Previous', ButtonStyle.Secondary));
+  nav.push(backButton(`admin:authority:permissions:${tierKey}:${safePage}`));
+  if (safePage < totalPages - 1) nav.push(button(`admin:authority:permissions:${tierKey}:${safePage + 1}`, 'Next ➡️', ButtonStyle.Secondary));
+  return { embeds: [embed], components: [...toggleRows, row(...nav)].slice(0, 5) };
 }
 
 function buildModulesPanel(guild, name = 'Unknown User') {
@@ -181,18 +465,16 @@ function buildLogsPanel(guild, name = 'Unknown User') {
   };
 }
 
-function buildBackupsPanel(guild, name = 'Unknown User') {
+function buildBackupsPanel(guild, name = 'Unknown User', interaction = null) {
   const backups = listServerBackups(guild.id);
   const latest = normalizeBackupId(backups[0]);
+  const actions = [];
+  if (!interaction || hasGuildPermission(interaction, 'admin.backups.create')) actions.push(['admin:backup:create', '⚡ Create Backup', ButtonStyle.Success]);
+  actions.push(['admin:backup:list', '📦 View Backups'], ['admin:backup:preview', '🔍 Preview Latest', ButtonStyle.Secondary], ['admin:backup:download', '💾 Download Backup', ButtonStyle.Secondary]);
+  if (!interaction || hasGuildPermission(interaction, 'admin.backups.requestRestore')) actions.push(['admin:backup:requestrestore', '🚨 Request Restore', ButtonStyle.Danger]);
   return {
     embeds: [createEmbed('🧱 Server Backups', `**Backups found:** ${backups.length}\n**Latest:** \`${latest || 'None'}\``, name)],
-    components: [...buttonRows([
-      ['admin:backup:create', '⚡ Create Backup', ButtonStyle.Success],
-      ['admin:backup:list', '📦 View Backups'],
-      ['admin:backup:preview', '🔍 Preview Latest', ButtonStyle.Secondary],
-      ['admin:backup:download', '💾 Download Backup', ButtonStyle.Secondary],
-      ['admin:backup:requestrestore', '🚨 Request Restore', ButtonStyle.Danger],
-    ], 2), row(backButton('admin:backups'))],
+    components: [...buttonRows(actions, 2), row(backButton('admin:backups'))].slice(0, 5),
   };
 }
 
@@ -236,7 +518,15 @@ function buildChannelPanel(type = 'logs') {
 const buildComingSoonPanel = (title, description, route) => ({ embeds: [createEmbed(title, description)], components: [row(backButton(route))] });
 const buildPurgeModal = () => new ModalBuilder().setCustomId('admin:purgeModal').setTitle('Purge Messages').addComponents(row(new TextInputBuilder().setCustomId('amount').setLabel('Amount (1-100)').setStyle(TextInputStyle.Short).setPlaceholder('25').setRequired(true)));
 
+async function deny(interaction, message = '❌ You do not have permission to use this control.') {
+  const payload = { content: message, flags: 64 };
+  if (interaction.deferred || interaction.replied) await interaction.editReply(payload);
+  else await interaction.reply(payload);
+  return true;
+}
+
 async function executePurge(interaction) {
+  if (!hasGuildPermission(interaction, 'admin.purge')) return deny(interaction);
   const raw = interaction.fields?.getTextInputValue?.('amount')?.trim() || '';
   const amount = /^\d+$/.test(raw) ? Number(raw) : NaN;
   if (!Number.isInteger(amount) || amount < 1 || amount > 100) {
@@ -265,19 +555,23 @@ async function updatePanel(interaction, panel, route = 'admin:home') {
 }
 
 function panelForRoute(route, interaction, name) {
-  if (route === 'admin:home') return buildAdminPanel(interaction.guild, name);
+  if (route === 'admin:home') return buildAdminPanel(interaction.guild, name, interaction);
   if (route === 'admin:automod') return automodPanel.buildAutomodPanel(interaction.guild, name);
   if (route === 'admin:automod:configure') return automodPanel.buildAutomodConfigurePanel(interaction.guild, name);
   if (route?.startsWith('admin:automod:rule:')) return automodPanel.buildAutomodRulePanel(interaction.guild, route.split(':').pop(), name);
-  if (route === 'admin:adminpanel') return buildAdminToolsPanel(interaction.guild, name);
+  if (route === 'admin:adminpanel') return buildAdminToolsPanel(interaction.guild, name, interaction);
+  if (route === 'admin:authority') return buildAuthorityPanel(interaction.guild, name);
+  const authorityRoles = route.match(/^admin:authority:roles:(administrator|moderator|juniorModerator)$/);
+  if (authorityRoles) return buildAuthorityRolesPanel(interaction.guild, authorityRoles[1], name);
+  const authorityPermissions = route.match(/^admin:authority:permissions:(administrator|moderator|juniorModerator):(\d+)$/);
+  if (authorityPermissions) return buildAuthorityPermissionsPanel(interaction.guild, authorityPermissions[1], Number(authorityPermissions[2]), name);
   if (route === 'admin:modules') return buildModulesPanel(interaction.guild, name);
   if (route === 'admin:logs') return buildLogsPanel(interaction.guild, name);
-  if (route === 'admin:backups') return buildBackupsPanel(interaction.guild, name);
+  if (route === 'admin:backups') return buildBackupsPanel(interaction.guild, name, interaction);
   if (route === 'admin:staffroles') return buildStaffRolesPanel(interaction.guild, name);
   if (route === 'admin:modroles') return buildModRolesPanel(interaction.guild, name);
   if (route === 'admin:autoRoles') return buildAutoRolesPanel(interaction.guild, name);
-  if (COMING_SOON[route]) return buildComingSoonPanel(...COMING_SOON[route], route);
-  return buildAdminPanel(interaction.guild, name);
+  return buildAdminPanel(interaction.guild, name, interaction);
 }
 
 const openRoute = (interaction, route, name) => updatePanel(interaction, panelForRoute(route, interaction, name), route);
@@ -286,12 +580,22 @@ async function handleAdminNavigation(interaction) {
   if (!interaction.guild) return false;
   const nav = panelNav.parseCustomId(interaction.customId);
   if (!String(interaction.customId || '').startsWith('admin:') && !nav) return false;
-  if (!canUseAdminPanel(interaction)) {
-    await interaction.reply({ content: '❌ Only the Goliath Owner, Guild Owner, or Administrators can use the Admin Panel.', flags: 64 });
-    return true;
+
+  const id = String(interaction.customId || '');
+  const authorityControl = id.startsWith('admin:authority') || id === 'admin:adminpanel';
+  if (authorityControl && !canManageGuildAuthority(interaction)) return deny(interaction, '❌ Only the Guild Owner can change this guild’s Goliath authority configuration.');
+
+  if (!canUseAdminPanel(interaction) && !hasGuildPermission(interaction, 'mod.panel.view')) {
+    return deny(interaction, '❌ Your guild roles are not authorized to use this Goliath control.');
   }
 
+  if (id.startsWith('admin:automod') && !hasGuildPermission(interaction, 'admin.automod.manage')) return deny(interaction);
+  if ((id.startsWith('admin:module') || id.startsWith('admin:studio') || id === 'admin:modules' || MODULE_ROUTES.has(id)) && !hasGuildPermission(interaction, 'admin.modules.manage')) return deny(interaction);
+  if ((id === 'admin:logs' || LOG_BUTTON_TO_TYPE[id] || LOG_SELECT_TO_TYPE[id]) && !hasGuildPermission(interaction, 'admin.logs.manage')) return deny(interaction);
+  if (id.startsWith('admin:backup') && !hasGuildPermission(interaction, 'admin.backups.view')) return deny(interaction);
+
   if (await automodPanel.handleAutomodInteraction(interaction)) return true;
+  if (await moduleAdminPanels.handleModuleAdminInteraction(interaction)) return true;
   if (interaction.isModalSubmit?.() && interaction.customId === 'admin:purgeModal') return executePurge(interaction);
 
   const name = getMemberDisplayName(interaction);
@@ -301,8 +605,19 @@ async function handleAdminNavigation(interaction) {
   }
 
   if (interaction.isRoleSelectMenu?.()) {
+    const authorityRoleSelect = id.match(/^admin:authority:roles:select:(administrator|moderator|juniorModerator)$/);
+    if (authorityRoleSelect) {
+      if (!canManageGuildAuthority(interaction)) return deny(interaction);
+      const tierKey = authorityRoleSelect[1];
+      const config = getAuthorityConfig(interaction.guild.id);
+      config.tiers[tierKey].roleIds = [...new Set(interaction.values || [])];
+      config.configured = Object.values(config.tiers).some((tier) => tier.roleIds.length > 0);
+      saveAuthorityConfig(interaction.guild.id, config);
+      return openRoute(interaction, `admin:authority:roles:${tierKey}`, name);
+    }
+
     const map = { 'admin:staffroles:select': 'staffRoles', 'admin:modroles:select': 'modRoles', 'admin:autoRoles:select': 'autoRoles' };
-    const section = map[interaction.customId];
+    const section = map[id];
     if (!section) return false;
     const current = section === 'autoRoles' ? getAutoRolesConfig(interaction.guild.id) : getRoleConfig(interaction.guild.id, section);
     replaceGuildSection(interaction.guild.id, section, { ...current, roleIds: [...new Set(interaction.values || [])] });
@@ -310,25 +625,65 @@ async function handleAdminNavigation(interaction) {
   }
 
   if (interaction.isChannelSelectMenu?.()) {
-    const type = LOG_SELECT_TO_TYPE[interaction.customId];
+    const type = LOG_SELECT_TO_TYPE[id];
     if (!type) return false;
     setLogChannelId(interaction.guild.id, LOG_TYPES[type].key, interaction.values?.[0] || null);
     return openRoute(interaction, 'admin:logs', name);
   }
 
   if (!interaction.isButton?.()) return false;
-  const id = interaction.customId;
 
-  if (id === 'admin:purge') { await interaction.showModal(buildPurgeModal()); return true; }
+  const authorityRoleOpen = id.match(/^admin:authority:roles:(administrator|moderator|juniorModerator)$/);
+  if (authorityRoleOpen) return openRoute(interaction, id, name);
+
+  const authorityRoleClear = id.match(/^admin:authority:roles:clear:(administrator|moderator|juniorModerator)$/);
+  if (authorityRoleClear) {
+    const tierKey = authorityRoleClear[1];
+    const config = getAuthorityConfig(interaction.guild.id);
+    config.tiers[tierKey].roleIds = [];
+    config.configured = Object.values(config.tiers).some((tier) => tier.roleIds.length > 0);
+    saveAuthorityConfig(interaction.guild.id, config);
+    return openRoute(interaction, `admin:authority:roles:${tierKey}`, name);
+  }
+
+  const authorityPermissionOpen = id.match(/^admin:authority:permissions:(administrator|moderator|juniorModerator):(\d+)$/);
+  if (authorityPermissionOpen) return openRoute(interaction, id, name);
+
+  const authorityToggle = id.match(/^admin:authority:toggle:(administrator|moderator|juniorModerator):(\d+):(\d+)$/);
+  if (authorityToggle) {
+    const [, tierKey, permissionIndexRaw, pageRaw] = authorityToggle;
+    const entry = GUILD_PERMISSION_CATALOG[Number(permissionIndexRaw)];
+    if (!entry) return openRoute(interaction, `admin:authority:permissions:${tierKey}:${Number(pageRaw) || 0}`, name);
+    const config = getAuthorityConfig(interaction.guild.id);
+    config.tiers[tierKey].permissions[entry.key] = !config.tiers[tierKey].permissions[entry.key];
+    saveAuthorityConfig(interaction.guild.id, config);
+    return openRoute(interaction, `admin:authority:permissions:${tierKey}:${Number(pageRaw) || 0}`, name);
+  }
+
+  if (id === 'admin:purge') {
+    if (!hasGuildPermission(interaction, 'admin.purge')) return deny(interaction);
+    await interaction.showModal(buildPurgeModal());
+    return true;
+  }
   if (id === 'admin:modpanel') {
+    if (!hasGuildPermission(interaction, 'mod.panel.view')) return deny(interaction);
     await interaction.deferUpdate();
     await modPanel.openModPanel(interaction);
     return true;
   }
   if (LOG_BUTTON_TO_TYPE[id]) return updatePanel(interaction, buildChannelPanel(LOG_BUTTON_TO_TYPE[id]), `admin:channel:${LOG_BUTTON_TO_TYPE[id]}`);
-  if (id === 'admin:embed') { const { buildEmbedPanel } = require('../../../modules/messageStudio/embed/embedPanel'); return updatePanel(interaction, buildEmbedPanel(interaction, name), 'admin:embed'); }
-  if (id === 'admin:tickets') { const { sendSetupPanel } = require('../../../modules/feedbackStudio/tickets/ticketsPanel'); return sendSetupPanel(interaction); }
+  if (id === 'admin:embed') {
+    if (!hasGuildPermission(interaction, 'admin.modules.manage')) return deny(interaction);
+    const { buildEmbedPanel } = require('../../../modules/messageStudio/embed/embedPanel');
+    return updatePanel(interaction, buildEmbedPanel(interaction, name), 'admin:embed');
+  }
+  if (id === 'admin:tickets') {
+    if (!hasGuildPermission(interaction, 'admin.modules.manage')) return deny(interaction);
+    const { sendSetupPanel } = require('../../../modules/feedbackStudio/tickets/ticketsPanel');
+    return sendSetupPanel(interaction);
+  }
   if (id === 'admin:autoRoles:toggle') {
+    if (!hasGuildPermission(interaction, 'admin.modules.manage')) return deny(interaction);
     const current = getAutoRolesConfig(interaction.guild.id);
     replaceGuildSection(interaction.guild.id, 'autoRoles', { ...current, enabled: !current.enabled, roleIds: current.roleIds || [] });
     return openRoute(interaction, 'admin:autoRoles', name);
@@ -339,9 +694,10 @@ async function handleAdminNavigation(interaction) {
     return openRoute(interaction, route, name);
   }
   if (id === 'admin:backup:create') {
+    if (!hasGuildPermission(interaction, 'admin.backups.create')) return deny(interaction);
     await interaction.deferUpdate();
     await createServerBackup(interaction.guild, { createdBy: interaction.user.id, reason: 'Manual backup from admin panel' });
-    return interaction.editReply(applyNavigationUI(interaction, buildBackupsPanel(interaction.guild, name), canonicalState('admin:backups')));
+    return interaction.editReply(applyNavigationUI(interaction, buildBackupsPanel(interaction.guild, name, interaction), canonicalState('admin:backups')));
   }
   if (id === 'admin:backup:list') {
     const backups = listServerBackups(interaction.guild.id).map(normalizeBackupId).filter(Boolean);
@@ -358,22 +714,36 @@ async function handleAdminNavigation(interaction) {
   if (id === 'admin:backup:download') {
     const latest = normalizeBackupId(listServerBackups(interaction.guild.id)[0]);
     const backup = latest ? readServerBackup(interaction.guild.id, latest) : null;
-    if (!backup) { await interaction.reply({ content: '❌ No backups found.', flags: 64 }); return true; }
+    if (!backup) {
+      await interaction.reply({ content: '❌ No backups found.', flags: 64 });
+      return true;
+    }
     await interaction.reply({ content: `💾 Backup: ${latest}`, files: [{ attachment: Buffer.from(JSON.stringify(backup, null, 2)), name: `${latest}.json` }], flags: 64 });
     return true;
   }
-  if (id === 'admin:backup:requestrestore') return restoreRequestManager.createRestoreRequest(interaction, { cooldownMs: 1800000 });
-  if (['admin:backup:restore', 'admin:backup:restore:real'].includes(id)) { await interaction.reply({ content: '❌ Direct restores are disabled. Use the centralized restore approval system.', flags: 64 }); return true; }
+  if (id === 'admin:backup:requestrestore') {
+    if (!hasGuildPermission(interaction, 'admin.backups.requestRestore')) return deny(interaction);
+    return restoreRequestManager.createRestoreRequest(interaction, { cooldownMs: 1800000 });
+  }
+  if (['admin:backup:restore', 'admin:backup:restore:real'].includes(id)) {
+    await interaction.reply({ content: '❌ Direct restores are disabled. Use the centralized restore approval system.', flags: 64 });
+    return true;
+  }
 
-  const routes = ['admin:home', 'admin:adminpanel', 'admin:modules', 'admin:logs', 'admin:backups', 'admin:staffroles', 'admin:modroles', 'admin:autoRoles'];
-  if (routes.includes(id) || COMING_SOON[id]) return openRoute(interaction, id, name);
+  const routes = ['admin:home', 'admin:adminpanel', 'admin:authority', 'admin:modules', 'admin:logs', 'admin:backups', 'admin:staffroles', 'admin:modroles', 'admin:autoRoles'];
+  if (routes.includes(id)) return openRoute(interaction, id, name);
   return false;
 }
 
 module.exports = {
   LOG_TYPES,
+  AUTHORITY_TIERS,
+  GUILD_PERMISSION_CATALOG,
   buildAdminPanel,
   buildAdminToolsPanel,
+  buildAuthorityPanel,
+  buildAuthorityRolesPanel,
+  buildAuthorityPermissionsPanel,
   buildBackupsPanel,
   buildStaffRolesPanel,
   buildModRolesPanel,
@@ -383,6 +753,11 @@ module.exports = {
   buildChannelPanel,
   buildComingSoonPanel,
   buildPurgeModal,
+  getAuthorityConfig,
+  saveAuthorityConfig,
+  getMatchedAuthorityTiers,
+  hasGuildPermission,
+  canManageGuildAuthority,
   getLogChannelId,
   setLogChannelId,
   handleAdminNavigation,
