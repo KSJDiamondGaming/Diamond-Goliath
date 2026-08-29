@@ -1,17 +1,12 @@
 'use strict';
 
-const {
-  SlashCommandBuilder,
-  PermissionFlagsBits,
-} = require('discord.js');
+const { SlashCommandBuilder } = require('discord.js');
 const { enforceCommandAccess } = require('../../commands/commandAccess');
 const { errorEmbed } = require('../../ui/embeds');
 const { safeEditReply } = require('../../ui/interactionResponse');
 const { openModPanel } = require('./panel');
 const { openExternalAppealFromCommand } = require('./cases');
 const { recordModerationSystemEvent, getModerationDoctorStatus } = require('./permissions');
-
-const MOD_COMMAND_PERMISSIONS = PermissionFlagsBits.ModerateMembers | PermissionFlagsBits.KickMembers | PermissionFlagsBits.BanMembers;
 
 const command = {
   category: 'Moderation',
@@ -20,8 +15,7 @@ const command = {
   data: new SlashCommandBuilder()
     .setName('mod')
     .setDescription('🔐 Open Goliath’s moderation hub and staff tools')
-    .addStringOption((option) => option.setName('appeal').setDescription('Appeal a case using SERVER_ID:CASE_ID (works in bot DMs)').setRequired(false).setMaxLength(40))
-    .setDefaultMemberPermissions(MOD_COMMAND_PERMISSIONS),
+    .addStringOption((option) => option.setName('appeal').setDescription('Appeal a case using SERVER_ID:CASE_ID (works in bot DMs)').setRequired(false).setMaxLength(40)),
   async execute(interaction) {
     const appealReference = interaction.options?.getString?.('appeal') || null;
     if (appealReference) {
