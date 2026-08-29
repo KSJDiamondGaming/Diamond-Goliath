@@ -2,7 +2,7 @@
 
 const Discord = require('discord.js');
 const { safeReply } = require('../../../core/ui/interactionResponse');
-const { db, getCaseById, updateCaseStatus, recordCaseAudit } = require('./storage');
+const { db, getCaseById, getCasesForUser, updateCaseStatus, recordCaseAudit } = require('./storage');
 const {
   fetchTarget,
   ensurePanelAccess,
@@ -11,7 +11,7 @@ const {
   recordModerationSystemEvent,
 } = require('./permissions');
 const { buildPunishmentModal, buildBulkModal, submitPunishmentRequest, submitBulkModal, createConfirmation, executePendingAction } = require('./punishments');
-const { syncExpiredWarningsToCases, showWarningModal, showRemoveWarningModal, submitWarningModal, submitRemoveWarningRequest } = require('./warns');
+const { getWarningCountForUser, syncExpiredWarningsToCases, showWarningModal, showRemoveWarningModal, submitWarningModal, submitRemoveWarningRequest } = require('./warns');
 const { openCaseTool, handleCaseAction, submitCaseModal, handleExternalAppealInteraction } = require('./cases');
 const { openCaseSearch, handleCaseSearchAction, handleCaseSearchSelect, handleCaseSearchModal } = require('./caseSearch');
 const {
@@ -76,6 +76,122 @@ async function handlePresetEditorButton(i) {
     await i.showModal(buildSafePresetEditorModal(preset, targetId));
     return true;
   }
+  return false;
+}
+
+function scanTimestamp(ms) {
+  const value = Number(ms);
+  return Number.isFinite(value) && value > 0 ? `<t:${Math.floor(value / 1000)}:F> • <t:${Math.floor(value / 1000)}:R>` : 'Unknown';
+}
+function normalizeIdentity(value) { return String(value || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
+function parseCaseMetadata(modCase) {
+  const metadata = modCase?.metadata;
+  if (metadata && typeof metadata === 'object') return metadata;
+  if (typeof metadata === 'string') { try { return JSON.parse(metadata) || {}; } catch { return {}; } }
+  return {};
+}
+function buildSuspectedAccounts(guild, target) {
+  const targetUser = target.user;
+  const targetUsername = normalizeIdentity(targetUser.username);
+  const targetGlobal = normalizeIdentity(targetUser.globalName || target.displayName);
+  const candidates = [];
+  for (const member of guild.members.cache.values()) {
+    if (!member?.user || member.id === target.id || member.user.bot) continue;
+    const signals = [];
+    let score = 0;
+    if (targetUser.avatar && member.user.avatar && targetUser.avatar === member.user.avatar) { score += 45; signals.push('same custom avatar hash'); }
+    const candidateUsername = normalizeIdentity(member.user.username);
+    const candidateGlobal = normalizeIdentity(member.user.globalName || member.displayName);
+    if (targetUsername && candidateUsername === targetUsername) { score += 30; signals.push('same normalized username'); }
+    else if (targetUsername && candidateUsername && (candidateUsername.includes(targetUsername) || targetUsername.includes(candidateUsername)) && Math.min(candidateUsername.length, targetUsername.length) >= 5) { score += 12; signals.push('similar username'); }
+    if (targetGlobal && candidateGlobal && targetGlobal === candidateGlobal) { score += 20; signals.push('same display/global name'); }
+    const createdDelta = Math.abs((member.user.createdTimestamp || 0) - (targetUser.createdTimestamp || 0));
+    if (createdDelta && createdDelta <= 86400000) { score += 10; signals.push('accounts created within 24h'); }
+    const joinedDelta = Math.abs((member.joinedTimestamp || 0) - (target.joinedTimestamp || 0));
+    if (joinedDelta && joinedDelta <= 86400000) { score += 10; signals.push('joined server within 24h'); }
+    score = Math.min(95, score);
+    if (score >= 35) candidates.push({ member, score, signals });
+  }
+  return candidates.sort((a, b) => b.score - a.score).slice(0, 5);
+}
+function buildMemberScanPayload(i, target) {
+  const cases = getCasesForUser(i.guild.id, target.id) || [];
+  const warningCount = getWarningCountForUser(i.guild.id, target.id);
+  const activeCases = cases.filter((entry) => String(entry.status || 'active') === 'active').length;
+  const bans = cases.filter((entry) => entry.action === 'ban').length;
+  const timeouts = cases.filter((entry) => entry.action === 'timeout').length;
+  const appeals = cases.reduce((total, entry) => total + (Array.isArray(parseCaseMetadata(entry).appeals) ? parseCaseMetadata(entry).appeals.length : 0), 0);
+  const evidence = cases.reduce((total, entry) => total + (Array.isArray(parseCaseMetadata(entry).evidence) ? parseCaseMetadata(entry).evidence.filter((item) => !item?.removedAt).length : 0), 0);
+  const roles = [...target.roles.cache.values()].filter((role) => role.id !== i.guild.id).sort((a, b) => b.position - a.position);
+  const keyPermissions = target.permissions.toArray().filter((name) => ['Administrator', 'ManageGuild', 'ManageRoles', 'ManageChannels', 'ManageMessages', 'ModerateMembers', 'KickMembers', 'BanMembers'].includes(name));
+  const flags = target.user.flags?.toArray?.() || [];
+  const suspects = buildSuspectedAccounts(i.guild, target);
+  const suspectText = suspects.length
+    ? suspects.map(({ member, score, signals }) => `${score >= 70 ? '🔴 **STRONG MATCH**' : '🟠 **POSSIBLE MATCH**'} — ${member.user} • **${score}%**\n${signals.map((signal) => `• ${signal}`).join('\n')}`).join('\n\n')
+    : '⚪ **NO LINK FOUND** — No evidence-based suspected account match in the current guild cache.';
+  const recent = cases.slice(0, 5).map((entry) => `#${entry.caseId} • ${entry.action} • ${entry.status || 'active'} • ${entry.reason || 'No reason'}`).join('\n') || 'No recorded moderation cases.';
+  const scanId = `scan_${Date.now().toString(36)}_${target.id.slice(-6)}`;
+  const embed = new Discord.EmbedBuilder()
+    .setColor(0x5865F2)
+    .setTitle(`🔎 Goliath Member Scan • ${target.user.tag}`)
+    .setDescription([
+      `**Scan ID:** \`${scanId}\``,
+      `**Target:** ${target.user} (\`${target.id}\`)`,
+      '',
+      'This report separates confirmed Discord/Goliath data from heuristic suspected-account matches. A suspected match is not proof of account ownership.',
+    ].join('\n'))
+    .addFields(
+      { name: '🪪 Identity', value: [`Username: \`${target.user.username}\``, `Global name: ${target.user.globalName || 'None'}`, `Server display: ${target.displayName || target.user.username}`, `Bot: ${target.user.bot ? 'Yes' : 'No'}`, `Account created: ${scanTimestamp(target.user.createdTimestamp)}`].join('\n'), inline: false },
+      { name: '🏠 Guild Membership', value: [`Joined: ${scanTimestamp(target.joinedTimestamp)}`, `Boosting since: ${scanTimestamp(target.premiumSinceTimestamp)}`, `Pending screening: ${target.pending ? 'Yes' : 'No'}`, `Timeout until: ${target.communicationDisabledUntilTimestamp ? scanTimestamp(target.communicationDisabledUntilTimestamp) : 'None'}`].join('\n'), inline: false },
+      { name: `🎭 Roles (${roles.length})`, value: (roles.slice(0, 15).map((role) => `${role}`).join(', ') || 'None').slice(0, 1024), inline: false },
+      { name: '🔐 Key Permissions', value: keyPermissions.length ? keyPermissions.map((name) => `\`${name}\``).join(' • ') : 'No elevated Discord permissions detected.', inline: false },
+      { name: '🚩 Account Flags', value: flags.length ? flags.join(', ') : 'None exposed by Discord.', inline: false },
+      { name: '⚖️ Moderation Intelligence', value: [`Warnings: **${warningCount}**`, `Cases: **${cases.length}** • Active: **${activeCases}**`, `Timeout cases: **${timeouts}** • Ban cases: **${bans}**`, `Appeals: **${appeals}** • Active evidence refs: **${evidence}**`].join('\n'), inline: false },
+      { name: '🕘 Recent Case History', value: recent.slice(0, 1024), inline: false },
+      { name: '🧬 Suspected Accounts', value: suspectText.slice(0, 1024), inline: false },
+      { name: '🔗 Confirmed Linked Accounts', value: 'No confirmed Goliath identity-link provider is currently connected to this scan. This section will only show verified links when Goliath has a legitimate stored verification/OAuth relationship.', inline: false },
+      { name: '📡 Data Sources', value: 'Discord API • current guild member cache • Goliath moderation cases • warnings • case metadata • appeals • evidence references • heuristic guild correlation', inline: false },
+    )
+    .setFooter({ text: `Scanned by ${i.user?.tag || i.user?.username || i.user?.id || 'Unknown staff'} • evidence-based intelligence only` })
+    .setTimestamp();
+  const controls = new Discord.ActionRowBuilder().addComponents(
+    new Discord.ButtonBuilder().setCustomId(`mod_member_scan:${target.id}`).setLabel('Rescan').setEmoji('🔄').setStyle(Discord.ButtonStyle.Primary),
+    new Discord.ButtonBuilder().setCustomId(`mod_case_detail:${target.id}`).setLabel('Case Detail').setEmoji('📁').setStyle(Discord.ButtonStyle.Secondary),
+    new Discord.ButtonBuilder().setCustomId(`mod_dashboard:${target.id}:cases`).setLabel('Cases').setEmoji('⚖️').setStyle(Discord.ButtonStyle.Secondary),
+  );
+  return { scanId, cases, suspects, embed, components: [controls] };
+}
+async function runMemberScan(i, targetId) {
+  const allowed = await ensureActionAccess(i, 'view_case_detail', '❌ You do not have permission to run a member intelligence scan.');
+  if (!allowed) return true;
+  const target = await fetchTarget(i.guild, targetId);
+  if (!target) return safeReply(i, { content: '❌ Could not find that member in this server.', flags: 64 });
+  const report = buildMemberScanPayload(i, target);
+  recordModerationSystemEvent({
+    interaction: i,
+    event: 'moderation.member_scan.completed',
+    action: 'member_scan',
+    targetId: target.id,
+    after: { scanId: report.scanId, caseCount: report.cases.length, suspectedMatches: report.suspects.map((entry) => ({ userId: entry.member.id, score: entry.score, signals: entry.signals })) },
+    metadata: { dataSources: ['discord_api', 'guild_cache', 'moderation_cases', 'warnings', 'case_metadata', 'appeals', 'evidence', 'heuristic_guild_correlation'] },
+  });
+  return safeReply(i, { embeds: [report.embed], components: report.components, flags: 64 });
+}
+async function handleMemberScanSelect(i) {
+  if (i.customId !== 'mod_scan_user_select') return false;
+  const targetId = i.values?.[0];
+  if (!targetId) return safeReply(i, { content: '❌ No member selected.', flags: 64 });
+  return runMemberScan(i, targetId);
+}
+async function handleMemberScanButton(i) {
+  const id = String(i.customId || '');
+  if (id === 'mod_select_user' || id === 'mod_member_scan') {
+    const allowed = await ensureActionAccess(i, 'view_case_detail', '❌ You do not have permission to run a member intelligence scan.');
+    if (!allowed) return true;
+    const select = new Discord.UserSelectMenuBuilder().setCustomId('mod_scan_user_select').setPlaceholder('🔎 Select a member to scan').setMinValues(1).setMaxValues(1);
+    return safeReply(i, { content: '🔎 **Goliath Member Scan** — select a server member to run a full intelligence report.', components: [new Discord.ActionRowBuilder().addComponents(select)], flags: 64 });
+  }
+  if (id.startsWith('mod_member_scan:')) return runMemberScan(i, id.split(':')[1]);
   return false;
 }
 
@@ -172,10 +288,14 @@ async function handleCaseModal(i) {
 async function routeHandlers(i, handlers) { for (const handler of handlers) { const result = await handler(i); if (result) return result; } return false; }
 async function routeButtonsAndSelects(i) {
   const denied = ensurePanelAccess(i); if (denied) return denied;
-  if (i.isUserSelectMenu?.()) return handleUserSelectMenu(i);
+  if (i.isUserSelectMenu?.()) {
+    const scan = await handleMemberScanSelect(i);
+    if (scan) return scan;
+    return handleUserSelectMenu(i);
+  }
   if (i.isStringSelectMenu?.()) return routeHandlers(i, [handlePresetInteraction, handleCaseSearchSelect, handleActionSelectMenu]);
   if (!i.isButton?.()) return false;
-  return routeHandlers(i, [handleExportInteraction, handlePresetEditorButton, handlePresetInteraction, handleConfirmButton, value => handleCaseAction(value, { fetchTarget, createConfirmation }), handleDashboardNavigation, handleCancelButton, handleSelectUserButton, handleBulkButton, handleOpenActionButton, handleCaseToolButton]);
+  return routeHandlers(i, [handleExportInteraction, handlePresetEditorButton, handlePresetInteraction, handleConfirmButton, value => handleCaseAction(value, { fetchTarget, createConfirmation }), handleDashboardNavigation, handleCancelButton, handleMemberScanButton, handleSelectUserButton, handleBulkButton, handleOpenActionButton, handleCaseToolButton]);
 }
 async function routeModModal(i) {
   if (!i?.customId?.startsWith('mod_')) return false;
