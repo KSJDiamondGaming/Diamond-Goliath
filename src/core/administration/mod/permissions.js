@@ -39,6 +39,93 @@ const ACTION_DISCORD_PERMISSIONS = {
   bulk_ban: PermissionFlagsBits.BanMembers,
 };
 
+const DOCTOR_INDEXES = Object.freeze([
+  'CREATE INDEX IF NOT EXISTS idx_cases_guild_moderator ON cases(guild_id, moderator_id, case_id DESC)',
+  'CREATE INDEX IF NOT EXISTS idx_cases_guild_action_status ON cases(guild_id, action, status, case_id DESC)',
+  'CREATE INDEX IF NOT EXISTS idx_cases_guild_created ON cases(guild_id, created_at DESC)',
+  'CREATE INDEX IF NOT EXISTS idx_warnings_guild_expires ON warnings(guild_id, expires_at)',
+  'CREATE INDEX IF NOT EXISTS idx_pending_expires ON pending_actions(expires_at)',
+  'CREATE INDEX IF NOT EXISTS idx_audit_guild_event_created ON case_audit(guild_id, event, created_at DESC)',
+]);
+let doctorResult = null;
+let doctorScheduled = false;
+
+function getModerationDb() {
+  try { return require('./storage').db || null; }
+  catch (error) { console.error('❌ Moderation DB unavailable:', error); return null; }
+}
+function safeJson(value) {
+  if (value === undefined || value === null) return null;
+  if (typeof value === 'string') return value.slice(0, 4000);
+  try { return JSON.stringify(value).slice(0, 4000); }
+  catch { return String(value).slice(0, 4000); }
+}
+function recordModerationSystemEvent({ interaction = null, guildId = null, actorId = null, event, action = null, targetId = null, reason = null, before = null, after = null, metadata = {} } = {}) {
+  if (!event) return null;
+  const db = getModerationDb();
+  if (!db) return null;
+  const resolvedGuildId = String(guildId || interaction?.guild?.id || 'system');
+  const resolvedActorId = actorId || interaction?.user?.id || null;
+  const detail = { action, targetId: targetId ? String(targetId) : null, reason: reason ? String(reason).slice(0, 500) : null, customId: interaction?.customId ? String(interaction.customId).slice(0, 120) : null, ...metadata };
+  try {
+    const createdAt = new Date().toISOString();
+    const result = db.prepare('INSERT INTO case_audit (guild_id, case_id, actor_id, event, before_value, after_value, metadata, created_at) VALUES (?, 0, ?, ?, ?, ?, ?, ?)').run(
+      resolvedGuildId,
+      resolvedActorId ? String(resolvedActorId) : null,
+      String(event).slice(0, 120),
+      safeJson(before),
+      safeJson(after),
+      JSON.stringify(detail),
+      createdAt
+    );
+    return { auditId: Number(result.lastInsertRowid), guildId: resolvedGuildId, caseId: 0, actorId: resolvedActorId, event, createdAt };
+  } catch (error) {
+    console.error(`❌ Failed to record moderation system event ${event}:`, error);
+    return null;
+  }
+}
+function runModerationDoctor({ record = true } = {}) {
+  const db = getModerationDb();
+  if (!db) return { ok: false, checkedAt: new Date().toISOString(), errors: ['moderation database unavailable'], warnings: [] };
+  const checkedAt = new Date().toISOString();
+  const checks = {};
+  const errors = [];
+  const warnings = [];
+  try {
+    for (const sql of DOCTOR_INDEXES) db.exec(sql);
+    checks.integrity = String(db.pragma('quick_check', { simple: true }) || 'unknown');
+    if (checks.integrity !== 'ok') errors.push(`SQLite quick_check: ${checks.integrity}`);
+    const requiredTables = ['cases', 'warnings', 'pending_actions', 'case_audit'];
+    const present = new Set(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((row) => row.name));
+    checks.tables = requiredTables.filter((name) => present.has(name));
+    for (const table of requiredTables) if (!present.has(table)) errors.push(`Missing table: ${table}`);
+    const expired = db.prepare('DELETE FROM pending_actions WHERE expires_at <= ?').run(checkedAt).changes;
+    checks.expiredPendingPurged = expired;
+    checks.pendingActions = db.prepare('SELECT COUNT(*) AS count FROM pending_actions').get().count;
+    checks.orphanWarnings = db.prepare('SELECT COUNT(*) AS count FROM warnings w LEFT JOIN cases c ON c.guild_id = w.guild_id AND c.case_id = w.case_id WHERE c.case_id IS NULL').get().count;
+    checks.invalidStatuses = db.prepare("SELECT COUNT(*) AS count FROM cases WHERE status NOT IN ('active','reversed','expired') OR status IS NULL").get().count;
+    checks.systemAuditRows = db.prepare('SELECT COUNT(*) AS count FROM case_audit WHERE case_id = 0').get().count;
+    checks.indexCount = db.prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'index' AND tbl_name IN ('cases','warnings','pending_actions','case_audit')").get().count;
+    if (checks.orphanWarnings) warnings.push(`${checks.orphanWarnings} warning record(s) reference missing cases`);
+    if (checks.invalidStatuses) warnings.push(`${checks.invalidStatuses} case(s) use unexpected status values`);
+  } catch (error) {
+    errors.push(String(error?.message || error));
+  }
+  doctorResult = { ok: errors.length === 0, checkedAt, checks, warnings, errors };
+  if (record) recordModerationSystemEvent({ guildId: 'system', actorId: null, event: doctorResult.ok ? 'moderation.doctor.passed' : 'moderation.doctor.failed', after: doctorResult, metadata: { source: 'startup' } });
+  return doctorResult;
+}
+function getModerationDoctorStatus() { return doctorResult || runModerationDoctor({ record: false }); }
+function scheduleModerationDoctor() {
+  if (doctorScheduled) return;
+  doctorScheduled = true;
+  setImmediate(() => {
+    try { runModerationDoctor({ record: true }); }
+    catch (error) { console.error('❌ Moderation doctor failed:', error); }
+  });
+}
+scheduleModerationDoctor();
+
 function getId(memberOrUserId) { return typeof memberOrUserId === 'string' ? memberOrUserId : memberOrUserId?.id; }
 function isGuildOwner(memberOrUserId, guildOwnerId) { const id = getId(memberOrUserId); return Boolean(id && guildOwnerId && String(id) === String(guildOwnerId)); }
 function hasPermission(member, permission) { return Boolean(member?.permissions?.has(permission)); }
@@ -109,17 +196,27 @@ async function fetchTarget(guild, userId) {
 }
 function ensurePanelAccess(interaction) {
   if (hasModPermission(interaction?.member)) return null;
+  recordModerationSystemEvent({ interaction, event: 'moderation.access.denied', action: 'view_dashboard', reason: 'No moderation panel permission.' });
   return safeReply(interaction, ephemeralError('No permission to use moderation panel.'));
 }
 async function ensureActionAccess(interaction, action, deniedMessage = null) {
   if (canUseModAction(interaction?.member, interaction?.guild, action)) return true;
+  recordModerationSystemEvent({ interaction, event: 'moderation.action.denied', action, reason: deniedMessage || getModActionDeniedMessage(action), metadata: { requiredLevel: getRequiredStaffLevel(action), staffLevel: getStaffLevel(interaction?.member, interaction?.guild) } });
   await safeReply(interaction, { content: deniedMessage || getModActionDeniedMessage(action), flags: 64 });
   return false;
 }
 async function requireSelectedTarget(interaction, targetId) {
-  if (!targetId || targetId === 'none') { await safeReply(interaction, ephemeralError('No user selected.')); return null; }
+  if (!targetId || targetId === 'none') {
+    recordModerationSystemEvent({ interaction, event: 'moderation.target.invalid', targetId, reason: 'No user selected.' });
+    await safeReply(interaction, ephemeralError('No user selected.'));
+    return null;
+  }
   const target = await fetchTarget(interaction?.guild, targetId);
-  if (!target) { await safeReply(interaction, ephemeralError('Could not find that user.')); return null; }
+  if (!target) {
+    recordModerationSystemEvent({ interaction, event: 'moderation.target.not_found', targetId, reason: 'Could not find target member.' });
+    await safeReply(interaction, ephemeralError('Could not find that user.'));
+    return null;
+  }
   return target;
 }
 async function requireModeratableTarget(interaction, targetId, action) {
@@ -128,8 +225,26 @@ async function requireModeratableTarget(interaction, targetId, action) {
   const target = await requireSelectedTarget(interaction, targetId);
   if (!target) return null;
   const hierarchyError = checkHierarchy(interaction, target);
-  if (hierarchyError) { await safeReply(interaction, ephemeralError(String(hierarchyError).replace(/^❌\s*/, ''))); return null; }
+  if (hierarchyError) {
+    recordModerationSystemEvent({ interaction, event: 'moderation.hierarchy.denied', action, targetId: target.id, reason: String(hierarchyError).replace(/^❌\s*/, '') });
+    await safeReply(interaction, ephemeralError(String(hierarchyError).replace(/^❌\s*/, '')));
+    return null;
+  }
   return target;
 }
 
-module.exports = { hasModPermission, getStaffDisplay, canUseModAction, getModActionDeniedMessage, checkHierarchy, checkHierarchyForBulk, fetchTarget, ensurePanelAccess, ensureActionAccess, requireModeratableTarget };
+module.exports = {
+  hasModPermission,
+  getStaffDisplay,
+  canUseModAction,
+  getModActionDeniedMessage,
+  checkHierarchy,
+  checkHierarchyForBulk,
+  fetchTarget,
+  ensurePanelAccess,
+  ensureActionAccess,
+  requireModeratableTarget,
+  recordModerationSystemEvent,
+  runModerationDoctor,
+  getModerationDoctorStatus,
+};
