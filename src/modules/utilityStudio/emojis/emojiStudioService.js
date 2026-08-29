@@ -1,19 +1,18 @@
 'use strict';
 
 const crypto = require('crypto');
-const fs = require('fs');
 const path = require('path');
 const fetch = require('node-fetch');
 const guildManager = require('../../../core/guild/guildManager');
 const emojiStore = require('./emojisStore');
 
 const BUILTIN_PACKS = Object.freeze({
-  gaming: { name: 'Gaming', tags: ['gaming', 'pc', 'playstation', 'xbox', 'nintendo', 'steam', 'epic', 'activision', 'blizzard'] },
+  gaming: { name: 'Gaming', tags: ['gaming', 'game', 'pc', 'playstation', 'xbox', 'nintendo', 'steam', 'epic', 'activision', 'blizzard'] },
   socials: { name: 'Socials', tags: ['social', 'discord', 'facebook', 'instagram', 'kick', 'snapchat', 'tiktok', 'twitch', 'whatsapp', 'x', 'youtube'] },
-  reactions: { name: 'Reactions', tags: ['reaction', 'react', 'emoji', 'meme'] },
-  moderation: { name: 'Moderation', tags: ['moderation', 'mod', 'warning', 'ban', 'mute', 'ticket'] },
-  events: { name: 'Events', tags: ['event', 'giveaway', 'party', 'celebration', 'birthday'] },
-  seasonal: { name: 'Seasonal', tags: ['seasonal', 'christmas', 'halloween', 'easter', 'newyear'] },
+  reactions: { name: 'Reactions', tags: ['reaction', 'react', 'emoji', 'meme', 'heart', 'check', 'cross'] },
+  moderation: { name: 'Moderation', tags: ['moderation', 'mod', 'warning', 'ban', 'mute', 'ticket', 'report'] },
+  events: { name: 'Events', tags: ['event', 'giveaway', 'party', 'celebration', 'birthday', 'winner'] },
+  seasonal: { name: 'Seasonal', tags: ['seasonal', 'christmas', 'xmas', 'halloween', 'easter', 'newyear'] },
 });
 
 const CATEGORY_RULES = [
@@ -48,7 +47,7 @@ function inferredTags(emoji) {
     const match = source.match(pattern);
     if (match?.[1]) tags.add(String(match[1]).toLowerCase());
   }
-  if (/animated/i.test(String(emoji?.animated))) tags.add('animated');
+  if (emoji?.animated) tags.add('animated');
   else tags.add('static');
   return [...tags];
 }
@@ -63,8 +62,15 @@ function activePackEmojiIds(section, now = Date.now()) {
 }
 
 function effectiveFavouriteIds(section, now = Date.now()) {
-  const ids = new Set((section?.favourites || []).map(String));
-  for (const id of activePackEmojiIds(section, now)) ids.add(id);
+  const ids = new Set();
+  for (const id of section?.favourites || []) {
+    if (ids.size >= emojiStore.MAX_GUILD_EMOJIS) break;
+    ids.add(String(id));
+  }
+  for (const id of activePackEmojiIds(section, now)) {
+    if (ids.size >= emojiStore.MAX_GUILD_EMOJIS) break;
+    ids.add(id);
+  }
   return ids;
 }
 
@@ -87,7 +93,6 @@ function decorateCatalog(bank, guildId) {
     list.push(alias);
     aliasesById.set(String(id), list);
   }
-
   return (bank || []).map((emoji) => {
     const customTags = section.tags?.[String(emoji.id)] || [];
     const tags = [...new Set([...inferredTags(emoji), ...customTags])];
@@ -152,21 +157,57 @@ function shortcodeSuggestions(bank, guildId, query = '', context = 'unknown', li
   return output;
 }
 
+function materialiseBuiltinPack(bank, guildId, packKey, options = {}) {
+  const key = emojiStore.cleanKey(packKey, 40);
+  const definition = BUILTIN_PACKS[key];
+  if (!definition) throw new Error(`Unknown built-in Emoji Studio pack: ${packKey}`);
+  const wanted = new Set(definition.tags.map((tag) => String(tag).toLowerCase()));
+  const matches = decorateCatalog(bank, guildId)
+    .filter((emoji) => !emoji.core)
+    .filter((emoji) => emoji.tags.some((tag) => wanted.has(String(tag).toLowerCase())) || wanted.has(String(emoji.category || '').toLowerCase()))
+    .slice(0, emojiStore.MAX_GUILD_EMOJIS)
+    .map((emoji) => String(emoji.id));
+  return {
+    key,
+    pack: {
+      name: definition.name,
+      emojiIds: matches,
+      tags: definition.tags,
+      enabled: options.enabled !== false,
+      startAt: options.startAt || null,
+      endAt: options.endAt || null,
+      temporary: options.temporary === true,
+    },
+  };
+}
+
+function packStatus(bank, guildId) {
+  const section = emojiStore.getSection(guildId);
+  const catalog = decorateCatalog(bank, guildId);
+  const statuses = [];
+  for (const [key, definition] of Object.entries(BUILTIN_PACKS)) {
+    const current = section.packs[key] || null;
+    const materialised = materialiseBuiltinPack(bank, guildId, key, { enabled: current?.enabled === true, startAt: current?.startAt, endAt: current?.endAt, temporary: current?.temporary });
+    statuses.push({ key, name: definition.name, builtIn: true, available: materialised.pack.emojiIds.length, enabled: current?.enabled === true, active: current?.enabled === true && isActiveWindow(current.startAt, current.endAt), startAt: current?.startAt || null, endAt: current?.endAt || null });
+  }
+  for (const [key, pack] of Object.entries(section.packs)) {
+    if (BUILTIN_PACKS[key]) continue;
+    statuses.push({ key, name: pack.name, builtIn: false, available: (pack.emojiIds || []).filter((id) => catalog.some((emoji) => String(emoji.id) === String(id))).length, enabled: pack.enabled === true, active: pack.enabled === true && isActiveWindow(pack.startAt, pack.endAt), startAt: pack.startAt, endAt: pack.endAt });
+  }
+  return statuses;
+}
+
 function collectShortcodePaths(value, names, pathParts = [], output = []) {
   if (pathParts[0] === 'modules' && pathParts[1] === 'emojis') return output;
   if (typeof value === 'string') {
-    for (const name of names) {
-      if (value.toLowerCase().includes(`:${String(name).toLowerCase()}:`)) output.push(pathParts.join('.') || '<root>');
-    }
+    for (const name of names) if (value.toLowerCase().includes(`:${String(name).toLowerCase()}:`)) output.push(pathParts.join('.') || '<root>');
     return output;
   }
   if (Array.isArray(value)) {
     value.forEach((entry, index) => collectShortcodePaths(entry, names, [...pathParts, String(index)], output));
     return output;
   }
-  if (value && typeof value === 'object') {
-    for (const [key, entry] of Object.entries(value)) collectShortcodePaths(entry, names, [...pathParts, key], output);
-  }
+  if (value && typeof value === 'object') for (const [key, entry] of Object.entries(value)) collectShortcodePaths(entry, names, [...pathParts, key], output);
   return output;
 }
 
@@ -221,25 +262,23 @@ function cleanupCandidates(bank, unusedDays = 90) {
 }
 
 async function imageHash(emoji) {
-  const url = emoji?.url;
-  if (!url) return null;
-  const response = await fetch(url, { headers: { 'User-Agent': 'KSJHub-Goliath/1.0' }, timeout: 15000 });
+  if (!emoji?.url) return null;
+  const response = await fetch(emoji.url, { headers: { 'User-Agent': 'KSJHub-Goliath/1.0' }, timeout: 15000 });
   if (!response.ok) return null;
   const buffer = await response.buffer();
   return crypto.createHash('sha256').update(buffer).digest('hex');
 }
 
 async function duplicateGroups(bank) {
-  const studio = (bank || []).filter((emoji) => !emoji.core);
   const groups = new Map();
-  for (const emoji of studio) {
+  for (const emoji of (bank || []).filter((entry) => !entry.core)) {
     try {
       const hash = await imageHash(emoji);
       if (!hash) continue;
       const list = groups.get(hash) || [];
       list.push(emoji);
       groups.set(hash, list);
-    } catch (_) { /* individual remote image failures do not fail the audit */ }
+    } catch (_) { /* one failed CDN request does not fail the audit */ }
   }
   return [...groups.entries()].filter(([, entries]) => entries.length > 1).map(([hash, entries]) => ({ hash, entries }));
 }
@@ -247,38 +286,18 @@ async function duplicateGroups(bank) {
 function capacityForecast(bank, dailyGrowth = null) {
   const used = (bank || []).length;
   const max = 2000;
-  let growth = Number(dailyGrowth);
-  if (!Number.isFinite(growth) || growth <= 0) growth = 0;
+  const growth = Number.isFinite(Number(dailyGrowth)) && Number(dailyGrowth) > 0 ? Number(dailyGrowth) : 0;
   return { used, max, remaining: Math.max(0, max - used), dailyGrowth: growth, estimatedDaysToFull: growth > 0 ? Math.ceil(Math.max(0, max - used) / growth) : null };
 }
 
 function exportGuildConfig(guildId) {
   const section = emojiStore.getSection(guildId);
-  return {
-    version: 1,
-    exportedAt: nowIso(),
-    sourceGuildId: String(guildId),
-    favourites: section.favourites,
-    aliases: section.aliases,
-    tags: section.tags,
-    packs: section.packs,
-    temporary: section.temporary,
-    policies: section.policies,
-    cleanup: section.cleanup,
-  };
+  return { version: 1, exportedAt: nowIso(), sourceGuildId: String(guildId), favourites: section.favourites, aliases: section.aliases, tags: section.tags, packs: section.packs, temporary: section.temporary, policies: section.policies, cleanup: section.cleanup };
 }
 
 function importGuildConfig(guildId, payload, meta = {}) {
   const source = payload && typeof payload === 'object' ? payload : {};
-  return emojiStore.saveSection(guildId, {
-    favourites: source.favourites || [],
-    aliases: source.aliases || {},
-    tags: source.tags || {},
-    packs: source.packs || {},
-    temporary: source.temporary || {},
-    policies: source.policies || {},
-    cleanup: source.cleanup || {},
-  }, meta);
+  return emojiStore.saveSection(guildId, { favourites: source.favourites || [], aliases: source.aliases || {}, tags: source.tags || {}, packs: source.packs || {}, temporary: source.temporary || {}, policies: source.policies || {}, cleanup: source.cleanup || {} }, meta);
 }
 
 function expiredTemporaryEntries(guildId, now = Date.now()) {
@@ -294,9 +313,7 @@ function healthReport(bank, guildId) {
   const brokenFavourites = section.favourites.filter((id) => !ids.has(id));
   const brokenAliases = Object.entries(section.aliases).filter(([, id]) => !ids.has(String(id))).map(([alias, id]) => ({ alias, id }));
   const brokenPackEntries = [];
-  for (const [packKey, pack] of Object.entries(section.packs || {})) {
-    for (const id of pack.emojiIds || []) if (!ids.has(String(id))) brokenPackEntries.push({ packKey, emojiId: id });
-  }
+  for (const [packKey, pack] of Object.entries(section.packs || {})) for (const id of pack.emojiIds || []) if (!ids.has(String(id))) brokenPackEntries.push({ packKey, emojiId: id });
   const forecast = capacityForecast(bank);
   return {
     healthy: brokenFavourites.length === 0 && brokenAliases.length === 0 && brokenPackEntries.length === 0 && forecast.remaining > 0,
@@ -320,6 +337,8 @@ module.exports = {
   searchCatalog,
   pickerData,
   shortcodeSuggestions,
+  materialiseBuiltinPack,
+  packStatus,
   dependencyReport,
   aggregateUsage,
   cleanupCandidates,
