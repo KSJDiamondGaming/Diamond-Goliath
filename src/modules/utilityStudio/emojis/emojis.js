@@ -184,15 +184,16 @@ async function createStudioEmoji(client, attachment, requestedName) {
 }
 
 async function importFromUrl(client, imageUrl, requestedName = null) {
-  const attachment = await emojiApi.downloadAsset(String(imageUrl || '').trim());
+  const prepared = await emojiApi.prepareDownloadedAsset(String(imageUrl || '').trim());
   let fallback = requestedName;
   if (!fallback) {
     try {
       const pathname = new URL(String(imageUrl)).pathname;
       fallback = pathname.split('/').pop()?.replace(/\.[a-z0-9]+$/i, '') || null;
-    } catch (_) { /* URL validation is handled by downloadAsset */ }
+    } catch (_) { /* URL validation is handled by the downloader */ }
   }
-  return createStudioEmoji(client, attachment, fallback);
+  const result = await createStudioEmoji(client, prepared.buffer, fallback);
+  return { ...result, processed: prepared.processed === true, animated: prepared.animated === true };
 }
 
 async function importFromEmojiGG(client, emojiGgId, requestedName = null) {
@@ -200,10 +201,10 @@ async function importFromEmojiGG(client, emojiGgId, requestedName = null) {
   if (!source) throw new Error('Emoji.gg emoji was not found.');
   const url = emojiApi.assetUrl(source);
   if (!url) throw new Error('Emoji.gg did not provide an image URL for this emoji.');
-  const attachment = await emojiApi.downloadAsset(url);
+  const prepared = await emojiApi.prepareDownloadedAsset(url);
   const rawName = requestedName || source.title || source.slug || `emoji_${source.id}`;
-  const result = await createStudioEmoji(client, attachment, rawName);
-  return { ...result, sourceId: String(source.id) };
+  const result = await createStudioEmoji(client, prepared.buffer, rawName);
+  return { ...result, sourceId: String(source.id), processed: prepared.processed === true, animated: prepared.animated === true };
 }
 
 async function removeFromBank(client, emojiId) {
@@ -359,25 +360,15 @@ async function componentEmojiForGuild(client, guildId, reference, context = 'com
   return componentPayload(emoji);
 }
 
-async function catalog(client, guildId, query = '', options = {}) {
-  return studioService.searchCatalog(await listBank(client), guildId, query, options);
-}
-
-async function picker(client, guildId, query = '', context = 'picker') {
-  return studioService.pickerData(await listBank(client), guildId, query, context);
-}
-
-async function suggest(client, guildId, query = '', context = 'editor', limit = 25) {
-  return studioService.shortcodeSuggestions(await listBank(client), guildId, query, context, limit);
-}
-
+async function catalog(client, guildId, query = '', options = {}) { return studioService.searchCatalog(await listBank(client), guildId, query, options); }
+async function picker(client, guildId, query = '', context = 'picker') { return studioService.pickerData(await listBank(client), guildId, query, context); }
+async function suggest(client, guildId, query = '', context = 'editor', limit = 25) { return studioService.shortcodeSuggestions(await listBank(client), guildId, query, context, limit); }
 async function dependencies(client, emojiId) { return studioService.dependencyReport(await listBank(client), emojiId); }
 async function analytics(client) { return studioService.aggregateUsage(await listBank(client)); }
 async function cleanupCandidates(client, unusedDays = 90) { return studioService.cleanupCandidates(await listBank(client), unusedDays); }
 async function duplicates(client) { return studioService.duplicateGroups(await listBank(client)); }
 async function health(client, guildId) { return studioService.healthReport(await listBank(client), guildId); }
 async function forecast(client) { return studioService.capacityForecast(await listBank(client)); }
-
 function exportGuildConfig(guildId) { return studioService.exportGuildConfig(guildId); }
 function importGuildConfig(guildId, config, meta = {}) { return studioService.importGuildConfig(guildId, config, meta); }
 
