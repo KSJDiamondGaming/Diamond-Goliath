@@ -109,13 +109,14 @@ function customGroupSelect(guildId, selectedId = null, customId = 'admin:roleSel
 }
 function memberCategorySelect(guild, selectedId = null, customId = 'roleSelector:switchGroup') {
   const groups = roleSelector.listGroups(guild.id).filter(roleSelector.isGroupMemberUsable).slice(0, 25);
-  const menu = new StringSelectMenuBuilder().setCustomId(customId).setPlaceholder('Choose a category').setMinValues(1).setMaxValues(1);
+  const selected = selectedId ? groups.find((group) => group.id === selectedId) : null;
+  const placeholder = selected ? `Current: ${selected.name} · choose or switch` : 'Choose a category';
+  const menu = new StringSelectMenuBuilder().setCustomId(customId).setPlaceholder(placeholder.slice(0, 150)).setMinValues(1).setMaxValues(1);
   if (!groups.length) return row(menu.setDisabled(true).addOptions({ label: 'No selectors available', value: '__none__' }));
   menu.addOptions(groups.map((group) => ({
     label: `${group.emoji || '🏷️'} ${group.name}`.slice(0, 100),
     value: group.id,
     description: (group.description || (group.selectionMode === 'multiple' ? 'Choose one or more' : 'Choose one')).slice(0, 100),
-    default: group.id === selectedId,
   })));
   return row(menu);
 }
