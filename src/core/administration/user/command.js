@@ -3,6 +3,7 @@ const { SlashCommandBuilder } = require('discord.js');
 const { errorEmbed } = require('../../ui/embeds');
 const { enforceCommandAccess } = require('../../commands/commandAccess');
 const { buildUserHomePanel } = require('./interactions');
+const emojisUserPanel = require('../../../modules/utilityStudio/emojis/emojisUserPanel');
 
 module.exports = {
   category: 'Utility',
@@ -20,7 +21,16 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('user')
     .setDescription('Open your Goliath user panel')
+    .addStringOption((option) => option
+      .setName('emoji')
+      .setDescription('Quickly find an emoji from Goliath Core or this server')
+      .setAutocomplete(true)
+      .setRequired(false))
     .setDMPermission(false),
+
+  async autocomplete(interaction) {
+    return emojisUserPanel.autocomplete(interaction);
+  },
 
   async execute(interaction) {
     const denied = await enforceCommandAccess(interaction, module.exports);
@@ -31,6 +41,18 @@ module.exports = {
         return await safeReply(interaction, {
           embeds: [errorEmbed('This command can only be used inside a server.')],
         });
+      }
+
+      const emojiId = interaction.options.getString('emoji');
+      if (emojiId) {
+        const selection = await emojisUserPanel.commandSelection(interaction, emojiId);
+        if (!selection) {
+          return await safeReply(interaction, {
+            embeds: [errorEmbed('That emoji is no longer available in this server.')],
+            components: [],
+          });
+        }
+        return await safeReply(interaction, selection);
       }
 
       return await safeReply(interaction, buildUserHomePanel(interaction));
