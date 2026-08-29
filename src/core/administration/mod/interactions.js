@@ -7,7 +7,16 @@ const { buildPunishmentModal, buildBulkModal, submitPunishmentRequest, submitBul
 const { syncExpiredWarningsToCases, showWarningModal, showRemoveWarningModal, submitWarningModal, submitRemoveWarningRequest } = require('./warns');
 const { openCaseTool, handleCaseAction, submitCaseModal, handleExternalAppealInteraction } = require('./cases');
 const { openCaseSearch, handleCaseSearchAction, handleCaseSearchSelect, handleCaseSearchModal } = require('./caseSearch');
-const { refreshCasesDashboard, handleDashboardNavigation, handleUserSelectMenu, handleSelectUserButton } = require('./panel');
+const {
+  refreshCasesDashboard,
+  handleDashboardNavigation,
+  handleUserSelectMenu,
+  handleSelectUserButton,
+  handlePresetInteraction,
+  handlePresetModal,
+  presetIdFromSubmission,
+  markPresetUsed,
+} = require('./panel');
 
 const PUNISHMENT_ACTIONS = new Set(['timeout', 'kick', 'ban']);
 const BULK_ACTIONS = new Set(['warn', 'timeout', 'kick', 'ban']);
@@ -29,10 +38,24 @@ async function handleBulkButton(i) { if (!String(i.customId || '').startsWith('m
 async function handleConfirmButton(i) { if (!i.customId.startsWith('mod_confirm_action:')) return false; const { token, context } = parseConfirmActionContext(i.customId); return executePendingAction(Discord, i, token, context); }
 async function handleCancelButton(i) { if (i.customId !== 'mod_cancel_action') return false; if (i.message && typeof i.update === 'function') { await i.update({ content: '❌ Cancelled.', embeds: [], components: [] }); return true; } return safeReply(i, { content: '❌ Cancelled.', flags: 64 }); }
 async function handleBulkModal(i) { if (!String(i.customId || '').startsWith('mod_submit_bulk_')) return false; const action = getBulkAction(i.customId); if (!action) return false; const allowed = await ensureActionAccess(i, `bulk_${action}`, `❌ No permission to use bulk ${action}.`); if (!allowed) return true; return submitBulkModal(i, action); }
-async function handleActionModal(i) { const id = String(i.customId || ''); const targetId = getTargetIdFromCustomId(id); if (id.startsWith('mod_submit_warn:')) return submitWarningModal(i, targetId, refreshCasesDashboard); if (id.startsWith('mod_submit_remove_warning:')) return submitRemoveWarningRequest(i, targetId, createConfirmation); const action = getPunishmentSubmitAction(id); if (!action) return false; const target = await requireModeratableTarget(i, targetId, action); if (!target) return true; const result = await submitPunishmentRequest(i, target, action); if (action === 'timeout' && result?.ok) await refreshCasesDashboard(i, target); return true; }
+function trackPresetSubmission(i) { const presetId = presetIdFromSubmission(i.customId); if (presetId && i.guild) markPresetUsed(i.guild, presetId, i.user?.id || null); }
+async function handleActionModal(i) {
+  const id = String(i.customId || ''); const targetId = getTargetIdFromCustomId(id);
+  if (id.startsWith('mod_submit_warn:')) { const result = await submitWarningModal(i, targetId, refreshCasesDashboard); trackPresetSubmission(i); return result; }
+  if (id.startsWith('mod_submit_remove_warning:')) return submitRemoveWarningRequest(i, targetId, createConfirmation);
+  const action = getPunishmentSubmitAction(id); if (!action) return false;
+  const target = await requireModeratableTarget(i, targetId, action); if (!target) return true;
+  const result = await submitPunishmentRequest(i, target, action); if (result?.ok) trackPresetSubmission(i); if (action === 'timeout' && result?.ok) await refreshCasesDashboard(i, target); return true;
+}
 async function routeHandlers(i, handlers) { for (const handler of handlers) { const result = await handler(i); if (result) return result; } return false; }
-async function routeButtonsAndSelects(i) { const denied = ensurePanelAccess(i); if (denied) return denied; if (i.isUserSelectMenu?.()) return handleUserSelectMenu(i); if (i.isStringSelectMenu?.()) return routeHandlers(i, [handleCaseSearchSelect, handleActionSelectMenu]); if (!i.isButton?.()) return false; return routeHandlers(i, [handleConfirmButton, value => handleCaseAction(value, { fetchTarget, createConfirmation }), handleDashboardNavigation, handleCancelButton, handleSelectUserButton, handleBulkButton, handleOpenActionButton, handleCaseToolButton]); }
-async function routeModModal(i) { if (!i?.customId?.startsWith('mod_')) return false; const denied = ensurePanelAccess(i); if (denied) return denied; await syncExpiredWarningsToCases(i.guild.id); return routeHandlers(i, [handleCaseSearchModal, value => submitCaseModal(value, { fetchTarget, refreshCasesDashboard }), handleBulkModal, handleActionModal]); }
+async function routeButtonsAndSelects(i) {
+  const denied = ensurePanelAccess(i); if (denied) return denied;
+  if (i.isUserSelectMenu?.()) return handleUserSelectMenu(i);
+  if (i.isStringSelectMenu?.()) return routeHandlers(i, [handlePresetInteraction, handleCaseSearchSelect, handleActionSelectMenu]);
+  if (!i.isButton?.()) return false;
+  return routeHandlers(i, [handlePresetInteraction, handleConfirmButton, value => handleCaseAction(value, { fetchTarget, createConfirmation }), handleDashboardNavigation, handleCancelButton, handleSelectUserButton, handleBulkButton, handleOpenActionButton, handleCaseToolButton]);
+}
+async function routeModModal(i) { if (!i?.customId?.startsWith('mod_')) return false; const denied = ensurePanelAccess(i); if (denied) return denied; await syncExpiredWarningsToCases(i.guild.id); return routeHandlers(i, [handlePresetModal, handleCaseSearchModal, value => submitCaseModal(value, { fetchTarget, refreshCasesDashboard }), handleBulkModal, handleActionModal]); }
 async function handleModInteraction(i) {
   if (!i?.customId || !isModCustomId(i.customId)) return false;
   if (i.customId.startsWith('nav|')) return false;
