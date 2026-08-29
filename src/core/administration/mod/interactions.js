@@ -28,6 +28,7 @@ const {
 const PUNISHMENT_ACTIONS = new Set(['timeout', 'kick', 'ban']);
 const BULK_ACTIONS = new Set(['warn', 'timeout', 'kick', 'ban']);
 const OPEN_ACTIONS = new Set(['warn', ...PUNISHMENT_ACTIONS]);
+const CONFIRM_LOCKS = new Set();
 function isModCustomId(customId) { const id = String(customId || ''); return id.startsWith('mod_') || id.startsWith('mod:'); }
 function isExternalAppealCustomId(customId) { const id = String(customId || ''); return id === 'mod_appeal_lookup' || id === 'mod_appeal_lookup_submit' || id.startsWith('mod_appeal_external:') || id.startsWith('mod_appeal_external_submit:'); }
 function getTargetIdFromCustomId(customId) { return String(customId || '').split(':')[1] || 'none'; }
@@ -53,9 +54,20 @@ async function handleBulkButton(i) {
 async function handleConfirmButton(i) {
   if (!i.customId.startsWith('mod_confirm_action:')) return false;
   const { token, context } = parseConfirmActionContext(i.customId);
-  const result = await executePendingAction(Discord, i, token, context);
-  recordModerationSystemEvent({ interaction: i, event: 'moderation.confirmation.processed', metadata: { tokenPresent: Boolean(token), handled: Boolean(result) } });
-  return result;
+  if (!token) return false;
+  const lockKey = `${i.guild?.id || 'none'}:${token}`;
+  if (CONFIRM_LOCKS.has(lockKey)) {
+    recordModerationSystemEvent({ interaction: i, event: 'moderation.confirmation.duplicate_blocked', metadata: { tokenPresent: true } });
+    return safeReply(i, { content: '⏳ That moderation action is already being processed.', flags: 64 });
+  }
+  CONFIRM_LOCKS.add(lockKey);
+  try {
+    const result = await executePendingAction(Discord, i, token, context);
+    recordModerationSystemEvent({ interaction: i, event: 'moderation.confirmation.processed', metadata: { tokenPresent: true, handled: Boolean(result) } });
+    return result;
+  } finally {
+    CONFIRM_LOCKS.delete(lockKey);
+  }
 }
 async function handleCancelButton(i) {
   if (i.customId !== 'mod_cancel_action') return false;
