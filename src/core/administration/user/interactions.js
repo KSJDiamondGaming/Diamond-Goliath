@@ -17,6 +17,7 @@ const socialStudio = require('../../../modules/socialStudio/socialAlerts/socialS
 const { normalizeAccountInput, migrateAccount } = require('../../../modules/socialStudio/socialAlerts/accountNormalizer');
 const { checkGuildAccounts, forcePostCreatorLive } = require('../../../modules/socialStudio/socialAlerts/socialStudioMonitor');
 const notesUserPanel = require('../../../modules/utilityStudio/notes/notesUserPanel');
+const emojisUserPanel = require('../../../modules/utilityStudio/emojis/emojisUserPanel');
 const userUtilities = require('./utilities');
 const profileDevelopmentPage = require('./profileDevelopmentPage');
 const {
@@ -582,6 +583,7 @@ async function handleUserManualPostLive(interaction) {
 }
 
 async function delegateModuleUserInteraction(interaction) {
+  if (await emojisUserPanel.handleInteraction(interaction, updatePanel)) return true;
   if (await socialStudio.user.handleInteraction(interaction, updatePanel)) return true;
   if (await notesUserPanel.user.handleInteraction(interaction, updatePanel)) return true;
   return false;
