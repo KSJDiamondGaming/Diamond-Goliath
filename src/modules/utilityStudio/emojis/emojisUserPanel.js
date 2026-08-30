@@ -267,26 +267,27 @@ async function autocomplete(interaction) {
   return interaction.respond(matches.map((emoji) => {
     const prefix = favouriteIds.has(String(emoji.id)) ? '⭐ ' : recentIds.has(String(emoji.id)) ? '🕘 ' : '';
     const shortcode = emojiShortcode(emoji);
-    return { name: `${prefix}:${shortcode}: · ${emoji.category || 'General'}`.slice(0, 100), value: String(emoji.id) };
+    // Core choices carry their canonical alias so a stale ID can never make one Core label select another Core entry.
+    const value = emoji.core ? `core:${shortcode}` : String(emoji.id);
+    return { name: `${prefix}:${shortcode}: · ${emoji.category || 'General'}`.slice(0, 100), value };
   })).catch(() => null);
 }
 
-async function commandSelection(interaction, emojiId) {
-  const catalog = await availableCatalog(interaction);
-  const emoji = catalog.find((entry) => String(entry.id) === String(emojiId));
+async function commandSelection(interaction, reference) {
+  const raw = String(reference || '').trim();
+  let emoji = null;
+  if (raw.startsWith('core:')) {
+    const alias = raw.slice(5).toLowerCase();
+    if (!emojis.isApprovedCoreAlias(alias)) return null;
+    emoji = await emojis.resolveGuildEmoji(interaction.client, guildId(interaction), alias, 'user_quick_emoji');
+    if (!emoji?.core || emoji.alias !== alias || emoji.name !== `${emojis.CORE_EMOJI_PREFIX}${alias}`) return null;
+  } else {
+    const catalog = await availableCatalog(interaction);
+    emoji = catalog.find((entry) => String(entry.id) === raw) || null;
+  }
   if (!emoji) return null;
   touchUserRecent(guildId(interaction), userId(interaction), emoji.id);
-  const prefs = getUserPreferences(guildId(interaction), userId(interaction));
-  return {
-    embeds: [new EmbedBuilder().setColor(PANEL_COLOR).setTitle(`${emoji.mention} Emoji`).setDescription([
-      emoji.mention,
-      '',
-      `**Shortcode:** \`:${emojiShortcode(emoji)}:\``,
-      `**Category:** ${emoji.category || 'General'}`,
-      prefs.favourites.includes(String(emoji.id)) ? '**Favourite:** ⭐ Saved' : '**Favourite:** Not saved yet — open My Emojis to add it.',
-    ].join('\n')).setFooter({ text: 'Use /user with no options to open your full panel.' })],
-    components: [],
-  };
+  return { content: emoji.mention, allowedMentions: { parse: [] } };
 }
 
 async function handleInteraction(interaction, updatePanel) {
