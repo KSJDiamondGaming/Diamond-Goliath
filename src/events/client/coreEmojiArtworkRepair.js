@@ -21,12 +21,37 @@ function digest(buffer) {
   return crypto.createHash('sha256').update(buffer).digest('hex');
 }
 
+function canonicalPath(alias) {
+  return path.join(
+    process.cwd(),
+    'src',
+    'modules',
+    'utilityStudio',
+    'emojis',
+    'assets',
+    `${alias}.png`,
+  );
+}
+
 async function downloadEmoji(emoji) {
   const url = emoji?.imageURL?.({ extension: 'png', size: 128 }) || emoji?.url;
   if (!url) return null;
   const response = await fetch(url, REQUEST_OPTIONS);
   if (!response.ok) throw new Error(`emoji download failed (${response.status})`);
   return response.buffer();
+}
+
+async function visualDigest(buffer) {
+  let sharp = null;
+  try { sharp = require('sharp'); } catch (_) {}
+  if (!sharp) return digest(buffer);
+
+  const normalized = await sharp(buffer)
+    .ensureAlpha()
+    .resize(64, 64, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+    .raw()
+    .toBuffer();
+  return digest(normalized);
 }
 
 async function repairIfMisassigned(client) {
@@ -43,31 +68,35 @@ async function repairIfMisassigned(client) {
 
   const target = byName.get(`${emojis.CORE_EMOJI_PREFIX}${TARGET_ALIAS}`);
   const accidental = byName.get(`${emojis.CORE_EMOJI_PREFIX}${ACCIDENTAL_ALIAS}`);
-  if (!target || !accidental) return { repaired: false, reason: 'required-core-emoji-missing' };
+  if (!target) return { repaired: false, reason: 'discord-core-emoji-missing' };
 
-  const [targetBuffer, accidentalBuffer] = await Promise.all([
+  const targetAsset = canonicalPath(TARGET_ALIAS);
+  const accidentalAsset = canonicalPath(ACCIDENTAL_ALIAS);
+  if (!fs.existsSync(targetAsset)) throw new Error(`Canonical Core asset is missing: ${targetAsset}`);
+  if (!fs.existsSync(accidentalAsset)) throw new Error(`Canonical Core asset is missing: ${accidentalAsset}`);
+
+  const [targetBuffer, canonicalDiscord, canonicalActivision, currentActivision] = await Promise.all([
     downloadEmoji(target),
-    downloadEmoji(accidental),
+    fs.promises.readFile(targetAsset),
+    fs.promises.readFile(accidentalAsset),
+    accidental ? downloadEmoji(accidental) : Promise.resolve(null),
   ]);
-  if (!targetBuffer || !accidentalBuffer) return { repaired: false, reason: 'image-unavailable' };
+  if (!targetBuffer) return { repaired: false, reason: 'discord-image-unavailable' };
 
-  if (digest(targetBuffer) !== digest(accidentalBuffer)) {
-    return { repaired: false, reason: 'discord-artwork-not-duplicated' };
-  }
+  const [targetHash, discordHash, activisionHash, currentActivisionHash] = await Promise.all([
+    visualDigest(targetBuffer),
+    visualDigest(canonicalDiscord),
+    visualDigest(canonicalActivision),
+    currentActivision ? visualDigest(currentActivision) : Promise.resolve(null),
+  ]);
 
-  const sourcePath = path.join(
-    process.cwd(),
-    'src',
-    'modules',
-    'utilityStudio',
-    'emojis',
-    'assets',
-    `${TARGET_ALIAS}.png`,
-  );
-  if (!fs.existsSync(sourcePath)) throw new Error(`Canonical Core asset is missing: ${sourcePath}`);
+  if (targetHash === discordHash) return { repaired: false, reason: 'already-canonical' };
 
-  const source = await fs.promises.readFile(sourcePath);
-  const prepared = await emojiProcessor.prepareEmojiBuffer(source, {
+  const clearlyActivision = targetHash === activisionHash
+    || (currentActivisionHash && targetHash === currentActivisionHash);
+  if (!clearlyActivision) return { repaired: false, reason: 'unexpected-discord-artwork' };
+
+  const prepared = await emojiProcessor.prepareEmojiBuffer(canonicalDiscord, {
     size: 512,
     padding: 32,
     maxBytes: emojiApi.MAX_BYTES,
@@ -84,7 +113,7 @@ module.exports = {
     try {
       const outcome = await repairIfMisassigned(client);
       if (outcome.repaired) {
-        console.log('[Emoji Core] Repaired :discord: from canonical repo asset after detecting duplicated Activision artwork.');
+        console.log('[Emoji Core] Repaired :discord: from the canonical repo asset after detecting Activision artwork in the Discord slot.');
       }
     } catch (error) {
       console.error('[Emoji Core] Automatic Discord artwork repair failed:', error?.message || error);
