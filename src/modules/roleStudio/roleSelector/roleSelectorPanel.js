@@ -356,17 +356,27 @@ async function buildAdminPanel(guild, requestedBy = 'Unknown User') {
 async function buildSettingsPanel(guild) {
   const enabled = guildManager.isModuleEnabled(guild.id, roleSelector.MODULE);
   const health = await healthService.buildHealth(guild);
+  const section = roleSelector.getSection(guild.id);
+  const hasSuggestion = Boolean(section.style.detectedFormat);
   return {
     embeds: [new EmbedBuilder().setColor(health.healthy ? 0x57F287 : 0xFAA61A).setTitle('⚙️ Role Selector · Settings').setDescription([
       `**Module:** ${enabled ? 'Enabled ✅' : 'Disabled ❌'}`,
       `**Health:** ${health.healthy ? 'Healthy ✅' : 'Needs attention ⚠️'}`,
-      '', 'Module controls, usage and diagnostics live here.',
+      '',
+      '**Guild Style Detection**',
+      hasSuggestion ? `Suggested role style: \`${section.style.detectedFormat}\`` : 'No style scan has been run yet.',
+      '',
+      'System controls, usage, diagnostics and guild-style detection live here.',
     ].join('\n'))],
     components: [
       row(
-        button(enabled ? 'admin:roleSelector:disable' : 'admin:roleSelector:enable', enabled ? '⏸ Disable' : '▶ Enable'),
+        button(enabled ? 'admin:roleSelector:disable' : 'admin:roleSelector:enable', enabled ? '⏸ Disable' : '▶ Enable', enabled ? ButtonStyle.Danger : ButtonStyle.Success),
         button('admin:roleSelector:stats', '📊 Stats', ButtonStyle.Primary),
-        button('admin:roleSelector:health', '🩺 Health / Repair'),
+        button('admin:roleSelector:health', '🩺 Health / Repair', ButtonStyle.Secondary),
+      ),
+      row(
+        button('admin:roleSelector:scanStyle', '🔎 Scan Guild Style', ButtonStyle.Primary),
+        button('admin:roleSelector:applyStyle', '✅ Apply Suggested Style', hasSuggestion ? ButtonStyle.Success : ButtonStyle.Secondary, !hasSuggestion),
       ),
       nav('admin:roleSelector', true),
     ],
@@ -432,27 +442,29 @@ function buildColourPanel(guildId, group) {
 
 function buildAppearance(guild) {
   const section = roleSelector.getSection(guild.id);
+  const preview = roleSelector.roleNameFor(section, 'Example Role');
+  const anchor = section.style.anchorRoleId ? `<@&${section.style.anchorRoleId}>` : '`No anchor selected`';
+  const placement = section.style.placement === 'above' ? 'Above' : 'Below';
   return {
     embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('🎨 Role Selector · Appearance').setDescription([
-      '**Role Style**',
-      `Format: \`${roleSelector.roleNameFor(section, 'Example Role')}\``,
-      `Detected suggestion: ${section.style.detectedFormat ? `\`${section.style.detectedFormat}\`` : '`Not scanned`'}`, '',
-      '**Role Placement**',
-      `Anchor: ${section.style.anchorRoleId ? `<@&${section.style.anchorRoleId}>` : '`Not set`'}`,
-      `Placement: **${section.style.placement}**`,
-      `Keep roles together: **${section.style.keepGrouped ? 'Yes ✅' : 'No'}**`,
+      '**Role Preview**',
+      `\`${preview}\``,
+      '',
+      '**Where roles are placed**',
+      `${placement} ${anchor}`,
+      `Keep selector roles together: **${section.style.keepGrouped ? 'On ✅' : 'Off'}**`,
+      '',
+      'Choose where Role Selector roles should sit, then adjust the role style or divider if needed.',
     ].join('\n'))],
     components: [
-      row(new RoleSelectMenuBuilder().setCustomId('admin:roleSelector:anchor').setPlaceholder('Select divider / anchor role').setMinValues(0).setMaxValues(1)),
+      row(new RoleSelectMenuBuilder().setCustomId('admin:roleSelector:anchor').setPlaceholder('Choose where Role Selector roles should sit').setMinValues(0).setMaxValues(1)),
       row(
-        button('admin:roleSelector:styleOpen', '✏️ Edit Format', ButtonStyle.Primary),
-        button('admin:roleSelector:scanStyle', '🔎 Scan Guild Style', ButtonStyle.Secondary),
-        button('admin:roleSelector:createDivider', '➕ Create Divider', ButtonStyle.Success),
+        button('admin:roleSelector:styleOpen', '✏️ Edit Role Style', ButtonStyle.Primary),
+        button('admin:roleSelector:createDivider', '➕ Create Divider', ButtonStyle.Primary),
       ),
       row(
-        button('admin:roleSelector:togglePlacement', section.style.placement === 'above' ? '📍 Place Above' : '📍 Place Below', ButtonStyle.Primary),
-        button('admin:roleSelector:toggleGrouped', section.style.keepGrouped ? '🧲 Keep Together: On' : '🧲 Keep Together: Off', section.style.keepGrouped ? ButtonStyle.Primary : ButtonStyle.Secondary),
-        button('admin:roleSelector:applyStyle', '✅ Apply Suggestion', section.style.detectedFormat ? ButtonStyle.Success : ButtonStyle.Secondary, !section.style.detectedFormat),
+        button('admin:roleSelector:togglePlacement', section.style.placement === 'above' ? '⬆️ Place Above' : '⬇️ Place Below', ButtonStyle.Primary),
+        button('admin:roleSelector:toggleGrouped', section.style.keepGrouped ? '🧲 Keep Together: On' : '🧲 Keep Together: Off', ButtonStyle.Primary),
       ),
       nav(),
     ],
@@ -715,8 +727,8 @@ function optionsModal(group) {
 }
 
 function styleModal(section) {
-  return new ModalBuilder().setCustomId('admin:roleSelector:styleSubmit').setTitle('Role Selector Appearance').addComponents(
-    row(new TextInputBuilder().setCustomId('format').setLabel('Role format').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(100).setValue(section.style.format || '🎭 | {role}')),
+  return new ModalBuilder().setCustomId('admin:roleSelector:styleSubmit').setTitle('Edit Role Style').addComponents(
+    row(new TextInputBuilder().setCustomId('format').setLabel('Role name format').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(100).setValue(section.style.format || '🎭 | {role}')),
     row(new TextInputBuilder().setCustomId('icon').setLabel('Default icon / prefix').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(100).setValue(section.style.icon || '')),
     row(new TextInputBuilder().setCustomId('separator').setLabel('Separator').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(20).setValue(section.style.separator || '|')),
   );
@@ -856,11 +868,11 @@ async function handleRoleSelectorInteraction(i) {
     if (id === 'admin:roleSelector:scanStyle') {
       const suggestion = roleSelector.suggestRoleStyle(i.guild);
       roleSelector.updateSection(i.guildId, (section) => ({ ...section, style: { ...section.style, detectedFormat: suggestion.format, detectedIcon: suggestion.icon, detectedSeparator: suggestion.separator, detectedConfidence: suggestion.confidence } }), { ...actor, action: id });
-      return respond(i, buildAppearance(i.guild));
+      return respond(i, await buildSettingsPanel(i.guild));
     }
     if (id === 'admin:roleSelector:applyStyle') {
       roleSelector.updateSection(i.guildId, (section) => ({ ...section, style: { ...section.style, format: section.style.detectedFormat || section.style.format, icon: section.style.detectedIcon || '', separator: section.style.detectedSeparator || section.style.separator } }), { ...actor, action: id });
-      await roleSelector.syncManagedRoleAppearance(i.guild); await syncPanels(i.guild); return respond(i, buildAppearance(i.guild));
+      await roleSelector.syncManagedRoleAppearance(i.guild); await syncPanels(i.guild); return respond(i, await buildSettingsPanel(i.guild));
     }
     if (id === 'admin:roleSelector:createDivider') { await i.showModal(dividerModal()); return true; }
     if (id === 'admin:roleSelector:createDividerSubmit') {
