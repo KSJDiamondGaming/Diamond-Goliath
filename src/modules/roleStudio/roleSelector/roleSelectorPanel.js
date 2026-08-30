@@ -31,19 +31,12 @@ const cleanId = (value) => {
 };
 const sessionKey = (i) => `${i.guildId}:${i.user.id}`;
 const actorName = (i) => i.member?.displayName || i.user?.username || 'Unknown User';
+const safePart = (value) => String(value || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 40);
+const customId = (...parts) => parts.filter((part) => part !== null && part !== undefined && part !== '').join(':').slice(0, 100);
 
 function state(i) {
   const key = sessionKey(i);
-  const value = sessions.get(key) || {
-    groupId: null,
-    deploymentId: null,
-    deploymentContentGroupId: null,
-    statsGroupId: null,
-    statsOptionId: null,
-    statsPage: 0,
-    pendingChannelId: null,
-    pendingStatsChannelId: null,
-  };
+  const value = sessions.get(key) || { statsGroupId: null, statsOptionId: null, statsPage: 0 };
   sessions.set(key, value);
   return value;
 }
@@ -106,10 +99,10 @@ async function resolvePayload(guild, payload) {
   };
 }
 
-function groupMenu(guildId, selected = null, customId = 'admin:roleSelector:groupSelect', multi = false, selectedIds = []) {
+function groupMenu(guildId, selected = null, menuId = 'admin:roleSelector:groupSelect', multi = false, selectedIds = []) {
   const list = groups(guildId).slice(0, 25);
   const menu = new StringSelectMenuBuilder()
-    .setCustomId(customId)
+    .setCustomId(menuId)
     .setPlaceholder(multi ? 'Choose groups for this panel' : 'Choose a group')
     .setMinValues(multi ? 0 : 1)
     .setMaxValues(multi ? Math.max(1, list.length) : 1);
@@ -123,14 +116,12 @@ function groupMenu(guildId, selected = null, customId = 'admin:roleSelector:grou
   return row(menu);
 }
 
-function memberCategoryMenu(guild, allowedIds = null, selected = null, customId = 'roleSelector:switchGroup') {
+function memberCategoryMenu(guild, allowedIds = null, selected = null, menuId = 'roleSelector:switchGroup') {
   const allowed = Array.isArray(allowedIds) ? new Set(allowedIds) : null;
-  const list = groups(guild.id)
-    .filter((g) => roleSelector.isGroupMemberUsable(g) && (!allowed || allowed.has(g.id)))
-    .slice(0, 25);
+  const list = groups(guild.id).filter((g) => roleSelector.isGroupMemberUsable(g) && (!allowed || allowed.has(g.id))).slice(0, 25);
   const current = list.find((g) => g.id === selected);
   const menu = new StringSelectMenuBuilder()
-    .setCustomId(customId)
+    .setCustomId(menuId)
     .setPlaceholder(current ? `Current: ${current.name} · choose or switch`.slice(0, 150) : 'Choose a category')
     .setMinValues(1)
     .setMaxValues(1);
@@ -150,77 +141,8 @@ function memberDisabledPayload() {
   };
 }
 
-function optionFilterFor(deployment, groupId) {
-  const value = deployment?.optionIdsByGroup?.[groupId];
-  return Array.isArray(value) ? new Set(value.map(String)) : null;
-}
-
-function memberLauncherPayload(guild, allowedIds = null, deploymentId = null) {
-  if (!guildManager.isModuleEnabled(guild.id, roleSelector.MODULE)) return memberDisabledPayload();
-  return {
-    embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('🎭 Choose Your Roles').setDescription('Choose a category below. Each category manages only its own roles.')],
-    components: [memberCategoryMenu(guild, allowedIds, null, deploymentId ? `roleSelector:openGroup:${deploymentId}` : 'roleSelector:openGroup')],
-  };
-}
-
-function memberGroupPayload(guild, member, groupId, allowedIds = null, deploymentId = null, deployment = null) {
-  roleSelector.assertModuleEnabled(guild.id);
-  const group = roleSelector.getGroup(guild.id, groupId);
-  if (!group || !roleSelector.isGroupMemberUsable(group) || (Array.isArray(allowedIds) && !allowedIds.includes(group.id))) {
-    throw new Error('That selector is unavailable on this panel.');
-  }
-
-  const components = [memberCategoryMenu(guild, allowedIds, group.id, deploymentId ? `roleSelector:switchGroup:${deploymentId}` : 'roleSelector:switchGroup')];
-  const embed = new EmbedBuilder()
-    .setColor(0x5865F2)
-    .setTitle(`${group.emoji || '🏷️'} ${group.name}`)
-    .setDescription([
-      group.description || 'Choose your role.',
-      group.selectionMode === 'multiple' ? 'Select every option that applies.' : 'Select one option.',
-      group.allowRemove ? 'You may clear this category at any time.' : null,
-    ].filter(Boolean).join('\n'));
-
-  if (group.type === 'colour') {
-    const opts = group.palette.filter((x) => x.enabled).sort((a, b) => a.order - b.order).slice(0, 24).map((x) => ({
-      label: x.label,
-      value: x.hex,
-      emoji: x.emoji || undefined,
-      description: `${x.hex} · ${x.family}`.slice(0, 100),
-      default: Boolean(group.managedRoles?.[x.hex]?.roleId && member?.roles?.cache?.has(group.managedRoles[x.hex].roleId)),
-    }));
-    if (opts.length) components.push(row(new StringSelectMenuBuilder().setCustomId(`roleSelector:colourChoose:${deploymentId || 'global'}`).setPlaceholder('Choose a colour').setMinValues(1).setMaxValues(1).addOptions(opts)));
-    components.push(row(
-      group.customHexEnabled ? button(`roleSelector:customHex:${deploymentId || 'global'}`, '🎨 Pick Your Own', ButtonStyle.Primary) : null,
-      group.allowRemove ? button(`roleSelector:clear:colours:${deploymentId || 'global'}`, '🧹 Clear Selection') : null,
-    ));
-  } else {
-    const filter = optionFilterFor(deployment, group.id);
-    const opts = (group.options || [])
-      .filter((x) => x.enabled && (!filter || filter.has(x.id)))
-      .sort((a, b) => a.order - b.order)
-      .slice(0, 25)
-      .map((x) => ({
-        label: x.label,
-        value: x.id,
-        emoji: x.emoji || undefined,
-        description: x.description || undefined,
-        default: Boolean(x.roleId && member?.roles?.cache?.has(x.roleId)),
-      }));
-    if (opts.length) components.push(row(new StringSelectMenuBuilder()
-      .setCustomId(`roleSelector:choose:${group.id}:${deploymentId || 'global'}`)
-      .setPlaceholder(group.selectionMode === 'multiple' ? 'Choose one or more' : 'Choose one')
-      .setMinValues(group.selectionMode === 'multiple' ? 0 : 1)
-      .setMaxValues(group.selectionMode === 'multiple' ? opts.length : 1)
-      .addOptions(opts)));
-    if (group.allowRemove) components.push(row(button(`roleSelector:clear:${group.id}:${deploymentId || 'global'}`, '🧹 Clear Selection')));
-  }
-  return { embeds: [embed], components: components.filter((x) => x.components.length) };
-}
-
-async function freshMember(i) { return i.guild.members.fetch(i.user.id).catch(() => i.member); }
-
 function normalizeDeployment(raw, fallbackId = null) {
-  const id = String(raw?.id || fallbackId || '').trim() || `panel-${Date.now().toString(36)}`;
+  const id = safePart(raw?.id || fallbackId) || `p${Date.now().toString(36)}`;
   const optionIdsByGroup = {};
   if (raw?.optionIdsByGroup && typeof raw.optionIdsByGroup === 'object') {
     for (const [groupId, ids] of Object.entries(raw.optionIdsByGroup)) {
@@ -274,6 +196,66 @@ function deploymentAllowedGroups(guildId, deploymentId) {
   return deployment ? deployment.groupIds : [];
 }
 
+function optionFilterFor(deployment, groupId) {
+  const value = deployment?.optionIdsByGroup?.[groupId];
+  return Array.isArray(value) ? new Set(value.map(String)) : null;
+}
+
+function memberLauncherPayload(guild, allowedIds = null, deploymentId = null) {
+  if (!guildManager.isModuleEnabled(guild.id, roleSelector.MODULE)) return memberDisabledPayload();
+  return {
+    embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('🎭 Choose Your Roles').setDescription('Choose a category below. Each category manages only its own roles, so changing one selection never removes roles from another category.')],
+    components: [memberCategoryMenu(guild, allowedIds, null, deploymentId ? customId('roleSelector:openGroup', deploymentId) : 'roleSelector:openGroup')],
+  };
+}
+
+function memberGroupPayload(guild, member, groupId, allowedIds = null, deploymentId = null, deployment = null) {
+  roleSelector.assertModuleEnabled(guild.id);
+  const group = roleSelector.getGroup(guild.id, groupId);
+  if (!group || !roleSelector.isGroupMemberUsable(group) || (Array.isArray(allowedIds) && !allowedIds.includes(group.id))) throw new Error('That selector is unavailable on this panel.');
+
+  const components = [memberCategoryMenu(guild, allowedIds, group.id, deploymentId ? customId('roleSelector:switchGroup', deploymentId) : 'roleSelector:switchGroup')];
+  const embed = new EmbedBuilder().setColor(0x5865F2).setTitle(`${group.emoji || '🏷️'} ${group.name}`).setDescription([
+    group.description || 'Choose your role.',
+    group.selectionMode === 'multiple' ? 'Select every option that applies.' : 'Select one option.',
+    group.allowRemove ? 'You may clear this category at any time.' : null,
+  ].filter(Boolean).join('\n'));
+
+  if (group.type === 'colour') {
+    const opts = group.palette.filter((x) => x.enabled).sort((a, b) => a.order - b.order).slice(0, 24).map((x) => ({
+      label: x.label,
+      value: x.hex,
+      emoji: x.emoji || undefined,
+      description: `${x.hex} · ${x.family}`.slice(0, 100),
+      default: Boolean(group.managedRoles?.[x.hex]?.roleId && member?.roles?.cache?.has(group.managedRoles[x.hex].roleId)),
+    }));
+    if (opts.length) components.push(row(new StringSelectMenuBuilder().setCustomId(customId('roleSelector:colourChoose', deploymentId || 'global')).setPlaceholder('Choose a colour').setMinValues(1).setMaxValues(1).addOptions(opts)));
+    components.push(row(
+      group.customHexEnabled ? button(customId('roleSelector:customHex', deploymentId || 'global'), '🎨 Pick Your Own', ButtonStyle.Primary) : null,
+      group.allowRemove ? button(customId('roleSelector:clear', 'colours', deploymentId || 'global'), '🧹 Clear Selection') : null,
+    ));
+  } else {
+    const filter = optionFilterFor(deployment, group.id);
+    const opts = (group.options || []).filter((x) => x.enabled && (!filter || filter.has(x.id))).sort((a, b) => a.order - b.order).slice(0, 25).map((x) => ({
+      label: x.label,
+      value: x.id,
+      emoji: x.emoji || undefined,
+      description: x.description || undefined,
+      default: Boolean(x.roleId && member?.roles?.cache?.has(x.roleId)),
+    }));
+    if (opts.length) components.push(row(new StringSelectMenuBuilder()
+      .setCustomId(customId('roleSelector:choose', group.id, deploymentId || 'global'))
+      .setPlaceholder(group.selectionMode === 'multiple' ? 'Choose one or more' : 'Choose one')
+      .setMinValues(group.selectionMode === 'multiple' ? 0 : 1)
+      .setMaxValues(group.selectionMode === 'multiple' ? opts.length : 1)
+      .addOptions(opts)));
+    if (group.allowRemove) components.push(row(button(customId('roleSelector:clear', group.id, deploymentId || 'global'), '🧹 Clear Selection')));
+  }
+  return { embeds: [embed], components: components.filter((x) => x.components.length) };
+}
+
+async function freshMember(i) { return i.guild.members.fetch(i.user.id).catch(() => i.member); }
+
 async function fetchDeployment(guild, deployment) {
   if (!deployment?.channelId) return { channel: null, message: null };
   const channel = guild.channels.cache.get(deployment.channelId) || await guild.channels.fetch(deployment.channelId).catch(() => null);
@@ -302,9 +284,7 @@ async function syncDeploymentState(guild, changedGroupId = null) {
     const list = deploymentList(roleSelector.getSection(guild.id));
     const targets = changedGroupId ? list.filter((d) => d.groupIds.includes(changedGroupId)) : list;
     const results = [];
-    for (const deployment of targets) {
-      results.push(await syncOneDeployment(guild, deployment).catch((error) => ({ updated: false, reason: error.message })));
-    }
+    for (const deployment of targets) results.push(await syncOneDeployment(guild, deployment).catch((error) => ({ updated: false, reason: error.message })));
     return { updated: results.some((r) => r.updated), results };
   });
 }
@@ -371,16 +351,15 @@ async function buildSettingsPanel(guild) {
   };
 }
 
-function buildGroupsPanel(i) {
-  const current = state(i);
-  const selected = current.groupId ? roleSelector.getGroup(i.guildId, current.groupId) : null;
+function buildGroupsPanel(guildId, selectedId = null) {
+  const selected = selectedId ? roleSelector.getGroup(guildId, selectedId) : null;
   if (!selected) {
     return {
       embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('🏷️ Role Selector · Groups').setDescription('Create and manage self-role categories.\n\n🌈 **Colours** is the protected built-in group.')],
-      components: [groupMenu(i.guildId), row(button('admin:roleSelector:createGroup', '➕ Create Group', ButtonStyle.Success)), nav()],
+      components: [groupMenu(guildId), row(button('admin:roleSelector:createGroup', '➕ Create Group', ButtonStyle.Success)), nav()],
     };
   }
-  if (selected.type === 'colour') return buildColourPanel(i.guild, selected);
+  if (selected.type === 'colour') return buildColourPanel(guildId, selected);
   const lines = (selected.options || []).map((x) => `${x.enabled ? '✅' : '⬜'} ${x.emoji || '•'} **${x.label}** · Role: ${x.managed === false ? 'Existing role' : x.roleId ? 'Goliath-managed' : 'Auto-create'}`);
   return {
     embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('🏷️ Role Selector · Groups').setDescription([
@@ -392,15 +371,18 @@ function buildGroupsPanel(i) {
       lines.join('\n') || '`No options yet`',
     ].join('\n').slice(0, 4096))],
     components: [
-      groupMenu(i.guildId, selected.id),
-      row(button('admin:roleSelector:options', '📝 Manage Options', ButtonStyle.Primary), button('admin:roleSelector:groupSettings', '⚙️ Group Settings', ButtonStyle.Primary)),
-      row(button('admin:roleSelector:deleteGroup', '🗑️ Delete Group', ButtonStyle.Danger)),
+      groupMenu(guildId, selected.id),
+      row(
+        button(customId('admin:roleSelector:options', selected.id), '📝 Manage Options', ButtonStyle.Primary),
+        button(customId('admin:roleSelector:groupSettings', selected.id), '⚙️ Group Settings', ButtonStyle.Primary),
+      ),
+      row(button(customId('admin:roleSelector:deleteGroup', selected.id), '🗑️ Delete Group', ButtonStyle.Danger)),
       nav(),
     ],
   };
 }
 
-function buildColourPanel(guild, group) {
+function buildColourPanel(guildId, group) {
   const palette = [...group.palette].sort((a, b) => a.order - b.order).slice(0, 25);
   const menu = new StringSelectMenuBuilder().setCustomId('admin:roleSelector:palette').setPlaceholder('Enabled preset colours').setMinValues(0).setMaxValues(Math.max(1, palette.length)).addOptions(palette.map((x) => ({
     label: x.label, value: x.id, emoji: x.emoji || undefined, description: x.hex, default: x.enabled,
@@ -411,7 +393,7 @@ function buildColourPanel(guild, group) {
       ...palette.map((x) => `${x.enabled ? '✅' : '⬜'} ${x.emoji} **${x.label}** · \`${x.hex}\``),
     ].join('\n'))],
     components: [
-      groupMenu(guild.id, group.id),
+      groupMenu(guildId, group.id),
       row(menu),
       row(
         button('admin:roleSelector:toggleHex', group.customHexEnabled ? '🎨 Custom HEX: On' : '🎨 Custom HEX: Off'),
@@ -422,8 +404,8 @@ function buildColourPanel(guild, group) {
   };
 }
 
-function buildGroupSettings(i) {
-  const group = roleSelector.getGroup(i.guildId, state(i).groupId);
+function buildGroupSettings(guildId, groupId) {
+  const group = roleSelector.getGroup(guildId, groupId);
   if (!group || group.builtIn) throw new Error('Select a custom group first.');
   return {
     embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle(`⚙️ ${group.emoji || '🏷️'} ${group.name} · Group Settings`).setDescription([
@@ -432,10 +414,13 @@ function buildGroupSettings(i) {
     ].join('\n'))],
     components: [
       row(
-        button('admin:roleSelector:toggleMode', group.selectionMode === 'multiple' ? '☑️ Multiple Choices' : '1️⃣ Single Choice', ButtonStyle.Primary),
-        button('admin:roleSelector:toggleRemove', group.allowRemove ? '🧹 Allow Clear: Yes' : '🧹 Allow Clear: No'),
+        button(customId('admin:roleSelector:toggleMode', group.id), group.selectionMode === 'multiple' ? '☑️ Multiple Choices' : '1️⃣ Single Choice', ButtonStyle.Primary),
+        button(customId('admin:roleSelector:toggleRemove', group.id), group.allowRemove ? '🧹 Allow Clear: Yes' : '🧹 Allow Clear: No'),
       ),
-      nav('admin:roleSelector:groups'),
+      row(
+        button(customId('admin:roleSelector:groupOpen', group.id), '⬅️ Back'),
+        button('admin:roleSelector:settings', '⚙️ Settings'),
+      ),
     ],
   };
 }
@@ -482,45 +467,9 @@ function deploymentSelect(guildId, selectedId = null) {
   return row(menu);
 }
 
-function deploymentGroupFilterMenu(guildId, deployment) {
-  const selectedGroup = stateForDeploymentContentGroup(deployment, guildId);
-  const included = deployment.groupIds.map((id) => roleSelector.getGroup(guildId, id)).filter((g) => g && g.type !== 'colour' && (g.options || []).some((x) => x.enabled)).slice(0, 25);
-  const menu = new StringSelectMenuBuilder().setCustomId('admin:roleSelector:deploymentContentGroup').setPlaceholder('Choose a group to limit roles').setMinValues(1).setMaxValues(1);
-  if (!included.length) return row(menu.setDisabled(true).addOptions({ label: 'No role groups selected', value: '__none__' }));
-  menu.addOptions(included.map((g) => ({
-    label: `${g.emoji || '🏷️'} ${g.name}`.slice(0, 100),
-    value: g.id,
-    description: Array.isArray(deployment.optionIdsByGroup?.[g.id]) ? `${deployment.optionIdsByGroup[g.id].length} selected role(s)` : 'All roles included',
-    default: g.id === selectedGroup,
-  })));
-  return row(menu);
-}
-
-function stateForDeploymentContentGroup(deployment, guildId) {
-  const values = Object.keys(deployment.optionIdsByGroup || {});
-  return values.find((id) => deployment.groupIds.includes(id) && roleSelector.getGroup(guildId, id)) || null;
-}
-
-function deploymentOptionMenu(guildId, deployment, groupId) {
-  const group = roleSelector.getGroup(guildId, groupId);
-  const options = (group?.options || []).filter((x) => x.enabled).slice(0, 25);
-  const selected = deployment.optionIdsByGroup?.[groupId];
-  const selectedSet = Array.isArray(selected) ? new Set(selected) : new Set(options.map((x) => x.id));
-  const menu = new StringSelectMenuBuilder().setCustomId('admin:roleSelector:deploymentOptions').setPlaceholder('Choose roles shown on this panel').setMinValues(0).setMaxValues(Math.max(1, options.length));
-  if (!options.length) return row(menu.setDisabled(true).addOptions({ label: 'No role options available', value: '__none__' }));
-  menu.addOptions(options.map((x) => ({
-    label: `${x.emoji || '•'} ${x.label}`.slice(0, 100),
-    value: x.id,
-    description: (x.description || 'Role selector option').slice(0, 100),
-    default: selectedSet.has(x.id),
-  })));
-  return row(menu);
-}
-
-async function buildDeploymentsPanel(i) {
+async function buildDeploymentsPanel(i, selectedId = null) {
   const list = deploymentList(roleSelector.getSection(i.guildId));
-  const current = state(i);
-  const selected = current.deploymentId ? list.find((d) => d.id === current.deploymentId) : null;
+  const selected = selectedId ? list.find((d) => d.id === selectedId) : null;
   if (!selected) {
     const lines = await Promise.all(list.map(async (d, index) => {
       const { message } = await fetchDeployment(i.guild, d);
@@ -533,11 +482,7 @@ async function buildDeploymentsPanel(i) {
         'Deploy different Role Selector panels to different channels. The same group can appear on multiple panels.', '',
         lines.join('\n\n') || '`No deployments yet`',
       ].join('\n').slice(0, 4096))],
-      components: [
-        deploymentSelect(i.guildId),
-        row(button('admin:roleSelector:deploymentCreate', '➕ Create Deployment', ButtonStyle.Success)),
-        nav(),
-      ],
+      components: [deploymentSelect(i.guildId), row(button('admin:roleSelector:deploymentCreate', '➕ Create Deployment', ButtonStyle.Success)), nav()],
     };
   }
 
@@ -546,10 +491,9 @@ async function buildDeploymentsPanel(i) {
   const jump = message ? `https://discord.com/channels/${i.guildId}/${message.channel.id}/${message.id}` : null;
   const channelName = selected.channelId ? i.guild.channels.cache.get(selected.channelId)?.name : null;
   const channelMenu = new ChannelSelectMenuBuilder()
-    .setCustomId('admin:roleSelector:deploymentChannel')
+    .setCustomId(customId('admin:roleSelector:deploymentChannel', selected.id))
     .setPlaceholder(channelName ? `Current: #${channelName} · choose to change` : 'Choose deployment channel')
-    .setMinValues(1)
-    .setMaxValues(1)
+    .setMinValues(1).setMaxValues(1)
     .setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement);
 
   return {
@@ -564,25 +508,50 @@ async function buildDeploymentsPanel(i) {
       deploymentSelect(i.guildId, selected.id),
       row(channelMenu),
       row(
-        button('admin:roleSelector:deploymentContent', '🏷️ Groups & Roles', ButtonStyle.Primary),
-        button('admin:roleSelector:deploy', message ? '🔄 Update Panel' : '📨 Deploy Panel', ButtonStyle.Success, !selected.channelId || !selected.groupIds.length),
+        button(customId('admin:roleSelector:deploymentContent', selected.id), '🏷️ Groups & Roles', ButtonStyle.Primary),
+        button(customId('admin:roleSelector:deploy', selected.id), message ? '🔄 Update Panel' : '📨 Deploy Panel', ButtonStyle.Success, !selected.channelId || !selected.groupIds.length),
         jump ? linkButton('↗️ Jump to Panel', jump) : null,
       ),
       row(
         button('admin:roleSelector:deployment', '⬅️ Back'),
-        button('admin:roleSelector:deploymentDelete', '🗑️ Delete', ButtonStyle.Danger),
+        button(customId('admin:roleSelector:deploymentDelete', selected.id), '🗑️ Delete', ButtonStyle.Danger),
         button('admin:roleSelector:settings', '⚙️ Settings'),
       ),
     ],
   };
 }
 
-async function buildDeploymentContentPanel(i) {
-  const deployment = deploymentById(i.guildId, state(i).deploymentId);
+function deploymentGroupFilterMenu(guildId, deployment, selectedGroupId = null) {
+  const included = deployment.groupIds.map((id) => roleSelector.getGroup(guildId, id)).filter((g) => g && g.type !== 'colour' && (g.options || []).some((x) => x.enabled)).slice(0, 25);
+  const menu = new StringSelectMenuBuilder().setCustomId(customId('admin:roleSelector:deploymentContentGroup', deployment.id)).setPlaceholder('Choose a group to limit roles').setMinValues(1).setMaxValues(1);
+  if (!included.length) return row(menu.setDisabled(true).addOptions({ label: 'No role groups selected', value: '__none__' }));
+  menu.addOptions(included.map((g) => ({
+    label: `${g.emoji || '🏷️'} ${g.name}`.slice(0, 100),
+    value: g.id,
+    description: Array.isArray(deployment.optionIdsByGroup?.[g.id]) ? `${deployment.optionIdsByGroup[g.id].length} selected role(s)` : 'All roles included',
+    default: g.id === selectedGroupId,
+  })));
+  return row(menu);
+}
+
+function deploymentOptionMenu(guildId, deployment, groupId) {
+  const group = roleSelector.getGroup(guildId, groupId);
+  const options = (group?.options || []).filter((x) => x.enabled).slice(0, 25);
+  const selected = deployment.optionIdsByGroup?.[groupId];
+  const selectedSet = Array.isArray(selected) ? new Set(selected) : new Set(options.map((x) => x.id));
+  const menu = new StringSelectMenuBuilder().setCustomId(customId('admin:roleSelector:deploymentOptions', deployment.id, groupId)).setPlaceholder('Choose roles shown on this panel').setMinValues(0).setMaxValues(Math.max(1, options.length));
+  if (!options.length) return row(menu.setDisabled(true).addOptions({ label: 'No role options available', value: '__none__' }));
+  menu.addOptions(options.map((x) => ({
+    label: `${x.emoji || '•'} ${x.label}`.slice(0, 100), value: x.id,
+    description: (x.description || 'Role selector option').slice(0, 100), default: selectedSet.has(x.id),
+  })));
+  return row(menu);
+}
+
+async function buildDeploymentContentPanel(i, deploymentId, groupId = null) {
+  const deployment = deploymentById(i.guildId, deploymentId);
   if (!deployment) throw new Error('Choose a deployment first.');
-  const current = state(i);
-  if (current.deploymentContentGroupId && !deployment.groupIds.includes(current.deploymentContentGroupId)) current.deploymentContentGroupId = null;
-  const groupId = current.deploymentContentGroupId;
+  if (groupId && !deployment.groupIds.includes(groupId)) groupId = null;
   const group = groupId ? roleSelector.getGroup(i.guildId, groupId) : null;
   const roleLimitText = Object.entries(deployment.optionIdsByGroup || {}).filter(([id]) => deployment.groupIds.includes(id)).map(([id, ids]) => {
     const g = roleSelector.getGroup(i.guildId, id);
@@ -597,19 +566,19 @@ async function buildDeploymentContentPanel(i) {
       group ? `\nEditing roles for **${group.name}**.` : '',
     ].join('\n').slice(0, 4096))],
     components: [
-      groupMenu(i.guildId, null, 'admin:roleSelector:deploymentGroups', true, deployment.groupIds),
-      deploymentGroupFilterMenu(i.guildId, deployment),
+      groupMenu(i.guildId, null, customId('admin:roleSelector:deploymentGroups', deployment.id), true, deployment.groupIds),
+      deploymentGroupFilterMenu(i.guildId, deployment, groupId),
       groupId ? deploymentOptionMenu(i.guildId, deployment, groupId) : row(button('admin:roleSelector:deploymentContentHint', 'Select a group above to limit its roles', ButtonStyle.Secondary, true)),
-      row(button('admin:roleSelector:deploymentOptionsAll', '♻️ Use All Roles for Group', ButtonStyle.Secondary, !groupId)),
-      nav('admin:roleSelector:deploymentSelectCurrent'),
+      row(button(customId('admin:roleSelector:deploymentOptionsAll', deployment.id, groupId || 'none'), '♻️ Use All Roles for Group', ButtonStyle.Secondary, !groupId)),
+      row(button(customId('admin:roleSelector:deploymentOpen', deployment.id), '⬅️ Back'), button('admin:roleSelector:settings', '⚙️ Settings')),
     ],
   };
 }
 
-async function deploySelected(i) {
+async function deploySelected(i, deploymentId) {
   return withDeploymentLock(i.guildId, async () => {
     const list = deploymentList(roleSelector.getSection(i.guildId));
-    const index = list.findIndex((d) => d.id === state(i).deploymentId);
+    const index = list.findIndex((d) => d.id === deploymentId);
     if (index < 0) throw new Error('Choose a deployment first.');
     const deployment = list[index];
     if (!deployment.channelId || !deployment.groupIds.length) throw new Error('Choose a channel and at least one group.');
@@ -624,10 +593,10 @@ async function deploySelected(i) {
   });
 }
 
-async function deleteSelectedDeployment(i) {
+async function deleteSelectedDeployment(i, deploymentId) {
   return withDeploymentLock(i.guildId, async () => {
     const list = deploymentList(roleSelector.getSection(i.guildId));
-    const index = list.findIndex((d) => d.id === state(i).deploymentId);
+    const index = list.findIndex((d) => d.id === deploymentId);
     if (index < 0) throw new Error('Choose a deployment first.');
     const deployment = list[index];
     const { message } = await fetchDeployment(i.guild, deployment);
@@ -637,19 +606,7 @@ async function deleteSelectedDeployment(i) {
     }
     list.splice(index, 1);
     saveDeployments(i.guildId, list, { actorId: i.user.id, action: 'role_selector_deployment_delete' });
-    state(i).deploymentId = null;
-    state(i).deploymentContentGroupId = null;
   });
-}
-
-async function retireSelectedDeployment(i) {
-  const list = deploymentList(roleSelector.getSection(i.guildId));
-  const index = list.findIndex((d) => d.id === state(i).deploymentId);
-  if (index < 0) throw new Error('Choose a deployment first.');
-  const deployment = list[index];
-  await retireDeployment(i.guild, deployment);
-  list[index] = { ...deployment, status: 'retired' };
-  saveDeployments(i.guildId, list, { actorId: i.user.id, action: 'role_selector_deployment_retire' });
 }
 
 function statsDeploymentRecord(section) {
@@ -669,11 +626,7 @@ async function buildStats(guild) {
       `**Total selections:** ${total}`, '', '**🏆 Most Selected**',
       rows.filter((x) => x.count).slice(0, 10).map((x, index) => `${index + 1}. ${x.groupEmoji} **${x.label}** — ${x.count} · ${x.groupName}`).join('\n') || '`No selections yet`',
     ].join('\n'))],
-    components: [
-      groupMenu(guild.id, null, 'admin:roleSelector:statsGroup'),
-      row(button('admin:roleSelector:statsPublic', '📣 Public Stats Panel', ButtonStyle.Primary)),
-      nav('admin:roleSelector:settings', true),
-    ],
+    components: [groupMenu(guild.id, null, 'admin:roleSelector:statsGroup'), row(button('admin:roleSelector:statsPublic', '📣 Public Stats Panel', ButtonStyle.Primary)), nav('admin:roleSelector:settings', true)],
   };
 }
 
@@ -686,10 +639,8 @@ async function buildPublicStatsPayload(guild) {
     embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('📊 Role Selector Leaderboard').setDescription([
       `👥 **Members using selectors:** ${usage.totalUsing}`,
       `🎯 **Total selections:** ${rows.reduce((sum, item) => sum + Number(item.count || 0), 0)}`, '',
-      '**🏆 Top Choices**',
-      rows.filter((x) => Number(x.count || 0) > 0).slice(0, 10).map((x, index) => `${index + 1}. ${x.groupEmoji} **${x.label}** — ${x.count}`).join('\n') || '`No selections yet`',
-    ].join('\n'))],
-    components: [],
+      '**🏆 Top Choices**', rows.filter((x) => Number(x.count || 0) > 0).slice(0, 10).map((x, index) => `${index + 1}. ${x.groupEmoji} **${x.label}** — ${x.count}`).join('\n') || '`No selections yet`',
+    ].join('\n'))], components: [],
   });
 }
 
@@ -713,11 +664,7 @@ async function buildStatsDeploymentPanel(i) {
       `**Message:** ${message ? 'Deployed ✅' : 'Not deployed'}`, '',
       'Deploy a user-visible community leaderboard. Counts update in place; member names remain admin-only.',
     ].join('\n'))],
-    components: [
-      row(menu),
-      row(button('admin:roleSelector:statsDeploy', message ? '🔄 Update Public Panel' : '📨 Deploy Public Panel', ButtonStyle.Success, !deployment.channelId), jump ? linkButton('↗️ Jump to Panel', jump) : null),
-      nav('admin:roleSelector:stats', true),
-    ],
+    components: [row(menu), row(button('admin:roleSelector:statsDeploy', message ? '🔄 Update Public Panel' : '📨 Deploy Public Panel', ButtonStyle.Success, !deployment.channelId), jump ? linkButton('↗️ Jump to Panel', jump) : null), nav('admin:roleSelector:stats', true)],
   };
 }
 
@@ -755,11 +702,13 @@ function createGroupModal() {
     row(new TextInputBuilder().setCustomId('mode').setLabel('Selection type: single or multiple').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(8).setValue('single')),
   );
 }
+
 function optionsModal(group) {
-  return new ModalBuilder().setCustomId('admin:roleSelector:optionsSubmit').setTitle(`Options · ${group.name}`.slice(0, 45)).addComponents(
+  return new ModalBuilder().setCustomId(customId('admin:roleSelector:optionsSubmit', group.id)).setTitle(`Options · ${group.name}`.slice(0, 45)).addComponents(
     row(new TextInputBuilder().setCustomId('options').setLabel('emoji | label | description | roleId').setStyle(TextInputStyle.Paragraph).setRequired(true).setMaxLength(4000).setValue((group.options || []).map((x) => `${x.emoji || ''} | ${x.label} | ${x.description || ''} | ${x.managed === false ? x.roleId || '' : ''}`).join('\n'))),
   );
 }
+
 function styleModal(section) {
   return new ModalBuilder().setCustomId('admin:roleSelector:styleSubmit').setTitle('Role Selector Appearance').addComponents(
     row(new TextInputBuilder().setCustomId('format').setLabel('Role format').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(100).setValue(section.style.format || '🎭 | {role}')),
@@ -767,13 +716,15 @@ function styleModal(section) {
     row(new TextInputBuilder().setCustomId('separator').setLabel('Separator').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(20).setValue(section.style.separator || '|')),
   );
 }
+
 function dividerModal() {
   return new ModalBuilder().setCustomId('admin:roleSelector:createDividerSubmit').setTitle('Create Role Selector Divider').addComponents(
     row(new TextInputBuilder().setCustomId('name').setLabel('Divider role name').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(100).setValue('🎭 | ROLE SELECTOR')),
   );
 }
+
 function hexModal(deploymentId = 'global') {
-  return new ModalBuilder().setCustomId(`roleSelector:customHexSubmit:${deploymentId}`).setTitle('Pick Your Own Colour').addComponents(
+  return new ModalBuilder().setCustomId(customId('roleSelector:customHexSubmit', deploymentId)).setTitle('Pick Your Own Colour').addComponents(
     row(new TextInputBuilder().setCustomId('hex').setLabel('HEX colour').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(7).setPlaceholder('#1EA7FF')),
     row(new TextInputBuilder().setCustomId('label').setLabel('Colour name').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(60)),
   );
@@ -781,6 +732,15 @@ function hexModal(deploymentId = 'global') {
 
 async function syncPanels(guild, changedGroupId = null) {
   await Promise.allSettled([syncDeploymentState(guild, changedGroupId), syncStatsDeploymentState(guild)]);
+}
+
+function tail(id, prefix) {
+  return id.startsWith(`${prefix}:`) ? id.slice(prefix.length + 1) : null;
+}
+
+function splitTail(id, prefix) {
+  const value = tail(id, prefix);
+  return value == null ? [] : value.split(':');
 }
 
 async function handleRoleSelectorInteraction(i) {
@@ -801,8 +761,8 @@ async function handleRoleSelectorInteraction(i) {
       return respond(i, await buildSettingsPanel(i.guild));
     }
 
-    if (id === 'admin:roleSelector:groups') { state(i).groupId = null; return respond(i, buildGroupsPanel(i)); }
-    if (id === 'admin:roleSelector:groupSelect' && i.values?.[0] !== '__none__') { state(i).groupId = i.values[0]; return respond(i, buildGroupsPanel(i)); }
+    if (id === 'admin:roleSelector:groups') return respond(i, buildGroupsPanel(i.guildId));
+    if (id === 'admin:roleSelector:groupSelect' && i.values?.[0] !== '__none__') return respond(i, buildGroupsPanel(i.guildId, i.values[0]));
     if (id === 'admin:roleSelector:createGroup') { await i.showModal(createGroupModal()); return true; }
     if (id === 'admin:roleSelector:createGroupSubmit') {
       const mode = i.fields.getTextInputValue('mode').trim().toLowerCase();
@@ -810,18 +770,18 @@ async function handleRoleSelectorInteraction(i) {
       const group = await roleSelector.saveGroupSafe(i.guild, {
         name: i.fields.getTextInputValue('name'), emoji: i.fields.getTextInputValue('emoji'), description: i.fields.getTextInputValue('description'), selectionMode: mode, allowRemove: true, options: [],
       }, { ...actor, action: 'role_selector_create_group' });
-      state(i).groupId = group.id;
       await syncPanels(i.guild, group.id);
-      return i.reply({ content: `✅ Created **${group.name}**.`, ...buildGroupsPanel(i), flags: 64 });
+      return i.reply({ content: `✅ Created **${group.name}**.`, ...buildGroupsPanel(i.guildId, group.id), flags: 64 });
     }
-    if (id === 'admin:roleSelector:options') {
-      const group = roleSelector.getGroup(i.guildId, state(i).groupId);
+    if (id.startsWith('admin:roleSelector:groupOpen:')) return respond(i, buildGroupsPanel(i.guildId, tail(id, 'admin:roleSelector:groupOpen')));
+    if (id.startsWith('admin:roleSelector:options:')) {
+      const group = roleSelector.getGroup(i.guildId, tail(id, 'admin:roleSelector:options'));
       if (!group || group.builtIn) throw new Error('Select a custom group first.');
-      await i.showModal(optionsModal(group));
-      return true;
+      await i.showModal(optionsModal(group)); return true;
     }
-    if (id === 'admin:roleSelector:optionsSubmit') {
-      const group = roleSelector.getGroup(i.guildId, state(i).groupId);
+    if (id.startsWith('admin:roleSelector:optionsSubmit:')) {
+      const groupId = tail(id, 'admin:roleSelector:optionsSubmit');
+      const group = roleSelector.getGroup(i.guildId, groupId);
       if (!group || group.builtIn) throw new Error('Select a custom group first.');
       const old = new Map((group.options || []).map((x) => [x.label.toLowerCase(), x]));
       const options = i.fields.getTextInputValue('options').split(/\r?\n/).map((x) => x.trim()).filter(Boolean).slice(0, 25).map((line, index) => {
@@ -831,20 +791,29 @@ async function handleRoleSelectorInteraction(i) {
         const roleId = cleanId(roleRaw);
         return { ...(previous || {}), id: previous?.id, emoji, label, description, roleId: roleId || previous?.roleId || null, managed: roleId ? false : previous?.managed !== false, enabled: true, order: (index + 1) * 10 };
       });
+      for (const option of options) {
+        if (!option.roleId || option.managed !== false) continue;
+        const role = i.guild.roles.cache.get(option.roleId) || await i.guild.roles.fetch(option.roleId).catch(() => null);
+        roleSelector.assertSafeSelectorRole(i.guild, role);
+      }
       await roleSelector.saveGroupSafe(i.guild, { ...group, options }, { ...actor, action: 'role_selector_update_options' });
       await syncPanels(i.guild, group.id);
-      return i.reply({ content: '✅ Selector options saved.', ...buildGroupsPanel(i), flags: 64 });
+      return i.reply({ content: '✅ Selector options saved.', ...buildGroupsPanel(i.guildId, group.id), flags: 64 });
     }
-    if (id === 'admin:roleSelector:groupSettings') return respond(i, buildGroupSettings(i));
-    if (id === 'admin:roleSelector:toggleMode' || id === 'admin:roleSelector:toggleRemove') {
-      const group = roleSelector.getGroup(i.guildId, state(i).groupId);
+    if (id.startsWith('admin:roleSelector:groupSettings:')) return respond(i, buildGroupSettings(i.guildId, tail(id, 'admin:roleSelector:groupSettings')));
+    if (id.startsWith('admin:roleSelector:toggleMode:') || id.startsWith('admin:roleSelector:toggleRemove:')) {
+      const prefix = id.startsWith('admin:roleSelector:toggleMode:') ? 'admin:roleSelector:toggleMode' : 'admin:roleSelector:toggleRemove';
+      const groupId = tail(id, prefix);
+      const group = roleSelector.getGroup(i.guildId, groupId);
       if (!group || group.builtIn) throw new Error('Select a custom group first.');
-      await roleSelector.saveGroupSafe(i.guild, { ...group, ...(id.endsWith('toggleMode') ? { selectionMode: group.selectionMode === 'multiple' ? 'single' : 'multiple' } : { allowRemove: !group.allowRemove }) }, { ...actor, action: id });
+      const next = prefix.endsWith('toggleMode') ? { ...group, selectionMode: group.selectionMode === 'multiple' ? 'single' : 'multiple' } : { ...group, allowRemove: !group.allowRemove };
+      await roleSelector.saveGroupSafe(i.guild, next, { ...actor, action: prefix });
       await syncPanels(i.guild, group.id);
-      return respond(i, buildGroupSettings(i));
+      return respond(i, buildGroupSettings(i.guildId, group.id));
     }
-    if (id === 'admin:roleSelector:deleteGroup') {
-      const group = roleSelector.getGroup(i.guildId, state(i).groupId);
+    if (id.startsWith('admin:roleSelector:deleteGroup:')) {
+      const groupId = tail(id, 'admin:roleSelector:deleteGroup');
+      const group = roleSelector.getGroup(i.guildId, groupId);
       if (!group || group.builtIn) throw new Error('Select a custom group first.');
       const result = await roleSelector.deleteManagedGroupRoles(i.guild, group.id);
       if (result.unresolved) throw new Error(`Group not deleted because ${result.unresolved} managed role(s) could not be removed.`);
@@ -854,9 +823,8 @@ async function handleRoleSelectorInteraction(i) {
         return { ...d, groupIds: d.groupIds.filter((x) => x !== group.id), optionIdsByGroup };
       });
       saveDeployments(i.guildId, list, { ...actor, action: 'role_selector_prune_deployments' });
-      state(i).groupId = null;
       await syncPanels(i.guild);
-      return respond(i, buildGroupsPanel(i));
+      return respond(i, buildGroupsPanel(i.guildId));
     }
     if (id === 'admin:roleSelector:palette' || id === 'admin:roleSelector:toggleHex' || id === 'admin:roleSelector:colourClearToggle') {
       const group = roleSelector.getGroup(i.guildId, roleSelector.COLOUR_GROUP_ID);
@@ -866,7 +834,7 @@ async function handleRoleSelectorInteraction(i) {
       else next = { ...group, allowRemove: !group.allowRemove };
       await roleSelector.saveGroupSafe(i.guild, next, { ...actor, action: id });
       await syncPanels(i.guild, group.id);
-      return respond(i, buildColourPanel(i.guild, roleSelector.getGroup(i.guildId, roleSelector.COLOUR_GROUP_ID)));
+      return respond(i, buildColourPanel(i.guildId, roleSelector.getGroup(i.guildId, roleSelector.COLOUR_GROUP_ID)));
     }
 
     if (id === 'admin:roleSelector:style') return respond(i, buildAppearance(i.guild));
@@ -893,86 +861,102 @@ async function handleRoleSelectorInteraction(i) {
     if (id === 'admin:roleSelector:createDivider') { await i.showModal(dividerModal()); return true; }
     if (id === 'admin:roleSelector:createDividerSubmit') {
       const divider = await i.guild.roles.create({ name: i.fields.getTextInputValue('name').trim().slice(0, 100), permissions: [], hoist: false, mentionable: false, reason: 'Goliath Role Selector divider' });
-      await roleSelector.setAnchorRole(i.guild, divider.id, { managed: true, meta: { ...actor, action: id } });
+      try { await roleSelector.setAnchorRole(i.guild, divider.id, { managed: true, meta: { ...actor, action: id } }); }
+      catch (error) { await divider.delete('Unsafe Role Selector divider').catch(() => null); throw error; }
+      await syncPanels(i.guild);
       return i.reply({ content: `✅ Created divider **${divider.name}**.`, ...buildAppearance(i.guild), flags: 64 });
     }
 
-    if (id === 'admin:roleSelector:deployment') { state(i).deploymentId = null; state(i).deploymentContentGroupId = null; return respond(i, await buildDeploymentsPanel(i)); }
-    if (id === 'admin:roleSelector:deploymentSelect' && i.values?.[0] !== '__none__') { state(i).deploymentId = i.values[0]; state(i).deploymentContentGroupId = null; return respond(i, await buildDeploymentsPanel(i)); }
-    if (id === 'admin:roleSelector:deploymentSelectCurrent') return respond(i, await buildDeploymentsPanel(i));
+    if (id === 'admin:roleSelector:deployment') return respond(i, await buildDeploymentsPanel(i));
+    if (id === 'admin:roleSelector:deploymentSelect' && i.values?.[0] !== '__none__') return respond(i, await buildDeploymentsPanel(i, i.values[0]));
     if (id === 'admin:roleSelector:deploymentCreate') {
       const list = deploymentList(roleSelector.getSection(i.guildId));
-      const deployment = normalizeDeployment({ id: `panel-${Date.now().toString(36)}`, groupIds: [] });
-      list.push(deployment); saveDeployments(i.guildId, list, { ...actor, action: 'role_selector_deployment_create' });
-      state(i).deploymentId = deployment.id; state(i).deploymentContentGroupId = null;
-      return respond(i, await buildDeploymentsPanel(i));
+      let candidate = `p${Date.now().toString(36)}`;
+      while (list.some((d) => d.id === candidate)) candidate = `${candidate}${Math.random().toString(36).slice(2, 4)}`.slice(0, 20);
+      const deployment = normalizeDeployment({ id: candidate, groupIds: [] });
+      list.push(deployment);
+      saveDeployments(i.guildId, list, { ...actor, action: 'role_selector_deployment_create' });
+      return respond(i, await buildDeploymentsPanel(i, deployment.id));
     }
-    if (id === 'admin:roleSelector:deploymentContent') { state(i).deploymentContentGroupId = null; return respond(i, await buildDeploymentContentPanel(i)); }
-    if (id === 'admin:roleSelector:deploymentGroups') {
-      const list = deploymentList(roleSelector.getSection(i.guildId)); const index = list.findIndex((d) => d.id === state(i).deploymentId);
+    if (id.startsWith('admin:roleSelector:deploymentOpen:')) return respond(i, await buildDeploymentsPanel(i, tail(id, 'admin:roleSelector:deploymentOpen')));
+    if (id.startsWith('admin:roleSelector:deploymentContent:')) return respond(i, await buildDeploymentContentPanel(i, tail(id, 'admin:roleSelector:deploymentContent')));
+    if (id.startsWith('admin:roleSelector:deploymentGroups:')) {
+      const deploymentId = tail(id, 'admin:roleSelector:deploymentGroups');
+      const list = deploymentList(roleSelector.getSection(i.guildId)); const index = list.findIndex((d) => d.id === deploymentId);
       if (index < 0) throw new Error('Choose a deployment first.');
       const selected = [...new Set((i.values || []).filter((x) => x !== '__none__'))];
       const optionIdsByGroup = { ...list[index].optionIdsByGroup };
       for (const groupId of Object.keys(optionIdsByGroup)) if (!selected.includes(groupId)) delete optionIdsByGroup[groupId];
       list[index] = { ...list[index], groupIds: selected, optionIdsByGroup };
       saveDeployments(i.guildId, list, { ...actor, action: 'role_selector_deployment_groups' });
-      if (state(i).deploymentContentGroupId && !selected.includes(state(i).deploymentContentGroupId)) state(i).deploymentContentGroupId = null;
       await syncOneDeployment(i.guild, list[index]).catch(() => null);
-      return respond(i, await buildDeploymentContentPanel(i));
+      return respond(i, await buildDeploymentContentPanel(i, deploymentId));
     }
-    if (id === 'admin:roleSelector:deploymentContentGroup' && i.values?.[0] !== '__none__') { state(i).deploymentContentGroupId = i.values[0]; return respond(i, await buildDeploymentContentPanel(i)); }
-    if (id === 'admin:roleSelector:deploymentOptions') {
-      const list = deploymentList(roleSelector.getSection(i.guildId)); const index = list.findIndex((d) => d.id === state(i).deploymentId); const groupId = state(i).deploymentContentGroupId;
+    if (id.startsWith('admin:roleSelector:deploymentContentGroup:') && i.values?.[0] !== '__none__') {
+      const deploymentId = tail(id, 'admin:roleSelector:deploymentContentGroup');
+      return respond(i, await buildDeploymentContentPanel(i, deploymentId, i.values[0]));
+    }
+    if (id.startsWith('admin:roleSelector:deploymentOptions:')) {
+      const [deploymentId, groupId] = splitTail(id, 'admin:roleSelector:deploymentOptions');
+      const list = deploymentList(roleSelector.getSection(i.guildId)); const index = list.findIndex((d) => d.id === deploymentId);
       if (index < 0 || !groupId) throw new Error('Choose a deployment group first.');
       list[index] = { ...list[index], optionIdsByGroup: { ...list[index].optionIdsByGroup, [groupId]: [...new Set((i.values || []).filter((x) => x !== '__none__'))] } };
       saveDeployments(i.guildId, list, { ...actor, action: 'role_selector_deployment_options' });
       await syncOneDeployment(i.guild, list[index]).catch(() => null);
-      return respond(i, await buildDeploymentContentPanel(i));
+      return respond(i, await buildDeploymentContentPanel(i, deploymentId, groupId));
     }
-    if (id === 'admin:roleSelector:deploymentOptionsAll') {
-      const list = deploymentList(roleSelector.getSection(i.guildId)); const index = list.findIndex((d) => d.id === state(i).deploymentId); const groupId = state(i).deploymentContentGroupId;
-      if (index < 0 || !groupId) throw new Error('Choose a deployment group first.');
+    if (id.startsWith('admin:roleSelector:deploymentOptionsAll:')) {
+      const [deploymentId, groupId] = splitTail(id, 'admin:roleSelector:deploymentOptionsAll');
+      if (!groupId || groupId === 'none') throw new Error('Choose a deployment group first.');
+      const list = deploymentList(roleSelector.getSection(i.guildId)); const index = list.findIndex((d) => d.id === deploymentId);
+      if (index < 0) throw new Error('Choose a deployment first.');
       const optionIdsByGroup = { ...list[index].optionIdsByGroup }; delete optionIdsByGroup[groupId];
       list[index] = { ...list[index], optionIdsByGroup };
       saveDeployments(i.guildId, list, { ...actor, action: 'role_selector_deployment_options_all' });
       await syncOneDeployment(i.guild, list[index]).catch(() => null);
-      return respond(i, await buildDeploymentContentPanel(i));
+      return respond(i, await buildDeploymentContentPanel(i, deploymentId, groupId));
     }
-    if (id === 'admin:roleSelector:deploymentChannel') {
+    if (id.startsWith('admin:roleSelector:deploymentChannel:')) {
+      const deploymentId = tail(id, 'admin:roleSelector:deploymentChannel');
       const target = i.values?.[0]; if (!target) throw new Error('Choose a deployment channel.');
-      const list = deploymentList(roleSelector.getSection(i.guildId)); const index = list.findIndex((d) => d.id === state(i).deploymentId);
+      const list = deploymentList(roleSelector.getSection(i.guildId)); const index = list.findIndex((d) => d.id === deploymentId);
       if (index < 0) throw new Error('Choose a deployment first.');
       const deployment = list[index];
       if (deployment.messageId && deployment.channelId && deployment.channelId !== target) {
-        state(i).pendingChannelId = target;
         return respond(i, {
           embeds: [new EmbedBuilder().setColor(0xFAA61A).setTitle('📍 Move this Role Selector panel?').setDescription(`Current: <#${deployment.channelId}>\nNew: <#${target}>\n\nChoose what to do with the old Goliath-owned panel.`)],
           components: [
-            row(button('admin:roleSelector:moveRemove', '🗑️ Remove Old Panel & Move', ButtonStyle.Danger), button('admin:roleSelector:moveRetire', '📦 Retire Old Panel & Move', ButtonStyle.Primary)),
-            row(button('admin:roleSelector:moveCancel', '⬅️ Back')),
+            row(button(customId('admin:roleSelector:moveRemove', deploymentId, target), '🗑️ Remove Old Panel & Move', ButtonStyle.Danger), button(customId('admin:roleSelector:moveRetire', deploymentId, target), '📦 Retire Old Panel & Move', ButtonStyle.Primary)),
+            row(button(customId('admin:roleSelector:deploymentOpen', deploymentId), '⬅️ Back')),
           ],
         });
       }
       list[index] = { ...deployment, channelId: target, messageId: deployment.channelId === target ? deployment.messageId : null };
       saveDeployments(i.guildId, list, { ...actor, action: 'role_selector_deployment_channel' });
-      return respond(i, await buildDeploymentsPanel(i));
+      return respond(i, await buildDeploymentsPanel(i, deploymentId));
     }
-    if (id === 'admin:roleSelector:moveCancel') { state(i).pendingChannelId = null; return respond(i, await buildDeploymentsPanel(i)); }
-    if (id === 'admin:roleSelector:moveRemove' || id === 'admin:roleSelector:moveRetire') {
-      const list = deploymentList(roleSelector.getSection(i.guildId)); const index = list.findIndex((d) => d.id === state(i).deploymentId);
-      if (index < 0) throw new Error('Choose a deployment first.');
+    if (id.startsWith('admin:roleSelector:moveRemove:') || id.startsWith('admin:roleSelector:moveRetire:')) {
+      const prefix = id.startsWith('admin:roleSelector:moveRemove:') ? 'admin:roleSelector:moveRemove' : 'admin:roleSelector:moveRetire';
+      const [deploymentId, targetChannelId] = splitTail(id, prefix);
+      const list = deploymentList(roleSelector.getSection(i.guildId)); const index = list.findIndex((d) => d.id === deploymentId);
+      if (index < 0 || !cleanId(targetChannelId)) throw new Error('Choose a deployment and channel first.');
       const deployment = list[index]; const { message } = await fetchDeployment(i.guild, deployment);
       if (message) {
         if (!owned(i.guild, message)) throw new Error('Goliath will not modify a message it does not own.');
-        if (id.endsWith('moveRemove')) await message.delete(); else await message.edit(memberDisabledPayload());
+        if (prefix.endsWith('moveRemove')) await message.delete(); else await message.edit(memberDisabledPayload());
       }
-      list[index] = { ...deployment, channelId: state(i).pendingChannelId, messageId: null, status: 'active' };
-      state(i).pendingChannelId = null; saveDeployments(i.guildId, list, { ...actor, action: id });
-      const sent = await deploySelected(i); const payload = await buildDeploymentsPanel(i); payload.content = `✅ Panel moved to <#${sent.channel.id}>.`; return respond(i, payload);
+      list[index] = { ...deployment, channelId: targetChannelId, messageId: null, status: 'active' };
+      saveDeployments(i.guildId, list, { ...actor, action: prefix });
+      const sent = await deploySelected(i, deploymentId); const payload = await buildDeploymentsPanel(i, deploymentId); payload.content = `✅ Panel moved to <#${sent.channel.id}>.`; return respond(i, payload);
     }
-    if (id === 'admin:roleSelector:deploy') { const message = await deploySelected(i); const payload = await buildDeploymentsPanel(i); payload.content = `✅ Role Selector panel deployed in <#${message.channel.id}>.`; return respond(i, payload); }
-    if (id === 'admin:roleSelector:deploymentRetire') { await retireSelectedDeployment(i); return respond(i, await buildDeploymentsPanel(i)); }
-    if (id === 'admin:roleSelector:deploymentDelete') { await deleteSelectedDeployment(i); return respond(i, await buildDeploymentsPanel(i)); }
+    if (id.startsWith('admin:roleSelector:deploy:')) {
+      const deploymentId = tail(id, 'admin:roleSelector:deploy');
+      const message = await deploySelected(i, deploymentId); const payload = await buildDeploymentsPanel(i, deploymentId); payload.content = `✅ Role Selector panel deployed in <#${message.channel.id}>.`; return respond(i, payload);
+    }
+    if (id.startsWith('admin:roleSelector:deploymentDelete:')) {
+      const deploymentId = tail(id, 'admin:roleSelector:deploymentDelete');
+      await deleteSelectedDeployment(i, deploymentId); return respond(i, await buildDeploymentsPanel(i));
+    }
 
     if (id === 'admin:roleSelector:stats') return respond(i, await buildStats(i.guild));
     if (id === 'admin:roleSelector:statsGroup' && i.values?.[0] !== '__none__') {
@@ -991,28 +975,34 @@ async function handleRoleSelectorInteraction(i) {
     if (id === 'admin:roleSelector:healthRepair') { const health = await healthService.repair(i.guild); await syncPanels(i.guild); return respond(i, await buildHealth(i.guild, health)); }
 
     if (id.startsWith('roleSelector:')) roleSelector.assertModuleEnabled(i.guildId);
-    if (id.startsWith('roleSelector:openGroup')) {
+    if (id === 'roleSelector:openGroup' || id.startsWith('roleSelector:openGroup:')) {
       if (i.values?.[0] === '__none__') return i.reply({ content: 'No selector groups are available.', flags: 64 });
-      const deploymentId = id.split(':')[2] || null; const deployment = deploymentId ? deploymentById(i.guildId, deploymentId) : null; const allowed = deploymentAllowedGroups(i.guildId, deploymentId);
+      const deploymentId = tail(id, 'roleSelector:openGroup');
+      const deployment = deploymentId ? deploymentById(i.guildId, deploymentId) : null;
+      const allowed = deploymentAllowedGroups(i.guildId, deploymentId);
       return i.reply({ ...await resolvePayload(i.guild, memberGroupPayload(i.guild, await freshMember(i), i.values[0], allowed, deploymentId, deployment)), flags: 64 });
     }
-    if (id.startsWith('roleSelector:switchGroup')) {
+    if (id === 'roleSelector:switchGroup' || id.startsWith('roleSelector:switchGroup:')) {
       if (i.values?.[0] === '__none__') return i.update(memberDisabledPayload());
-      const deploymentId = id.split(':')[2] || null; const deployment = deploymentId ? deploymentById(i.guildId, deploymentId) : null; const allowed = deploymentAllowedGroups(i.guildId, deploymentId);
+      const deploymentId = tail(id, 'roleSelector:switchGroup');
+      const deployment = deploymentId ? deploymentById(i.guildId, deploymentId) : null;
+      const allowed = deploymentAllowedGroups(i.guildId, deploymentId);
       return i.update(await resolvePayload(i.guild, memberGroupPayload(i.guild, await freshMember(i), i.values[0], allowed, deploymentId, deployment)));
     }
     if (id.startsWith('roleSelector:colourChoose:')) {
-      const deploymentId = id.split(':')[2] || 'global'; const deployment = deploymentId !== 'global' ? deploymentById(i.guildId, deploymentId) : null;
+      const deploymentId = tail(id, 'roleSelector:colourChoose') || 'global';
+      const deployment = deploymentId !== 'global' ? deploymentById(i.guildId, deploymentId) : null;
       if (deployment && !deployment.groupIds.includes(roleSelector.COLOUR_GROUP_ID)) throw new Error('Colours are not available on this panel.');
       await roleSelector.applyColourSelection(i.guild, i.member, i.values[0]);
       await i.update(await resolvePayload(i.guild, memberGroupPayload(i.guild, await freshMember(i), roleSelector.COLOUR_GROUP_ID, deploymentAllowedGroups(i.guildId, deploymentId), deploymentId, deployment)));
       await syncStatsDeploymentState(i.guild).catch(() => null);
       await i.followUp({ content: '✅ Your colour has been updated.', flags: 64 }); return true;
     }
-    if (id.startsWith('roleSelector:customHex:')) { await i.showModal(hexModal(id.split(':')[2] || 'global')); return true; }
+    if (id.startsWith('roleSelector:customHex:')) { await i.showModal(hexModal(tail(id, 'roleSelector:customHex') || 'global')); return true; }
     if (id.startsWith('roleSelector:customHexSubmit:')) { await roleSelector.applyColourSelection(i.guild, i.member, i.fields.getTextInputValue('hex'), i.fields.getTextInputValue('label')); await syncStatsDeploymentState(i.guild).catch(() => null); return i.reply({ content: '✅ Your custom colour has been applied.', flags: 64 }); }
     if (id.startsWith('roleSelector:choose:')) {
-      const parts = id.split(':'); const groupId = parts[2]; const deploymentId = parts[3] || 'global'; const deployment = deploymentId !== 'global' ? deploymentById(i.guildId, deploymentId) : null; const allowed = deploymentAllowedGroups(i.guildId, deploymentId);
+      const [groupId, deploymentId = 'global'] = splitTail(id, 'roleSelector:choose');
+      const deployment = deploymentId !== 'global' ? deploymentById(i.guildId, deploymentId) : null; const allowed = deploymentAllowedGroups(i.guildId, deploymentId);
       if (allowed && !allowed.includes(groupId)) throw new Error('That group is not available on this panel.');
       const filter = optionFilterFor(deployment, groupId); if (filter && (i.values || []).some((value) => !filter.has(value))) throw new Error('That role is not available on this panel.');
       await roleSelector.applyStandardSelection(i.guild, i.member, groupId, i.values || []);
@@ -1020,7 +1010,8 @@ async function handleRoleSelectorInteraction(i) {
       await syncStatsDeploymentState(i.guild).catch(() => null); await i.followUp({ content: '✅ Your role selection has been updated.', flags: 64 }); return true;
     }
     if (id.startsWith('roleSelector:clear:')) {
-      const parts = id.split(':'); const groupId = parts[2]; const deploymentId = parts[3] || 'global'; const deployment = deploymentId !== 'global' ? deploymentById(i.guildId, deploymentId) : null; const allowed = deploymentAllowedGroups(i.guildId, deploymentId);
+      const [groupId, deploymentId = 'global'] = splitTail(id, 'roleSelector:clear');
+      const deployment = deploymentId !== 'global' ? deploymentById(i.guildId, deploymentId) : null; const allowed = deploymentAllowedGroups(i.guildId, deploymentId);
       if (allowed && !allowed.includes(groupId)) throw new Error('That group is not available on this panel.');
       await roleSelector.clearSelection(i.guild, i.member, groupId);
       await i.update(await resolvePayload(i.guild, memberGroupPayload(i.guild, await freshMember(i), groupId, allowed, deploymentId, deployment)));
