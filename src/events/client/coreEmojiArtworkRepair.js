@@ -1,6 +1,5 @@
 'use strict';
 
-const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const fetch = require('node-fetch');
@@ -11,15 +10,10 @@ const emojis = require('../../modules/utilityStudio/emojis/emojis');
 const emojiProcessor = require('../../core/mediaTools/emojiMaker/emojiProcessor');
 
 const TARGET_ALIAS = 'discord';
-const ACCIDENTAL_ALIAS = 'activision';
 const REQUEST_OPTIONS = {
   headers: { 'User-Agent': 'KSJHub-Goliath/1.0' },
   timeout: 15000,
 };
-
-function digest(buffer) {
-  return crypto.createHash('sha256').update(buffer).digest('hex');
-}
 
 function canonicalPath(alias) {
   return path.join(
@@ -34,6 +28,8 @@ function canonicalPath(alias) {
 }
 
 async function downloadEmoji(emoji) {
+  // Application emoji CDN rendering is the source of truth for what Discord
+  // currently displays. Fetch at the same working size used for comparison.
   const url = emoji?.imageURL?.({ extension: 'png', size: 128 }) || emoji?.url;
   if (!url) return null;
   const response = await fetch(url, REQUEST_OPTIONS);
@@ -41,62 +37,76 @@ async function downloadEmoji(emoji) {
   return response.buffer();
 }
 
-async function visualDigest(buffer) {
+async function normalizedPixels(buffer) {
   let sharp = null;
   try { sharp = require('sharp'); } catch (_) {}
-  if (!sharp) return digest(buffer);
+  if (!sharp) return null;
 
-  const normalized = await sharp(buffer)
+  return sharp(buffer)
     .ensureAlpha()
-    .resize(64, 64, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+    .resize(64, 64, {
+      fit: 'contain',
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    })
     .raw()
     .toBuffer();
-  return digest(normalized);
 }
 
-async function repairIfMisassigned(client) {
+function meanPixelDifference(left, right) {
+  if (!left || !right || left.length !== right.length) return Number.POSITIVE_INFINITY;
+  let difference = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    difference += Math.abs(left[index] - right[index]);
+  }
+  return difference / left.length;
+}
+
+async function isCanonicalArtwork(current, canonical) {
+  const [currentPixels, canonicalPixels] = await Promise.all([
+    normalizedPixels(current),
+    normalizedPixels(canonical),
+  ]);
+
+  // Sharp is part of Goliath's emoji processing path. If it is unavailable we
+  // cannot safely compare artwork, so do not perform a destructive replacement.
+  if (!currentPixels || !canonicalPixels) return false;
+
+  // CDN re-encoding/resizing can change exact bytes and a small number of
+  // pixels. A tiny mean-channel difference still represents the same artwork.
+  return meanPixelDifference(currentPixels, canonicalPixels) <= 2;
+}
+
+async function repairDiscordArtwork(client) {
   const manager = client?.application?.emojis;
   if (!manager) return { repaired: false, reason: 'manager-unavailable' };
 
   await emojis.recoverCoreArtifacts(client);
   const bank = await manager.fetch();
-  const byName = new Map(
-    [...bank.values()]
-      .filter((emoji) => emoji?.name)
-      .map((emoji) => [String(emoji.name).toLowerCase(), emoji]),
+  const targetName = `${emojis.CORE_EMOJI_PREFIX}${TARGET_ALIAS}`;
+  const target = [...bank.values()].find(
+    (emoji) => String(emoji?.name || '').toLowerCase() === targetName,
   );
-
-  const target = byName.get(`${emojis.CORE_EMOJI_PREFIX}${TARGET_ALIAS}`);
-  const accidental = byName.get(`${emojis.CORE_EMOJI_PREFIX}${ACCIDENTAL_ALIAS}`);
   if (!target) return { repaired: false, reason: 'discord-core-emoji-missing' };
 
-  const targetAsset = canonicalPath(TARGET_ALIAS);
-  const accidentalAsset = canonicalPath(ACCIDENTAL_ALIAS);
-  if (!fs.existsSync(targetAsset)) throw new Error(`Canonical Core asset is missing: ${targetAsset}`);
-  if (!fs.existsSync(accidentalAsset)) throw new Error(`Canonical Core asset is missing: ${accidentalAsset}`);
+  const sourcePath = canonicalPath(TARGET_ALIAS);
+  if (!fs.existsSync(sourcePath)) {
+    throw new Error(`Canonical Core asset is missing: ${sourcePath}`);
+  }
 
-  const [targetBuffer, canonicalDiscord, canonicalActivision, currentActivision] = await Promise.all([
+  const [currentArtwork, canonicalArtwork] = await Promise.all([
     downloadEmoji(target),
-    fs.promises.readFile(targetAsset),
-    fs.promises.readFile(accidentalAsset),
-    accidental ? downloadEmoji(accidental) : Promise.resolve(null),
+    fs.promises.readFile(sourcePath),
   ]);
-  if (!targetBuffer) return { repaired: false, reason: 'discord-image-unavailable' };
+  if (!currentArtwork) return { repaired: false, reason: 'discord-image-unavailable' };
 
-  const [targetHash, discordHash, activisionHash, currentActivisionHash] = await Promise.all([
-    visualDigest(targetBuffer),
-    visualDigest(canonicalDiscord),
-    visualDigest(canonicalActivision),
-    currentActivision ? visualDigest(currentActivision) : Promise.resolve(null),
-  ]);
+  if (await isCanonicalArtwork(currentArtwork, canonicalArtwork)) {
+    return { repaired: false, reason: 'already-canonical' };
+  }
 
-  if (targetHash === discordHash) return { repaired: false, reason: 'already-canonical' };
-
-  const clearlyActivision = targetHash === activisionHash
-    || (currentActivisionHash && targetHash === currentActivisionHash);
-  if (!clearlyActivision) return { repaired: false, reason: 'unexpected-discord-artwork' };
-
-  const prepared = await emojiProcessor.prepareEmojiBuffer(canonicalDiscord, {
+  // The alias is fixed and the repository asset is authoritative. If the
+  // installed :discord: artwork differs, repair that exact slot regardless of
+  // which incorrect image was uploaded previously.
+  const prepared = await emojiProcessor.prepareEmojiBuffer(canonicalArtwork, {
     size: 512,
     padding: 32,
     maxBytes: emojiApi.MAX_BYTES,
@@ -111,9 +121,11 @@ module.exports = {
   once: true,
   async execute(client) {
     try {
-      const outcome = await repairIfMisassigned(client);
+      const outcome = await repairDiscordArtwork(client);
       if (outcome.repaired) {
-        console.log('[Emoji Core] Repaired :discord: from the canonical repo asset after detecting Activision artwork in the Discord slot.');
+        console.log('[Emoji Core] Repaired noncanonical :discord: artwork from the canonical repo asset.');
+      } else {
+        console.log(`[Emoji Core] Discord artwork check: ${outcome.reason}.`);
       }
     } catch (error) {
       console.error('[Emoji Core] Automatic Discord artwork repair failed:', error?.message || error);
