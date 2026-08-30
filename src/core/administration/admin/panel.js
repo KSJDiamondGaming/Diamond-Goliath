@@ -87,6 +87,14 @@ const GUILD_PERMISSION_CATALOG = [
   { key: 'mod.appeals.decide', label: 'Decide Appeals', group: 'Cases' },
   { key: 'mod.bulk', label: 'Bulk Moderation', group: 'Moderation' },
   { key: 'mod.analytics.view', label: 'View Moderation Analytics', group: 'Moderation' },
+  { key: 'mod.scan.run', label: 'Run Member Scan', group: 'Member Scan' },
+  { key: 'mod.scan.history', label: 'View Scan History', group: 'Member Scan' },
+  { key: 'mod.scan.compare', label: 'Compare Accounts', group: 'Member Scan' },
+  { key: 'mod.scan.suspectedAccounts', label: 'View Suspected Accounts', group: 'Member Scan' },
+  { key: 'mod.scan.network', label: 'View Network Intelligence', group: 'Member Scan' },
+  { key: 'mod.scan.notes', label: 'Manage Investigation Notes', group: 'Member Scan' },
+  { key: 'mod.scan.watch', label: 'Manage Watch Status', group: 'Member Scan' },
+  { key: 'mod.scan.links', label: 'View Link Evidence', group: 'Member Scan' },
 ];
 const GUILD_PERMISSION_KEYS = new Set(GUILD_PERMISSION_CATALOG.map((entry) => entry.key));
 
@@ -114,6 +122,14 @@ const DEFAULT_TIER_PERMISSIONS = {
     'mod.appeals.decide': false,
     'mod.bulk': false,
     'mod.analytics.view': true,
+    'mod.scan.run': true,
+    'mod.scan.history': true,
+    'mod.scan.compare': true,
+    'mod.scan.suspectedAccounts': true,
+    'mod.scan.network': true,
+    'mod.scan.notes': true,
+    'mod.scan.watch': true,
+    'mod.scan.links': true,
   },
   juniorModerator: {
     'admin.dashboard.view': false,
@@ -137,6 +153,14 @@ const DEFAULT_TIER_PERMISSIONS = {
     'mod.appeals.decide': false,
     'mod.bulk': false,
     'mod.analytics.view': false,
+    'mod.scan.run': true,
+    'mod.scan.history': true,
+    'mod.scan.compare': true,
+    'mod.scan.suspectedAccounts': false,
+    'mod.scan.network': false,
+    'mod.scan.notes': false,
+    'mod.scan.watch': false,
+    'mod.scan.links': false,
   },
 };
 
