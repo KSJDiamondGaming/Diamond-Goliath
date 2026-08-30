@@ -26,7 +26,7 @@ const moduleAdminPanels = require('./modules');
 
 const PANEL_COLOR = '#5865F2';
 const AUTHORITY_SECTION = 'goliathAuthority';
-const AUTHORITY_VERSION = 3;
+const AUTHORITY_VERSION = 4;
 const AUTHORITY_PER_PAGE = 10;
 
 const LOG_TYPES = {
@@ -61,9 +61,13 @@ const CORE_GUILD_PERMISSIONS = [
   { key: 'mod.ban', label: 'Ban Members', group: 'Moderation' },
   { key: 'mod.unban', label: 'Unban Members', group: 'Moderation' },
   { key: 'mod.cases.view', label: 'View Cases', group: 'Cases' },
+  { key: 'mod.cases.search', label: 'Search Cases', group: 'Cases' },
+  { key: 'mod.cases.export', label: 'Export Cases', group: 'Cases' },
   { key: 'mod.cases.manage', label: 'Manage Cases', group: 'Cases' },
   { key: 'mod.evidence.manage', label: 'Manage Evidence', group: 'Cases' },
+  { key: 'mod.appeals.view', label: 'View Appeal Queue', group: 'Cases' },
   { key: 'mod.appeals.decide', label: 'Decide Appeals', group: 'Cases' },
+  { key: 'mod.presets.manage', label: 'Manage Moderation Presets', group: 'Moderation' },
   { key: 'mod.bulk', label: 'Bulk Moderation', group: 'Moderation' },
   { key: 'mod.analytics.view', label: 'View Moderation Analytics', group: 'Moderation' },
   { key: 'mod.scan.run', label: 'Run Member Scan', group: 'Member Scan' },
@@ -87,8 +91,9 @@ const baseModeratorPermissions = {
   'admin.dashboard.view': false, 'admin.automod.manage': false, 'admin.modules.manage': false, 'admin.logs.manage': false,
   'admin.backups.view': false, 'admin.backups.create': false, 'admin.backups.requestRestore': false, 'admin.purge': false,
   'mod.panel.view': true, 'mod.warn': true, 'mod.timeout': true, 'mod.timeout.remove': true, 'mod.kick': true,
-  'mod.ban': false, 'mod.unban': false, 'mod.cases.view': true, 'mod.cases.manage': true, 'mod.evidence.manage': true,
-  'mod.appeals.decide': false, 'mod.bulk': false, 'mod.analytics.view': true, 'mod.scan.run': true, 'mod.scan.history': true,
+  'mod.ban': false, 'mod.unban': false, 'mod.cases.view': true, 'mod.cases.search': true, 'mod.cases.export': false,
+  'mod.cases.manage': true, 'mod.evidence.manage': true, 'mod.appeals.view': true, 'mod.appeals.decide': false,
+  'mod.presets.manage': true, 'mod.bulk': false, 'mod.analytics.view': true, 'mod.scan.run': true, 'mod.scan.history': true,
   'mod.scan.compare': true, 'mod.scan.suspectedAccounts': true, 'mod.scan.network': true, 'mod.scan.notes': true,
   'mod.scan.watch': true, 'mod.scan.links': true,
 };
@@ -96,8 +101,9 @@ const baseJuniorPermissions = {
   'admin.dashboard.view': false, 'admin.automod.manage': false, 'admin.modules.manage': false, 'admin.logs.manage': false,
   'admin.backups.view': false, 'admin.backups.create': false, 'admin.backups.requestRestore': false, 'admin.purge': false,
   'mod.panel.view': true, 'mod.warn': true, 'mod.timeout': true, 'mod.timeout.remove': false, 'mod.kick': false,
-  'mod.ban': false, 'mod.unban': false, 'mod.cases.view': true, 'mod.cases.manage': false, 'mod.evidence.manage': false,
-  'mod.appeals.decide': false, 'mod.bulk': false, 'mod.analytics.view': false, 'mod.scan.run': true, 'mod.scan.history': true,
+  'mod.ban': false, 'mod.unban': false, 'mod.cases.view': true, 'mod.cases.search': true, 'mod.cases.export': false,
+  'mod.cases.manage': false, 'mod.evidence.manage': false, 'mod.appeals.view': false, 'mod.appeals.decide': false,
+  'mod.presets.manage': false, 'mod.bulk': false, 'mod.analytics.view': false, 'mod.scan.run': true, 'mod.scan.history': true,
   'mod.scan.compare': true, 'mod.scan.suspectedAccounts': false, 'mod.scan.network': false, 'mod.scan.notes': false,
   'mod.scan.watch': false, 'mod.scan.links': false,
 };
