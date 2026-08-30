@@ -1,4 +1,4 @@
-# corrected duplicate-cleanup runner v2
+# corrected duplicate-cleanup runner v3
 name: Apply Moderation Duplicate Cleanup
 
 on:
