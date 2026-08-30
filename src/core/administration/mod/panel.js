@@ -23,7 +23,6 @@ const {
   createEmbed,
   createPrimaryButton,
   createSecondaryButton,
-  createSuccessButton,
   createDangerButton,
 } = require('../../../core/ui/embeds');
 const {
@@ -82,6 +81,7 @@ function percentage(part, total) { return total > 0 ? `${Math.round((part / tota
 function increment(map, key, amount = 1) { if (key) map[key] = (map[key] || 0) + amount; }
 function topEntries(map, limit = 5) { return Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, limit); }
 function timestamp(value, style = 'R') { const ms = Number(value); return Number.isFinite(ms) && ms > 0 ? `<t:${Math.floor(ms / 1000)}:${style}>` : 'Unknown'; }
+function targetHasActiveTimeout(target) { return Number(target?.communicationDisabledUntilTimestamp || 0) > Date.now(); }
 function formatActionBreakdown(counts = {}) {
   const order = ['warn', 'timeout', 'kick', 'ban', 'unwarn', 'remove-timeout'];
   const rows = order.filter((key) => counts[key]).map((key) => `${key}: **${counts[key]}**`);
@@ -202,18 +202,17 @@ function buildDashboardNav(targetId, activeView, member, guild) {
 }
 function buildUserSelectRow() { return new ActionRowBuilder().addComponents(new UserSelectMenuBuilder().setCustomId('mod_user_select').setPlaceholder('👤 Select a member to investigate or moderate').setMinValues(1).setMaxValues(1)); }
 function actionPermissions(member, guild) { return { warn: canUseModAction(member, guild, 'warn'), timeout: canUseModAction(member, guild, 'timeout'), kick: canUseModAction(member, guild, 'kick'), ban: canUseModAction(member, guild, 'ban'), removeWarning: canUseModAction(member, guild, 'remove_warning'), removeTimeout: canUseModAction(member, guild, 'remove_timeout') }; }
-function buildActionRows(targetId, member, guild, refreshView = 'member') {
-  if (!targetId) return [];
-  const id = targetId; const p = actionPermissions(member, guild); const primary = [];
-  if (p.warn) primary.push(createSecondaryButton(`mod_open_warn:${id}`, 'Warn', getEmoji('WARNING', '⚠️')));
-  if (p.timeout) primary.push(createSecondaryButton(`mod_open_timeout:${id}`, 'Timeout', getEmoji('TIMEOUT', '⏳')));
-  if (p.kick) primary.push(createDangerButton(`mod_open_kick:${id}`, 'Kick', getEmoji('KICK', '👢')));
-  if (p.ban) primary.push(createDangerButton(`mod_open_ban:${id}`, 'Ban', getEmoji('BAN', '🔨')));
-  const secondary = [];
-  if (p.removeWarning) secondary.push(createSecondaryButton(`mod_remove_warning:${id}`, 'Remove Warn', getEmoji('DELETE', '🗑️')));
-  if (p.removeTimeout) secondary.push(createSecondaryButton(`mod_remove_timeout:${id}`, 'Clear Timeout', getEmoji('SUCCESS', '✅')));
-  secondary.push(createSuccessButton(`mod_refresh:${id}:${refreshView}`, 'Refresh', getEmoji('REFRESH', '🔄')));
-  return [buttonRow(primary), buttonRow(secondary)].filter(Boolean);
+function buildActionRows(target, stats, member, guild) {
+  if (!target) return [];
+  const id = target.id; const p = actionPermissions(member, guild); const apply = [];
+  if (p.warn) apply.push(createSecondaryButton(`mod_open_warn:${id}`, 'Warn', getEmoji('WARNING', '⚠️')));
+  if (p.timeout) apply.push(createSecondaryButton(`mod_open_timeout:${id}`, 'Timeout', getEmoji('TIMEOUT', '⏳')));
+  if (p.kick) apply.push(createDangerButton(`mod_open_kick:${id}`, 'Kick', getEmoji('KICK', '👢')));
+  if (p.ban) apply.push(createDangerButton(`mod_open_ban:${id}`, 'Ban', getEmoji('BAN', '🔨')));
+  const reverse = [];
+  if (p.removeWarning && Number(stats?.warningCount || 0) > 0) reverse.push(createSecondaryButton(`mod_remove_warning:${id}`, 'Remove Warn', getEmoji('DELETE', '🗑️')));
+  if (p.removeTimeout && targetHasActiveTimeout(target)) reverse.push(createSecondaryButton(`mod_remove_timeout:${id}`, 'Clear Timeout', getEmoji('SUCCESS', '✅')));
+  return [buttonRow(apply), buttonRow(reverse)].filter(Boolean);
 }
 function buildIntelligenceRows(targetId, member, guild) {
   if (!targetId) return [];
@@ -242,6 +241,11 @@ function buildManagementRows(targetId, member, guild) {
   for (const row of [buttonRow(first), buttonRow(bulk)]) if (row) rows.push(row);
   return rows;
 }
+function validateDashboardComponents(components, view) {
+  if (components.length > 5) throw new Error(`Moderation ${view} workspace produced ${components.length} component rows; Discord allows 5.`);
+  for (const row of components) if (Array.isArray(row?.components) && row.components.length > 5) throw new Error(`Moderation ${view} workspace produced a row with ${row.components.length} components; Discord allows 5.`);
+  return components;
+}
 
 function buildMemberEmbed(interaction, target, stats, staffDisplay) {
   const overall = workspaceStats(interaction.guild.id);
@@ -251,8 +255,8 @@ function buildMemberEmbed(interaction, target, stats, staffDisplay) {
     { name: 'Pending Appeals', value: `**${overall.pendingAppeals}**`, inline: true },
   );
   const highestRole = target.roles?.highest && target.roles.highest.id !== interaction.guild.id ? `${target.roles.highest}` : 'No elevated role';
-  const timeout = target.communicationDisabledUntilTimestamp > Date.now() ? `Active until ${timestamp(target.communicationDisabledUntilTimestamp, 'f')}` : 'Not timed out';
-  const embed = baseEmbed(interaction.client, COLORS.PRIMARY).setTitle(`👤 Member Workspace • ${target.user?.tag || target.user?.username || target.id}`).setDescription(`${target.user} is the active moderation target.`).addFields(
+  const timeout = targetHasActiveTimeout(target) ? `Active until ${timestamp(target.communicationDisabledUntilTimestamp, 'f')}` : 'Not timed out';
+  const embed = baseEmbed(interaction.client, COLORS.PRIMARY).setTitle(`👤 Member Workspace • ${target.user?.tag || target.user?.username || target.id}`).setDescription([`${target.user} is the active moderation target.`, '', 'Use the workspace navigation below for actions, intelligence and cases.'].join('\n')).addFields(
     { name: 'Identity', value: `**Discord ID:** \`${target.id}\`\n**Account Created:** ${timestamp(target.user?.createdTimestamp)}\n**Joined Server:** ${timestamp(target.joinedTimestamp)}`, inline: false },
     { name: 'Server Position', value: `**Highest Role:** ${highestRole}\n**Timeout:** ${timeout}`, inline: false },
     { name: 'Moderation', value: `**Warnings:** ${stats.warningCount ?? 0}\n**Cases:** ${stats.caseCount ?? 0}`, inline: true },
@@ -260,7 +264,14 @@ function buildMemberEmbed(interaction, target, stats, staffDisplay) {
   );
   const avatar = target.user?.displayAvatarURL?.({ size: 256 }); if (avatar) embed.setThumbnail(avatar); return embed;
 }
-function buildActionsEmbed(interaction, target) { return baseEmbed(interaction.client, COLORS.PRIMARY).setTitle('⚡ Moderation Actions').setDescription(target ? [`**Active Member:** ${target.user}`, `**Discord ID:** \`${target.id}\``, '', 'Choose an authorized action below. Goliath will still enforce hierarchy, target safety and confirmations.'].join('\n') : ['**No member selected.**', '', 'Choose a member first. Only actions granted to your Goliath authority profile are shown.'].join('\n')); }
+function buildActionsEmbed(interaction, target, stats) {
+  if (!target) return baseEmbed(interaction.client, COLORS.PRIMARY).setTitle('⚡ Moderation Actions').setDescription(['**No member selected.**', '', 'Choose a member first. Only actions granted to your Goliath authority profile are shown.'].join('\n'));
+  const timeout = targetHasActiveTimeout(target) ? `Active until ${timestamp(target.communicationDisabledUntilTimestamp, 'f')}` : 'None';
+  return baseEmbed(interaction.client, COLORS.PRIMARY).setTitle('⚡ Moderation Actions').setDescription([`**Active Member:** ${target.user}`, `**Discord ID:** \`${target.id}\``, '', 'Apply actions here. Reversal controls only appear when the member actually has something to clear.'].join('\n')).addFields(
+    { name: 'Current State', value: `**Warnings:** ${stats?.warningCount ?? 0}\n**Timeout:** ${timeout}`, inline: false },
+    { name: 'Safety', value: 'Goliath rechecks authority, hierarchy, target safety and confirmations when an action is submitted.', inline: false },
+  );
+}
 function buildIntelligenceEmbed(interaction, target, member, guild) { const capabilities = []; if (canUseModAction(member, guild, 'scan_suspects')) capabilities.push('Suspected-account correlation'); if (canUseModAction(member, guild, 'scan_network')) capabilities.push('Goliath network intelligence'); if (canUseModAction(member, guild, 'scan_links')) capabilities.push('Persistent link evidence'); if (canUseModAction(member, guild, 'scan_notes')) capabilities.push('Investigation notes'); if (canUseModAction(member, guild, 'scan_watch')) capabilities.push('Watch status'); return baseEmbed(interaction.client, COLORS.PRIMARY).setTitle('🧠 Member Intelligence').setDescription([target ? `**Active Member:** ${target.user} • \`${target.id}\`` : '**No member selected.**', '', 'Run Goliath Intelligence Scan to assemble the information this viewer is authorized to access.', '', capabilities.length ? `**Available Intelligence:**\n${capabilities.map((value) => `• ${value}`).join('\n')}` : 'Your authority profile provides basic scan access only.', '', 'Correlation results are evidence-led and never presented as confirmed identity unless Goliath has verified evidence.'].join('\n')); }
 function buildCasesEmbed(target, cases = [], page = 0, totalPages = 1, actionFilter = 'all', statusFilter = 'all') { const description = cases.length ? cases.map((entry) => `**#${entry.caseId}** • ${String(entry.action || 'unknown').toUpperCase()} • ${getStatusLabel(entry)}\n${entry.reason || 'No reason provided'}\n<t:${Math.floor(getCaseTime(entry) / 1000)}:R>`).join('\n\n') : 'No cases found for this member.'; return createEmbed({ title: target?.user?.tag ? `📁 Cases • ${target.user.tag}` : '📁 Member Cases', description, color: COLORS.PRIMARY, footer: `Action: ${actionFilter} | Status: ${statusFilter} | Page ${page + 1}/${totalPages}` }); }
 function buildManagementEmbed(interaction) { return baseEmbed(interaction.client, COLORS.PRIMARY).setTitle('🛠️ Moderation Management').setDescription(['Administrative moderation tools are grouped here so the main member workflow stays clean.', '', 'Only controls granted to your authority profile are shown.', '', '• Presets — reusable action templates', '• Analytics — server and moderator activity', '• Search / Export — case investigation and data', '• Bulk Actions — permission-gated mass moderation'].join('\n')); }
@@ -276,14 +287,14 @@ async function buildDashboardPayload(discord, interaction, target, view = DEFAUL
   if (!canViewDashboardSection(interaction.member, interaction.guild, safeView)) safeView = DEFAULT_VIEW;
   const targetId = target?.id || null; const stats = buildTargetStats(interaction.guild.id, target); const staff = getStaffDisplay(interaction.member, interaction.guild); const staffDisplay = `${staff.badge} ${staff.label} • ${interaction.member}`;
   const embeds = []; const components = [buildUserSelectRow()];
-  if (safeView === 'member') { embeds.push(buildMemberEmbed(interaction, target, stats, staffDisplay)); components.push(...buildActionRows(targetId, interaction.member, interaction.guild, 'member')); }
-  else if (safeView === 'actions') { embeds.push(buildActionsEmbed(interaction, target)); components.push(...buildActionRows(targetId, interaction.member, interaction.guild, 'actions')); }
+  if (safeView === 'member') embeds.push(buildMemberEmbed(interaction, target, stats, staffDisplay));
+  else if (safeView === 'actions') { embeds.push(buildActionsEmbed(interaction, target, stats)); components.push(...buildActionRows(target, stats, interaction.member, interaction.guild)); }
   else if (safeView === 'intelligence') { embeds.push(buildIntelligenceEmbed(interaction, target, interaction.member, interaction.guild)); components.push(...buildIntelligenceRows(targetId, interaction.member, interaction.guild)); }
   else if (safeView === 'cases') { if (!target) { embeds.push(baseEmbed(interaction.client, COLORS.PRIMARY).setTitle('📁 Member Cases').setDescription('Select a member to open their case workspace.')); } else { const pageData = getCasesPageData(interaction.guild.id, target.id, context); embeds.push(buildCasesEmbed(target, pageData.pageCases, pageData.page, pageData.totalPages, pageData.actionFilter, pageData.statusFilter)); components.push(...buildCasesPageButtons(target.id, pageData.page, pageData.totalPages, pageData.actionFilter, pageData.statusFilter), ...buildCaseFilterButtons(target.id, pageData.actionFilter, pageData.statusFilter, pageData.page)); } }
   else if (safeView === 'management') { embeds.push(buildManagementEmbed(interaction)); components.push(...buildManagementRows(targetId, interaction.member, interaction.guild)); }
   else if (safeView === 'analytics') { const window = context.analyticsWindow; if (context.analyticsMode === 'moderator' && context.analyticsModeratorId) embeds.push(buildModeratorAnalyticsEmbed(interaction.guild, getModeratorAnalytics(interaction.guild.id, context.analyticsModeratorId, window))); else embeds.push(buildAnalyticsOverviewEmbed(interaction.guild, getModerationAnalytics(interaction.guild.id, window))); components.push(...buildAnalyticsRows(window, context.analyticsMode, context.analyticsModeratorId, interaction.user?.id || null)); }
   components.push(buildDashboardNav(targetId, safeView, interaction.member, interaction.guild));
-  return { embeds, components: components.slice(-5) };
+  return { embeds, components: validateDashboardComponents(components, safeView) };
 }
 async function renderDashboard(interaction, targetId, view = DEFAULT_VIEW, context = {}) { const requestedView = normalizeView(view); if (!canViewDashboardSection(interaction.member, interaction.guild, requestedView)) return safeReply(interaction, ephemeralError('That moderation workspace is not available to your authority profile.')); const target = targetId && targetId !== 'none' ? await fetchTarget(interaction.guild, targetId) : null; if (targetId && targetId !== 'none' && !target) return safeReply(interaction, ephemeralError('Could not find the selected member.')); await interaction.update(await buildDashboardPayload(Discord, interaction, target, requestedView, context)); return true; }
 async function refreshDashboard(discord, interaction, target, context = {}) { const safeContext = normalizeDashboardContext(context); const payload = await buildDashboardPayload(discord, interaction, target, safeContext.view, safeContext); try { if (interaction.message) { await interaction.message.edit(payload); return true; } if (interaction.replied || interaction.deferred) { await interaction.editReply(payload); return true; } await interaction.reply({ ...payload, flags: 64 }); return true; } catch (error) { console.error('❌ Failed to refresh moderation dashboard message:', error); return false; } }
