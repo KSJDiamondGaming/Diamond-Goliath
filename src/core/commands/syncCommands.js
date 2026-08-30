@@ -84,7 +84,7 @@ function loadCanonicalCommands() {
   }
 
   if (seen.size !== CANONICAL_COMMAND_NAMES.size) {
-    throw new Error(`Expected /admin, /mod, /user, /emoji and /e; loaded ${[...seen].join(', ')}`);
+    throw new Error(`Expected /admin, /mod, /user, /e and Convert Emoji Shortcodes; loaded ${[...seen].join(', ')}`);
   }
 
   return commands;
