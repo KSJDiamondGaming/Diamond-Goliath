@@ -2,7 +2,7 @@
 
 const path = require('node:path');
 
-const CANONICAL_COMMAND_NAMES = new Set(['admin', 'mod', 'user', 'emoji', 'e']);
+const CANONICAL_COMMAND_NAMES = new Set(['admin', 'mod', 'user', 'e']);
 
 function getCanonicalCommandFiles() {
   const root = process.cwd();
@@ -10,7 +10,6 @@ function getCanonicalCommandFiles() {
     path.join(root, 'src', 'core', 'administration', 'admin', 'command.js'),
     path.join(root, 'src', 'core', 'administration', 'mod', 'command.js'),
     path.join(root, 'src', 'core', 'administration', 'user', 'command.js'),
-    path.join(root, 'src', 'core', 'administration', 'user', 'emojiCommand.js'),
     path.join(root, 'src', 'core', 'administration', 'user', 'emojiAliasCommand.js'),
   ];
 }
@@ -43,7 +42,7 @@ function loadCommands(client) {
   }
 
   if (loaded.length !== CANONICAL_COMMAND_NAMES.size) {
-    throw new Error(`Expected /admin, /mod, /user, /emoji and /e; loaded ${loaded.join(', ')}`);
+    throw new Error(`Expected /admin, /mod, /user and /e; loaded ${loaded.join(', ')}`);
   }
 
   console.log(`✅ commands loaded (${loaded.length}): ${loaded.join(', ')}`);
