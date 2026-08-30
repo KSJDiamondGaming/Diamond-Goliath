@@ -399,8 +399,11 @@ function buildGroupsPanel(guildId, selectedId = null) {
         button(customId('admin:roleSelector:toggleMode', selected.id), selected.selectionMode === 'multiple' ? '☑️ Multiple Choices' : '1️⃣ Single Choice', ButtonStyle.Primary),
         button(customId('admin:roleSelector:toggleRemove', selected.id), selected.allowRemove ? '🧹 Allow Clear: Yes' : '🧹 Allow Clear: No'),
       ),
-      row(button(customId('admin:roleSelector:deleteGroup', selected.id), '🗑️ Delete Group', ButtonStyle.Danger)),
-      nav(),
+      row(
+        button('admin:roleSelector:groups', '⬅️ Back'),
+        button(customId('admin:roleSelector:deleteGroup', selected.id), '🗑️ Delete Group', ButtonStyle.Danger),
+        button('admin:roleSelector:settings', '⚙️ Settings'),
+      ),
     ],
   };
 }
