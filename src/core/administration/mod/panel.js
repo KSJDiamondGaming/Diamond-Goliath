@@ -160,7 +160,7 @@ function upsertModerationPreset(guild, input, actorId, presetId = null) { const 
 function deleteModerationPreset(guild, presetId) { const presets = getModerationPresets(guild.id); const next = presets.filter((preset) => preset.id !== String(presetId)); if (next.length === presets.length) return false; saveModerationPresets(guild, next); return true; }
 function toggleModerationPreset(guild, presetId, actorId) { const presets = getModerationPresets(guild.id); const index = presets.findIndex((preset) => preset.id === String(presetId)); if (index < 0) return null; presets[index] = { ...presets[index], enabled: !presets[index].enabled, updatedBy: actorId, updatedAt: new Date().toISOString() }; saveModerationPresets(guild, presets); return presets[index]; }
 function markPresetUsed(guild, presetId, actorId) { const presets = getModerationPresets(guild.id); const index = presets.findIndex((preset) => preset.id === String(presetId)); if (index < 0) return null; presets[index] = { ...presets[index], usageCount: presets[index].usageCount + 1, lastUsedAt: new Date().toISOString(), lastUsedBy: actorId || null }; saveModerationPresets(guild, presets); return presets[index]; }
-function buildPresetManagerPayload(guild, targetId = 'none') { const presets = getModerationPresets(guild.id); const embed = createEmbed({ title: '📋 Moderation Presets', description: presets.length ? `Reusable moderation templates for **${guild.name}**.` : 'No moderation presets exist yet.', color: COLORS.PRIMARY, fields: [{ name: 'Stored', value: `${presets.length}/${MAX_PRESETS}`, inline: true }, { name: 'Selected Member', value: targetId !== 'none' ? `<@${targetId}>` : 'None', inline: true }, { name: 'Safety', value: 'Presets still use normal authority, hierarchy, validation, confirmation, logging and appeal safeguards.', inline: false }] }); const rows = []; if (presets.length) rows.push(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`mod_preset_select:${targetId}`).setPlaceholder('Select a moderation preset').addOptions(presets.map((preset) => ({ label: preset.name.slice(0, 100), value: preset.id, description: `${preset.enabled ? 'Enabled' : 'Disabled'} • ${preset.action} • ${preset.usageCount} uses`.slice(0, 100) }))))); rows.push(new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`mod_preset_create:${targetId}`).setLabel('➕ Create Preset').setStyle(ButtonStyle.Primary).setDisabled(presets.length >= MAX_PRESETS), new ButtonBuilder().setCustomId(`mod_dashboard:${targetId}:management`).setLabel('← Management').setStyle(ButtonStyle.Secondary))); return { embeds: [embed], components: rows }; }
+function buildPresetManagerPayload(guild, targetId = 'none') { const presets = getModerationPresets(guild.id); const embed = createEmbed({ title: '📋 Moderation Presets', description: presets.length ? `Reusable moderation templates for **${guild.name}**.` : 'No moderation presets exist yet.', color: COLORS.PRIMARY, fields: [{ name: 'Stored', value: `${presets.length}/${MAX_PRESETS}`, inline: true }, { name: 'Selected Member', value: targetId !== 'none' ? `<@${targetId}>` : 'None', inline: true }, { name: 'Safety', value: 'Presets still use normal authority, hierarchy, validation, confirmation, logging and appeal safeguards.', inline: false }] }); const rows = []; if (presets.length) rows.push(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`mod_preset_select:${targetId}`).setPlaceholder('Select a moderation preset').addOptions(presets.map((preset) => ({ label: preset.name.slice(0, 100), value: preset.id, description: `${preset.enabled ? 'Enabled' : 'Disabled'} • ${preset.action} • ${preset.usageCount} uses`.slice(0, 100) }))))); rows.push(new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`mod_preset_create:${targetId}`).setLabel('➕ Create Preset').setStyle(ButtonStyle.Primary).setDisabled(presets.length >= MAX_PRESETS), new ButtonBuilder().setCustomId(targetId !== 'none' ? `mod_dashboard:${targetId}:actions` : 'mod:overview').setLabel(targetId !== 'none' ? '← Actions' : '← Moderation').setStyle(ButtonStyle.Secondary))); return { embeds: [embed], components: rows }; }
 function buildPresetDetailPayload(guild, preset, targetId = 'none') { const detail = preset.action === 'warn' ? `Weight **${preset.strikeWeight}** • Expiry **${preset.warnExpiry}**` : preset.action === 'timeout' ? `Duration **${preset.duration}**` : preset.action === 'ban' ? `Delete days **${preset.deleteDays}**` : 'No additional action settings'; const embed = createEmbed({ title: `📋 ${preset.name}`, description: `Action: **${preset.action.toUpperCase()}** • ${preset.enabled ? 'Enabled ✅' : 'Disabled ⛔'}`, color: COLORS.PRIMARY, fields: [{ name: 'Reason', value: preset.reason, inline: false }, { name: 'Settings', value: detail, inline: false }, { name: 'Usage', value: `**${preset.usageCount}** submissions${preset.lastUsedAt ? ` • last used ${timestamp(new Date(preset.lastUsedAt).getTime())}` : ''}`, inline: false }, { name: 'Selected Member', value: targetId !== 'none' ? `<@${targetId}>` : 'None selected', inline: false }] }); return { embeds: [embed], components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`mod_preset_apply:${preset.id}:${targetId}`).setLabel('▶ Apply').setStyle(ButtonStyle.Success).setDisabled(!preset.enabled || targetId === 'none'), new ButtonBuilder().setCustomId(`mod_preset_edit:${preset.id}:${targetId}`).setLabel('✏️ Edit').setStyle(ButtonStyle.Primary), new ButtonBuilder().setCustomId(`mod_preset_toggle:${preset.id}:${targetId}`).setLabel(preset.enabled ? '⏸ Disable' : '▶ Enable').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId(`mod_preset_delete:${preset.id}:${targetId}`).setLabel('🗑 Delete').setStyle(ButtonStyle.Danger), new ButtonBuilder().setCustomId(`mod_presets:${targetId}`).setLabel('← Presets').setStyle(ButtonStyle.Secondary))] }; }
 function buildPresetEditorModal(preset = null, targetId = 'none') { const value = preset || normalizePreset({ name: '', action: 'warn', reason: '', warnExpiry: 'never', strikeWeight: 1 }); const secondary = value.action === 'warn' ? value.warnExpiry : value.action === 'timeout' ? value.duration : ''; const numeric = value.action === 'warn' ? String(value.strikeWeight) : value.action === 'ban' ? String(value.deleteDays) : ''; return new ModalBuilder().setCustomId(`mod_preset_save:${preset?.id || 'new'}:${targetId}`).setTitle(preset ? 'Edit Moderation Preset' : 'Create Moderation Preset').addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('name').setLabel('Preset Name').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(80).setValue(String(value.name || '').slice(0, 80))), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('action').setLabel('Action: warn / timeout / kick / ban').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(10).setValue(String(value.action || 'warn'))), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('reason').setLabel('Reason').setStyle(TextInputStyle.Paragraph).setRequired(true).setMaxLength(500).setValue(String(value.reason || '').slice(0, 500))), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('secondary').setLabel('Warn expiry OR timeout duration').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(10).setPlaceholder('warn: 7d/2w/1m/never • timeout: 1h').setValue(String(secondary || '').slice(0, 10))), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('numeric').setLabel('Warn weight (1-5) OR ban delete days (0-7)').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(1).setValue(String(numeric || '').slice(0, 1)))); }
 function buildPresetExecutionModal(preset, targetId) { const suffix = `:preset:${preset.id}`; if (preset.action === 'warn') return new ModalBuilder().setCustomId(`mod_submit_warn:${targetId}${suffix}`).setTitle(`Warn • ${preset.name}`.slice(0, 45)).addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('strike_weight').setLabel('Strike weight (1-5)').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(1).setValue(String(preset.strikeWeight))), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('warn_expiry').setLabel('Warn expiry (7d, 2w, 1m, or never)').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(10).setValue(preset.warnExpiry)), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('reason').setLabel('Reason').setStyle(TextInputStyle.Paragraph).setRequired(true).setMaxLength(500).setValue(preset.reason))); const modal = new ModalBuilder().setCustomId(`mod_submit_${preset.action}:${targetId}${suffix}`).setTitle(`${preset.action[0].toUpperCase()}${preset.action.slice(1)} • ${preset.name}`.slice(0, 45)); const rows = []; if (preset.action === 'ban') rows.push(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('days').setLabel('Delete message days (0-7)').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(1).setValue(String(preset.deleteDays)))); if (preset.action === 'timeout') rows.push(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('duration').setLabel('Duration (10m, 1h, 1d)').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(10).setValue(preset.duration))); rows.push(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('reason').setLabel('Reason').setStyle(TextInputStyle.Paragraph).setRequired(true).setMaxLength(500).setValue(preset.reason))); return modal.addComponents(...rows); }
@@ -185,7 +185,7 @@ function buttonRow(buttons) { return buttons.length ? new ActionRowBuilder().add
 function buildDashboardNav(targetId, activeView, member, guild) {
   const active = normalizeView(activeView);
   const id = targetId || 'none';
-  const buttons = [];
+  const rows = [];
 
   if (targetId) {
     const candidates = [
@@ -195,26 +195,35 @@ function buildDashboardNav(targetId, activeView, member, guild) {
       ['cases', '📁 Cases'],
     ].filter(([view]) => view !== active && canViewDashboardSection(member, guild, view));
 
-    for (const [view, label] of candidates.slice(0, 4)) {
-      buttons.push(new ButtonBuilder().setCustomId(`mod_dashboard:${id}:${view}`).setLabel(label).setStyle(ButtonStyle.Secondary));
-    }
+    const buttons = candidates.slice(0, 4).map(([view, label]) => new ButtonBuilder()
+      .setCustomId(`mod_dashboard:${id}:${view}`)
+      .setLabel(label)
+      .setStyle(ButtonStyle.Secondary));
+    if (buttons.length) rows.push(new ActionRowBuilder().addComponents(buttons));
   }
 
-  buttons.push(new ButtonBuilder().setCustomId('admin:home').setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary));
-  return new ActionRowBuilder().addComponents(buttons);
+  rows.push(new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('admin:home').setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary)
+  ));
+  return rows;
 }
 function buildUserSelectRow() { return new ActionRowBuilder().addComponents(new UserSelectMenuBuilder().setCustomId('mod_user_select').setPlaceholder('👤 Select a member to investigate or moderate').setMinValues(1).setMaxValues(1)); }
 function actionPermissions(member, guild) { return { warn: canUseModAction(member, guild, 'warn'), timeout: canUseModAction(member, guild, 'timeout'), kick: canUseModAction(member, guild, 'kick'), ban: canUseModAction(member, guild, 'ban'), removeWarning: canUseModAction(member, guild, 'remove_warning'), removeTimeout: canUseModAction(member, guild, 'remove_timeout') }; }
 function buildActionRows(target, stats, member, guild) {
-  if (!target) return [];
-  const id = target.id; const p = actionPermissions(member, guild); const apply = [];
-  if (p.warn) apply.push(createSecondaryButton(`mod_open_warn:${id}`, 'Warn', getEmoji('WARNING', '⚠️')));
-  if (p.timeout) apply.push(createSecondaryButton(`mod_open_timeout:${id}`, 'Timeout', getEmoji('TIMEOUT', '⏳')));
-  if (p.kick) apply.push(createDangerButton(`mod_open_kick:${id}`, 'Kick', getEmoji('KICK', '👢')));
-  if (p.ban) apply.push(createDangerButton(`mod_open_ban:${id}`, 'Ban', getEmoji('BAN', '🔨')));
+  const id = target?.id || 'none';
+  const p = actionPermissions(member, guild);
+  const disabled = !target;
+  const apply = [];
+
+  if (p.warn) apply.push(createSecondaryButton(`mod_open_warn:${id}`, 'Warn', getEmoji('WARNING', '⚠️')).setDisabled(disabled));
+  if (p.timeout) apply.push(createSecondaryButton(`mod_open_timeout:${id}`, 'Timeout', getEmoji('TIMEOUT', '⏳')).setDisabled(disabled));
+  if (p.kick) apply.push(createDangerButton(`mod_open_kick:${id}`, 'Kick', getEmoji('KICK', '👢')).setDisabled(disabled));
+  if (p.ban) apply.push(createDangerButton(`mod_open_ban:${id}`, 'Ban', getEmoji('BAN', '🔨')).setDisabled(disabled));
+
   const reverse = [];
-  if (p.removeWarning && Number(stats?.warningCount || 0) > 0) reverse.push(createSecondaryButton(`mod_remove_warning:${id}`, 'Remove Warn', getEmoji('DELETE', '🗑️')));
-  if (p.removeTimeout && targetHasActiveTimeout(target)) reverse.push(createSecondaryButton(`mod_remove_timeout:${id}`, 'Clear Timeout', getEmoji('SUCCESS', '✅')));
+  if (target && p.removeWarning && Number(stats?.warningCount || 0) > 0) reverse.push(createSecondaryButton(`mod_remove_warning:${id}`, 'Remove Warn', getEmoji('DELETE', '🗑️')));
+  if (target && p.removeTimeout && targetHasActiveTimeout(target)) reverse.push(createSecondaryButton(`mod_remove_timeout:${id}`, 'Clear Timeout', getEmoji('SUCCESS', '✅')));
+
   return [buttonRow(apply), buttonRow(reverse)].filter(Boolean);
 }
 function buildIntelligenceRows(targetId, member, guild) {
@@ -245,7 +254,7 @@ function buildMemberEmbed(interaction, target, stats, staffDisplay) {
       '',
       `**Authority:** ${staffDisplay}`,
       '',
-      'Select a member below to open their workspace, or use **Manage** for server-wide moderation tools.',
+      'Select a member below. The moderation buttons underneath become available immediately.',
     ].join('\n'))
     .addFields(
       { name: 'Open Cases', value: `**${overall.activeCases}**`, inline: true },
@@ -297,12 +306,12 @@ async function buildDashboardPayload(discord, interaction, target, view = DEFAUL
   if (!canViewDashboardSection(interaction.member, interaction.guild, safeView)) safeView = DEFAULT_VIEW;
   const targetId = target?.id || null; const stats = buildTargetStats(interaction.guild.id, target); const staff = getStaffDisplay(interaction.member, interaction.guild); const staffDisplay = `${staff.badge} ${staff.label} • ${interaction.member}`;
   const embeds = []; const components = [buildUserSelectRow()];
-  if (safeView === 'member') embeds.push(buildMemberEmbed(interaction, target, stats, staffDisplay));
+  if (safeView === 'member') { embeds.push(buildMemberEmbed(interaction, target, stats, staffDisplay)); components.push(...buildActionRows(target, stats, interaction.member, interaction.guild)); }
   else if (safeView === 'actions') { embeds.push(buildActionsEmbed(interaction, target, stats)); components.push(...buildActionRows(target, stats, interaction.member, interaction.guild)); }
   else if (safeView === 'intelligence') { embeds.push(buildIntelligenceEmbed(interaction, target, interaction.member, interaction.guild)); components.push(...buildIntelligenceRows(targetId, interaction.member, interaction.guild)); }
   else if (safeView === 'cases') { if (!target) { embeds.push(baseEmbed(interaction.client, COLORS.PRIMARY).setTitle('📁 Member Cases').setDescription('Select a member to open their case workspace.')); } else { const pageData = getCasesPageData(interaction.guild.id, target.id, context); embeds.push(buildCasesEmbed(target, pageData.pageCases, pageData.page, pageData.totalPages, pageData.actionFilter, pageData.statusFilter)); components.push(...buildCasesPageButtons(target.id, pageData.page, pageData.totalPages, pageData.actionFilter, pageData.statusFilter), ...buildCaseFilterButtons(target.id, pageData.actionFilter, pageData.statusFilter, pageData.page)); } }
   else if (safeView === 'analytics') { const window = context.analyticsWindow; if (context.analyticsMode === 'moderator' && context.analyticsModeratorId) embeds.push(buildModeratorAnalyticsEmbed(interaction.guild, getModeratorAnalytics(interaction.guild.id, context.analyticsModeratorId, window))); else embeds.push(buildAnalyticsOverviewEmbed(interaction.guild, getModerationAnalytics(interaction.guild.id, window))); components.push(...buildAnalyticsRows(window, context.analyticsMode, context.analyticsModeratorId, interaction.user?.id || null)); }
-  components.push(buildDashboardNav(targetId, safeView, interaction.member, interaction.guild));
+  components.push(...buildDashboardNav(targetId, safeView, interaction.member, interaction.guild));
   return { embeds, components: validateDashboardComponents(components, safeView) };
 }
 async function renderDashboard(interaction, targetId, view = DEFAULT_VIEW, context = {}) { const requestedView = normalizeView(view); if (!canViewDashboardSection(interaction.member, interaction.guild, requestedView)) return safeReply(interaction, ephemeralError('That moderation workspace is not available to your authority profile.')); const target = targetId && targetId !== 'none' ? await fetchTarget(interaction.guild, targetId) : null; if (targetId && targetId !== 'none' && !target) return safeReply(interaction, ephemeralError('Could not find the selected member.')); await interaction.update(await buildDashboardPayload(Discord, interaction, target, requestedView, context)); return true; }
@@ -326,7 +335,6 @@ async function handleDashboardNavigation(interaction) {
   return false;
 }
 async function handleUserSelectMenu(interaction) { if (String(interaction.customId || '').startsWith('mod_analytics_moderator_select:')) { if (!canUseModAction(interaction.member, interaction.guild, 'view_analytics')) return safeReply(interaction, ephemeralError('No permission to view moderation analytics.')); const [, window] = String(interaction.customId).split(':'); const moderatorId = interaction.values?.[0]; if (!moderatorId) return safeReply(interaction, ephemeralError('No moderator selected.')); return renderDashboard(interaction, 'none', 'analytics', { analyticsWindow: window, analyticsMode: 'moderator', analyticsModeratorId: moderatorId }); } if (interaction.customId !== 'mod_user_select') return false; const target = await fetchTarget(interaction.guild, interaction.values[0]); if (!target) return safeReply(interaction, ephemeralError('Could not find that member.')); return renderDashboard(interaction, target.id, 'actions'); }
-async function handleSelectUserButton(interaction) { if (interaction.customId !== 'mod_select_user') return false; return safeReply(interaction, { content: '👤 Select a member:', components: [buildUserSelectRow()], flags: 64 }); }
 async function openPresetManager(interaction, targetId = 'none') {
   if (!canUseModAction(interaction.member, interaction.guild, 'manage_presets')) return safeReply(interaction, ephemeralError('No permission to manage moderation presets.'));
   return safeReply(interaction, { ...buildPresetManagerPayload(interaction.guild, targetId), flags: 64 });
@@ -362,7 +370,6 @@ module.exports = {
   refreshCasesDashboard,
   handleDashboardNavigation,
   handleUserSelectMenu,
-  handleSelectUserButton,
   handlePresetInteraction,
   handlePresetModal,
   handleExportInteraction,
