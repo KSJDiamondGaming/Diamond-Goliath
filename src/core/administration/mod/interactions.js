@@ -92,6 +92,51 @@ function parseJson(value, fallback = {}) {
 function parseCaseMetadata(modCase) {
   return parseJson(modCase?.metadata, {});
 }
+function investigationAuditRows(guildId, targetId, limit = 200) {
+  try {
+    const rows = db.prepare("SELECT audit_id, actor_id, event, after_value, metadata, created_at FROM case_audit WHERE guild_id = ? AND event IN ('moderation.member_scan.note_added','moderation.member_scan.watch_updated') ORDER BY created_at DESC LIMIT ?").all(String(guildId), Math.max(1, Math.min(500, Number(limit) || 200)));
+    return rows.filter((row) => String(parseJson(row.metadata, {}).targetId || '') === String(targetId));
+  } catch (error) {
+    console.error('❌ Member investigation state query failed:', error);
+    return [];
+  }
+}
+function getInvestigationState(guildId, targetId) {
+  const rows = investigationAuditRows(guildId, targetId);
+  const notes = [];
+  let watch = null;
+  for (const row of rows) {
+    const after = parseJson(row.after_value, {});
+    if (row.event === 'moderation.member_scan.watch_updated' && watch === null) {
+      watch = { enabled: Boolean(after.enabled), reason: after.reason || null, actorId: row.actor_id || null, at: row.created_at || null };
+    }
+    if (row.event === 'moderation.member_scan.note_added' && after.note) {
+      notes.push({ note: String(after.note), actorId: row.actor_id || null, at: row.created_at || null });
+    }
+  }
+  return { watched: Boolean(watch?.enabled), watch, notes: notes.slice(0, 10) };
+}
+function aggregateSuspectedEvidence(guildId, targetId) {
+  const matches = new Map();
+  for (const row of scanAuditRows(guildId, targetId, 100)) {
+    const after = parseJson(row.after_value, {});
+    for (const match of Array.isArray(after.suspectedMatches) ? after.suspectedMatches : []) {
+      if (!match?.userId) continue;
+      const key = String(match.userId);
+      const current = matches.get(key) || { userId: key, appearances: 0, maxScore: 0, signals: new Set(), firstSeen: row.created_at || null, lastSeen: row.created_at || null };
+      current.appearances += 1;
+      current.maxScore = Math.max(current.maxScore, Number(match.score) || 0);
+      for (const signal of Array.isArray(match.signals) ? match.signals : []) current.signals.add(String(signal));
+      current.firstSeen = current.firstSeen || row.created_at || null;
+      current.lastSeen = row.created_at || current.lastSeen;
+      matches.set(key, current);
+    }
+  }
+  return [...matches.values()]
+    .map((entry) => ({ ...entry, signals: [...entry.signals] }))
+    .sort((a, b) => (b.appearances - a.appearances) || (b.maxScore - a.maxScore))
+    .slice(0, 10);
+}
 function scanAuditRows(guildId, targetId, limit = 25) {
   try {
     const rows = db.prepare("SELECT audit_id, actor_id, after_value, metadata, created_at FROM case_audit WHERE guild_id = ? AND event = 'moderation.member_scan.completed' ORDER BY created_at DESC LIMIT ?").all(String(guildId), Math.max(1, Math.min(100, Number(limit) || 25)));
@@ -167,6 +212,30 @@ function moderationSummary(guildId, userId) {
   const evidence = cases.reduce((total, entry) => total + (Array.isArray(parseCaseMetadata(entry).evidence) ? parseCaseMetadata(entry).evidence.filter((item) => !item?.removedAt).length : 0), 0);
   return { cases, warningCount, activeCases, bans, timeouts, appeals, evidence };
 }
+function calculateModerationRisk(summary, crossGuild) {
+  const reasons = [];
+  let score = 0;
+  const warnings = Math.min(20, Math.max(0, Number(summary.warningCount) || 0) * 4);
+  const active = Math.min(20, Math.max(0, Number(summary.activeCases) || 0) * 5);
+  const bans = Math.min(25, Math.max(0, Number(summary.bans) || 0) * 10);
+  const timeouts = Math.min(15, Math.max(0, Number(summary.timeouts) || 0) * 4);
+  const network = Math.min(20, Math.max(0, Number(crossGuild?.caseCount) || 0) * 4);
+  if (warnings) { score += warnings; reasons.push(`${summary.warningCount} active warning(s)`); }
+  if (active) { score += active; reasons.push(`${summary.activeCases} active moderation case(s)`); }
+  if (bans) { score += bans; reasons.push(`${summary.bans} ban case(s)`); }
+  if (timeouts) { score += timeouts; reasons.push(`${summary.timeouts} timeout case(s)`); }
+  if (network) { score += network; reasons.push(`${crossGuild.caseCount} case(s) for the same Discord ID in other Goliath guilds`); }
+  score = Math.min(100, score);
+  const label = score >= 70 ? '🔴 High' : score >= 40 ? '🟠 Elevated' : score >= 20 ? '🟡 Moderate' : '🟢 Low';
+  return { score, label, reasons };
+}
+function buildInvestigationNoteModal(targetId) {
+  return new Discord.ModalBuilder().setCustomId(`mod_scan_note_submit:${targetId}`).setTitle('Add Investigation Note').addComponents(
+    new Discord.ActionRowBuilder().addComponents(
+      new Discord.TextInputBuilder().setCustomId('note').setLabel('Investigation note').setStyle(Discord.TextInputStyle.Paragraph).setRequired(true).setMinLength(2).setMaxLength(1000).setPlaceholder('Record relevant context, observations, or why this account needs review.')
+    )
+  );
+}
 function buildMemberScanPayload(i, target) {
   const summary = moderationSummary(i.guild.id, target.id);
   const { cases, warningCount, activeCases, bans, timeouts, appeals, evidence } = summary;
@@ -176,6 +245,9 @@ function buildMemberScanPayload(i, target) {
   const suspects = buildSuspectedAccounts(i.guild, target);
   const history = historicalIdentitySnapshot(i.guild.id, target.id);
   const crossGuild = getCrossGuildModeration(target.id, i.guild.id);
+  const investigation = getInvestigationState(i.guild.id, target.id);
+  const persistentLinks = aggregateSuspectedEvidence(i.guild.id, target.id);
+  const risk = calculateModerationRisk(summary, crossGuild);
   const historicalNames = [...new Set([...history.names, ...history.globals, ...history.displays])].filter((name) => name && name !== target.user.username && name !== target.user.globalName && name !== target.displayName);
   const suspectText = suspects.length
     ? suspects.map(({ member, score, signals }) => `${score >= 70 ? '🔴 **STRONG MATCH**' : '🟠 **POSSIBLE MATCH**'} — ${member.user} • **${score}%**\n${signals.map((signal) => `• ${signal}`).join('\n')}`).join('\n\n')
@@ -199,11 +271,13 @@ function buildMemberScanPayload(i, target) {
       { name: '🔐 Key Permissions', value: keyPermissions.length ? keyPermissions.map((name) => `\`${name}\``).join(' • ') : 'No elevated Discord permissions detected.', inline: false },
       { name: '🚩 Account Flags', value: flags.length ? flags.join(', ') : 'None exposed by Discord.', inline: false },
       { name: '⚖️ Moderation Intelligence', value: [`Warnings: **${warningCount}**`, `Cases: **${cases.length}** • Active: **${activeCases}**`, `Timeout cases: **${timeouts}** • Ban cases: **${bans}**`, `Appeals: **${appeals}** • Active evidence refs: **${evidence}**`].join('\n'), inline: false },
+      { name: '📈 Moderation Risk Score', value: [`**${risk.score}/100 • ${risk.label}**`, risk.reasons.length ? risk.reasons.map((reason) => `• ${reason}`).join('\n') : 'No recorded moderation-risk signals.', 'Score is based only on recorded moderation history; identity-correlation guesses do not increase it.'].join('\n').slice(0, 1024), inline: false },
+      { name: '👁️ Investigation Status', value: [`Watch list: **${investigation.watched ? 'ON' : 'OFF'}**`, investigation.watch?.reason ? `Reason: ${investigation.watch.reason}` : 'No watch reason recorded.', `Investigation notes: **${investigation.notes.length}**`, investigation.notes[0] ? `Latest: ${investigation.notes[0].note.slice(0, 500)}` : 'No investigation notes yet.'].join('\n').slice(0, 1024), inline: false },
       { name: '🌐 Goliath Network Intelligence', value: crossGuild.guildCount ? `Same Discord ID has **${crossGuild.caseCount}** moderation case(s) across **${crossGuild.guildCount}** other Goliath guild(s).\n${crossGuild.rows.map((row) => `• Guild \`${row.guild_id}\` — ${row.case_count} case(s) • last ${row.last_case_at || 'unknown'}`).join('\n').slice(0, 850)}` : 'No moderation cases for this Discord ID were found in other Goliath guilds.', inline: false },
       { name: '🕘 Recent Case History', value: recent.slice(0, 1024), inline: false },
       { name: '🧬 Suspected Accounts', value: suspectText.slice(0, 1024), inline: false },
       { name: '🔗 Confirmed Linked Accounts', value: 'No confirmed Goliath identity-link provider is currently connected to this scan. This section only shows verified links when Goliath has a legitimate stored verification/OAuth relationship.', inline: false },
-      { name: '📡 Data Sources', value: 'Discord API • guild member cache • Goliath moderation cases • warnings • case metadata • appeals • evidence • scan history • same-ID cross-guild case intelligence • heuristic guild correlation', inline: false },
+      { name: '📡 Data Sources', value: 'Discord API • guild member cache • Goliath moderation cases • warnings • case metadata • appeals • evidence • scan history • same-ID cross-guild case intelligence • persistent scan correlation • investigation notes/watch state • heuristic guild correlation', inline: false },
     )
     .setFooter({ text: `Scanned by ${i.user?.tag || i.user?.username || i.user?.id || 'Unknown staff'} • evidence-based intelligence only` })
     .setTimestamp();
@@ -214,7 +288,12 @@ function buildMemberScanPayload(i, target) {
     new Discord.ButtonBuilder().setCustomId(`mod_case_detail:${target.id}`).setLabel('Case Detail').setEmoji('📁').setStyle(Discord.ButtonStyle.Secondary),
     new Discord.ButtonBuilder().setCustomId(`mod_dashboard:${target.id}:cases`).setLabel('Cases').setEmoji('⚖️').setStyle(Discord.ButtonStyle.Secondary),
   );
-  return { scanId, cases, suspects, history, crossGuild, embed, components: [controls] };
+  const intelligenceControls = new Discord.ActionRowBuilder().addComponents(
+    new Discord.ButtonBuilder().setCustomId(`mod_scan_note:${target.id}`).setLabel('Add Note').setEmoji('📝').setStyle(Discord.ButtonStyle.Secondary),
+    new Discord.ButtonBuilder().setCustomId(`mod_scan_watch:${target.id}`).setLabel(investigation.watched ? 'Remove Watch' : 'Watch Member').setEmoji('👁️').setStyle(investigation.watched ? Discord.ButtonStyle.Danger : Discord.ButtonStyle.Secondary),
+    new Discord.ButtonBuilder().setCustomId(`mod_scan_links:${target.id}`).setLabel(`Link Evidence (${persistentLinks.length})`.slice(0, 80)).setEmoji('🔗').setStyle(Discord.ButtonStyle.Secondary),
+  );
+  return { scanId, cases, suspects, history, crossGuild, investigation, persistentLinks, risk, embed, components: [controls, intelligenceControls] };
 }
 function buildScanHistoryPayload(i, target) {
   const rows = scanAuditRows(i.guild.id, target.id, 25);
@@ -302,8 +381,11 @@ async function runMemberScan(i, targetId) {
         joinedAt: target.joinedTimestamp || null,
       },
       network: { otherGuildCount: report.crossGuild.guildCount, otherGuildCaseCount: report.crossGuild.caseCount },
+      risk: report.risk,
+      investigation: { watched: report.investigation.watched, noteCount: report.investigation.notes.length },
+      persistentLinkEvidence: report.persistentLinks.map((entry) => ({ userId: entry.userId, appearances: entry.appearances, maxScore: entry.maxScore, signals: entry.signals })),
     },
-    metadata: { dataSources: ['discord_api', 'guild_cache', 'moderation_cases', 'warnings', 'case_metadata', 'appeals', 'evidence', 'scan_history', 'cross_guild_same_id_cases', 'heuristic_guild_correlation'] },
+    metadata: { dataSources: ['discord_api', 'guild_cache', 'moderation_cases', 'warnings', 'case_metadata', 'appeals', 'evidence', 'scan_history', 'cross_guild_same_id_cases', 'persistent_scan_correlation', 'investigation_state', 'heuristic_guild_correlation'] },
   });
   return safeReply(i, { embeds: [report.embed], components: report.components, flags: 64 });
 }
@@ -325,6 +407,49 @@ async function runMemberComparison(i, primaryId, secondaryId) {
   const payload = buildComparisonPayload(i, primary, secondary);
   recordModerationSystemEvent({ interaction: i, event: 'moderation.member_scan.compared', action: 'member_compare', targetId: primary.id, after: { comparedUserId: secondary.id, score: payload.correlation.score, signals: payload.correlation.signals } });
   return safeReply(i, { embeds: [payload.embed], components: payload.components, flags: 64 });
+}
+async function showPersistentLinkEvidence(i, targetId) {
+  const allowed = await ensureActionAccess(i, 'view_case_detail', '❌ You do not have permission to view persistent link evidence.');
+  if (!allowed) return true;
+  const target = await fetchTarget(i.guild, targetId);
+  if (!target) return safeReply(i, { content: '❌ Could not find that member in this server.', flags: 64 });
+  const evidence = aggregateSuspectedEvidence(i.guild.id, target.id);
+  const text = evidence.length ? evidence.map((entry) => {
+    const member = i.guild.members.cache.get(entry.userId);
+    const label = entry.maxScore >= 70 ? '🔴 Strong historical correlation' : '🟠 Possible historical correlation';
+    return `${label} — ${member ? member.user : `<@${entry.userId}>`} (\`${entry.userId}\`)\n• appeared in **${entry.appearances}** scan(s) • highest score **${entry.maxScore}%**\n${entry.signals.slice(0, 8).map((signal) => `• ${signal}`).join('\n')}`;
+  }).join('\n\n') : 'No suspected-account correlation has repeated across prior Goliath scans.';
+  const embed = new Discord.EmbedBuilder()
+    .setColor(0x5865F2)
+    .setTitle(`🔗 Persistent Link Evidence • ${target.user.tag}`)
+    .setDescription(`Evidence accumulated from previous Goliath scans. Repeated heuristic matches are still **not proof** of shared ownership.\n\n${text.slice(0, 3800)}`)
+    .setFooter({ text: 'Persistent correlation uses only previously recorded Goliath scan signals.' })
+    .setTimestamp();
+  recordModerationSystemEvent({ interaction: i, event: 'moderation.member_scan.link_evidence_viewed', action: 'member_scan_links', targetId: target.id, after: { matchCount: evidence.length } });
+  return safeReply(i, { embeds: [embed], components: [new Discord.ActionRowBuilder().addComponents(new Discord.ButtonBuilder().setCustomId(`mod_member_scan:${target.id}`).setLabel('Back to Scan').setEmoji('🔎').setStyle(Discord.ButtonStyle.Primary))], flags: 64 });
+}
+async function toggleMemberWatch(i, targetId) {
+  const allowed = await ensureActionAccess(i, 'view_case_detail', '❌ You do not have permission to change investigation watch state.');
+  if (!allowed) return true;
+  const target = await fetchTarget(i.guild, targetId);
+  if (!target) return safeReply(i, { content: '❌ Could not find that member in this server.', flags: 64 });
+  const state = getInvestigationState(i.guild.id, target.id);
+  const enabled = !state.watched;
+  recordModerationSystemEvent({ interaction: i, event: 'moderation.member_scan.watch_updated', action: 'member_watch', targetId: target.id, before: { enabled: state.watched }, after: { enabled, reason: enabled ? 'Manual staff investigation watch.' : 'Removed from manual investigation watch.' } });
+  return runMemberScan(i, target.id);
+}
+async function submitInvestigationNote(i) {
+  const id = String(i.customId || '');
+  if (!id.startsWith('mod_scan_note_submit:')) return false;
+  const targetId = id.split(':')[1];
+  const allowed = await ensureActionAccess(i, 'add_case_note', '❌ You do not have permission to add investigation notes.');
+  if (!allowed) return true;
+  const note = fieldValue(i, 'note').slice(0, 1000);
+  if (!note) return safeReply(i, { content: '❌ Investigation note cannot be empty.', flags: 64 });
+  const target = await fetchTarget(i.guild, targetId);
+  if (!target) return safeReply(i, { content: '❌ Could not find that member in this server.', flags: 64 });
+  recordModerationSystemEvent({ interaction: i, event: 'moderation.member_scan.note_added', action: 'member_scan_note', targetId: target.id, after: { note } });
+  return runMemberScan(i, target.id);
 }
 async function handleMemberScanSelect(i) {
   if (i.customId === 'mod_scan_user_select') {
@@ -350,6 +475,15 @@ async function handleMemberScanButton(i) {
   }
   if (id.startsWith('mod_member_scan:')) return runMemberScan(i, id.split(':')[1]);
   if (id.startsWith('mod_scan_history:')) return showMemberScanHistory(i, id.split(':')[1]);
+  if (id.startsWith('mod_scan_links:')) return showPersistentLinkEvidence(i, id.split(':')[1]);
+  if (id.startsWith('mod_scan_watch:')) return toggleMemberWatch(i, id.split(':')[1]);
+  if (id.startsWith('mod_scan_note:')) {
+    const targetId = id.split(':')[1];
+    const allowed = await ensureActionAccess(i, 'add_case_note', '❌ You do not have permission to add investigation notes.');
+    if (!allowed) return true;
+    await i.showModal(buildInvestigationNoteModal(targetId));
+    return true;
+  }
   if (id.startsWith('mod_scan_compare:')) {
     const primaryId = id.split(':')[1];
     const allowed = await ensureActionAccess(i, 'view_case_detail', '❌ You do not have permission to compare member intelligence.');
@@ -475,7 +609,7 @@ async function routeModModal(i) {
       return result;
     }
   }
-  return routeHandlers(i, [handleExportInteraction, handlePresetModal, handleCaseSearchModal, handleCaseModal, handleBulkModal, handleActionModal]);
+  return routeHandlers(i, [submitInvestigationNote, handleExportInteraction, handlePresetModal, handleCaseSearchModal, handleCaseModal, handleBulkModal, handleActionModal]);
 }
 async function handleModInteraction(i) {
   if (!i?.customId || !isModCustomId(i.customId)) return false;
