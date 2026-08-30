@@ -49,6 +49,7 @@ const ALLOWED_VIEWS = new Set(['member', 'actions', 'intelligence', 'cases', 'ma
 const ANALYTICS_WINDOWS = Object.freeze({ '7d': 7, '30d': 30, '90d': 90, all: null });
 const ANALYTICS_WINDOW_LABELS = Object.freeze({ '7d': '7 Days', '30d': '30 Days', '90d': '90 Days', all: 'All Time' });
 const DEFAULT_CASES_CONTEXT = Object.freeze({ view: 'cases', actionFilter: 'all', statusFilter: 'all', page: 0 });
+const DEFAULT_ACTIONS_CONTEXT = Object.freeze({ view: 'actions', actionFilter: 'all', statusFilter: 'all', page: 0 });
 const DEFAULT_ANALYTICS_CONTEXT = Object.freeze({ view: 'analytics', analyticsWindow: '30d', analyticsMode: 'overview', analyticsModeratorId: null });
 const PRESET_ACTIONS = new Set(['warn', 'timeout', 'kick', 'ban']);
 const MAX_PRESETS = 20;
@@ -298,7 +299,12 @@ async function buildDashboardPayload(discord, interaction, target, view = DEFAUL
 }
 async function renderDashboard(interaction, targetId, view = DEFAULT_VIEW, context = {}) { const requestedView = normalizeView(view); if (!canViewDashboardSection(interaction.member, interaction.guild, requestedView)) return safeReply(interaction, ephemeralError('That moderation workspace is not available to your authority profile.')); const target = targetId && targetId !== 'none' ? await fetchTarget(interaction.guild, targetId) : null; if (targetId && targetId !== 'none' && !target) return safeReply(interaction, ephemeralError('Could not find the selected member.')); await interaction.update(await buildDashboardPayload(Discord, interaction, target, requestedView, context)); return true; }
 async function refreshDashboard(discord, interaction, target, context = {}) { const safeContext = normalizeDashboardContext(context); const payload = await buildDashboardPayload(discord, interaction, target, safeContext.view, safeContext); try { if (interaction.message) { await interaction.message.edit(payload); return true; } if (interaction.replied || interaction.deferred) { await interaction.editReply(payload); return true; } await interaction.reply({ ...payload, flags: 64 }); return true; } catch (error) { console.error('❌ Failed to refresh moderation dashboard message:', error); return false; } }
-async function refreshCasesDashboard(interaction, target) { if (!target) return false; return refreshDashboard(Discord, interaction, target, DEFAULT_CASES_CONTEXT); }
+async function refreshCasesDashboard(interaction, target) {
+  if (!target) return false;
+  const id = String(interaction?.customId || '');
+  const returnsToActions = id.startsWith('mod_submit_warn:') || id.startsWith('mod_submit_timeout:');
+  return refreshDashboard(Discord, interaction, target, returnsToActions ? DEFAULT_ACTIONS_CONTEXT : DEFAULT_CASES_CONTEXT);
+}
 async function handleDashboardNavigation(interaction) {
   const id = String(interaction.customId || '');
   if (id === 'mod:overview') return renderDashboard(interaction, 'none', 'member');
