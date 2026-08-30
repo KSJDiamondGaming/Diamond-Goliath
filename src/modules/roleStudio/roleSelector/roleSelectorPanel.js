@@ -446,16 +446,16 @@ function buildAppearance(guild) {
       row(new RoleSelectMenuBuilder().setCustomId('admin:roleSelector:anchor').setPlaceholder('Select divider / anchor role').setMinValues(0).setMaxValues(1)),
       row(
         button('admin:roleSelector:styleOpen', '✏️ Edit Format', ButtonStyle.Primary),
-        button('admin:roleSelector:scanStyle', '🔎 Scan Guild Style'),
+        button('admin:roleSelector:scanStyle', '🔎 Scan Guild Style', ButtonStyle.Secondary),
         button('admin:roleSelector:createDivider', '➕ Create Divider', ButtonStyle.Success),
       ),
       row(
         button('admin:roleSelector:togglePlacement', section.style.placement === 'above' ? '📍 Place Above' : '📍 Place Below', ButtonStyle.Primary),
-        button('admin:roleSelector:toggleGrouped', section.style.keepGrouped ? '🧲 Keep Together: On' : '🧲 Keep Together: Off'),
+        button('admin:roleSelector:toggleGrouped', section.style.keepGrouped ? '🧲 Keep Together: On' : '🧲 Keep Together: Off', section.style.keepGrouped ? ButtonStyle.Primary : ButtonStyle.Secondary),
+        button('admin:roleSelector:applyStyle', '✅ Apply Suggestion', section.style.detectedFormat ? ButtonStyle.Success : ButtonStyle.Secondary, !section.style.detectedFormat),
       ),
-      section.style.detectedFormat ? row(button('admin:roleSelector:applyStyle', '✅ Apply Suggestion', ButtonStyle.Success)) : null,
       nav(),
-    ].filter(Boolean),
+    ],
   };
 }
 
