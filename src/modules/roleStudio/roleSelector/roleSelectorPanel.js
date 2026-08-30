@@ -396,7 +396,8 @@ function buildGroupsPanel(guildId, selectedId = null) {
       groupMenu(guildId, selected.id),
       row(
         button(customId('admin:roleSelector:options', selected.id), '📝 Manage Options', ButtonStyle.Primary),
-        button(customId('admin:roleSelector:groupSettings', selected.id), '⚙️ Group Settings', ButtonStyle.Primary),
+        button(customId('admin:roleSelector:toggleMode', selected.id), selected.selectionMode === 'multiple' ? '☑️ Multiple Choices' : '1️⃣ Single Choice', ButtonStyle.Primary),
+        button(customId('admin:roleSelector:toggleRemove', selected.id), selected.allowRemove ? '🧹 Allow Clear: Yes' : '🧹 Allow Clear: No'),
       ),
       row(button(customId('admin:roleSelector:deleteGroup', selected.id), '🗑️ Delete Group', ButtonStyle.Danger)),
       nav(),
@@ -422,27 +423,6 @@ function buildColourPanel(guildId, group) {
         button('admin:roleSelector:colourClearToggle', group.allowRemove ? '🧹 Allow Clear: Yes' : '🧹 Allow Clear: No'),
       ),
       nav(),
-    ],
-  };
-}
-
-function buildGroupSettings(guildId, groupId) {
-  const group = roleSelector.getGroup(guildId, groupId);
-  if (!group || group.builtIn) throw new Error('Select a custom group first.');
-  return {
-    embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle(`⚙️ ${group.emoji || '🏷️'} ${group.name} · Group Settings`).setDescription([
-      `**Selection type:** ${group.selectionMode === 'multiple' ? 'Multiple choices' : 'Single choice'}`,
-      `**Allow members to clear selection:** ${group.allowRemove ? 'Yes ✅' : 'No'}`,
-    ].join('\n'))],
-    components: [
-      row(
-        button(customId('admin:roleSelector:toggleMode', group.id), group.selectionMode === 'multiple' ? '☑️ Multiple Choices' : '1️⃣ Single Choice', ButtonStyle.Primary),
-        button(customId('admin:roleSelector:toggleRemove', group.id), group.allowRemove ? '🧹 Allow Clear: Yes' : '🧹 Allow Clear: No'),
-      ),
-      row(
-        button(customId('admin:roleSelector:groupOpen', group.id), '⬅️ Back'),
-        button('admin:roleSelector:settings', '⚙️ Settings'),
-      ),
     ],
   };
 }
@@ -822,7 +802,6 @@ async function handleRoleSelectorInteraction(i) {
       await syncPanels(i.guild, group.id);
       return i.reply({ content: '✅ Selector options saved.', ...buildGroupsPanel(i.guildId, group.id), flags: 64 });
     }
-    if (id.startsWith('admin:roleSelector:groupSettings:')) return respond(i, buildGroupSettings(i.guildId, tail(id, 'admin:roleSelector:groupSettings')));
     if (id.startsWith('admin:roleSelector:toggleMode:') || id.startsWith('admin:roleSelector:toggleRemove:')) {
       const prefix = id.startsWith('admin:roleSelector:toggleMode:') ? 'admin:roleSelector:toggleMode' : 'admin:roleSelector:toggleRemove';
       const groupId = tail(id, prefix);
@@ -831,7 +810,7 @@ async function handleRoleSelectorInteraction(i) {
       const next = prefix.endsWith('toggleMode') ? { ...group, selectionMode: group.selectionMode === 'multiple' ? 'single' : 'multiple' } : { ...group, allowRemove: !group.allowRemove };
       await roleSelector.saveGroupSafe(i.guild, next, { ...actor, action: prefix });
       await syncPanels(i.guild, group.id);
-      return respond(i, buildGroupSettings(i.guildId, group.id));
+      return respond(i, buildGroupsPanel(i.guildId, group.id));
     }
     if (id.startsWith('admin:roleSelector:deleteGroup:')) {
       const groupId = tail(id, 'admin:roleSelector:deleteGroup');
