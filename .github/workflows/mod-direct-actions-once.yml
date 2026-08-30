@@ -1,0 +1,45 @@
+name: Apply Direct Member Action Flow
+
+on:
+  push:
+    branches:
+      - dev
+    paths:
+      - .github/workflows/mod-direct-actions-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: dev
+          fetch-depth: 0
+      - name: Restore direct member action flow
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('src/core/administration/mod/panel.js')
+          text = path.read_text()
+          old = "return renderDashboard(interaction, target.id, 'member'); }"
+          new = "return renderDashboard(interaction, target.id, 'actions'); }"
+          if old not in text:
+              raise SystemExit('Expected member-select route not found')
+          path.write_text(text.replace(old, new, 1))
+          PY
+          node -c src/core/administration/mod/panel.js
+      - name: Commit source change
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/mod-direct-actions-once.yml
+          git config user.name "KSJ Hub"
+          git config user.email "sycomorgan@gmail.com"
+          git add src/core/administration/mod/panel.js .github/workflows/mod-direct-actions-once.yml
+          git commit -m "fix(mod): open actions after member selection"
+          git push origin dev
