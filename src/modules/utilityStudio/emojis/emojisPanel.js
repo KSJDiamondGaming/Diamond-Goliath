@@ -97,7 +97,20 @@ function addPanel(interaction) {
   ] };
 }
 
-function settingsPanel(overview, interaction, notice = '') { return { embeds: [new EmbedBuilder().setColor(overview.enabled ? 0x57F287 : PANEL_COLOR).setTitle('⚙️ Emoji Studio Settings').setDescription(['Control Emoji Studio and check that everything is working.', '', `**Emoji Studio:** ${overview.enabled ? 'On ✅' : 'Off ❌'}`, `**Status:** ${overview.health?.healthy ? 'Everything working ✅' : 'Needs attention ⚠️'}`, notice ? `\n${notice}` : ''].filter(Boolean).join('\n')).setFooter({ text: `Requested by ${memberName(interaction)}` }).setTimestamp()], components: [row(button('admin:module:emojis:tools', '🧰 Check & Clean Up', ButtonStyle.Secondary)), row(button('admin:module:emojis:toggle', overview.enabled ? '⏸️ Turn Off Emoji Studio' : '▶️ Turn On Emoji Studio', overview.enabled ? ButtonStyle.Secondary : ButtonStyle.Success)), row(button('admin:module:emojis:panel', '⬅️ Back', ButtonStyle.Secondary))] }; }
+function settingsPanel(overview, interaction, notice = '') {
+  return { embeds: [new EmbedBuilder().setColor(overview.enabled ? 0x57F287 : PANEL_COLOR).setTitle('⚙️ Emoji Studio Settings').setDescription([
+    'Control Emoji Studio and keep it running smoothly.', '',
+    `**Emoji Studio:** ${overview.enabled ? 'On ✅' : 'Off ❌'}`,
+    `**Status:** ${overview.health?.healthy ? 'Everything working ✅' : 'Needs attention ⚠️'}`,
+    notice ? `\n${notice}` : '',
+  ].filter(Boolean).join('\n')).setFooter({ text: `Requested by ${memberName(interaction)}` }).setTimestamp()], components: [
+    row(
+      button('admin:module:emojis:tools', '🧰 Check & Clean Up', ButtonStyle.Secondary),
+      button('admin:module:emojis:toggle', overview.enabled ? '⏸️ Turn Off Emoji Studio' : '▶️ Turn On Emoji Studio', overview.enabled ? ButtonStyle.Secondary : ButtonStyle.Success),
+    ),
+    row(button('admin:module:emojis:panel', '⬅️ Back', ButtonStyle.Secondary)),
+  ] };
+}
 
 function corePanel(overview, interaction) { const status = overview.coreStatus || []; const split = Math.ceil(status.length / 2); const line = (entry) => `${entry.installed ? '✅' : '⬜'} **${String(entry.slot).padStart(2, '0')}** \`:${entry.alias}:\``; const components = [row(button('admin:module:emojis:core-preview', '👁️ Preview Emojis', ButtonStyle.Primary))]; if (security.isBotOwner(interaction.user?.id)) components.push(row(button('admin:module:emojis:core-replace', '🛠️ Replace Built-in Emoji', ButtonStyle.Secondary))); components.push(row(button('admin:module:emojis:panel', '⬅️ Back to Emoji Studio', ButtonStyle.Secondary))); return { embeds: [new EmbedBuilder().setColor(PANEL_COLOR).setTitle('💠 Built-in Goliath Emojis').setDescription(['These emojis come with Goliath and work automatically in every server. Server admins cannot remove them.', '', `**Ready:** ${overview.coreCapacity.used}/${overview.coreCapacity.max}`, `**Status:** ${overview.coreIntegrity?.healthy ? 'Healthy ✅' : 'Needs attention ⚠️'}`, '**Uses your server emoji slots:** No'].join('\n')).addFields({ name: 'Built-in Emojis 01–09', value: status.slice(0, split).map(line).join('\n') || 'None', inline: true }, { name: 'Built-in Emojis 10–18', value: status.slice(split).map(line).join('\n') || 'None', inline: true }).setFooter({ text: `Requested by ${memberName(interaction)}` })], components }; }
 function corePreviewPanel(overview, interaction) { const installed = (overview.coreStatus || []).filter((entry) => entry.installed && entry.emoji); return { embeds: [new EmbedBuilder().setColor(PANEL_COLOR).setTitle('👁️ Built-in Emoji Preview').setDescription([`**Available:** ${installed.length}/${overview.coreCapacity.max}`, '', ...installed.map((entry) => `${entry.mention || entry.emoji.mention}  \`:${entry.alias}:\``)].join('\n')).setFooter({ text: `Requested by ${memberName(interaction)}` })], components: [row(button('admin:module:emojis:core-preview', '🔄 Refresh', ButtonStyle.Primary)), row(button('admin:module:emojis:core', '⬅️ Back to Built-in Emojis', ButtonStyle.Secondary))] }; }
