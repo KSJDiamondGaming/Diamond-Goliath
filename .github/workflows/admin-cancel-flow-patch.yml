@@ -1,0 +1,66 @@
+name: Apply Admin Cancel Flow Patch
+
+on:
+  push:
+    branches:
+      - dev
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: "${{ github.event.head_commit.message == 'chore(admin): apply cancel return flow patch' }}"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: dev
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Patch moderation cancel return flow
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f'Expected source block not found in {path}')
+              p.write_text(text.replace(old, new, 1))
+
+          punishments = 'src/core/administration/mod/punishments.js'
+          replace_once(
+              punishments,
+              "function buildConfirmRow(confirmId) { return [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(confirmId).setLabel('⚠️ Confirm').setStyle(ButtonStyle.Danger), new ButtonBuilder().setCustomId('mod_cancel_action').setLabel('❌ Cancel').setStyle(ButtonStyle.Secondary))]; }\nasync function createConfirmation(interaction, targetId, type, payload, message, context = DEFAULT_DASHBOARD_CONTEXT) {\n  const token = createPendingAction(interaction.guild.id, { moderatorId: interaction.user.id, targetId, type, payload });\n  return safeReply(interaction, { content: message, components: buildConfirmRow(buildConfirmCustomId(token, context)), flags: 64 });\n}",
+              "function buildCancelCustomId(targetId, context = DEFAULT_DASHBOARD_CONTEXT) { const c = normalizeDashboardContext(context); return ['mod_cancel_action', targetId || 'none', c.view, c.actionFilter, c.statusFilter, c.page].join(':'); }\nfunction buildConfirmRow(confirmId, cancelId) { return [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(confirmId).setLabel('⚠️ Confirm').setStyle(ButtonStyle.Danger), new ButtonBuilder().setCustomId(cancelId).setLabel('❌ Cancel').setStyle(ButtonStyle.Secondary))]; }\nasync function createConfirmation(interaction, targetId, type, payload, message, context = DEFAULT_DASHBOARD_CONTEXT) {\n  const normalizedContext = normalizeDashboardContext(context);\n  const token = createPendingAction(interaction.guild.id, { moderatorId: interaction.user.id, targetId, type, payload });\n  return safeReply(interaction, { content: message, components: buildConfirmRow(buildConfirmCustomId(token, normalizedContext), buildCancelCustomId(targetId, normalizedContext)), flags: 64 });\n}"
+          )
+
+          interactions = 'src/core/administration/mod/interactions.js'
+          replace_once(
+              interactions,
+              "const {\n  refreshCasesDashboard,\n  handleDashboardNavigation,",
+              "const {\n  refreshDashboard,\n  refreshCasesDashboard,\n  handleDashboardNavigation,"
+          )
+          replace_once(
+              interactions,
+              "async function handleCancelButton(i) {\n  if (i.customId !== 'mod_cancel_action') return false;\n  let removed = 0;\n  if (i.guild?.id && i.user?.id) removed = db.prepare('DELETE FROM pending_actions WHERE guild_id = ? AND moderator_id = ?').run(String(i.guild.id), String(i.user.id)).changes;\n  recordModerationSystemEvent({ interaction: i, event: 'moderation.action.cancelled', metadata: { pendingActionsRemoved: removed } });\n  if (i.message && typeof i.update === 'function') { await i.update({ content: '❌ Cancelled.', embeds: [], components: [] }); return true; }\n  return safeReply(i, { content: '❌ Cancelled.', flags: 64 });\n}",
+              "async function handleCancelButton(i) {\n  const id = String(i.customId || '');\n  if (!id.startsWith('mod_cancel_action')) return false;\n  const parts = id.split(':');\n  const targetId = parts[1] || 'none';\n  const requestedPage = Number(parts[5]);\n  const context = {\n    view: parts[2] || 'actions',\n    actionFilter: parts[3] || 'all',\n    statusFilter: parts[4] || 'all',\n    page: Number.isFinite(requestedPage) ? Math.max(0, Math.trunc(requestedPage)) : 0,\n  };\n  let removed = 0;\n  if (i.guild?.id && i.user?.id) removed = db.prepare('DELETE FROM pending_actions WHERE guild_id = ? AND moderator_id = ?').run(String(i.guild.id), String(i.user.id)).changes;\n  recordModerationSystemEvent({ interaction: i, event: 'moderation.action.cancelled', targetId: targetId === 'none' ? null : targetId, metadata: { pendingActionsRemoved: removed, returnView: context.view } });\n  if (i.message && typeof i.update === 'function') {\n    await i.update({ content: '❌ Cancelled — no moderation action was applied.', embeds: [], components: [] });\n    const target = targetId !== 'none' ? await fetchTarget(i.guild, targetId) : null;\n    await refreshDashboard(Discord, i, target, target ? context : { view: 'member', actionFilter: 'all', statusFilter: 'all', page: 0 });\n    return true;\n  }\n  return safeReply(i, { content: '❌ Cancelled — no moderation action was applied.', flags: 64 });\n}"
+          )
+
+          Path('.github/workflows/admin-cancel-flow-patch.yml').unlink()
+          PY
+      - name: Verify syntax
+        run: |
+          node -c src/core/administration/mod/interactions.js
+          node -c src/core/administration/mod/punishments.js
+      - name: Commit patched cancel flow
+        run: |
+          git config user.name "KSJ Hub"
+          git config user.email "sycomorgan@gmail.com"
+          git add src/core/administration/mod/interactions.js src/core/administration/mod/punishments.js .github/workflows/admin-cancel-flow-patch.yml
+          git commit -m "refactor(mod): preserve workspace after cancellation"
+          git push origin dev
