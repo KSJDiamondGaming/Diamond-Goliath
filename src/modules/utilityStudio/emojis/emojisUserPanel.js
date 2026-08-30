@@ -119,15 +119,9 @@ function emojiShortcode(emoji) {
 
 function searchTerms(emoji) {
   const shortcode = emojiShortcode(emoji);
-  return [
-    emoji.name,
-    emoji.alias,
-    emoji.category,
-    shortcode,
-    ...(emoji.aliases || []),
-    ...(emoji.tags || []),
-    ...(emoji.core ? (CORE_SEARCH_TERMS[shortcode] || []) : []),
-  ].filter(Boolean).map((value) => String(value).toLowerCase());
+  return [emoji.name, emoji.alias, emoji.category, shortcode, ...(emoji.aliases || []), ...(emoji.tags || []), ...(emoji.core ? (CORE_SEARCH_TERMS[shortcode] || []) : [])]
+    .filter(Boolean)
+    .map((value) => String(value).toLowerCase());
 }
 
 function searchEmoji(catalog, query = '') {
@@ -199,7 +193,7 @@ async function buildPanel(interaction, notice = '') {
   components.push(...navigationRows());
   return {
     embeds: [new EmbedBuilder().setColor(PANEL_COLOR).setTitle('😀 My Emojis').setDescription([
-      'Use `/e` for quick everyday emoji search. You can search by the real name or natural shortcuts such as `yt`, `ps5`, `insta`, `snap`, `twitter`, `stream`, or `video`.',
+      'Use `/e` for quick everyday emoji search. Search by the real name or natural shortcuts such as `yt`, `ps5`, `insta`, `snap`, `twitter`, `stream`, or `video`.',
       '',
       `**Available:** ${catalog.length}`,
       `**Your favourites:** ${favourites.length}/${MAX_USER_FAVOURITES}`,
@@ -248,11 +242,7 @@ async function buildCategoriesPanel(interaction) {
   const counts = new Map();
   for (const emoji of catalog) counts.set(String(emoji.category || 'General'), (counts.get(String(emoji.category || 'General')) || 0) + 1);
   const categories = CATEGORY_ORDER.filter((name) => name === 'All' || counts.has(name));
-  const options = categories.slice(0, 25).map((name) => ({
-    label: name,
-    value: name,
-    description: name === 'All' ? `${catalog.length} emojis` : `${counts.get(name) || 0} emojis`,
-  }));
+  const options = categories.slice(0, 25).map((name) => ({ label: name, value: name, description: name === 'All' ? `${catalog.length} emojis` : `${counts.get(name) || 0} emojis` }));
   return {
     embeds: [new EmbedBuilder().setColor(PANEL_COLOR).setTitle('📁 Emoji Categories').setDescription('Pick a category to browse the emojis available in this server.')],
     components: [row(new StringSelectMenuBuilder().setCustomId('user:emojis:category-select').setPlaceholder('Choose a category').addOptions(options)), ...navigationRows()].slice(0, 5),
@@ -336,6 +326,26 @@ async function resolveMessageText(interaction, content) {
   return { source, resolved, changed: resolved !== source };
 }
 
+async function buildMessageConversionPreview(interaction, message) {
+  if (!message?.id || !message?.channelId) throw new Error('That message could not be read.');
+  if (String(message.author?.id || '') !== userId(interaction)) {
+    return { content: 'You can only convert emoji shortcodes in your own messages.', components: [] };
+  }
+  const result = await resolveMessageText(interaction, message.content);
+  if (!result.changed) {
+    return { content: 'No available Emoji Studio shortcodes were found in that message. Try something like `:youtube:` or `:twitch:`.', components: [] };
+  }
+  return {
+    embeds: [new EmbedBuilder().setColor(PANEL_COLOR).setTitle('😀 Convert Emoji Shortcodes').setDescription([
+      '**Preview**',
+      result.resolved.slice(0, 3500),
+      '',
+      'Your original message will stay in place. Press **Post Converted** and Goliath will reply to it with the converted version.',
+    ].join('\n'))],
+    components: [row(button(`user:emojis:convert-post:${message.channelId}:${message.id}`, 'Post Converted', ButtonStyle.Primary, '😀'))],
+  };
+}
+
 async function handleInteraction(interaction, updatePanel) {
   const id = String(interaction?.customId || '');
   if (!id.startsWith('user:emojis:')) return false;
@@ -347,6 +357,19 @@ async function handleInteraction(interaction, updatePanel) {
   if (id === 'user:emojis:search-submit' && interaction.isModalSubmit?.()) { await updatePanel(interaction, await buildListPanel(interaction, 'search', interaction.fields.getTextInputValue('query'))); return true; }
   if (id === 'user:emojis:category-select' && interaction.isStringSelectMenu?.()) { await updatePanel(interaction, await buildListPanel(interaction, 'category', '', interaction.values?.[0] || 'All')); return true; }
   if (id === 'user:emojis:pick' && interaction.isStringSelectMenu?.()) { await updatePanel(interaction, await buildSelectedPanel(interaction, interaction.values?.[0])); return true; }
+
+  const convertMatch = id.match(/^user:emojis:convert-post:(\d{16,20}):(\d{16,20})$/);
+  if (convertMatch && interaction.isButton?.()) {
+    const channel = await interaction.client.channels.fetch(convertMatch[1]).catch(() => null);
+    const message = await channel?.messages?.fetch?.(convertMatch[2]).catch(() => null);
+    if (!message || String(message.author?.id || '') !== userId(interaction)) throw new Error('The original message is no longer available to convert.');
+    const result = await resolveMessageText(interaction, message.content);
+    if (!result.changed) throw new Error('That message no longer contains available Emoji Studio shortcodes.');
+    await channel.send({ content: result.resolved, reply: { messageReference: message.id, failIfNotExists: false }, allowedMentions: { parse: [] } });
+    await updatePanel(interaction, { content: '✅ Converted message posted as a reply. Your original message was left untouched.', embeds: [], components: [] });
+    return true;
+  }
+
   const favouriteMatch = id.match(/^user:emojis:favourite-toggle:(\d{16,20})$/);
   if (favouriteMatch && interaction.isButton?.()) {
     toggleUserFavourite(guildId(interaction), userId(interaction), favouriteMatch[1]);
@@ -358,6 +381,7 @@ async function handleInteraction(interaction, updatePanel) {
 
 module.exports = {
   buildPanel,
+  buildMessageConversionPreview,
   handleInteraction,
   autocomplete,
   commandSelection,
