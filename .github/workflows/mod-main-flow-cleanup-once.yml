@@ -1,0 +1,59 @@
+name: Apply Moderation Main Flow Cleanup
+
+on:
+  push:
+    branches:
+      - dev
+    paths:
+      - .github/workflows/mod-main-flow-cleanup-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: dev
+          fetch-depth: 0
+      - name: Apply cleanup
+        run: python scripts/mod-main-flow-cleanup-temp.py
+      - name: Verify source
+        run: |
+          node -c src/core/administration/mod/panel.js
+          node -c src/core/administration/mod/interactions.js
+          npm run syntax
+      - name: Audit duplicate function names
+        shell: bash
+        run: |
+          python - <<'PY'
+          import re
+          from collections import defaultdict
+          from pathlib import Path
+
+          root = Path('src/core/administration/mod')
+          found = defaultdict(list)
+          for path in root.glob('*.js'):
+              text = path.read_text()
+              for name in re.findall(r'\b(?:async\s+)?function\s+([A-Za-z0-9_$]+)\s*\(', text):
+                  found[name].append(path.name)
+          duplicates = {name: files for name, files in found.items() if len(files) > 1}
+          print('Duplicate named functions across moderation files:')
+          if not duplicates:
+              print('none')
+          else:
+              for name, files in sorted(duplicates.items()):
+                  print(f'{name}: {", ".join(files)}')
+          PY
+      - name: Commit cleanup
+        shell: bash
+        run: |
+          rm .github/workflows/mod-main-flow-cleanup-once.yml
+          rm scripts/mod-main-flow-cleanup-temp.py
+          git config user.name "KSJ Hub"
+          git config user.email "sycomorgan@gmail.com"
+          git add src/core/administration/mod/panel.js src/core/administration/mod/interactions.js .github/workflows/mod-main-flow-cleanup-once.yml scripts/mod-main-flow-cleanup-temp.py
+          git commit -m "refactor(mod): flatten main moderation action flow"
+          git push origin dev
