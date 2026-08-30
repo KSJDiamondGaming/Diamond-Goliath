@@ -17,6 +17,7 @@ const { getWarningCountForUser, syncExpiredWarningsToCases, showWarningModal, sh
 const { openCaseTool, handleCaseAction, submitCaseModal, handleExternalAppealInteraction } = require('./cases');
 const { openCaseSearch, handleCaseSearchAction, handleCaseSearchSelect, handleCaseSearchModal } = require('./caseSearch');
 const {
+  refreshDashboard,
   refreshCasesDashboard,
   handleDashboardNavigation,
   handleUserSelectMenu,
@@ -573,12 +574,27 @@ async function handleConfirmButton(i) {
   }
 }
 async function handleCancelButton(i) {
-  if (i.customId !== 'mod_cancel_action') return false;
+  const id = String(i.customId || '');
+  if (!id.startsWith('mod_cancel_action')) return false;
+  const parts = id.split(':');
+  const targetId = parts[1] || 'none';
+  const requestedPage = Number(parts[5]);
+  const context = {
+    view: parts[2] || 'actions',
+    actionFilter: parts[3] || 'all',
+    statusFilter: parts[4] || 'all',
+    page: Number.isFinite(requestedPage) ? Math.max(0, Math.trunc(requestedPage)) : 0,
+  };
   let removed = 0;
   if (i.guild?.id && i.user?.id) removed = db.prepare('DELETE FROM pending_actions WHERE guild_id = ? AND moderator_id = ?').run(String(i.guild.id), String(i.user.id)).changes;
-  recordModerationSystemEvent({ interaction: i, event: 'moderation.action.cancelled', metadata: { pendingActionsRemoved: removed } });
-  if (i.message && typeof i.update === 'function') { await i.update({ content: '❌ Cancelled.', embeds: [], components: [] }); return true; }
-  return safeReply(i, { content: '❌ Cancelled.', flags: 64 });
+  recordModerationSystemEvent({ interaction: i, event: 'moderation.action.cancelled', targetId: targetId === 'none' ? null : targetId, metadata: { pendingActionsRemoved: removed, returnView: context.view } });
+  if (i.message && typeof i.update === 'function') {
+    await i.update({ content: '❌ Cancelled — no moderation action was applied.', embeds: [], components: [] });
+    const target = targetId !== 'none' ? await fetchTarget(i.guild, targetId) : null;
+    await refreshDashboard(Discord, i, target, target ? context : { view: 'member', actionFilter: 'all', statusFilter: 'all', page: 0 });
+    return true;
+  }
+  return safeReply(i, { content: '❌ Cancelled — no moderation action was applied.', flags: 64 });
 }
 async function handleBulkModal(i) {
   if (!String(i.customId || '').startsWith('mod_submit_bulk_')) return false;
