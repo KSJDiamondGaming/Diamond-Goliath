@@ -2,14 +2,15 @@ name: Apply Admin Action Flow Patch
 
 on:
   push:
-    branches: [dev]
+    branches:
+      - dev
 
 permissions:
   contents: write
 
 jobs:
   patch:
-    if: github.event.head_commit.message == 'chore(admin): apply post-action flow patch'
+    if: "${{ github.event.head_commit.message == 'chore(admin): retry post-action flow patch' }}"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -20,8 +21,8 @@ jobs:
         with:
           node-version: 22
       - name: Patch moderation action return flow
-        shell: python
         run: |
+          python - <<'PY'
           from pathlib import Path
 
           def replace_once(path, old, new):
@@ -60,8 +61,8 @@ jobs:
               "    await interaction.update({ content: result.content, embeds: [], components: [] });\n    const targetDeparted = pending.type === 'kick' || pending.type === 'ban';\n    const dashboardTarget = targetDeparted ? null : result.target;\n    const dashboardContext = targetDeparted\n      ? { view: 'member', actionFilter: 'all', statusFilter: 'all', page: 0 }\n      : normalizeDashboardContext(returnContext);\n    if (dashboardTarget || targetDeparted) {\n      const { refreshDashboard } = require('./panel');\n      if (typeof refreshDashboard === 'function') await refreshDashboard(discord, interaction, dashboardTarget, dashboardContext);\n    }\n    return true;"
           )
 
-          workflow = Path('.github/workflows/admin-action-flow-patch.yml')
-          workflow.unlink()
+          Path('.github/workflows/admin-action-flow-patch.yml').unlink()
+          PY
       - name: Verify syntax
         run: |
           node -c src/core/administration/mod/panel.js
