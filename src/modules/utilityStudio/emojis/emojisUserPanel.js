@@ -304,16 +304,29 @@ async function autocomplete(interaction) {
 
 async function commandSelection(interaction, reference) {
   const raw = String(reference || '').trim();
+  if (!raw) return null;
+
+  const catalog = await availableCatalog(interaction);
   let emoji = null;
-  if (raw.startsWith('core:')) {
-    const alias = raw.slice(5).toLowerCase();
+
+  if (raw.toLowerCase().startsWith('core:')) {
+    const alias = raw.slice(5).trim().toLowerCase();
     if (!emojis.isApprovedCoreAlias(alias)) return null;
-    emoji = await emojis.resolveGuildEmoji(interaction.client, guildId(interaction), alias, 'user_quick_emoji');
-    if (!emoji?.core || emoji.alias !== alias || emoji.name !== `${emojis.CORE_EMOJI_PREFIX}${alias}`) return null;
-  } else {
-    const catalog = await availableCatalog(interaction);
+    emoji = catalog.find((entry) => (
+      entry.core
+      && String(entry.alias || '').toLowerCase() === alias
+      && String(entry.name || '').toLowerCase() === `${emojis.CORE_EMOJI_PREFIX}${alias}`
+    )) || null;
+  } else if (/^\d{16,20}$/.test(raw)) {
     emoji = catalog.find((entry) => String(entry.id) === raw) || null;
+  } else {
+    const clean = raw.replace(/^:+|:+$/g, '').toLowerCase();
+    const exact = catalog.find((entry) => String(emojiShortcode(entry) || '').toLowerCase() === clean)
+      || catalog.find((entry) => searchTerms(entry).some((term) => term === clean));
+    emoji = exact || searchEmoji(catalog, clean)
+      .sort((a, b) => matchScore(b, clean) - matchScore(a, clean))[0] || null;
   }
+
   if (!emoji) return null;
   touchUserRecent(guildId(interaction), userId(interaction), emoji.id);
   return { content: emoji.mention, allowedMentions: { parse: [] } };
