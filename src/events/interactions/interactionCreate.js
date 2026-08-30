@@ -73,6 +73,41 @@ const MODULE_STUDIO_PREFIXES = [
   ['utilityStudio', ['admin:schedule', 'schedule:', 'admin:stats', 'stats:', 'admin:translation', 'translation:', 'admin:tempVoice', 'tempVoice:']],
 ];
 
+const ADMIN_MODULE_PREFIXES = Object.freeze([
+  ['birthdays', 'admin:birthdays'], ['giveaways', 'admin:giveaways'], ['invites', 'admin:invites'], ['leveling', 'admin:leveling'], ['polls', 'admin:polls'],
+  ['forms', 'admin:forms'], ['suggestions', 'admin:suggestions'], ['tickets', 'admin:tickets'],
+  ['goodbye', 'admin:goodbye'], ['embed', 'admin:embed'], ['starboard', 'admin:starboard'], ['sticky', 'admin:sticky'], ['welcome', 'admin:welcome'],
+  ['autoRoles', 'admin:autoRoles'], ['reactionRoles', 'admin:reactionRoles'], ['temporaryRoles', 'admin:temporaryRoles'], ['timedRoles', 'admin:timedRoles'],
+  ['verification', 'admin:verification'], ['social', 'admin:social'],
+  ['emojis', 'admin:module:emojis'], ['privateRooms', 'admin:privateRooms'], ['schedule', 'admin:schedule'], ['stats', 'admin:stats'], ['tempVoice', 'admin:tempVoice'], ['translation', 'admin:translation'],
+]);
+
+function resolveAdminModuleKey(customId) {
+  const id = String(customId || '');
+  const generic = id.match(/^admin:module:([a-zA-Z0-9_-]+)/);
+  if (generic) return generic[1];
+  const catalogMatch = (moduleAdminPanels.MODULE_CATALOG || []).find((module) => id === module.route || id.startsWith(`${module.route}:`));
+  if (catalogMatch) return catalogMatch.key;
+  return ADMIN_MODULE_PREFIXES.find(([, prefix]) => id === prefix || id.startsWith(`${prefix}:`))?.[0] || null;
+}
+
+async function enforceAdminModuleAuthority(interaction) {
+  const id = String(interaction?.customId || '');
+  if (!id.startsWith('admin:')) return false;
+  const studio = id.match(/^admin:studio:([a-zA-Z0-9_-]+)$/);
+  if (studio) {
+    if (typeof adminPanel.canManageStudio !== 'function' || adminPanel.canManageStudio(interaction, studio[1])) return false;
+  } else {
+    const moduleKey = resolveAdminModuleKey(id);
+    if (!moduleKey) return false;
+    if (typeof adminPanel.canManageModule !== 'function' || adminPanel.canManageModule(interaction, moduleKey)) return false;
+  }
+  const payload = { content: '❌ Your guild authority profile does not permit this Studio or module.', flags: MessageFlags.Ephemeral };
+  if (interaction.deferred || interaction.replied) await interaction.editReply(payload);
+  else await interaction.reply(payload);
+  return true;
+}
+
 let invitesAdminPanel = null;
 let invitesAdminPanelError = null;
 function loadInvitesAdminPanel() {
@@ -356,6 +391,8 @@ module.exports = {
         return;
       }
 
+      if (await enforceAdminModuleAuthority(interaction)) return;
+
       if (customId === 'admin:studio:roleStudio') {
         interaction.customId = 'admin:roleStudio:handled';
 
@@ -436,7 +473,7 @@ module.exports = {
         return;
       }
       if (customId === 'admin:modules' || customId.startsWith('admin:modules:page:') || customId.startsWith('admin:module:') || customId.startsWith('admin:studio:')) {
-        if (!await callHandler(moduleAdminPanels, 'handleModuleAdminInteraction', interaction)) throw new Error(`Module admin did not handle ${customId}.`);
+        if (!await callHandler(adminPanel, 'handleAdminNavigation', interaction)) throw new Error(`Admin authority router did not handle ${customId}.`);
         return;
       }
       if (customId === 'admin:invites') {
