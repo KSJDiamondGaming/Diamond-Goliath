@@ -1,0 +1,58 @@
+name: Apply Moderation Duplicate Cleanup
+
+on:
+  push:
+    branches:
+      - dev
+    paths:
+      - .github/workflows/mod-duplicate-cleanup-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: dev
+          fetch-depth: 0
+      - name: Apply duplicate cleanup
+        run: python scripts/mod-duplicate-cleanup-temp.py
+      - name: Verify moderation source
+        run: |
+          for file in src/core/administration/mod/*.js; do node -c "$file"; done
+          npm run syntax
+          npm run imports
+      - name: Audit remaining duplicate function names
+        shell: bash
+        run: |
+          python - <<'PY'
+          import re
+          from collections import defaultdict
+          from pathlib import Path
+          root = Path('src/core/administration/mod')
+          found = defaultdict(list)
+          for path in root.glob('*.js'):
+              text = path.read_text()
+              for name in re.findall(r'\b(?:async\s+)?function\s+([A-Za-z0-9_$]+)\s*\(', text):
+                  found[name].append(path.name)
+          duplicates = {name: files for name, files in found.items() if len(files) > 1}
+          print('Remaining duplicate named functions:')
+          if not duplicates:
+              print('none')
+          else:
+              for name, files in sorted(duplicates.items()):
+                  print(f'{name}: {", ".join(files)}')
+          PY
+      - name: Commit cleanup
+        shell: bash
+        run: |
+          rm .github/workflows/mod-duplicate-cleanup-once.yml
+          rm scripts/mod-duplicate-cleanup-temp.py
+          git config user.name "KSJ Hub"
+          git config user.email "sycomorgan@gmail.com"
+          git add src/core/administration/mod/cases.js src/core/administration/mod/panel.js .github/workflows/mod-duplicate-cleanup-once.yml scripts/mod-duplicate-cleanup-temp.py
+          git commit -m "refactor(mod): remove duplicate moderation flows"
+          git push origin dev
