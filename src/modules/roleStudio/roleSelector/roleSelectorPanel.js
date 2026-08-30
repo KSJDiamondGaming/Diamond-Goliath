@@ -545,7 +545,12 @@ async function buildDeploymentsPanel(i) {
   const names = selected.groupIds.map((id) => roleSelector.getGroup(i.guildId, id)?.name).filter(Boolean);
   const jump = message ? `https://discord.com/channels/${i.guildId}/${message.channel.id}/${message.id}` : null;
   const channelName = selected.channelId ? i.guild.channels.cache.get(selected.channelId)?.name : null;
-  const channelMenu = new ChannelSelectMenuBuilder().setCustomId('admin:roleSelector:deploymentChannel').setPlaceholder(channelName ? `Current: #${channelName} · choose to change` : 'Choose deployment channel').setMinValues(1).setMaxValues(1).setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement);
+  const channelMenu = new ChannelSelectMenuBuilder()
+    .setCustomId('admin:roleSelector:deploymentChannel')
+    .setPlaceholder(channelName ? `Current: #${channelName} · choose to change` : 'Choose deployment channel')
+    .setMinValues(1)
+    .setMaxValues(1)
+    .setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement);
 
   return {
     content: null,
@@ -558,14 +563,16 @@ async function buildDeploymentsPanel(i) {
     components: [
       deploymentSelect(i.guildId, selected.id),
       row(channelMenu),
-      row(button('admin:roleSelector:deploymentContent', '🏷️ Groups & Roles', ButtonStyle.Primary)),
       row(
+        button('admin:roleSelector:deploymentContent', '🏷️ Groups & Roles', ButtonStyle.Primary),
         button('admin:roleSelector:deploy', message ? '🔄 Update Panel' : '📨 Deploy Panel', ButtonStyle.Success, !selected.channelId || !selected.groupIds.length),
         jump ? linkButton('↗️ Jump to Panel', jump) : null,
-        button('admin:roleSelector:deploymentRetire', '📦 Retire', ButtonStyle.Secondary, !message),
-        button('admin:roleSelector:deploymentDelete', '🗑️ Delete', ButtonStyle.Danger),
       ),
-      nav('admin:roleSelector:deployment'),
+      row(
+        button('admin:roleSelector:deployment', '⬅️ Back'),
+        button('admin:roleSelector:deploymentDelete', '🗑️ Delete', ButtonStyle.Danger),
+        button('admin:roleSelector:settings', '⚙️ Settings'),
+      ),
     ],
   };
 }
