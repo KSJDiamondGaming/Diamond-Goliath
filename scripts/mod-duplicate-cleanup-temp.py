@@ -42,7 +42,7 @@ function buildCasesPageButtons(targetId, page, totalPages, actionFilter = 'all',
 text = replace_between(text, 'function buildCaseFilterButtons(', 'function getCaseAppeals(', compact_controls)
 
 # Old cases.js search implementation is superseded by dedicated caseSearch.js.
-text = replace_between(text, 'function buildCaseSearchModal(', 'function buildCaseIdModal(')
+text = replace_between(text, 'function buildCaseSearchModal(', 'function buildCaseDetailEmbed(')
 
 legacy_open_variants = [
     "  if (id === 'mod_search_cases') {\n    if (!canUseModAction(interaction.member, interaction.guild, 'view_cases')) return safeReply(interaction, ephemeralError('No permission to search cases.'));\n    await interaction.showModal(buildCaseSearchModal()); return true;\n  }\n",
