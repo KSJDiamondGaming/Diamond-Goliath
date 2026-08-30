@@ -186,18 +186,29 @@ function buttonRow(buttons) { return buttons.length ? new ActionRowBuilder().add
 function buildDashboardNav(targetId, activeView, member, guild) {
   const active = activeView === 'analytics' ? 'management' : normalizeView(activeView);
   const id = targetId || 'none';
-  const candidates = [
-    ['member', '👤 Member'],
-    ['actions', '⚡ Actions'],
-    ['intelligence', '🧠 Intel'],
-    ['cases', '📁 Cases'],
-    ['management', '🛠 Manage'],
-  ].filter(([view]) => view !== active && canViewDashboardSection(member, guild, view));
-  const buttons = candidates.slice(0, 4).map(([view, label]) => new ButtonBuilder()
-    .setCustomId(`mod_dashboard:${id}:${view}`)
-    .setLabel(label)
-    .setStyle(ButtonStyle.Secondary)
-    .setDisabled(!targetId && ['actions', 'intelligence', 'cases'].includes(view)));
+  const buttons = [];
+
+  if (active === 'management') {
+    if (canViewDashboardSection(member, guild, 'member')) {
+      buttons.push(new ButtonBuilder().setCustomId('mod:overview').setLabel('🛡️ Moderation Home').setStyle(ButtonStyle.Secondary));
+    }
+  } else if (!targetId) {
+    if (canViewDashboardSection(member, guild, 'management')) {
+      buttons.push(new ButtonBuilder().setCustomId('mod_dashboard:none:management').setLabel('🛠️ Manage').setStyle(ButtonStyle.Secondary));
+    }
+  } else {
+    const candidates = [
+      ['member', '👤 Member'],
+      ['actions', '⚡ Actions'],
+      ['intelligence', '🧠 Intel'],
+      ['cases', '📁 Cases'],
+    ].filter(([view]) => view !== active && canViewDashboardSection(member, guild, view));
+
+    for (const [view, label] of candidates.slice(0, 4)) {
+      buttons.push(new ButtonBuilder().setCustomId(`mod_dashboard:${id}:${view}`).setLabel(label).setStyle(ButtonStyle.Secondary));
+    }
+  }
+
   buttons.push(new ButtonBuilder().setCustomId('admin:home').setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary));
   return new ActionRowBuilder().addComponents(buttons);
 }
@@ -253,28 +264,50 @@ function validateDashboardComponents(components, view) {
 
 function buildMemberEmbed(interaction, target, stats, staffDisplay) {
   const overall = workspaceStats(interaction.guild.id);
-  if (!target) return baseEmbed(interaction.client, COLORS.PRIMARY).setTitle('🛡️ Goliath Moderation').setDescription(['Server moderation, member intelligence and case management.', '', `**You:** ${staffDisplay}`, '', 'Select a member below to begin.'].join('\n')).addFields(
-    { name: 'Open Cases', value: `**${overall.activeCases}**`, inline: true },
-    { name: 'Active Warnings', value: `**${overall.activeWarnings}**`, inline: true },
-    { name: 'Pending Appeals', value: `**${overall.pendingAppeals}**`, inline: true },
-  );
+  if (!target) return baseEmbed(interaction.client, COLORS.PRIMARY)
+    .setTitle('🛡️ Goliath Moderation')
+    .setDescription([
+      'Moderate members, review intelligence and manage cases from one focused workspace.',
+      '',
+      `**Authority:** ${staffDisplay}`,
+      '',
+      'Select a member below to open their workspace, or use **Manage** for server-wide moderation tools.',
+    ].join('\n'))
+    .addFields(
+      { name: 'Open Cases', value: `**${overall.activeCases}**`, inline: true },
+      { name: 'Active Warnings', value: `**${overall.activeWarnings}**`, inline: true },
+      { name: 'Pending Appeals', value: `**${overall.pendingAppeals}**`, inline: true },
+    );
+
   const highestRole = target.roles?.highest && target.roles.highest.id !== interaction.guild.id ? `${target.roles.highest}` : 'No elevated role';
-  const timeout = targetHasActiveTimeout(target) ? `Active until ${timestamp(target.communicationDisabledUntilTimestamp, 'f')}` : 'Not timed out';
-  const embed = baseEmbed(interaction.client, COLORS.PRIMARY).setTitle(`👤 Member Workspace • ${target.user?.tag || target.user?.username || target.id}`).setDescription([`${target.user} is the active moderation target.`, '', 'Use the workspace navigation below for actions, intelligence and cases.'].join('\n')).addFields(
-    { name: 'Identity', value: `**Discord ID:** \`${target.id}\`\n**Account Created:** ${timestamp(target.user?.createdTimestamp)}\n**Joined Server:** ${timestamp(target.joinedTimestamp)}`, inline: false },
-    { name: 'Server Position', value: `**Highest Role:** ${highestRole}\n**Timeout:** ${timeout}`, inline: false },
-    { name: 'Moderation', value: `**Warnings:** ${stats.warningCount ?? 0}\n**Cases:** ${stats.caseCount ?? 0}`, inline: true },
-    { name: 'Latest Case', value: stats.lastCaseSummary || 'No cases found.', inline: false },
-  );
-  const avatar = target.user?.displayAvatarURL?.({ size: 256 }); if (avatar) embed.setThumbnail(avatar); return embed;
+  const timeout = targetHasActiveTimeout(target) ? `Active until ${timestamp(target.communicationDisabledUntilTimestamp, 'f')}` : 'None';
+  const embed = baseEmbed(interaction.client, COLORS.PRIMARY)
+    .setTitle(`👤 Member Workspace • ${target.user?.tag || target.user?.username || target.id}`)
+    .setDescription([`${target.user} is the active moderation target.`, '', 'Use **Actions**, **Intel** and **Cases** below. The selected member stays active while you move between these views.'].join('\n'))
+    .addFields(
+      { name: 'Identity', value: `**Discord ID:** \`${target.id}\`\n**Account Created:** ${timestamp(target.user?.createdTimestamp)}\n**Joined Server:** ${timestamp(target.joinedTimestamp)}`, inline: false },
+      { name: 'Server Position', value: `**Highest Role:** ${highestRole}\n**Timeout:** ${timeout}`, inline: true },
+      { name: 'Moderation', value: `**Warnings:** ${stats.warningCount ?? 0}\n**Cases:** ${stats.caseCount ?? 0}`, inline: true },
+      { name: 'Latest Case', value: stats.lastCaseSummary || 'No cases found.', inline: false },
+    );
+  const avatar = target.user?.displayAvatarURL?.({ size: 256 });
+  if (avatar) embed.setThumbnail(avatar);
+  return embed;
 }
 function buildActionsEmbed(interaction, target, stats) {
-  if (!target) return baseEmbed(interaction.client, COLORS.PRIMARY).setTitle('⚡ Moderation Actions').setDescription(['**No member selected.**', '', 'Choose a member first. Only actions granted to your Goliath authority profile are shown.'].join('\n'));
+  if (!target) return baseEmbed(interaction.client, COLORS.PRIMARY)
+    .setTitle('⚡ Moderation Actions')
+    .setDescription(['**No member selected.**', '', 'Return to Moderation Home and choose a member first.'].join('\n'));
+
   const timeout = targetHasActiveTimeout(target) ? `Active until ${timestamp(target.communicationDisabledUntilTimestamp, 'f')}` : 'None';
-  return baseEmbed(interaction.client, COLORS.PRIMARY).setTitle('⚡ Moderation Actions').setDescription([`**Active Member:** ${target.user}`, `**Discord ID:** \`${target.id}\``, '', 'Apply actions here. Reversal controls only appear when the member actually has something to clear.'].join('\n')).addFields(
-    { name: 'Current State', value: `**Warnings:** ${stats?.warningCount ?? 0}\n**Timeout:** ${timeout}`, inline: false },
-    { name: 'Safety', value: 'Goliath rechecks authority, hierarchy, target safety and confirmations when an action is submitted.', inline: false },
-  );
+  return baseEmbed(interaction.client, COLORS.PRIMARY)
+    .setTitle('⚡ Moderation Actions')
+    .setDescription([`**Active Member:** ${target.user}`, `**Discord ID:** \`${target.id}\``, '', 'Choose an action below. Reversal controls appear only when there is an active warning or timeout to clear.'].join('\n'))
+    .addFields(
+      { name: 'Warnings', value: `**${stats?.warningCount ?? 0}**`, inline: true },
+      { name: 'Timeout', value: `**${timeout}**`, inline: true },
+      { name: 'Safety Checks', value: 'Authority, Discord hierarchy, target safety and confirmation requirements are rechecked when the action is submitted.', inline: false },
+    );
 }
 function buildIntelligenceEmbed(interaction, target, member, guild) { const capabilities = []; if (canUseModAction(member, guild, 'scan_suspects')) capabilities.push('Suspected-account correlation'); if (canUseModAction(member, guild, 'scan_network')) capabilities.push('Goliath network intelligence'); if (canUseModAction(member, guild, 'scan_links')) capabilities.push('Persistent link evidence'); if (canUseModAction(member, guild, 'scan_notes')) capabilities.push('Investigation notes'); if (canUseModAction(member, guild, 'scan_watch')) capabilities.push('Watch status'); return baseEmbed(interaction.client, COLORS.PRIMARY).setTitle('🧠 Member Intelligence').setDescription([target ? `**Active Member:** ${target.user} • \`${target.id}\`` : '**No member selected.**', '', 'Run Goliath Intelligence Scan to assemble the information this viewer is authorized to access.', '', capabilities.length ? `**Available Intelligence:**\n${capabilities.map((value) => `• ${value}`).join('\n')}` : 'Your authority profile provides basic scan access only.', '', 'Correlation results are evidence-led and never presented as confirmed identity unless Goliath has verified evidence.'].join('\n')); }
 function buildCasesEmbed(target, cases = [], page = 0, totalPages = 1, actionFilter = 'all', statusFilter = 'all') { const description = cases.length ? cases.map((entry) => `**#${entry.caseId}** • ${String(entry.action || 'unknown').toUpperCase()} • ${getStatusLabel(entry)}\n${entry.reason || 'No reason provided'}\n<t:${Math.floor(getCaseTime(entry) / 1000)}:R>`).join('\n\n') : 'No cases found for this member.'; return createEmbed({ title: target?.user?.tag ? `📁 Cases • ${target.user.tag}` : '📁 Member Cases', description, color: COLORS.PRIMARY, footer: `Action: ${actionFilter} | Status: ${statusFilter} | Page ${page + 1}/${totalPages}` }); }
