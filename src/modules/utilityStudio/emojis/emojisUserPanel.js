@@ -17,6 +17,26 @@ const PANEL_COLOR = 0x5865F2;
 const MAX_USER_FAVOURITES = 25;
 const MAX_USER_RECENT = 20;
 const CATEGORY_ORDER = ['All', 'Gaming', 'Social', 'Reaction', 'Events', 'Seasonal', 'Moderation', 'General'];
+const CORE_SEARCH_TERMS = Object.freeze({
+  activision: ['activision', 'cod', 'callofduty', 'call of duty'],
+  blizzard: ['blizzard', 'battle.net', 'battlenet'],
+  discord: ['discord', 'chat', 'community', 'server'],
+  epic: ['epic', 'epicgames', 'fortnite'],
+  facebook: ['facebook', 'fb', 'meta'],
+  instagram: ['instagram', 'insta', 'ig'],
+  kick: ['kick', 'kickstreaming', 'stream'],
+  nintendo: ['nintendo', 'switch'],
+  pc: ['pc', 'computer', 'desktop'],
+  playstation: ['playstation', 'ps', 'ps4', 'ps5'],
+  snapchat: ['snapchat', 'snap'],
+  steam: ['steam', 'valve'],
+  tiktok: ['tiktok', 'tik tok', 'tt'],
+  twitch: ['twitch', 'stream', 'streaming'],
+  whatsapp: ['whatsapp', 'whats app', 'wa'],
+  x: ['x', 'twitter', 'tweet'],
+  xbox: ['xbox', 'xboxone', 'seriesx', 'seriess'],
+  youtube: ['youtube', 'yt', 'video', 'videos', 'stream'],
+});
 
 const row = (...items) => new ActionRowBuilder().addComponents(...items);
 const button = (id, label, style = ButtonStyle.Secondary, emoji = null) => {
@@ -38,8 +58,7 @@ function getRawEmojiSection(id) {
 }
 
 function getUserPreferences(id, memberId) {
-  const section = getRawEmojiSection(id);
-  const source = section?.userPreferences?.[String(memberId)] || {};
+  const source = getRawEmojiSection(id)?.userPreferences?.[String(memberId)] || {};
   return {
     favourites: validEmojiIds(source.favourites, MAX_USER_FAVOURITES),
     recent: validEmojiIds(source.recent, MAX_USER_RECENT),
@@ -94,21 +113,44 @@ async function availableCatalog(interaction) {
   return (overview.catalog || []).filter((emoji) => emoji.core || (overview.enabled && emoji.selected));
 }
 
+function emojiShortcode(emoji) {
+  return emoji.core ? emoji.alias : (emoji.aliases?.[0] || emoji.name);
+}
+
+function searchTerms(emoji) {
+  const shortcode = emojiShortcode(emoji);
+  return [
+    emoji.name,
+    emoji.alias,
+    emoji.category,
+    shortcode,
+    ...(emoji.aliases || []),
+    ...(emoji.tags || []),
+    ...(emoji.core ? (CORE_SEARCH_TERMS[shortcode] || []) : []),
+  ].filter(Boolean).map((value) => String(value).toLowerCase());
+}
+
 function searchEmoji(catalog, query = '') {
   const clean = String(query || '').trim().toLowerCase();
   if (!clean) return catalog;
-  return catalog.filter((emoji) => [emoji.name, emoji.alias, emoji.category, ...(emoji.aliases || []), ...(emoji.tags || [])]
-    .filter(Boolean)
-    .some((value) => String(value).toLowerCase().includes(clean)));
+  return catalog.filter((emoji) => searchTerms(emoji).some((value) => value.includes(clean)));
+}
+
+function matchScore(emoji, query) {
+  const clean = String(query || '').trim().toLowerCase();
+  if (!clean) return 0;
+  const shortcode = String(emojiShortcode(emoji) || '').toLowerCase();
+  const terms = searchTerms(emoji);
+  if (shortcode === clean) return 100;
+  if (terms.some((term) => term === clean)) return 80;
+  if (shortcode.startsWith(clean)) return 60;
+  if (terms.some((term) => term.startsWith(clean))) return 40;
+  return 10;
 }
 
 function byIds(catalog, ids) {
   const map = new Map(catalog.map((emoji) => [String(emoji.id), emoji]));
   return (ids || []).map((id) => map.get(String(id))).filter(Boolean);
-}
-
-function emojiShortcode(emoji) {
-  return emoji.core ? emoji.alias : (emoji.aliases?.[0] || emoji.name);
 }
 
 function emojiOption(emoji, suffix = '') {
@@ -157,13 +199,13 @@ async function buildPanel(interaction, notice = '') {
   components.push(...navigationRows());
   return {
     embeds: [new EmbedBuilder().setColor(PANEL_COLOR).setTitle('😀 My Emojis').setDescription([
-      'Find an emoji without remembering its shortcode. Goliath learns your favourites and recently used emojis so the ones you use most stay close.',
+      'Use `/e` for quick everyday emoji search. You can search by the real name or natural shortcuts such as `yt`, `ps5`, `insta`, `snap`, `twitter`, `stream`, or `video`.',
       '',
       `**Available:** ${catalog.length}`,
       `**Your favourites:** ${favourites.length}/${MAX_USER_FAVOURITES}`,
       `**Recent:** ${recent.length}/${MAX_USER_RECENT}`,
       '',
-      'Use **Search** when you know part of the name, or **Categories** when you just want to browse.',
+      'Favourites and recent choices are automatically prioritised in `/e` autocomplete.',
       notice ? `\n${notice}` : '',
     ].filter(Boolean).join('\n')).setFooter({ text: `Requested by ${displayName(interaction)}` }).setTimestamp()],
     components: components.slice(0, 5),
@@ -179,7 +221,7 @@ async function buildListPanel(interaction, mode, query = '', category = '') {
   if (mode === 'favourites') {
     items = byIds(catalog, prefs.favourites);
     title = '⭐ My Favourite Emojis';
-    description = items.length ? 'Your saved emojis, ready to use again.' : 'You have not saved any favourites yet. Pick an emoji and press **Add Favourite**.';
+    description = items.length ? 'Your saved emojis, ready to use again.' : 'You have not saved any favourites yet.';
   } else if (mode === 'recent') {
     items = byIds(catalog, prefs.recent);
     title = '🕘 Recently Used Emojis';
@@ -213,16 +255,13 @@ async function buildCategoriesPanel(interaction) {
   }));
   return {
     embeds: [new EmbedBuilder().setColor(PANEL_COLOR).setTitle('📁 Emoji Categories').setDescription('Pick a category to browse the emojis available in this server.')],
-    components: [
-      row(new StringSelectMenuBuilder().setCustomId('user:emojis:category-select').setPlaceholder('Choose a category').addOptions(options)),
-      ...navigationRows(),
-    ].slice(0, 5),
+    components: [row(new StringSelectMenuBuilder().setCustomId('user:emojis:category-select').setPlaceholder('Choose a category').addOptions(options)), ...navigationRows()].slice(0, 5),
   };
 }
 
 function searchModal() {
   return new ModalBuilder().setCustomId('user:emojis:search-submit').setTitle('Search Emojis').addComponents(
-    row(new TextInputBuilder().setCustomId('query').setLabel('Name, alias, tag or category').setPlaceholder('Example: youtube, gaming, heart, gg').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(80)),
+    row(new TextInputBuilder().setCustomId('query').setLabel('Name, nickname, tag or category').setPlaceholder('youtube, yt, ps5, insta, dolphin, heart...').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(80)),
   );
 }
 
@@ -242,7 +281,7 @@ async function buildSelectedPanel(interaction, emojiId) {
       `**Category:** ${emoji.category || 'General'}`,
       `**Tags:** ${(emoji.tags || []).join(', ') || 'none'}`,
       '',
-      'Goliath can use this shortcode anywhere Emoji Studio resolution is supported.',
+      'For normal chat, use `/e` and choose this emoji from autocomplete.',
     ].join('\n')).setFooter({ text: `Requested by ${displayName(interaction)}` }).setTimestamp()],
     components: [
       row(button(`user:emojis:favourite-toggle:${emoji.id}`, favourite ? 'Remove Favourite' : 'Add Favourite', favourite ? ButtonStyle.Secondary : ButtonStyle.Primary, '⭐')),
@@ -259,7 +298,8 @@ async function autocomplete(interaction) {
   const favouriteIds = new Set(prefs.favourites);
   const recentIds = new Set(prefs.recent);
   const matches = searchEmoji(catalog, focused)
-    .sort((a, b) => Number(favouriteIds.has(String(b.id))) - Number(favouriteIds.has(String(a.id)))
+    .sort((a, b) => matchScore(b, focused) - matchScore(a, focused)
+      || Number(favouriteIds.has(String(b.id))) - Number(favouriteIds.has(String(a.id)))
       || Number(recentIds.has(String(b.id))) - Number(recentIds.has(String(a.id)))
       || (b.usage?.count || 0) - (a.usage?.count || 0)
       || String(emojiShortcode(a)).localeCompare(String(emojiShortcode(b))))
@@ -267,7 +307,6 @@ async function autocomplete(interaction) {
   return interaction.respond(matches.map((emoji) => {
     const prefix = favouriteIds.has(String(emoji.id)) ? '⭐ ' : recentIds.has(String(emoji.id)) ? '🕘 ' : '';
     const shortcode = emojiShortcode(emoji);
-    // Core choices carry their canonical alias so a stale ID can never make one Core label select another Core entry.
     const value = emoji.core ? `core:${shortcode}` : String(emoji.id);
     return { name: `${prefix}:${shortcode}: · ${emoji.category || 'General'}`.slice(0, 100), value };
   })).catch(() => null);
@@ -288,6 +327,13 @@ async function commandSelection(interaction, reference) {
   if (!emoji) return null;
   touchUserRecent(guildId(interaction), userId(interaction), emoji.id);
   return { content: emoji.mention, allowedMentions: { parse: [] } };
+}
+
+async function resolveMessageText(interaction, content) {
+  const source = String(content || '');
+  if (!source.trim()) return { source, resolved: source, changed: false };
+  const resolved = await emojis.resolveText(interaction.client, guildId(interaction), source, 'member_message_convert');
+  return { source, resolved, changed: resolved !== source };
 }
 
 async function handleInteraction(interaction, updatePanel) {
@@ -315,5 +361,6 @@ module.exports = {
   handleInteraction,
   autocomplete,
   commandSelection,
+  resolveMessageText,
   getUserPreferences,
 };
