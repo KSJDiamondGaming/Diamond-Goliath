@@ -79,10 +79,21 @@ async function buildDiscordPanel(interaction, notice = '') {
 }
 
 function addPanel(interaction) {
-  return { embeds: [new EmbedBuilder().setColor(PANEL_COLOR).setTitle('➕ Add Emojis').setDescription(['Choose how you want to add an emoji.', '', '**Search for Emojis** — find one from the online emoji collection.', '**Upload Images** — add your own image files.', '**Add from Link** — paste a direct image link.'].join('\n')).setFooter({ text: `Requested by ${memberName(interaction)}` })], components: [
-    row(button('admin:module:emojis:search-open', '🔎 Search for Emojis', ButtonStyle.Primary), button('admin:module:emojis:bulk-open', '📤 Upload Images', ButtonStyle.Primary)),
-    row(button('admin:module:emojis:import-url-open', '🔗 Add from Link', ButtonStyle.Secondary)),
-    row(button('admin:module:emojis:panel', '⬅️ Back to Emoji Studio', ButtonStyle.Secondary)),
+  return { embeds: [new EmbedBuilder().setColor(PANEL_COLOR).setTitle('➕ Add Emojis').setDescription([
+    'Choose how you want to add emojis to this server.', '',
+    '**Search for Emojis** — browse the online emoji collection.',
+    '**Upload Images** — add image files from your device.',
+    '**Add from Link** — paste a direct image link.',
+  ].join('\n')).setFooter({ text: `Requested by ${memberName(interaction)}` })], components: [
+    row(
+      button('admin:module:emojis:search-open', '🔎 Search for Emojis', ButtonStyle.Primary),
+      button('admin:module:emojis:bulk-open', '📤 Upload Images', ButtonStyle.Primary),
+      button('admin:module:emojis:import-url-open', '🔗 Add from Link', ButtonStyle.Secondary),
+    ),
+    row(
+      button('admin:module:emojis:panel', '⬅️ Back', ButtonStyle.Secondary),
+      button('admin:module:emojis:settings', '⚙️ Settings', ButtonStyle.Secondary),
+    ),
   ] };
 }
 
