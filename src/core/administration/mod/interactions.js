@@ -550,26 +550,6 @@ async function showPunishmentModal(i, action, targetId) { if (!PUNISHMENT_ACTION
 async function requestRemoveTimeout(i, targetId) { const target = await requireModeratableTarget(i, targetId, 'remove_timeout'); if (!target) return true; return createConfirmation(i, target.id, 'remove-timeout', {}, `✅ Remove timeout from **${target.user.tag}**?`); }
 async function routeActionRequest(i, action, targetId) { if (action === 'warn') return showWarningModal(i, targetId); if (action === 'remove-warning') return showRemoveWarningModal(i, targetId); if (action === 'remove-timeout') return requestRemoveTimeout(i, targetId); if (PUNISHMENT_ACTIONS.has(action)) return showPunishmentModal(i, action, targetId); return false; }
 async function handleActionSelectMenu(i) { if (!i.customId.startsWith('mod_action_select:')) return false; return routeActionRequest(i, i.values[0], getTargetIdFromCustomId(i.customId)); }
-async function handleManagementSelect(i) {
-  const id = String(i.customId || '');
-  const targetId = getTargetIdFromCustomId(id);
-  const selection = String(i.values?.[0] || '');
-  if (id.startsWith('mod_management_tool:')) {
-    if (selection === 'presets') return openPresetManager(i, targetId);
-    if (selection === 'analytics') return renderDashboard(i, targetId, 'analytics', { analyticsWindow: '30d', analyticsMode: 'overview' });
-    if (selection === 'search') return openCaseSearch(i);
-    if (selection === 'export') return openExportModal(i, targetId);
-    return safeReply(i, { content: '❌ Unknown management tool.', flags: 64 });
-  }
-  if (id.startsWith('mod_management_bulk:')) {
-    if (!BULK_ACTIONS.has(selection)) return safeReply(i, { content: '❌ Unknown bulk moderation action.', flags: 64 });
-    const allowed = await ensureActionAccess(i, `bulk_${selection}`, `❌ No permission to use bulk ${selection}.`);
-    if (!allowed) return true;
-    await i.showModal(buildBulkModal(selection));
-    return true;
-  }
-  return false;
-}
 async function handleOpenActionButton(i) { const action = getPrefixedAction(i.customId, 'mod_open_', OPEN_ACTIONS); if (!action) return false; return routeActionRequest(i, action, getTargetIdFromCustomId(i.customId)); }
 async function handleCaseToolButton(i) { const caseResult = await openCaseTool(i); if (caseResult) return caseResult; const searchResult = await handleCaseSearchAction(i); if (searchResult) return searchResult; const id = String(i.customId || ''); const targetId = getTargetIdFromCustomId(id); if (id.startsWith('mod_remove_warning:')) return routeActionRequest(i, 'remove-warning', targetId); if (id.startsWith('mod_remove_timeout:')) return routeActionRequest(i, 'remove-timeout', targetId); return false; }
 async function handleBulkButton(i) {
@@ -679,7 +659,7 @@ async function routeButtonsAndSelects(i) {
     if (scan) return scan;
     return handleUserSelectMenu(i);
   }
-  if (i.isStringSelectMenu?.()) return routeHandlers(i, [handleManagementSelect, handlePresetInteraction, handleCaseSearchSelect, handleActionSelectMenu]);
+  if (i.isStringSelectMenu?.()) return routeHandlers(i, [handlePresetInteraction, handleCaseSearchSelect, handleActionSelectMenu]);
   if (!i.isButton?.()) return false;
   return routeHandlers(i, [handleExportInteraction, handlePresetEditorButton, handlePresetInteraction, handleConfirmButton, value => handleCaseAction(value, { fetchTarget, createConfirmation }), handleDashboardNavigation, handleCancelButton, handleMemberScanButton, handleSelectUserButton, handleBulkButton, handleOpenActionButton, handleCaseToolButton]);
 }
