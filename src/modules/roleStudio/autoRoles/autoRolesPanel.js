@@ -115,6 +115,7 @@ async function handleAutoRolesInteraction(interaction) {
       return updatePanel(interaction, rolePicker.page);
     }
     if (rolePicker && ['admin:autoRoles:joinRoles', 'admin:autoRoles:botRoles'].includes(rolePicker.baseId) && rolePicker.kind === 'select') {
+      await interaction.deferUpdate();
       const config = autoRoles.getAutoRolesSection(interaction.guild.id);
       const current = rolePicker.baseId.endsWith(':joinRoles') ? config.joinRoles : config.botRoles;
       const roleIds = autoRoles.cleanRoleIds(mergeRolePickerSelection(interaction.guild, current, interaction.values || [], rolePicker.page));
