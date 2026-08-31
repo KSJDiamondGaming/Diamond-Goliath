@@ -1,0 +1,165 @@
+name: Apply Unified Moderation Workspace
+
+on:
+  push:
+    branches:
+      - dev
+    paths:
+      - .github/workflows/mod-unified-workspace-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: dev
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - name: Merge member workspace into moderation home
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = 'src/core/administration/mod/panel.js';
+          let source = fs.readFileSync(path, 'utf8');
+
+          function replaceOnce(from, to, label) {
+            const count = source.split(from).length - 1;
+            if (count !== 1) throw new Error(`${label}: expected exactly one match, found ${count}`);
+            source = source.replace(from, to);
+          }
+
+          function replaceRegex(regex, to, label) {
+            const match = source.match(regex);
+            if (!match) throw new Error(`${label}: block not found`);
+            source = source.replace(regex, to);
+          }
+
+          replaceOnce(
+            "const DEFAULT_VIEW = 'member';\nconst CASES_PER_PAGE = 5;\nconst VIEW_ALIASES = Object.freeze({ overview: 'member' });\nconst ALLOWED_VIEWS = new Set(['member', 'actions', 'intelligence', 'cases', 'analytics']);",
+            "const DEFAULT_VIEW = 'actions';\nconst CASES_PER_PAGE = 5;\nconst VIEW_ALIASES = Object.freeze({ overview: 'actions', member: 'actions' });\nconst ALLOWED_VIEWS = new Set(['actions', 'intelligence', 'cases', 'analytics']);",
+            'workspace constants'
+          );
+
+          replaceOnce(
+            "  if (normalized === 'member') return canUseModAction(member, guild, 'view_dashboard');\n  if (normalized === 'actions') return hasAny(member, guild, ['warn', 'timeout', 'remove_timeout', 'kick', 'ban', 'remove_warning']);",
+            "  if (normalized === 'actions') return canUseModAction(member, guild, 'view_dashboard') || hasAny(member, guild, ['warn', 'timeout', 'remove_timeout', 'kick', 'ban', 'remove_warning']);",
+            'actions access'
+          );
+
+          replaceRegex(
+            /function buildDashboardNav\(targetId, activeView, member, guild\) \{[\s\S]*?\n\}\nfunction buildUserSelectRow/,
+            `function buildDashboardNav(targetId, activeView, member, guild) {
+  const active = normalizeView(activeView);
+  const id = targetId || 'none';
+  const rows = [];
+  const candidates = [
+    ['actions', '⚡ Moderation'],
+    ['intelligence', '🧠 Intelligence'],
+    ['cases', '📁 Cases'],
+  ]
+    .filter(([view]) => canViewDashboardSection(member, guild, view))
+    .filter(([view]) => view !== active);
+
+  const buttons = candidates.map(([view, label]) => new ButtonBuilder()
+    .setCustomId(\`mod_dashboard:\${id}:\${view}\`)
+    .setLabel(label)
+    .setStyle(ButtonStyle.Secondary)
+    .setDisabled(!targetId));
+  if (buttons.length) rows.push(new ActionRowBuilder().addComponents(buttons));
+
+  rows.push(new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('admin:home').setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary)
+  ));
+  return rows;
+}
+function buildUserSelectRow`,
+            'dashboard navigation'
+          );
+
+          replaceRegex(
+            /function buildMemberEmbed\(interaction, target, stats, staffDisplay\) \{[\s\S]*?\n\}\nfunction buildActionsEmbed\(interaction, target, stats\) \{[\s\S]*?\n\}\nfunction buildIntelligenceEmbed/,
+            `function buildActionsEmbed(interaction, target, stats, staffDisplay) {
+  const overall = workspaceStats(interaction.guild.id);
+  if (!target) return baseEmbed(interaction.client, COLORS.PRIMARY)
+    .setTitle('🛡️ Goliath Moderation')
+    .setDescription([
+      'Select a member, then choose an action or open their moderation records.',
+      '',
+      \`**Authority:** \${staffDisplay}\`,
+    ].join('\\n'))
+    .addFields(
+      { name: 'Open Cases', value: \`**\${overall.activeCases}**\`, inline: true },
+      { name: 'Active Warnings', value: \`**\${overall.activeWarnings}**\`, inline: true },
+      { name: 'Pending Appeals', value: \`**\${overall.pendingAppeals}**\`, inline: true },
+    );
+
+  const highestRole = target.roles?.highest && target.roles.highest.id !== interaction.guild.id ? \`\${target.roles.highest}\` : 'No elevated role';
+  const timeout = targetHasActiveTimeout(target) ? \`Active until \${timestamp(target.communicationDisabledUntilTimestamp, 'f')}\` : 'None';
+  const embed = baseEmbed(interaction.client, COLORS.PRIMARY)
+    .setTitle(\`🛡️ Moderation Workspace • \${target.user?.tag || target.user?.username || target.id}\`)
+    .setDescription([
+      \`**Active Member:** \${target.user}\`,
+      \`**Authority:** \${staffDisplay}\`,
+      '',
+      'Choose an action below, or open Intelligence and Cases for this member.',
+    ].join('\\n'))
+    .addFields(
+      { name: 'Identity', value: \`**Discord ID:** \\\`\${target.id}\\\`\\n**Account Created:** \${timestamp(target.user?.createdTimestamp)}\\n**Joined Server:** \${timestamp(target.joinedTimestamp)}\`, inline: false },
+      { name: 'Server Position', value: \`**Highest Role:** \${highestRole}\\n**Timeout:** \${timeout}\`, inline: true },
+      { name: 'Moderation', value: \`**Warnings:** \${stats?.warningCount ?? 0}\\n**Cases:** \${stats?.caseCount ?? 0}\`, inline: true },
+      { name: 'Latest Case', value: stats?.lastCaseSummary || 'No cases found.', inline: false },
+      { name: 'Safety', value: 'Authority, Discord hierarchy, target safety and confirmation requirements are rechecked when an action is submitted.', inline: false },
+    );
+  const avatar = target.user?.displayAvatarURL?.({ size: 256 });
+  if (avatar) embed.setThumbnail(avatar);
+  return embed;
+}
+function buildIntelligenceEmbed`,
+            'unified moderation embed'
+          );
+
+          replaceOnce(
+            "  if (safeView === 'member') { embeds.push(buildMemberEmbed(interaction, target, stats, staffDisplay)); components.push(...buildActionRows(target, stats, interaction.member, interaction.guild)); }\n  else if (safeView === 'actions') { embeds.push(buildActionsEmbed(interaction, target, stats)); components.push(...buildActionRows(target, stats, interaction.member, interaction.guild)); }",
+            "  if (safeView === 'actions') { embeds.push(buildActionsEmbed(interaction, target, stats, staffDisplay)); components.push(...buildActionRows(target, stats, interaction.member, interaction.guild)); }",
+            'dashboard payload actions branch'
+          );
+
+          replaceOnce(
+            "  if (id === 'mod:overview') return renderDashboard(interaction, 'none', 'member');",
+            "  if (id === 'mod:overview') return renderDashboard(interaction, 'none', 'actions');",
+            'overview route'
+          );
+
+          source = source.replace(/← Actions/g, '← Moderation');
+
+          if (source.includes('👤 Member Workspace')) throw new Error('Member Workspace embed still present after merge');
+          if (source.includes("['member', '👤 Member']")) throw new Error('Member navigation button still present after merge');
+
+          fs.writeFileSync(path, source);
+          NODE
+
+          node --check src/core/administration/mod/panel.js
+          npm ci
+          npm run doctor
+
+      - name: Commit clean source only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "KSJ Hub"
+          git config user.email "sycomorgan@gmail.com"
+          git rm .github/workflows/mod-unified-workspace-once.yml
+          git add src/core/administration/mod/panel.js
+          git diff --cached --check
+          git commit -m "refactor(mod): unify member moderation workspace"
+          git push origin HEAD:dev
