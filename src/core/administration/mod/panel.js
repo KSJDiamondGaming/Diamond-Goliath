@@ -181,48 +181,58 @@ async function handleExportInteraction(interaction) { const id = String(interact
 
 function buttonRow(buttons) { return buttons.length ? new ActionRowBuilder().addComponents(buttons) : null; }
 function buildDashboardNav(targetId, activeView, member, guild) {
-  const active = normalizeView(activeView);
-  const id = targetId || 'none';
-  const rows = [];
-  const candidates = [
-    ['actions', '⚡ Moderation'],
-    ['intelligence', '🧠 Intelligence'],
-    ['cases', '📁 Cases'],
-  ]
-    .filter(([view]) => canViewDashboardSection(member, guild, view))
-    .filter(([view]) => view !== active);
+    const active = normalizeView(activeView);
+    const id = targetId || 'none';
+    const rows = [];
 
-  const buttons = candidates.map(([view, label]) => new ButtonBuilder()
-    .setCustomId(`mod_dashboard:${id}:${view}`)
-    .setLabel(label)
-    .setStyle(ButtonStyle.Secondary)
-    .setDisabled(!targetId));
-  if (buttons.length) rows.push(new ActionRowBuilder().addComponents(buttons));
+    if (active !== 'actions') {
+      const candidates = [
+        ['actions', '⚡ Moderation'],
+        ['intelligence', '🧠 Intelligence'],
+        ['cases', '📁 Cases'],
+      ]
+        .filter(([view]) => canViewDashboardSection(member, guild, view))
+        .filter(([view]) => view !== active);
 
-  rows.push(new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('admin:home').setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary)
-  ));
-  return rows;
-}
+      const buttons = candidates.map(([view, label]) => new ButtonBuilder()
+        .setCustomId(`mod_dashboard:${id}:${view}`)
+        .setLabel(label)
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(!targetId));
+      if (buttons.length) rows.push(new ActionRowBuilder().addComponents(buttons));
+    }
+
+    rows.push(new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('admin:home').setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary)
+    ));
+    return rows;
+  }
 function buildUserSelectRow() { return new ActionRowBuilder().addComponents(new UserSelectMenuBuilder().setCustomId('mod_user_select').setPlaceholder('👤 Select a member to investigate or moderate').setMinValues(1).setMaxValues(1)); }
 function actionPermissions(member, guild) { return { warn: canUseModAction(member, guild, 'warn'), timeout: canUseModAction(member, guild, 'timeout'), kick: canUseModAction(member, guild, 'kick'), ban: canUseModAction(member, guild, 'ban'), removeWarning: canUseModAction(member, guild, 'remove_warning'), removeTimeout: canUseModAction(member, guild, 'remove_timeout') }; }
 function buildActionRows(target, stats, member, guild) {
-  const id = target?.id || 'none';
-  const p = actionPermissions(member, guild);
-  const disabled = !target;
-  const apply = [];
+    const id = target?.id || 'none';
+    const p = actionPermissions(member, guild);
+    const disabled = !target;
 
-  if (p.warn) apply.push(createSecondaryButton(`mod_open_warn:${id}`, 'Warn', getEmoji('WARNING', '⚠️')).setDisabled(disabled));
-  if (p.timeout) apply.push(createSecondaryButton(`mod_open_timeout:${id}`, 'Timeout', getEmoji('TIMEOUT', '⏳')).setDisabled(disabled));
-  if (p.kick) apply.push(createDangerButton(`mod_open_kick:${id}`, 'Kick', getEmoji('KICK', '👢')).setDisabled(disabled));
-  if (p.ban) apply.push(createDangerButton(`mod_open_ban:${id}`, 'Ban', getEmoji('BAN', '🔨')).setDisabled(disabled));
+    const row1 = [];
+    if (canViewDashboardSection(member, guild, 'intelligence')) row1.push(new ButtonBuilder().setCustomId(`mod_dashboard:${id}:intelligence`).setLabel('🧠 Intelligence').setStyle(ButtonStyle.Secondary).setDisabled(disabled));
+    if (canViewDashboardSection(member, guild, 'cases')) row1.push(new ButtonBuilder().setCustomId(`mod_dashboard:${id}:cases`).setLabel('📁 Cases').setStyle(ButtonStyle.Secondary).setDisabled(disabled));
+    if (p.timeout) row1.push(createSecondaryButton(`mod_open_timeout:${id}`, 'Timeout', getEmoji('TIMEOUT', '⏳')).setDisabled(disabled));
+    if (p.warn) row1.push(createSecondaryButton(`mod_open_warn:${id}`, 'Warn', getEmoji('WARNING', '⚠️')).setDisabled(disabled));
 
-  const reverse = [];
-  if (p.removeWarning) reverse.push(createSecondaryButton(`mod_remove_warning:${id}`, 'Remove Warn', getEmoji('DELETE', '🗑️')).setDisabled(disabled || Number(stats?.warningCount || 0) <= 0));
-  if (p.removeTimeout) reverse.push(createSecondaryButton(`mod_remove_timeout:${id}`, 'Clear Timeout', getEmoji('SUCCESS', '✅')).setDisabled(disabled || !targetHasActiveTimeout(target)));
+    const row2 = [];
+    if (p.kick) row2.push(createDangerButton(`mod_open_kick:${id}`, 'Kick', getEmoji('KICK', '👢')).setDisabled(disabled));
+    if (p.ban) row2.push(createDangerButton(`mod_open_ban:${id}`, 'Ban', getEmoji('BAN', '🔨')).setDisabled(disabled));
+    if (p.removeTimeout) row2.push(createSecondaryButton(`mod_remove_timeout:${id}`, 'Clear Timeout', getEmoji('SUCCESS', '✅')).setDisabled(disabled || !targetHasActiveTimeout(target)));
+    if (p.removeWarning) row2.push(createSecondaryButton(`mod_remove_warning:${id}`, 'Remove Warn', getEmoji('DELETE', '🗑️')).setDisabled(disabled || Number(stats?.warningCount || 0) <= 0));
 
-  return [buttonRow(apply), buttonRow(reverse)].filter(Boolean);
-}
+    const row3 = [];
+    if (canUseModAction(member, guild, 'manage_presets')) row3.push(new ButtonBuilder().setCustomId(`mod_presets:${id}`).setLabel('📋 Presets').setStyle(ButtonStyle.Secondary));
+    if (canUseModAction(member, guild, 'view_analytics')) row3.push(new ButtonBuilder().setCustomId(`mod_dashboard:${id}:analytics`).setLabel('📊 Analytics').setStyle(ButtonStyle.Secondary));
+    if (canUseModAction(member, guild, 'export_cases')) row3.push(new ButtonBuilder().setCustomId(`mod_export_cases:${id}`).setLabel('📤 Export').setStyle(ButtonStyle.Secondary));
+
+    return [buttonRow(row1), buttonRow(row2), buttonRow(row3)].filter(Boolean);
+  }
 function buildIntelligenceRows(targetId, member, guild) {
   if (!targetId) return [];
   const id = targetId; const rows = []; const first = [];
