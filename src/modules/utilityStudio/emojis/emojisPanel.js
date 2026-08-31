@@ -131,7 +131,7 @@ function corePreviewPanel(overview, interaction) { const installed = (overview.c
 function coreReplaceSelectPanel(overview, interaction) { const options = (overview.coreStatus || []).map((entry) => ({ label: `:${entry.alias}:`, value: entry.alias, description: entry.installed ? `Replace built-in slot ${String(entry.slot).padStart(2, '0')}` : `Slot ${String(entry.slot).padStart(2, '0')} is currently missing`, emoji: entry.emoji?.component || undefined })); return { embeds: [new EmbedBuilder().setColor(PANEL_COLOR).setTitle('🛠️ Replace Built-in Emoji').setDescription(['Choose the built-in Goliath emoji you want to replace.', '', 'Only the emoji you choose will be changed. Goliath keeps the current one safe until the replacement succeeds.'].join('\n')).setFooter({ text: `Requested by ${memberName(interaction)}` })], components: [row(new StringSelectMenuBuilder().setCustomId('admin:module:emojis:core-replace-select').setPlaceholder('Choose a built-in emoji').addOptions(options)), row(button('admin:module:emojis:core', '⬅️ Back to Built-in Emojis', ButtonStyle.Secondary))] }; }
 function coreReplaceUploadModal(alias) { const upload = new FileUploadBuilder().setCustomId('file').setMinValues(1).setMaxValues(1).setRequired(true); return new ModalBuilder().setCustomId(`admin:module:emojis:core-replace-submit:${alias}`).setTitle(`Replace :${alias}:`).addComponents(new LabelBuilder().setLabel(`Replacement image for :${alias}:`).setDescription('Upload one image. Goliath will prepare it automatically.').setFileUploadComponent(upload)); }
 
-function bankPanel(overview, interaction, notice = '') {
+function bankPanel(overview, interaction, selectedEmojiId = '', notice = '') {
   const selected = new Set(overview.effectiveFavourites || []);
   const available = (overview.catalog || []).filter((emoji) => !emoji.core).sort((a, b) => {
     const aSelected = selected.has(String(a.id)) ? 0 : 1;
@@ -139,6 +139,8 @@ function bankPanel(overview, interaction, notice = '') {
     if (aSelected !== bSelected) return aSelected - bSelected;
     return String(a.name || '').localeCompare(String(b.name || ''));
   });
+  const chosen = available.find((emoji) => String(emoji.id) === String(selectedEmojiId || '')) || null;
+  const chosenIsSelected = chosen ? selected.has(String(chosen.id)) : false;
   const options = available.slice(0, 25).map((emoji) => {
     const isSelected = selected.has(String(emoji.id));
     return {
@@ -148,18 +150,27 @@ function bankPanel(overview, interaction, notice = '') {
       emoji: emoji.component || undefined,
     };
   });
+  const description = [
+    `**Your emojis:** ${overview.guildCapacity.used}/${overview.guildCapacity.max}`,
+    '',
+    chosen
+      ? `${chosen.mention || `:${chosen.name}:`}  **:${chosen.name}:**\n**Status:** ${chosenIsSelected ? 'Added to this server ✅' : 'Available to add'}`
+      : (options.length ? 'Choose an emoji below to manage it.' : 'There are no extra emojis available yet.'),
+    notice ? `\n${notice}` : '',
+  ].filter(Boolean).join('\n');
+  const components = [];
+  if (options.length) components.push(row(new StringSelectMenuBuilder().setCustomId('admin:module:emojis:bank-toggle').setPlaceholder('Choose an emoji').addOptions(options)));
+  if (chosen) {
+    components.push(row(
+      chosenIsSelected
+        ? button(`admin:module:emojis:bank-remove:${chosen.id}`, '➖ Remove from Server', ButtonStyle.Danger)
+        : button(`admin:module:emojis:bank-add:${chosen.id}`, '➕ Add to Server', ButtonStyle.Success),
+    ));
+  }
+  components.push(row(button('admin:module:emojis:panel', '⬅️ Back', ButtonStyle.Secondary)));
   return {
-    embeds: [new EmbedBuilder().setColor(PANEL_COLOR).setTitle('⭐ Manage Emojis').setDescription([
-      `**Your emojis:** ${overview.guildCapacity.used}/${overview.guildCapacity.max}`,
-      '',
-      options.length ? 'Choose an emoji below to add or remove it. Changes apply immediately.' : 'There are no extra emojis available yet. Use **Add Emojis** to add some.',
-      notice ? `\n${notice}` : '',
-    ].filter(Boolean).join('\n')).setFooter({ text: `Requested by ${memberName(interaction)}` })],
-    components: [
-      ...(options.length ? [row(new StringSelectMenuBuilder().setCustomId('admin:module:emojis:bank-toggle').setPlaceholder('Choose an emoji').addOptions(options))] : []),
-      row(button('admin:module:emojis:add', '➕ Add Emojis', ButtonStyle.Primary)),
-      row(button('admin:module:emojis:panel', '⬅️ Back', ButtonStyle.Secondary)),
-    ],
+    embeds: [new EmbedBuilder().setColor(PANEL_COLOR).setTitle('⭐ Manage Emojis').setDescription(description).setFooter({ text: `Requested by ${memberName(interaction)}` })],
+    components,
   };
 }
 function pickerPanel(overview, interaction, query = '') { const clean = String(query || '').toLowerCase(); const available = (overview.catalog || []).filter((emoji) => emoji.core || (overview.enabled && emoji.selected)).filter((emoji) => !clean || [emoji.name, emoji.alias, ...(emoji.aliases || []), ...(emoji.tags || [])].some((value) => String(value || '').toLowerCase().includes(clean))).slice(0, 25); const options = available.map((emoji) => ({ label: `:${emoji.core ? emoji.alias : emoji.name}:`.slice(0, 100), value: String(emoji.id), description: `${emoji.core ? 'Built-in' : emoji.category} • used ${emoji.usage?.count || 0}x`.slice(0, 100), emoji: emoji.component || undefined })); return { embeds: [new EmbedBuilder().setColor(PANEL_COLOR).setTitle('👁️ Preview Emojis').setDescription(['See the emojis Goliath can currently use in this server.', '', query ? `**Search:** ${query}` : '**Search:** All emojis', `**Shown:** ${available.length}${(overview.catalog || []).length > 25 ? ' (up to 25 at a time)' : ''}`].join('\n')).setFooter({ text: `Requested by ${memberName(interaction)}` })], components: [...(options.length ? [row(new StringSelectMenuBuilder().setCustomId('admin:module:emojis:picker-select').setPlaceholder('Choose an emoji to preview').addOptions(options))] : []), row(button('admin:module:emojis:picker-search-open', '🔎 Search Emojis', ButtonStyle.Primary)), row(button('admin:module:emojis:guild', '⬅️ Back to Manage Emojis', ButtonStyle.Secondary))] }; }
@@ -255,14 +266,21 @@ async function handleDiscordInteraction(interaction) {
   if (id === 'admin:module:emojis:bank-toggle' && interaction.isStringSelectMenu?.()) {
     const emojiId = String(interaction.values?.[0] || '');
     const overview = await discordOverview(interaction);
-    if ((overview.core || []).some((emoji) => String(emoji.id) === emojiId)) throw new Error('Built-in emojis are always available and cannot be changed here.');
-    const emoji = (overview.catalog || []).find((entry) => String(entry.id) === emojiId);
+    const emoji = (overview.catalog || []).find((entry) => !entry.core && String(entry.id) === emojiId);
     if (!emoji) throw new Error('That emoji is no longer available.');
-    const current = emojiStore.getSection(guildId);
-    const wasSelected = current.favourites.includes(emojiId);
-    emojiStore.setFavourite(guildId, emojiId, !wasSelected, { actorId: interaction.user?.id, action: 'emoji_discord_select' });
+    await sendPanel(interaction, bankPanel(overview, interaction, emojiId));
+    return true;
+  }
+  if ((id.startsWith('admin:module:emojis:bank-add:') || id.startsWith('admin:module:emojis:bank-remove:')) && interaction.isButton?.()) {
+    const adding = id.startsWith('admin:module:emojis:bank-add:');
+    const prefix = adding ? 'admin:module:emojis:bank-add:' : 'admin:module:emojis:bank-remove:';
+    const emojiId = id.slice(prefix.length);
+    const overview = await discordOverview(interaction);
+    const emoji = (overview.catalog || []).find((entry) => !entry.core && String(entry.id) === emojiId);
+    if (!emoji) throw new Error('That emoji is no longer available.');
+    emojiStore.setFavourite(guildId, emojiId, adding, { actorId: interaction.user?.id, action: 'emoji_discord_select' });
     const updated = await discordOverview(interaction);
-    await sendPanel(interaction, bankPanel(updated, interaction, `${wasSelected ? '➖ Removed' : '✅ Added'} :${emoji.name}: ${wasSelected ? 'from' : 'to'} this server.`));
+    await sendPanel(interaction, bankPanel(updated, interaction, emojiId, `${adding ? '✅ Added' : '➖ Removed'} :${emoji.name}: ${adding ? 'to' : 'from'} this server.`));
     return true;
   }
   if (id === 'admin:module:emojis:picker-select' && interaction.isStringSelectMenu?.()) { const overview = await discordOverview(interaction); const emoji = (overview.catalog || []).find((entry) => String(entry.id) === String(interaction.values?.[0])); if (!emoji) throw new Error('Emoji no longer exists.'); const shortcode = emoji.core ? emoji.alias : (emoji.aliases?.[0] || emoji.name); emojiStore.touchRecent(guildId, emoji.id); await sendPanel(interaction, { embeds: [new EmbedBuilder().setColor(PANEL_COLOR).setTitle('👁️ Emoji Preview').setDescription([emoji.mention, '', `**Type this:** \`:${shortcode}:\``, `**Category:** ${emoji.category}`, `**Tags:** ${(emoji.tags || []).join(', ') || 'none'}`, `**Used:** ${emoji.usage?.count || 0} time(s)`].join('\n'))], components: [row(button('admin:module:emojis:picker', '⬅️ Back to Preview', ButtonStyle.Secondary))] }); return true; }
