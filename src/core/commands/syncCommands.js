@@ -137,10 +137,7 @@ async function putGlobalCommands(rest, clientId, commands, dryRun) {
 }
 
 async function upsertPrivateOwnerCommand(rest, clientId, privateGuildId, ownerCommand, dryRun = false) {
-  if (!privateGuildId || !ownerCommand) {
-    console.warn('[CommandSync] Private /owner registration skipped: missing private guild or command payload.');
-    return false;
-  }
+  if (!privateGuildId || !ownerCommand) return false;
 
   const existing = await rest.get(Routes.applicationGuildCommands(clientId, privateGuildId));
   const current = (existing || []).find((command) => command?.name === 'owner');
@@ -210,7 +207,7 @@ async function syncCommands() {
   const dryRun = ['1', 'true', 'yes', 'on'].includes(String(process.env.COMMAND_SYNC_DRY_RUN || '').toLowerCase());
   const commands = loadCanonicalCommands();
   const publicCommands = commands.filter((command) => PUBLIC_COMMAND_NAMES.has(command.name));
-  const ownerCommand = commands.find((command) => command.name === 'owner') || null;
+  const ownerCommand = mode === 'dev' ? commands.find((command) => command.name === 'owner') || null : null;
   const guildIds = configuredGuildIds(mode);
   const privateGuildId = commandCenterGuildId();
   const rest = new REST({ version: '10', timeout: timeoutMs() }).setToken(token);
@@ -218,14 +215,14 @@ async function syncCommands() {
 
   if (commandMode === 'global') {
     await putGlobalCommands(rest, clientId, publicCommands, dryRun);
-    await upsertPrivateOwnerCommand(rest, clientId, privateGuildId, ownerCommand, dryRun);
+    if (ownerCommand) await upsertPrivateOwnerCommand(rest, clientId, privateGuildId, ownerCommand, dryRun);
     removedGlobalCommands = await cleanupStaleGlobalCommands(rest, clientId, dryRun);
   } else {
     if (!guildIds.length) throw new Error(`No guild IDs configured for ${mode}`);
     for (const guildId of guildIds) {
       await putGuildCommands(rest, clientId, guildId, publicCommands, ownerCommand, privateGuildId, dryRun);
     }
-    if (!guildIds.includes(privateGuildId)) {
+    if (ownerCommand && !guildIds.includes(privateGuildId)) {
       await upsertPrivateOwnerCommand(rest, clientId, privateGuildId, ownerCommand, dryRun);
     }
     await cleanupPrivateCommandScope(rest, clientId, guildIds, privateGuildId, dryRun);
