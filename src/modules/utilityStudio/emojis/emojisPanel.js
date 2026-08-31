@@ -104,30 +104,58 @@ function settingsPanel(overview, interaction, notice = '') {
   ] };
 }
 
+function emojiPreviewUrl(emoji) {
+  if (!emoji?.id) return null;
+  return `https://cdn.discordapp.com/emojis/${emoji.id}.${emoji.animated ? 'gif' : 'png'}?size=256&quality=lossless`;
+}
+
 function managePanel(overview, interaction, selectedKey = '', notice = '') {
   const selectedIds = new Set(overview.effectiveFavourites || []);
   const extras = (overview.catalog || []).filter((emoji) => !emoji.core).sort((a, b) => Number(selectedIds.has(String(b.id))) - Number(selectedIds.has(String(a.id))) || String(a.name || '').localeCompare(String(b.name || '')));
   const builtIns = (overview.coreStatus || []).filter((entry) => entry.installed && entry.emoji);
   const extraOptions = extras.slice(0, 25).map((emoji) => ({ label: `:${emoji.name}:`.slice(0, 100), value: `extra:${emoji.id}`, description: selectedIds.has(String(emoji.id)) ? '✅ Added to this server' : '➕ Available to add', emoji: emoji.component || undefined }));
   const coreOptions = builtIns.slice(0, 25).map((entry) => ({ label: `:${entry.alias}:`.slice(0, 100), value: `core:${entry.alias}`, description: '💠 Built-in • always available', emoji: entry.emoji?.component || undefined }));
+
   let chosen = null;
   let isCore = false;
   if (selectedKey.startsWith('extra:')) chosen = extras.find((emoji) => String(emoji.id) === selectedKey.slice(6)) || null;
-  if (selectedKey.startsWith('core:')) { isCore = true; const alias = selectedKey.slice(5); const entry = builtIns.find((item) => item.alias === alias); chosen = entry ? { ...entry.emoji, alias: entry.alias, mention: entry.mention || entry.emoji.mention } : null; }
+  if (selectedKey.startsWith('core:')) {
+    isCore = true;
+    const alias = selectedKey.slice(5);
+    const entry = builtIns.find((item) => item.alias === alias);
+    const catalogEntry = (overview.catalog || []).find((emoji) => emoji.core && String(emoji.alias || emoji.name) === alias);
+    chosen = entry ? { ...catalogEntry, ...entry.emoji, alias: entry.alias, mention: entry.mention || entry.emoji.mention } : null;
+  }
+
   const chosenAdded = chosen && !isCore ? selectedIds.has(String(chosen.id)) : false;
-  const description = [
+  const shortcode = chosen ? String(chosen.alias || chosen.name || 'emoji') : '';
+  const previewLines = chosen ? [
+    `${chosen.mention || `:${shortcode}:`}  **:${shortcode}:**`,
+    `**Status:** ${isCore ? 'Built-in • always available 💠' : (chosenAdded ? 'Added to this server ✅' : 'Available to add')}`,
+    `**Type this:** \`:${shortcode}:\``,
+    ...(!isCore && chosen.category ? [`**Category:** ${chosen.category}`] : []),
+    ...(!isCore && Array.isArray(chosen.tags) && chosen.tags.length ? [`**Tags:** ${chosen.tags.join(', ')}`] : []),
+    `**Used:** ${chosen.usage?.count || 0} time(s)`,
+    ...(isCore ? ['', 'Included with Goliath and always available in this server.'] : []),
+  ] : ['Choose an emoji below to preview and manage it.'];
+
+  const embed = new EmbedBuilder().setColor(PANEL_COLOR).setTitle('⭐ Manage Emojis').setDescription([
     `**Your emojis:** ${overview.guildCapacity.used}/${overview.guildCapacity.max}`,
-    `**Built-in emojis:** ${overview.coreCapacity.used}/${overview.coreCapacity.max} always available`, '',
-    chosen ? `${chosen.mention || `:${chosen.alias || chosen.name}:`}  **:${chosen.alias || chosen.name}:**\n**Status:** ${isCore ? 'Built-in • always available 💠' : (chosenAdded ? 'Added to this server ✅' : 'Available to add')}` : 'Choose an emoji below to preview and manage it.',
+    `**Built-in emojis:** ${overview.coreCapacity.used}/${overview.coreCapacity.max} always available`,
+    '',
+    ...previewLines,
     notice ? `\n${notice}` : '',
-  ].filter(Boolean).join('\n');
+  ].filter(Boolean).join('\n')).setFooter({ text: `Requested by ${memberName(interaction)}` });
+  const previewUrl = emojiPreviewUrl(chosen);
+  if (previewUrl) embed.setThumbnail(previewUrl);
+
   const components = [];
-  if (extraOptions.length) components.push(row(new StringSelectMenuBuilder().setCustomId('admin:module:emojis:manage-select').setPlaceholder('Your & available emojis').addOptions(extraOptions)));
-  if (coreOptions.length) components.push(row(new StringSelectMenuBuilder().setCustomId('admin:module:emojis:manage-select').setPlaceholder('Built-in emojis').addOptions(coreOptions)));
+  if (extraOptions.length) components.push(row(new StringSelectMenuBuilder().setCustomId('admin:module:emojis:manage-extra-select').setPlaceholder('Your & available emojis').addOptions(extraOptions)));
+  if (coreOptions.length) components.push(row(new StringSelectMenuBuilder().setCustomId('admin:module:emojis:manage-core-select').setPlaceholder('Built-in emojis').addOptions(coreOptions)));
   if (chosen && !isCore) components.push(row(chosenAdded ? button(`admin:module:emojis:manage-remove:${chosen.id}`, '➖ Remove from Server', ButtonStyle.Danger) : button(`admin:module:emojis:manage-add:${chosen.id}`, '➕ Add to Server', ButtonStyle.Success)));
   if (chosen && isCore && security.isBotOwner(interaction.user?.id)) components.push(row(button(`admin:module:emojis:core-replace-one:${chosen.alias || chosen.name}`, '🛠️ Replace Built-in Emoji', ButtonStyle.Secondary)));
   components.push(row(button('admin:module:emojis:panel', '⬅️ Back', ButtonStyle.Secondary)));
-  return { embeds: [new EmbedBuilder().setColor(PANEL_COLOR).setTitle('⭐ Manage Emojis').setDescription(description).setFooter({ text: `Requested by ${memberName(interaction)}` })], components };
+  return { embeds: [embed], components };
 }
 
 function coreReplaceUploadModal(alias) { const upload = new FileUploadBuilder().setCustomId('file').setMinValues(1).setMaxValues(1).setRequired(true); return new ModalBuilder().setCustomId(`admin:module:emojis:core-replace-submit:${alias}`).setTitle(`Replace :${alias}:`).addComponents(new LabelBuilder().setLabel(`Replacement image for :${alias}:`).setDescription('Upload one image. Goliath will prepare it automatically.').setFileUploadComponent(upload)); }
@@ -151,7 +179,7 @@ async function handleDiscordInteraction(interaction) {
   if (id === 'admin:module:emojis:search-open') { await interaction.showModal(searchModal()); return true; }
   if (id === 'admin:module:emojis:import-url-open') { await interaction.showModal(urlImportModal()); return true; }
   if (id === 'admin:module:emojis:bulk-open') { await interaction.showModal(bulkUploadModal()); return true; }
-  if (id === 'admin:module:emojis:manage-select' && interaction.isStringSelectMenu?.()) { await sendPanel(interaction, managePanel(await discordOverview(interaction), interaction, String(interaction.values?.[0] || ''))); return true; }
+  if ((id === 'admin:module:emojis:manage-extra-select' || id === 'admin:module:emojis:manage-core-select' || id === 'admin:module:emojis:manage-select') && interaction.isStringSelectMenu?.()) { await sendPanel(interaction, managePanel(await discordOverview(interaction), interaction, String(interaction.values?.[0] || ''))); return true; }
   if ((id.startsWith('admin:module:emojis:manage-add:') || id.startsWith('admin:module:emojis:manage-remove:')) && interaction.isButton?.()) { const adding = id.startsWith('admin:module:emojis:manage-add:'); const emojiId = id.slice((adding ? 'admin:module:emojis:manage-add:' : 'admin:module:emojis:manage-remove:').length); const overview = await discordOverview(interaction); const emoji = (overview.catalog || []).find((entry) => !entry.core && String(entry.id) === emojiId); if (!emoji) throw new Error('That emoji is no longer available.'); emojiStore.setFavourite(guildId, emojiId, adding, { actorId: interaction.user?.id, action: 'emoji_discord_select' }); await sendPanel(interaction, managePanel(await discordOverview(interaction), interaction, `extra:${emojiId}`, `${adding ? '✅ Added' : '➖ Removed'} :${emoji.name}: ${adding ? 'to' : 'from'} this server.`)); return true; }
   if (id.startsWith('admin:module:emojis:core-replace-one:') && interaction.isButton?.()) { if (!security.isBotOwner(interaction.user?.id)) throw new Error('Only the Goliath Owner can replace built-in emojis.'); const alias = id.slice('admin:module:emojis:core-replace-one:'.length); if (!emojis.isApprovedCoreAlias(alias)) throw new Error('That is not an approved Goliath Core emoji.'); await interaction.showModal(coreReplaceUploadModal(alias)); return true; }
   if (id.startsWith('admin:module:emojis:core-replace-submit:') && interaction.isModalSubmit?.()) { if (!security.isBotOwner(interaction.user?.id)) throw new Error('Only the Goliath Owner can replace built-in emojis.'); const alias = id.split(':').pop(); if (!emojis.isApprovedCoreAlias(alias)) throw new Error('That is not an approved Goliath Core emoji.'); const uploads = interaction.fields.getUploadedFiles('file', true); const attachment = uploads?.first?.() || [...uploads.values()][0]; if (!attachment?.url) throw new Error('Replacement image upload was not found.'); await interaction.deferReply({ flags: MessageFlags.Ephemeral }); const response = await fetch(attachment.url, { headers: { 'User-Agent': 'KSJHub-Goliath/1.0' }, timeout: 15000 }); if (!response.ok) throw new Error(`Replacement image download failed (${response.status}).`); const prepared = await emojiProcessor.prepareEmojiBuffer(await response.buffer(), { size: 512, padding: 32, maxBytes: emojiApi.MAX_BYTES }); const result = await emojis.replaceCoreEmoji(interaction.client, alias, prepared.buffer); await interaction.editReply({ ...managePanel(await discordOverview(interaction), interaction, `core:${result.alias}`, `✅ Replaced :${result.alias}: successfully.`), content: null }); return true; }
