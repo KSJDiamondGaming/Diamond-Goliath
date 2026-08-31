@@ -8,7 +8,6 @@ const {
   ChannelType,
   EmbedBuilder,
   ModalBuilder,
-  RoleSelectMenuBuilder,
   StringSelectMenuBuilder,
   TextInputBuilder,
   TextInputStyle,
@@ -16,6 +15,7 @@ const {
 
 const guildManager = require('../../../core/guild/guildManager');
 const security = require('../../../core/security/protection/core');
+const { buildRolePicker, parseRolePickerId } = require('../../../core/ui/panelNavigation');
 const emojis = require('../../utilityStudio/emojis/emojis');
 const roleSelector = require('./roleSelector');
 const healthService = require('./roleSelectorHealth');
@@ -440,11 +440,19 @@ function buildColourPanel(guildId, group) {
   };
 }
 
-function buildAppearance(guild) {
+function buildAppearance(guild, rolePage = 0) {
   const section = roleSelector.getSection(guild.id);
   const preview = roleSelector.roleNameFor(section, 'Example Role');
   const anchor = section.style.anchorRoleId ? `<@&${section.style.anchorRoleId}>` : '`No anchor selected`';
   const placement = section.style.placement === 'above' ? 'Above' : 'Below';
+  const rolePicker = buildRolePicker(guild, {
+    customId: 'admin:roleSelector:anchor',
+    placeholder: 'Choose where Role Selector roles should sit',
+    selectedIds: section.style.anchorRoleId ? [section.style.anchorRoleId] : [],
+    minValues: 0,
+    maxValues: 1,
+    page: rolePage,
+  });
   return {
     embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('🎨 Role Selector · Appearance').setDescription([
       '**Role Preview**',
@@ -457,12 +465,12 @@ function buildAppearance(guild) {
       'Choose where Role Selector roles should sit, then adjust the role style or divider if needed.',
     ].join('\n'))],
     components: [
-      row(new RoleSelectMenuBuilder().setCustomId('admin:roleSelector:anchor').setPlaceholder('Choose where Role Selector roles should sit').setMinValues(0).setMaxValues(1)),
+      ...rolePicker.rows,
       row(
-        button('admin:roleSelector:styleOpen', '✏️ Edit Role Style', ButtonStyle.Primary),
-        button('admin:roleSelector:createDivider', '➕ Create Divider', ButtonStyle.Primary),
         button('admin:roleSelector:togglePlacement', section.style.placement === 'above' ? '⬆️ Place Above' : '⬇️ Place Below', ButtonStyle.Primary),
-        button('admin:roleSelector:toggleGrouped', section.style.keepGrouped ? '🧲 Keep Together: On' : '🧲 Keep Together: Off', ButtonStyle.Primary),
+        button('admin:roleSelector:toggleGrouped', section.style.keepGrouped ? '🧲 Keep Together: On' : '🧲 Keep Together: Off', section.style.keepGrouped ? ButtonStyle.Success : ButtonStyle.Secondary),
+        button('admin:roleSelector:styleOpen', '✏️ Edit Role Style', ButtonStyle.Secondary),
+        button('admin:roleSelector:createDivider', '➕ Create Divider', ButtonStyle.Success),
       ),
       nav(),
     ],
@@ -852,13 +860,19 @@ async function handleRoleSelectorInteraction(i) {
     }
 
     if (id === 'admin:roleSelector:style') return respond(i, buildAppearance(i.guild));
+    const rolePicker = parseRolePickerId(id);
+    if (rolePicker?.baseId === 'admin:roleSelector:anchor') {
+      if (rolePicker.kind === 'page') return respond(i, buildAppearance(i.guild, rolePicker.page));
+      const roleId = i.values?.[0] && i.values[0] !== '__none__' ? i.values[0] : null;
+      await roleSelector.setAnchorRole(i.guild, roleId, { managed: false, meta: { ...actor, action: 'admin:roleSelector:anchor' } });
+      return respond(i, buildAppearance(i.guild, rolePicker.page));
+    }
     if (id === 'admin:roleSelector:styleOpen') { await i.showModal(styleModal(roleSelector.getSection(i.guildId))); return true; }
     if (id === 'admin:roleSelector:styleSubmit') {
       roleSelector.updateSection(i.guildId, (section) => ({ ...section, style: { ...section.style, format: i.fields.getTextInputValue('format'), icon: i.fields.getTextInputValue('icon'), separator: i.fields.getTextInputValue('separator') || '|' } }), { ...actor, action: id });
       await roleSelector.syncManagedRoleAppearance(i.guild); await syncPanels(i.guild);
       return i.reply({ content: '✅ Role appearance updated.', ...buildAppearance(i.guild), flags: 64 });
     }
-    if (id === 'admin:roleSelector:anchor') { await roleSelector.setAnchorRole(i.guild, i.values?.[0] || null, { managed: false, meta: { ...actor, action: id } }); return respond(i, buildAppearance(i.guild)); }
     if (id === 'admin:roleSelector:togglePlacement' || id === 'admin:roleSelector:toggleGrouped') {
       roleSelector.updateSection(i.guildId, (section) => ({ ...section, style: { ...section.style, ...(id.endsWith('togglePlacement') ? { placement: section.style.placement === 'above' ? 'below' : 'above' } : { keepGrouped: !section.style.keepGrouped }) } }), { ...actor, action: id });
       await roleSelector.syncManagedRoleHierarchy(i.guild); await syncPanels(i.guild); return respond(i, buildAppearance(i.guild));
