@@ -139,7 +139,46 @@ function searchModal() { return new ModalBuilder().setCustomId('admin:module:emo
 function urlImportModal() { return new ModalBuilder().setCustomId('admin:module:emojis:import-url-submit').setTitle('Add Emoji from Link').addComponents(row(new TextInputBuilder().setCustomId('imageUrl').setLabel('Image link').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(1000)), row(new TextInputBuilder().setCustomId('name').setLabel('Emoji name (optional)').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(32))); }
 function pickerSearchModal() { return new ModalBuilder().setCustomId('admin:module:emojis:picker-search-submit').setTitle('Search Emojis').addComponents(row(new TextInputBuilder().setCustomId('query').setLabel('Name or keyword').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(80))); }
 function bulkUploadModal() { const upload = new FileUploadBuilder().setCustomId('files').setMinValues(1).setMaxValues(10).setRequired(true); return new ModalBuilder().setCustomId('admin:module:emojis:bulk-submit').setTitle('Upload Emoji Images').addComponents(new LabelBuilder().setLabel('Choose your images').setDescription('Upload up to 10 images. Goliath will prepare them automatically.').setFileUploadComponent(upload)); }
-function searchResultsPanel(results, query) { const clean = Array.isArray(results) ? results.slice(0, 25) : []; const components = []; if (clean.length) components.push(row(new StringSelectMenuBuilder().setCustomId('admin:module:emojis:import').setPlaceholder('Choose an emoji to add').addOptions(clean.map((entry) => ({ label: String(entry.title || entry.slug || `Emoji ${entry.id}`).slice(0, 100), value: String(entry.id), description: String(entry.category || 'Emoji').slice(0, 100) }))))); components.push(row(button('admin:module:emojis:search-open', '🔎 Search Again', ButtonStyle.Primary))); components.push(row(button('admin:module:emojis:add', '⬅️ Back to Add Emojis', ButtonStyle.Secondary))); return { embeds: [new EmbedBuilder().setColor(PANEL_COLOR).setTitle('🔎 Search Results').setDescription(clean.length ? `Found **${clean.length}** result(s) for **${String(query).slice(0, 80)}**. Choose one below to add it to this server.` : 'No matching emojis were found. Try a different search.')], components }; }
+
+function cleanSearchName(entry) {
+  return String(entry?.title || entry?.slug || 'Emoji').replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+function cleanSearchCategory(entry) {
+  const category = String(entry?.category || '').trim();
+  return category && !/^\d+$/.test(category) ? category : 'Online emoji';
+}
+function searchResultsPanel(results, query) {
+  const clean = Array.isArray(results) ? results.slice(0, 25) : [];
+  const components = [];
+  if (clean.length) {
+    components.push(row(new StringSelectMenuBuilder().setCustomId('admin:module:emojis:import').setPlaceholder('Choose an emoji to preview').addOptions(clean.map((entry) => ({
+      label: cleanSearchName(entry).slice(0, 100),
+      value: String(entry.id),
+      description: cleanSearchCategory(entry).slice(0, 100),
+    })))));
+  }
+  components.push(row(button('admin:module:emojis:search-open', '🔎 Search Again', ButtonStyle.Primary)));
+  components.push(row(button('admin:module:emojis:add', '⬅️ Back', ButtonStyle.Secondary)));
+  return { embeds: [new EmbedBuilder().setColor(PANEL_COLOR).setTitle('🔎 Search Results').setDescription(clean.length ? `Found **${clean.length}** result(s) for **${String(query).slice(0, 80)}**. Choose one to preview it before adding.` : 'No matching emojis were found. Try a different search.')], components };
+}
+function searchPreviewPanel(entry) {
+  const name = cleanSearchName(entry);
+  const imageUrl = emojiApi.assetUrl(entry);
+  const embed = new EmbedBuilder().setColor(PANEL_COLOR).setTitle(`👁️ ${name}`).setDescription([
+    `**Name:** ${name}`,
+    `**Type:** ${cleanSearchCategory(entry)}`,
+    '',
+    'Check the image below, then choose whether to add it to this server.',
+  ].join('\n'));
+  if (imageUrl) embed.setImage(imageUrl);
+  return {
+    embeds: [embed],
+    components: [
+      row(button(`admin:module:emojis:import-confirm:${entry.id}`, '✅ Add This Emoji', ButtonStyle.Success), button('admin:module:emojis:search-open', '🔎 Search Again', ButtonStyle.Secondary)),
+      row(button('admin:module:emojis:add', '⬅️ Back', ButtonStyle.Secondary)),
+    ],
+  };
+}
 
 async function sendPanel(interaction, data) { if (interaction.deferred || interaction.replied) return interaction.editReply(data); if (interaction.isModalSubmit?.()) return interaction.reply({ ...data, flags: MessageFlags.Ephemeral }); return interaction.update(data); }
 
@@ -164,7 +203,8 @@ async function handleDiscordInteraction(interaction) {
   if (id === 'admin:module:emojis:search-submit' && interaction.isModalSubmit?.()) { if (!emojiStore.getSection(guildId).enabled) throw new Error('Turn on Emoji Studio first.'); const query = interaction.fields.getTextInputValue('query'); await sendPanel(interaction, searchResultsPanel(await emojiApi.search(query, 25), query)); return true; }
   if (id === 'admin:module:emojis:picker-search-submit' && interaction.isModalSubmit?.()) { const query = interaction.fields.getTextInputValue('query'); await sendPanel(interaction, pickerPanel(await discordOverview(interaction), interaction, query)); return true; }
   if (id === 'admin:module:emojis:import-url-submit' && interaction.isModalSubmit?.()) { if (!emojiStore.getSection(guildId).enabled) throw new Error('Turn on Emoji Studio first.'); await interaction.deferReply({ flags: MessageFlags.Ephemeral }); const result = await emojis.importFromUrl(interaction.client, interaction.fields.getTextInputValue('imageUrl'), interaction.fields.getTextInputValue('name') || null); emojiStore.setFavourite(guildId, result.emoji.id, true, { actorId: interaction.user?.id, action: 'emoji_url_import' }); await interaction.editReply(await buildDiscordPanel(interaction, `${result.created ? '✅ Added' : '✅ Reused'} :${result.emoji.name}: from link.`)); return true; }
-  if (id === 'admin:module:emojis:import' && interaction.isStringSelectMenu?.()) { if (!emojiStore.getSection(guildId).enabled) throw new Error('Turn on Emoji Studio first.'); await interaction.deferUpdate(); const result = await emojis.importFromEmojiGG(interaction.client, interaction.values?.[0]); emojiStore.setFavourite(guildId, result.emoji.id, true, { actorId: interaction.user?.id, action: 'emoji_discord_import' }); await interaction.editReply(await buildDiscordPanel(interaction, `${result.created ? '✅ Added' : '✅ Reused'} :${result.emoji.name}: and added it to this server.`)); return true; }
+  if (id === 'admin:module:emojis:import' && interaction.isStringSelectMenu?.()) { if (!emojiStore.getSection(guildId).enabled) throw new Error('Turn on Emoji Studio first.'); const entry = await emojiApi.findById(interaction.values?.[0]); if (!entry) throw new Error('That emoji could not be found anymore. Try searching again.'); await sendPanel(interaction, searchPreviewPanel(entry)); return true; }
+  if (id.startsWith('admin:module:emojis:import-confirm:')) { if (!emojiStore.getSection(guildId).enabled) throw new Error('Turn on Emoji Studio first.'); const emojiGgId = id.split(':').pop(); await interaction.deferUpdate(); const result = await emojis.importFromEmojiGG(interaction.client, emojiGgId); emojiStore.setFavourite(guildId, result.emoji.id, true, { actorId: interaction.user?.id, action: 'emoji_discord_import' }); await interaction.editReply(await buildDiscordPanel(interaction, `${result.created ? '✅ Added' : '✅ Reused'} :${result.emoji.name}: and added it to this server.`)); return true; }
   if (id === 'admin:module:emojis:bank-toggle' && interaction.isStringSelectMenu?.()) { const emojiId = String(interaction.values?.[0] || ''); const overview = await discordOverview(interaction); if ((overview.core || []).some((emoji) => String(emoji.id) === emojiId)) throw new Error('Built-in emojis are always available and cannot be changed here.'); const current = emojiStore.getSection(guildId); emojiStore.setFavourite(guildId, emojiId, !current.favourites.includes(emojiId), { actorId: interaction.user?.id, action: 'emoji_discord_select' }); await sendPanel(interaction, bankPanel(await discordOverview(interaction), interaction)); return true; }
   if (id === 'admin:module:emojis:picker-select' && interaction.isStringSelectMenu?.()) { const overview = await discordOverview(interaction); const emoji = (overview.catalog || []).find((entry) => String(entry.id) === String(interaction.values?.[0])); if (!emoji) throw new Error('Emoji no longer exists.'); const shortcode = emoji.core ? emoji.alias : (emoji.aliases?.[0] || emoji.name); emojiStore.touchRecent(guildId, emoji.id); await sendPanel(interaction, { embeds: [new EmbedBuilder().setColor(PANEL_COLOR).setTitle('👁️ Emoji Preview').setDescription([emoji.mention, '', `**Type this:** \`:${shortcode}:\``, `**Category:** ${emoji.category}`, `**Tags:** ${(emoji.tags || []).join(', ') || 'none'}`, `**Used:** ${emoji.usage?.count || 0} time(s)`].join('\n'))], components: [row(button('admin:module:emojis:picker', '⬅️ Back to Preview', ButtonStyle.Secondary))] }); return true; }
   if (id === 'admin:module:emojis:bulk-submit' && interaction.isModalSubmit?.()) { if (!emojiStore.getSection(guildId).enabled) throw new Error('Turn on Emoji Studio first.'); const uploads = interaction.fields.getUploadedFiles('files', true); await interaction.deferReply({ flags: MessageFlags.Ephemeral }); const lines = []; for (const attachment of uploads.values()) { try { const response = await fetch(attachment.url, { headers: { 'User-Agent': 'KSJHub-Goliath/1.0' }, timeout: 15000 }); if (!response.ok) throw new Error(`download failed (${response.status})`); const source = await response.buffer(); const prepared = await emojiProcessor.prepareEmojiBuffer(source, { size: 512, padding: 32, maxBytes: emojiApi.MAX_BYTES }); const name = String(attachment.name || 'emoji').replace(/\.[a-z0-9]+$/i, ''); const result = await emojis.createStudioEmoji(interaction.client, prepared.buffer, name); emojiStore.setFavourite(guildId, result.emoji.id, true, { actorId: interaction.user?.id, action: 'emoji_bulk_import' }); lines.push(`✅ ${attachment.name} → \`:${result.emoji.name}:\``); } catch (error) { lines.push(`❌ ${attachment.name} — ${String(error?.message || error).slice(0, 120)}`); } } await interaction.editReply({ embeds: [new EmbedBuilder().setColor(PANEL_COLOR).setTitle('📤 Upload Complete').setDescription(lines.join('\n').slice(0, 4000))], components: [row(button('admin:module:emojis:guild', '⭐ Manage Emojis', ButtonStyle.Secondary)), row(button('admin:module:emojis:add', '➕ Add More Emojis', ButtonStyle.Primary))] }); return true; }
