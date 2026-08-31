@@ -105,10 +105,18 @@ function timeoutMs() {
   return Number.isFinite(value) && value >= 1000 ? value : 30000;
 }
 
-async function putGuildCommands(rest, clientId, guildId, publicCommands, ownerCommand, privateGuildId, dryRun) {
+function assertOwnerCommandPrivate(ownerCommand) {
+  if (!ownerCommand) return;
+  const permissions = ownerCommand.default_member_permissions;
+  if (String(permissions) !== '0') {
+    throw new Error('Refusing to sync /owner without default_member_permissions=0. Owner command must remain hidden by default.');
+  }
+}
+
+async function putGuildCommands(rest, clientId, guildId, publicCommands, ownerCommand, includeOwner, dryRun) {
   const body = [
     ...publicCommands,
-    ...(guildId === privateGuildId && ownerCommand ? [ownerCommand] : []),
+    ...(includeOwner && ownerCommand ? [ownerCommand] : []),
   ];
 
   if (dryRun) {
@@ -131,6 +139,7 @@ async function putGlobalCommands(rest, clientId, commands, dryRun) {
 
 async function upsertPrivateOwnerCommand(rest, clientId, privateGuildId, ownerCommand, dryRun = false) {
   if (!privateGuildId || !ownerCommand) return false;
+  assertOwnerCommandPrivate(ownerCommand);
 
   const existing = await rest.get(Routes.applicationGuildCommands(clientId, privateGuildId));
   const current = (existing || []).find((command) => command?.name === 'owner');
@@ -165,15 +174,16 @@ async function cleanupStaleGlobalCommands(rest, clientId, dryRun = false) {
   return stale.map((command) => command.name);
 }
 
-async function cleanupPrivateCommandScope(rest, clientId, guildIds, privateGuildId, dryRun = false) {
-  const scopes = uniqueGuildIds([guildIds, privateGuildId]);
+async function cleanupPrivateCommandScope(rest, clientId, guildIds, allowedOwnerGuildIds = [], dryRun = false) {
+  const allowedOwnerGuilds = new Set(uniqueGuildIds([allowedOwnerGuildIds]));
+  const scopes = uniqueGuildIds([guildIds, [...allowedOwnerGuilds]]);
   for (const guildId of scopes) {
     if (!guildId) continue;
     const commands = await rest.get(Routes.applicationGuildCommands(clientId, guildId));
     const stale = (commands || []).filter((command) => {
       const name = String(command?.name || '');
       if (name === 'commandcenter') return true;
-      return name === 'owner' && guildId !== privateGuildId;
+      return name === 'owner' && !allowedOwnerGuilds.has(guildId);
     });
     for (const command of stale) {
       if (dryRun) {
@@ -206,6 +216,8 @@ async function syncCommands() {
   const commands = loadCanonicalCommands();
   const publicCommands = commands.filter((command) => PUBLIC_COMMAND_NAMES.has(command.name));
   const ownerCommand = mode === 'dev' ? commands.find((command) => command.name === 'owner') || null : null;
+  if (ownerCommand) assertOwnerCommandPrivate(ownerCommand);
+
   const guildIds = configuredGuildIds(mode);
   const privateGuildId = commandCenterGuildId();
   const rest = new REST({ version: '10', timeout: timeoutMs() }).setToken(token);
@@ -213,18 +225,20 @@ async function syncCommands() {
 
   if (commandMode === 'global') {
     await putGlobalCommands(rest, clientId, publicCommands, dryRun);
+    const allowedOwnerGuildIds = ownerCommand && privateGuildId ? [privateGuildId] : [];
     if (ownerCommand) await upsertPrivateOwnerCommand(rest, clientId, privateGuildId, ownerCommand, dryRun);
-    await cleanupPrivateCommandScope(rest, clientId, guildIds, privateGuildId, dryRun);
+    await cleanupPrivateCommandScope(rest, clientId, uniqueGuildIds([guildIds, privateGuildId]), allowedOwnerGuildIds, dryRun);
     removedGlobalCommands = await cleanupStaleGlobalCommands(rest, clientId, dryRun);
   } else {
     if (!guildIds.length) throw new Error(`No guild IDs configured for ${mode}`);
+    const allowedOwnerGuildIds = ownerCommand ? uniqueGuildIds([guildIds, privateGuildId]) : [];
     for (const guildId of guildIds) {
-      await putGuildCommands(rest, clientId, guildId, publicCommands, ownerCommand, privateGuildId, dryRun);
+      await putGuildCommands(rest, clientId, guildId, publicCommands, ownerCommand, Boolean(ownerCommand), dryRun);
     }
-    if (ownerCommand && !guildIds.includes(privateGuildId)) {
+    if (ownerCommand && privateGuildId && !guildIds.includes(privateGuildId)) {
       await upsertPrivateOwnerCommand(rest, clientId, privateGuildId, ownerCommand, dryRun);
     }
-    await cleanupPrivateCommandScope(rest, clientId, guildIds, privateGuildId, dryRun);
+    await cleanupPrivateCommandScope(rest, clientId, uniqueGuildIds([guildIds, privateGuildId]), allowedOwnerGuildIds, dryRun);
     removedGlobalCommands = await cleanupStaleGlobalCommands(rest, clientId, dryRun);
   }
 
@@ -235,6 +249,7 @@ async function syncCommands() {
     guildIds,
     commands: publicCommands.map((command) => command.name),
     privateCommands: ownerCommand ? ['owner'] : [],
+    ownerCommandDefaultDenied: ownerCommand ? String(ownerCommand.default_member_permissions) === '0' : null,
     removedGlobalCommands,
   };
 }
@@ -258,5 +273,6 @@ module.exports = {
   cleanupStaleGlobalCommands,
   cleanupPrivateCommandScope,
   upsertPrivateOwnerCommand,
+  assertOwnerCommandPrivate,
   syncCommands,
 };
