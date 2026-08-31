@@ -7,13 +7,17 @@ const {
   EmbedBuilder,
   Events,
   MessageFlags,
+  ModalBuilder,
   SlashCommandBuilder,
+  TextInputBuilder,
+  TextInputStyle,
 } = require('discord.js');
 
 const { normalizeBotMode } = require('../config/botModes');
 const security = require('../core/security/protection/core');
 const devOverride = require('./dev/DevOverrideManager');
 const testSecurity = require('./dev/testsecurity');
+const duplicator = require('./dev/duplicator');
 const auditEvents = require('./auditIntelligence/auditEvents');
 
 const OWNER_PREFIX = 'ownerpanel:';
@@ -45,7 +49,7 @@ function ownerHomePayload(interaction, notice = null) {
     .setColor(0x5865F2)
     .setTitle('👑 Goliath Owner Control Panel')
     .setDescription([
-      'Private owner-only controls for Goliath development, security testing and the Command Center.',
+      'Private owner-only controls for Goliath development, security testing, server tooling and the Command Center.',
       '',
       notice ? `**Status:** ${notice}` : null,
     ].filter(Boolean).join('\n'))
@@ -55,7 +59,7 @@ function ownerHomePayload(interaction, notice = null) {
       { name: 'Panel Visibility', value: 'Ephemeral • owner ID checked on every action', inline: true },
       { name: 'DEV Override', value: isDev ? (devState.enabled ? '🟢 Enabled' : '🔴 Disabled') : '⚪ DEV only', inline: true },
       { name: 'DEV Billing Unlock', value: isDev ? (billing.active ? `🟢 ${billing.plan || 'enabled'}` : '🔴 Disabled') : '⚪ DEV only', inline: true },
-      { name: 'Security Tests', value: isDev ? '🟢 Available' : '⚪ DEV only', inline: true },
+      { name: 'Owner Tools', value: isDev ? '🟢 Security • Server Tools • Command Center' : '⚪ DEV only', inline: true },
     )
     .setFooter({ text: 'Goliath Owner • OWNER_IDS protected' })
     .setTimestamp();
@@ -71,6 +75,12 @@ function ownerHomePayload(interaction, notice = null) {
       .setCustomId(`${OWNER_PREFIX}security`)
       .setLabel('Security Tests')
       .setEmoji('🛡️')
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(!isDev),
+    new ButtonBuilder()
+      .setCustomId(`${OWNER_PREFIX}server-tools`)
+      .setLabel('Server Tools')
+      .setEmoji('🧰')
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(!isDev),
     new ButtonBuilder()
@@ -92,6 +102,81 @@ function ownerHomePayload(interaction, notice = null) {
   return { embeds: [embed], components: [primary, navigation] };
 }
 
+function serverToolsPayload() {
+  const embed = new EmbedBuilder()
+    .setColor(0x5865F2)
+    .setTitle('🧰 Owner Server Tools')
+    .setDescription([
+      'The original owner-only server developer tools are consolidated here.',
+      '',
+      '**Copy** — copy selected server structure/settings.',
+      '**Analyse** — compare a source and destination server.',
+      '**Export** — save a server as a reusable Duplicator template.',
+      '**Build** — build from a saved/default template.',
+    ].join('\n'))
+    .setFooter({ text: 'DEV only • Duplicator retains its own owner and safety checks' });
+
+  const tools = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`${OWNER_PREFIX}server-copy`).setLabel('Copy').setEmoji('📋').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId(`${OWNER_PREFIX}server-analyse`).setLabel('Analyse').setEmoji('🔎').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId(`${OWNER_PREFIX}server-export`).setLabel('Export').setEmoji('📤').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId(`${OWNER_PREFIX}server-build`).setLabel('Build').setEmoji('🏗️').setStyle(ButtonStyle.Secondary)
+  );
+  const navigation = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`${OWNER_PREFIX}home`).setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary)
+  );
+  return { embeds: [embed], components: [tools, navigation] };
+}
+
+function analyseModal() {
+  return new ModalBuilder()
+    .setCustomId(`${OWNER_PREFIX}server-analyse-submit`)
+    .setTitle('Analyse Servers')
+    .addComponents(
+      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('source_server').setLabel('Source server ID').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(25)),
+      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('destination_server').setLabel('Destination server ID').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(25))
+    );
+}
+
+function exportModal() {
+  return new ModalBuilder()
+    .setCustomId(`${OWNER_PREFIX}server-export-submit`)
+    .setTitle('Export Server Template')
+    .addComponents(
+      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('source_server').setLabel('Source server ID (blank = current)').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(25)),
+      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('name').setLabel('Template name').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(80)),
+      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('template_id').setLabel('Template ID (optional)').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(60)),
+      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('version').setLabel('Version (optional)').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(30)),
+      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('description').setLabel('Description (optional)').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(100))
+    );
+}
+
+function readModalValue(interaction, key) {
+  try { return String(interaction.fields.getTextInputValue(key) || '').trim() || null; }
+  catch { return null; }
+}
+
+function withOwnerOptions(interaction, values = {}) {
+  const options = {
+    getString(name, required = false) {
+      const value = values[name] === undefined || values[name] === null ? null : String(values[name]);
+      if (required && !value) throw new Error(`Missing owner tool option: ${name}`);
+      return value;
+    },
+  };
+  return new Proxy(interaction, {
+    get(target, property) {
+      if (property === 'options') return options;
+      const value = Reflect.get(target, property, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+}
+
+async function runDuplicator(interaction, values) {
+  return duplicator.run(withOwnerOptions(interaction, values));
+}
+
 async function handleOwnerPanelInteraction(interaction) {
   const id = String(interaction?.customId || '');
   if (!id.startsWith(OWNER_PREFIX) && !id.startsWith('testsecurity:')) return false;
@@ -107,7 +192,7 @@ async function handleOwnerPanelInteraction(interaction) {
     return true;
   }
 
-  if (id === `${OWNER_PREFIX}refresh`) {
+  if (id === `${OWNER_PREFIX}home` || id === `${OWNER_PREFIX}refresh`) {
     await interaction.update(ownerHomePayload(interaction));
     return true;
   }
@@ -128,6 +213,51 @@ async function handleOwnerPanelInteraction(interaction) {
       return true;
     }
     await testSecurity.execute(interaction);
+    return true;
+  }
+
+  if (id === `${OWNER_PREFIX}server-tools`) {
+    if (!devOverride.isDevMode()) {
+      await interaction.update(ownerHomePayload(interaction, 'Server developer tools are DEV only.'));
+      return true;
+    }
+    await interaction.update(serverToolsPayload());
+    return true;
+  }
+
+  if (id === `${OWNER_PREFIX}server-copy`) {
+    await runDuplicator(interaction, { action: 'copy' });
+    return true;
+  }
+  if (id === `${OWNER_PREFIX}server-build`) {
+    await runDuplicator(interaction, { action: 'build' });
+    return true;
+  }
+  if (id === `${OWNER_PREFIX}server-analyse`) {
+    await interaction.showModal(analyseModal());
+    return true;
+  }
+  if (id === `${OWNER_PREFIX}server-export`) {
+    await interaction.showModal(exportModal());
+    return true;
+  }
+  if (id === `${OWNER_PREFIX}server-analyse-submit`) {
+    await runDuplicator(interaction, {
+      action: 'analyse',
+      source_server: readModalValue(interaction, 'source_server'),
+      destination_server: readModalValue(interaction, 'destination_server'),
+    });
+    return true;
+  }
+  if (id === `${OWNER_PREFIX}server-export-submit`) {
+    await runDuplicator(interaction, {
+      action: 'export',
+      source_server: readModalValue(interaction, 'source_server'),
+      name: readModalValue(interaction, 'name'),
+      template_id: readModalValue(interaction, 'template_id'),
+      version: readModalValue(interaction, 'version'),
+      description: readModalValue(interaction, 'description'),
+    });
     return true;
   }
 
