@@ -287,9 +287,9 @@ function legacyRoleState(interaction, baseId, defaults = null) {
   let state = legacyRoleSelections.get(key);
   const isSameSource = interaction?.__goliathLegacyRoleBase === baseId;
   if (Array.isArray(defaults) && defaults.length) {
-    state = { ids: new Set(defaults.map(String)), touchedAt: Date.now() };
+    state = { ids: new Set(defaults.map(String)), maxValues: state?.maxValues || null, touchedAt: Date.now() };
   } else if (!state || (!isSameSource && Array.isArray(defaults))) {
-    state = { ids: new Set(), touchedAt: Date.now() };
+    state = { ids: new Set(), maxValues: state?.maxValues || null, touchedAt: Date.now() };
   } else {
     state.touchedAt = Date.now();
   }
@@ -316,7 +316,8 @@ function convertRoleComponent(component, interaction, requestedPage) {
   const defaults = native ? nativeRoleDefaults(component) : null;
   const state = legacyRoleState(interaction, baseId, defaults);
   const roles = guildRolesByHierarchy(interaction.guild).slice(page * LEGACY_ROLE_PAGE_SIZE, (page + 1) * LEGACY_ROLE_PAGE_SIZE);
-  const maxRequested = Math.max(1, Number(component?.max_values ?? 1) || 1);
+  const maxRequested = Math.max(1, Number(component?.max_values ?? state.maxValues ?? 1) || 1);
+  if (native || !state.maxValues) state.maxValues = maxRequested;
   const maxValues = Math.max(1, Math.min(maxRequested, roles.length || 1));
   const minRequested = Math.max(0, Number(component?.min_values ?? 1) || 0);
   const minValues = Math.min(minRequested, maxValues);
@@ -395,20 +396,22 @@ function prepareLegacyRoleInteraction(interaction) {
     sourceComponent = (rowData?.components || []).find((component) => componentId(component) === interaction.customId);
     if (sourceComponent) break;
   }
-  const maxValues = Math.max(1, Number(sourceComponent?.max_values ?? 1) || 1);
   const state = legacyRoleState(interaction, parsed.baseId, null);
+  const maxValues = Math.max(1, Number(state.maxValues ?? sourceComponent?.max_values ?? 1) || 1);
   const selectedNow = (interaction.values || []).filter((id) => id !== '__none__').map(String);
   if (maxValues <= 1) {
-    state.ids = new Set(selectedNow);
+    state.ids = new Set(selectedNow.slice(0, 1));
   } else {
     const visible = new Set(roleIdsOnLegacyPage(interaction.guild, parsed.page));
     for (const id of visible) state.ids.delete(id);
     for (const id of selectedNow) state.ids.add(id);
   }
   state.touchedAt = Date.now();
-  legacyRoleSelections.set(legacyRoleKey(interaction, parsed.baseId), state);
   const ordered = guildRolesByHierarchy(interaction.guild).map((role) => role.id).filter((id) => state.ids.has(id));
-  interaction.values = ordered;
+  const limited = ordered.slice(0, maxValues);
+  state.ids = new Set(limited);
+  legacyRoleSelections.set(legacyRoleKey(interaction, parsed.baseId), state);
+  interaction.values = limited;
   interaction.__goliathLegacyRolePage = parsed.page;
   interaction.__goliathLegacyRoleBase = parsed.baseId;
   interaction.customId = parsed.baseId;
