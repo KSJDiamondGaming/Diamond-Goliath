@@ -23,93 +23,104 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - name: Apply moderation layout
+      - name: Apply final moderation layout
         shell: bash
         run: |
           set -euo pipefail
-          cat > /tmp/apply-mod-layout.js <<'NODE'
+          node <<'NODE'
           const fs = require('node:fs');
           const path = 'src/core/administration/mod/panel.js';
           let source = fs.readFileSync(path, 'utf8');
 
-          function replaceFunction(name, next, followingName) {
-            const start = source.indexOf(`function ${name}(`);
-            if (start < 0) throw new Error(`${name}: start not found`);
-            const end = source.indexOf(`function ${followingName}(`, start);
-            if (end < 0) throw new Error(`${name}: end marker ${followingName} not found`);
-            source = source.slice(0, start) + next.trimEnd() + '\n' + source.slice(end);
+          function replaceBetween(startNeedle, endNeedle, replacement, label) {
+            const start = source.indexOf(startNeedle);
+            if (start < 0) throw new Error(`${label}: start not found`);
+            const end = source.indexOf(endNeedle, start);
+            if (end < 0) throw new Error(`${label}: end not found`);
+            source = source.slice(0, start) + replacement.trimEnd() + '\n' + source.slice(end);
           }
 
-          replaceFunction('buildDashboardNav', `function buildDashboardNav(targetId, activeView, member, guild) {
-            const active = normalizeView(activeView);
-            const id = targetId || 'none';
-            const rows = [];
+          replaceBetween(
+            'function buildDashboardNav(',
+            'function buildUserSelectRow(',
+            `function buildDashboardNav(targetId, activeView, member, guild) {
+              const active = normalizeView(activeView);
+              const id = targetId || 'none';
+              const rows = [];
 
-            // The main moderation workspace owns its action/tool rows. Sub-views keep
-            // a compact route back to Moderation plus the other useful member view.
-            if (active !== 'actions') {
-              const candidates = [
-                ['actions', '⚡ Moderation'],
-                ['intelligence', '🧠 Intelligence'],
-                ['cases', '📁 Cases'],
-              ]
-                .filter(([view]) => canViewDashboardSection(member, guild, view))
-                .filter(([view]) => view !== active);
+              if (active !== 'actions') {
+                const candidates = [
+                  ['actions', '⚡ Moderation'],
+                  ['intelligence', '🧠 Intelligence'],
+                  ['cases', '📁 Cases'],
+                ]
+                  .filter(([view]) => canViewDashboardSection(member, guild, view))
+                  .filter(([view]) => view !== active);
 
-              const buttons = candidates.map(([view, label]) => new ButtonBuilder()
-                .setCustomId(\`mod_dashboard:\${id}:\${view}\`)
-                .setLabel(label)
-                .setStyle(ButtonStyle.Secondary)
-                .setDisabled(!targetId));
-              if (buttons.length) rows.push(new ActionRowBuilder().addComponents(buttons));
-            }
+                const buttons = candidates.map(([view, label]) => new ButtonBuilder()
+                  .setCustomId(\`mod_dashboard:\${id}:\${view}\`)
+                  .setLabel(label)
+                  .setStyle(ButtonStyle.Secondary)
+                  .setDisabled(!targetId));
+                if (buttons.length) rows.push(new ActionRowBuilder().addComponents(buttons));
+              }
 
-            rows.push(new ActionRowBuilder().addComponents(
-              new ButtonBuilder().setCustomId('admin:home').setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary)
-            ));
-            return rows;
-          }`, 'buildUserSelectRow');
+              rows.push(new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId('admin:home').setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary)
+              ));
+              return rows;
+            }`,
+            'dashboard navigation'
+          );
 
-          replaceFunction('buildActionRows', `function buildActionRows(target, stats, member, guild) {
-            const id = target?.id || 'none';
-            const p = actionPermissions(member, guild);
-            const disabled = !target;
+          replaceBetween(
+            'function buildActionRows(',
+            'function buildIntelligenceRows(',
+            `function buildActionRows(target, stats, member, guild) {
+              const id = target?.id || 'none';
+              const p = actionPermissions(member, guild);
+              const disabled = !target;
 
-            const row1 = [];
-            if (canViewDashboardSection(member, guild, 'intelligence')) row1.push(new ButtonBuilder().setCustomId(\`mod_dashboard:\${id}:intelligence\`).setLabel('🧠 Intelligence').setStyle(ButtonStyle.Secondary).setDisabled(disabled));
-            if (canViewDashboardSection(member, guild, 'cases')) row1.push(new ButtonBuilder().setCustomId(\`mod_dashboard:\${id}:cases\`).setLabel('📁 Cases').setStyle(ButtonStyle.Secondary).setDisabled(disabled));
-            if (p.timeout) row1.push(createSecondaryButton(\`mod_open_timeout:\${id}\`, 'Timeout', getEmoji('TIMEOUT', '⏳')).setDisabled(disabled));
-            if (p.warn) row1.push(createSecondaryButton(\`mod_open_warn:\${id}\`, 'Warn', getEmoji('WARNING', '⚠️')).setDisabled(disabled));
+              const row1 = [];
+              if (canViewDashboardSection(member, guild, 'intelligence')) row1.push(new ButtonBuilder().setCustomId(\`mod_dashboard:\${id}:intelligence\`).setLabel('🧠 Intelligence').setStyle(ButtonStyle.Secondary).setDisabled(disabled));
+              if (canViewDashboardSection(member, guild, 'cases')) row1.push(new ButtonBuilder().setCustomId(\`mod_dashboard:\${id}:cases\`).setLabel('📁 Cases').setStyle(ButtonStyle.Secondary).setDisabled(disabled));
+              if (p.timeout) row1.push(createSecondaryButton(\`mod_open_timeout:\${id}\`, 'Timeout', getEmoji('TIMEOUT', '⏳')).setDisabled(disabled));
+              if (p.warn) row1.push(createSecondaryButton(\`mod_open_warn:\${id}\`, 'Warn', getEmoji('WARNING', '⚠️')).setDisabled(disabled));
 
-            const row2 = [];
-            if (p.kick) row2.push(createDangerButton(\`mod_open_kick:\${id}\`, 'Kick', getEmoji('KICK', '👢')).setDisabled(disabled));
-            if (p.ban) row2.push(createDangerButton(\`mod_open_ban:\${id}\`, 'Ban', getEmoji('BAN', '🔨')).setDisabled(disabled));
-            if (p.removeTimeout) row2.push(createSecondaryButton(\`mod_remove_timeout:\${id}\`, 'Clear Timeout', getEmoji('SUCCESS', '✅')).setDisabled(disabled || !targetHasActiveTimeout(target)));
-            if (p.removeWarning) row2.push(createSecondaryButton(\`mod_remove_warning:\${id}\`, 'Remove Warn', getEmoji('DELETE', '🗑️')).setDisabled(disabled || Number(stats?.warningCount || 0) <= 0));
+              const row2 = [];
+              if (p.kick) row2.push(createDangerButton(\`mod_open_kick:\${id}\`, 'Kick', getEmoji('KICK', '👢')).setDisabled(disabled));
+              if (p.ban) row2.push(createDangerButton(\`mod_open_ban:\${id}\`, 'Ban', getEmoji('BAN', '🔨')).setDisabled(disabled));
+              if (p.removeTimeout) row2.push(createSecondaryButton(\`mod_remove_timeout:\${id}\`, 'Clear Timeout', getEmoji('SUCCESS', '✅')).setDisabled(disabled || !targetHasActiveTimeout(target)));
+              if (p.removeWarning) row2.push(createSecondaryButton(\`mod_remove_warning:\${id}\`, 'Remove Warn', getEmoji('DELETE', '🗑️')).setDisabled(disabled || Number(stats?.warningCount || 0) <= 0));
 
-            const row3 = [];
-            if (canUseModAction(member, guild, 'manage_presets')) row3.push(new ButtonBuilder().setCustomId(\`mod_presets:\${id}\`).setLabel('📋 Presets').setStyle(ButtonStyle.Secondary));
-            if (canUseModAction(member, guild, 'view_analytics')) row3.push(new ButtonBuilder().setCustomId(\`mod_dashboard:\${id}:analytics\`).setLabel('📊 Analytics').setStyle(ButtonStyle.Secondary));
-            if (canUseModAction(member, guild, 'export_cases')) row3.push(new ButtonBuilder().setCustomId(\`mod_export_cases:\${id}\`).setLabel('📤 Export').setStyle(ButtonStyle.Secondary));
+              const row3 = [];
+              if (canUseModAction(member, guild, 'manage_presets')) row3.push(new ButtonBuilder().setCustomId(\`mod_presets:\${id}\`).setLabel('📋 Presets').setStyle(ButtonStyle.Secondary));
+              if (canUseModAction(member, guild, 'view_analytics')) row3.push(new ButtonBuilder().setCustomId(\`mod_dashboard:\${id}:analytics\`).setLabel('📊 Analytics').setStyle(ButtonStyle.Secondary));
+              if (canUseModAction(member, guild, 'export_cases')) row3.push(new ButtonBuilder().setCustomId(\`mod_export_cases:\${id}\`).setLabel('📤 Export').setStyle(ButtonStyle.Secondary));
 
-            return [buttonRow(row1), buttonRow(row2), buttonRow(row3)].filter(Boolean);
-          }`, 'buildIntelligenceRows');
+              return [buttonRow(row1), buttonRow(row2), buttonRow(row3)].filter(Boolean);
+            }`,
+            'action rows'
+          );
 
           fs.writeFileSync(path, source);
           NODE
-          node /tmp/apply-mod-layout.js
-          rm -f /tmp/apply-mod-layout.js
+
+          grep -q "📋 Presets" src/core/administration/mod/panel.js
+          grep -q "📊 Analytics" src/core/administration/mod/panel.js
+          grep -q "📤 Export" src/core/administration/mod/panel.js
+          git rm .github/workflows/mod-layout-tools-once.yml
           node --check src/core/administration/mod/panel.js
           npm run syntax
           npm run imports
           npm run doctor
+
       - name: Commit clean source
         shell: bash
         run: |
           set -euo pipefail
           git config user.name "KSJHub"
           git config user.email "actions@users.noreply.github.com"
-          git rm .github/workflows/mod-layout-tools-once.yml
           git add src/core/administration/mod/panel.js
           git diff --cached --check
           git commit -m "refactor(mod): reorganize moderation controls and expose tools"
