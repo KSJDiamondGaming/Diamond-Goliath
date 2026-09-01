@@ -64,10 +64,7 @@ function mainEmbed(overview, interaction, notice = '') {
 async function buildDiscordPanel(interaction, notice = '') {
   const overview = await discordOverview(interaction);
   return { embeds: [mainEmbed(overview, interaction, notice)], components: [
-    row(
-      button('admin:module:emojis:add', '➕ Add Emojis', ButtonStyle.Primary).setDisabled(!overview.enabled),
-      button('admin:module:emojis:guild', '⭐ Manage Emojis', ButtonStyle.Primary),
-    ),
+    row(button('admin:module:emojis:add', '➕ Add Emojis', ButtonStyle.Primary).setDisabled(!overview.enabled), button('admin:module:emojis:guild', '⭐ Manage Emojis', ButtonStyle.Primary)),
     row(button('admin:studio:utilityStudio', '⬅️ Back', ButtonStyle.Secondary), button('admin:module:emojis:settings', '⚙️ Settings', ButtonStyle.Secondary)),
   ] };
 }
@@ -140,8 +137,7 @@ function managePanel(overview, interaction, selectedKey = '', notice = '') {
 
   const embed = new EmbedBuilder().setColor(PANEL_COLOR).setTitle('⭐ Manage Emojis').setDescription([
     `**Your emojis:** ${overview.guildCapacity.used}/${overview.guildCapacity.max}`,
-    `**Built-in emojis:** ${overview.coreCapacity.used}/${overview.coreCapacity.max} always available`,
-    '',
+    `**Built-in emojis:** ${overview.coreCapacity.used}/${overview.coreCapacity.max} always available`, '',
     ...previewLines,
     notice ? `\n${notice}` : '',
   ].filter(Boolean).join('\n')).setFooter({ text: `Requested by ${memberName(interaction)}` });
@@ -151,9 +147,29 @@ function managePanel(overview, interaction, selectedKey = '', notice = '') {
   const components = [];
   if (extraOptions.length) components.push(row(new StringSelectMenuBuilder().setCustomId('admin:module:emojis:manage-extra-select').setPlaceholder('Your & available emojis').addOptions(extraOptions)));
   if (coreOptions.length) components.push(row(new StringSelectMenuBuilder().setCustomId('admin:module:emojis:manage-core-select').setPlaceholder('Built-in emojis').addOptions(coreOptions)));
-  if (chosen && !isCore) components.push(row(chosenAdded ? button(`admin:module:emojis:manage-remove:${chosen.id}`, '➖ Remove from Server', ButtonStyle.Danger) : button(`admin:module:emojis:manage-add:${chosen.id}`, '➕ Add to Server', ButtonStyle.Success)));
+  if (chosen && !isCore) components.push(row(
+    chosenAdded ? button(`admin:module:emojis:manage-remove:${chosen.id}`, '➖ Remove from Server', ButtonStyle.Secondary) : button(`admin:module:emojis:manage-add:${chosen.id}`, '➕ Add to Server', ButtonStyle.Success),
+    button(`admin:module:emojis:delete-open:${chosen.id}`, '🗑️ Delete Emoji', ButtonStyle.Danger),
+  ));
   components.push(row(button('admin:module:emojis:panel', '⬅️ Back', ButtonStyle.Secondary)));
   return { embeds: [embed], components };
+}
+
+function deleteConfirmPanel(emoji, interaction) {
+  const name = String(emoji?.name || 'emoji');
+  const mention = emoji?.mention || `:${name}:`;
+  const embed = new EmbedBuilder().setColor(0xED4245).setTitle('🗑️ Delete Emoji?').setDescription([
+    `${mention}  **:${name}:**`, '',
+    'This permanently deletes this emoji from Goliath’s available emoji collection.',
+    'Servers will no longer be able to add it again unless the image is imported or uploaded again.', '',
+    '**Built-in emojis cannot be deleted.**',
+  ].join('\n')).setFooter({ text: `Requested by ${memberName(interaction)}` });
+  const previewUrl = emojiPreviewUrl(emoji);
+  if (previewUrl) embed.setThumbnail(previewUrl);
+  return { embeds: [embed], components: [
+    row(button(`admin:module:emojis:delete-confirm:${emoji.id}`, '🗑️ Delete Permanently', ButtonStyle.Danger), button(`admin:module:emojis:delete-cancel:${emoji.id}`, 'Cancel', ButtonStyle.Secondary)),
+    row(button('admin:module:emojis:guild', '⬅️ Back', ButtonStyle.Secondary)),
+  ] };
 }
 
 function searchModal() { return new ModalBuilder().setCustomId('admin:module:emojis:search-submit').setTitle('Search for Emojis').addComponents(row(new TextInputBuilder().setCustomId('query').setLabel('What emoji are you looking for?').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(80))); }
@@ -161,7 +177,7 @@ function urlImportModal() { return new ModalBuilder().setCustomId('admin:module:
 function bulkUploadModal() { const upload = new FileUploadBuilder().setCustomId('files').setMinValues(1).setMaxValues(10).setRequired(true); return new ModalBuilder().setCustomId('admin:module:emojis:bulk-submit').setTitle('Upload Emoji Images').addComponents(new LabelBuilder().setLabel('Choose your images').setDescription('Upload up to 10 images. Goliath will prepare them automatically.').setFileUploadComponent(upload)); }
 function cleanSearchName(entry) { return String(entry?.title || entry?.slug || 'Emoji').replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim(); }
 function cleanSearchCategory(entry) { const category = String(entry?.category || '').trim(); return category && !/^\d+$/.test(category) ? category : 'Online emoji'; }
-function searchResultsPanel(results, query) { const clean = Array.isArray(results) ? results.slice(0, 25) : []; const components = []; if (clean.length) components.push(row(new StringSelectMenuBuilder().setCustomId('admin:module:emojis:import').setPlaceholder('Choose an emoji to preview').addOptions(clean.map((entry) => ({ label: cleanSearchName(entry).slice(0, 100), value: String(entry.id), description: cleanSearchCategory(entry).slice(0, 100) }))))); components.push(row(button('admin:module:emojis:search-open', '🔎 Search Again', ButtonStyle.Primary))); components.push(row(button('admin:module:emojis:add', '⬅️ Back', ButtonStyle.Secondary))); return { embeds: [new EmbedBuilder().setColor(PANEL_COLOR).setTitle('🔎 Search Results').setDescription(clean.length ? `Found **${clean.length}** result(s) for **${String(query).slice(0, 80)}**. Choose one to preview it before adding.` : 'No matching emojis were found. Try a different search.')], components }; }
+function searchResultsPanel(results, query) { const clean = Array.isArray(results) ? results.slice(0, 25) : []; const components = []; if (clean.length) components.push(row(new StringSelectMenuBuilder().setCustomId('admin:module:emojis:import').setPlaceholder('Choose an emoji to preview').addOptions(clean.map((entry) => ({ label: cleanSearchName(entry).slice(0, 100), value: String(entry.id), description: cleanSearchCategory(entry).slice(0, 100) })))); components.push(row(button('admin:module:emojis:search-open', '🔎 Search Again', ButtonStyle.Primary))); components.push(row(button('admin:module:emojis:add', '⬅️ Back', ButtonStyle.Secondary))); return { embeds: [new EmbedBuilder().setColor(PANEL_COLOR).setTitle('🔎 Search Results').setDescription(clean.length ? `Found **${clean.length}** result(s) for **${String(query).slice(0, 80)}**. Choose one to preview it before adding.` : 'No matching emojis were found. Try a different search.')], components }; }
 function searchPreviewPanel(entry) { const name = cleanSearchName(entry); const embed = new EmbedBuilder().setColor(PANEL_COLOR).setTitle(`👁️ ${name}`).setDescription(`**Name:** ${name}\n\nCheck the image below, then choose whether to add it to this server.`); const imageUrl = emojiApi.assetUrl(entry); if (imageUrl) embed.setImage(imageUrl); return { embeds: [embed], components: [row(button(`admin:module:emojis:import-confirm:${entry.id}`, '✅ Add This Emoji', ButtonStyle.Success), button('admin:module:emojis:search-open', '🔎 Search Again', ButtonStyle.Secondary)), row(button('admin:module:emojis:add', '⬅️ Back', ButtonStyle.Secondary))] }; }
 function addedEmojiPanel(result, interaction) { const emoji = result?.emoji; const name = String(emoji?.name || 'emoji'); const mention = emoji?.mention || (emoji?.id ? `<:${name}:${emoji.id}>` : `:${name}:`); return { content: null, embeds: [new EmbedBuilder().setColor(0x57F287).setTitle('✅ Emoji Added').setDescription(`${mention}  **:${name}:**\n\n${result?.created ? 'Added' : 'Already available and added'} to this server successfully.`).setFooter({ text: `Requested by ${memberName(interaction)}` }).setTimestamp()], components: [row(button('admin:module:emojis:search-open', '🔎 Add Another', ButtonStyle.Primary), button('admin:module:emojis:guild', '⭐ Manage Emojis', ButtonStyle.Secondary)), row(button('admin:module:emojis:add', '⬅️ Back', ButtonStyle.Secondary))] }; }
 async function sendPanel(interaction, data) { if (interaction.deferred || interaction.replied) return interaction.editReply(data); if (interaction.isModalSubmit?.()) return interaction.reply({ ...data, flags: MessageFlags.Ephemeral }); return interaction.update(data); }
@@ -178,6 +194,24 @@ async function handleDiscordInteraction(interaction) {
   if (id === 'admin:module:emojis:bulk-open') { await interaction.showModal(bulkUploadModal()); return true; }
   if ((id === 'admin:module:emojis:manage-extra-select' || id === 'admin:module:emojis:manage-core-select' || id === 'admin:module:emojis:manage-select') && interaction.isStringSelectMenu?.()) { await sendPanel(interaction, managePanel(await discordOverview(interaction), interaction, String(interaction.values?.[0] || ''))); return true; }
   if ((id.startsWith('admin:module:emojis:manage-add:') || id.startsWith('admin:module:emojis:manage-remove:')) && interaction.isButton?.()) { const adding = id.startsWith('admin:module:emojis:manage-add:'); const emojiId = id.slice((adding ? 'admin:module:emojis:manage-add:' : 'admin:module:emojis:manage-remove:').length); const overview = await discordOverview(interaction); const emoji = (overview.catalog || []).find((entry) => !entry.core && String(entry.id) === emojiId); if (!emoji) throw new Error('That emoji is no longer available.'); emojiStore.setFavourite(guildId, emojiId, adding, { actorId: interaction.user?.id, action: 'emoji_discord_select' }); await sendPanel(interaction, managePanel(await discordOverview(interaction), interaction, `extra:${emojiId}`, `${adding ? '✅ Added' : '➖ Removed'} :${emoji.name}: ${adding ? 'to' : 'from'} this server.`)); return true; }
+  if (id.startsWith('admin:module:emojis:delete-open:') && interaction.isButton?.()) { const emojiId = id.slice('admin:module:emojis:delete-open:'.length); const overview = await discordOverview(interaction); const emoji = (overview.catalog || []).find((entry) => !entry.core && String(entry.id) === emojiId); if (!emoji) throw new Error('That emoji is no longer available.'); await sendPanel(interaction, deleteConfirmPanel(emoji, interaction)); return true; }
+  if (id.startsWith('admin:module:emojis:delete-cancel:') && interaction.isButton?.()) { const emojiId = id.slice('admin:module:emojis:delete-cancel:'.length); await sendPanel(interaction, managePanel(await discordOverview(interaction), interaction, `extra:${emojiId}`)); return true; }
+  if (id.startsWith('admin:module:emojis:delete-confirm:') && interaction.isButton?.()) {
+    const emojiId = id.slice('admin:module:emojis:delete-confirm:'.length);
+    const overview = await discordOverview(interaction);
+    const emoji = (overview.catalog || []).find((entry) => !entry.core && String(entry.id) === emojiId);
+    if (!emoji) throw new Error('That emoji is no longer available.');
+    const wasAdded = new Set(overview.effectiveFavourites || []).has(String(emojiId));
+    if (wasAdded) emojiStore.setFavourite(guildId, emojiId, false, { actorId: interaction.user?.id, action: 'emoji_delete_prepare' });
+    try {
+      await emojis.removeFromBank(interaction.client, emojiId);
+    } catch (error) {
+      if (wasAdded) emojiStore.setFavourite(guildId, emojiId, true, { actorId: interaction.user?.id, action: 'emoji_delete_rollback' });
+      throw error;
+    }
+    await sendPanel(interaction, managePanel(await discordOverview(interaction), interaction, '', `🗑️ Deleted :${emoji.name}: permanently from the available emoji collection.`));
+    return true;
+  }
   if (id === 'admin:module:emojis:search-submit' && interaction.isModalSubmit?.()) { if (!emojiStore.getSection(guildId).enabled) throw new Error('Turn on Emoji Studio first.'); const query = interaction.fields.getTextInputValue('query'); await sendPanel(interaction, searchResultsPanel(await emojiApi.search(query, 25), query)); return true; }
   if (id === 'admin:module:emojis:import' && interaction.isStringSelectMenu?.()) { const entry = await emojiApi.findById(interaction.values?.[0]); if (!entry) throw new Error('That emoji could not be found anymore. Try searching again.'); await sendPanel(interaction, searchPreviewPanel(entry)); return true; }
   if (id.startsWith('admin:module:emojis:import-confirm:') && interaction.isButton?.()) { const emojiGgId = id.slice('admin:module:emojis:import-confirm:'.length); if (!/^\d+$/.test(emojiGgId)) throw new Error('That emoji could not be identified. Search for it again.'); await interaction.deferUpdate(); const result = await emojis.importFromEmojiGG(interaction.client, emojiGgId); emojiStore.setFavourite(guildId, result.emoji.id, true, { actorId: interaction.user?.id, action: 'emoji_discord_import' }); await interaction.editReply(addedEmojiPanel(result, interaction)); return true; }
