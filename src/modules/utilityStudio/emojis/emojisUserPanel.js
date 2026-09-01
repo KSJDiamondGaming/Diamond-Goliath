@@ -7,12 +7,10 @@ const {
   EmbedBuilder,
   StringSelectMenuBuilder,
 } = require('discord.js');
-const guildManager = require('../../../core/guild/guildManager');
 const emojis = require('./emojis');
+const emojiStore = require('./emojisStore');
 
 const PANEL_COLOR = 0x5865F2;
-const MAX_USER_FAVOURITES = 25;
-const MAX_USER_RECENT = 20;
 const CATEGORY_ORDER = ['Gaming', 'Social', 'Reaction', 'Events', 'Seasonal', 'Moderation', 'General'];
 const CORE_SEARCH_TERMS = Object.freeze({
   activision: ['activision', 'cod', 'callofduty', 'call of duty'],
@@ -45,53 +43,6 @@ const button = (id, label, style = ButtonStyle.Secondary, emoji = null) => {
 function userId(interaction) { return String(interaction?.user?.id || '').trim(); }
 function guildId(interaction) { return String(interaction?.guildId || interaction?.guild?.id || '').trim(); }
 function displayName(interaction) { return interaction.member?.displayName || interaction.user?.displayName || interaction.user?.username || 'Unknown User'; }
-function validEmojiIds(values, max) {
-  return [...new Set((Array.isArray(values) ? values : []).map(String).filter((id) => /^\d{16,20}$/.test(id)))].slice(0, max);
-}
-
-function getRawEmojiSection(id) {
-  const modules = guildManager.getGuildSection(id, 'modules', {});
-  return modules?.emojis && typeof modules.emojis === 'object' ? modules.emojis : {};
-}
-
-function getUserPreferences(id, memberId) {
-  const source = getRawEmojiSection(id)?.userPreferences?.[String(memberId)] || {};
-  return {
-    favourites: validEmojiIds(source.favourites, MAX_USER_FAVOURITES),
-    recent: validEmojiIds(source.recent, MAX_USER_RECENT),
-  };
-}
-
-function saveUserPreferences(id, memberId, prefs, meta = {}) {
-  const key = String(memberId);
-  const nextPrefs = {
-    favourites: validEmojiIds(prefs?.favourites, MAX_USER_FAVOURITES),
-    recent: validEmojiIds(prefs?.recent, MAX_USER_RECENT),
-  };
-  guildManager.updateGuildSection(id, 'modules', (modules) => {
-    const current = modules?.emojis && typeof modules.emojis === 'object' ? modules.emojis : {};
-    return {
-      ...modules,
-      emojis: {
-        ...current,
-        userPreferences: {
-          ...(current.userPreferences && typeof current.userPreferences === 'object' ? current.userPreferences : {}),
-          [key]: nextPrefs,
-        },
-      },
-    };
-  }, {}, { actorId: meta.actorId || key, action: meta.action || 'emoji_user_preferences' });
-  return nextPrefs;
-}
-
-function touchUserRecent(id, memberId, emojiId) {
-  const prefs = getUserPreferences(id, memberId);
-  const target = String(emojiId);
-  return saveUserPreferences(id, memberId, {
-    ...prefs,
-    recent: [target, ...prefs.recent.filter((entry) => entry !== target)],
-  }, { actorId: memberId, action: 'emoji_user_recent' });
-}
 
 async function availableCatalog(interaction) {
   const overview = await emojis.overview(interaction.client, guildId(interaction));
@@ -186,6 +137,10 @@ function emojiOption(emoji) {
   };
 }
 
+function recordMemberUse(interaction, emoji, context) {
+  emojiStore.recordUsage(guildId(interaction), emoji.id, context);
+}
+
 function buildLauncher() {
   return {
     content: 'Looking for an emoji? Search with `/e find`, or open the full emoji list below.',
@@ -246,13 +201,9 @@ async function autocomplete(interaction) {
   if (!interaction?.guildId || !interaction?.client) return interaction.respond([]).catch(() => null);
   const focused = String(interaction.options.getFocused?.() || '').trim();
   const catalog = await availableCatalog(interaction);
-  const prefs = getUserPreferences(guildId(interaction), userId(interaction));
-  const favouriteIds = new Set(prefs.favourites);
-  const recentIds = new Set(prefs.recent);
   const matches = searchEmoji(catalog, focused)
     .sort((a, b) => matchScore(b, focused) - matchScore(a, focused)
-      || Number(favouriteIds.has(String(b.id))) - Number(favouriteIds.has(String(a.id)))
-      || Number(recentIds.has(String(b.id))) - Number(recentIds.has(String(a.id)))
+      || Number(b.usage?.count || 0) - Number(a.usage?.count || 0)
       || String(emojiShortcode(a)).localeCompare(String(emojiShortcode(b))))
     .slice(0, 25);
   return interaction.respond(matches.map((emoji) => {
@@ -288,7 +239,7 @@ async function commandSelection(interaction, reference) {
   }
 
   if (!emoji) return null;
-  touchUserRecent(guildId(interaction), userId(interaction), emoji.id);
+  recordMemberUse(interaction, emoji, 'member_command');
   return { content: emoji.mention, allowedMentions: { parse: [] } };
 }
 
@@ -323,7 +274,7 @@ async function postSelectedEmoji(interaction, emojiId) {
   const catalog = await availableCatalog(interaction);
   const emoji = catalog.find((entry) => String(entry.id) === String(emojiId));
   if (!emoji) throw new Error('That emoji is no longer available here.');
-  touchUserRecent(guildId(interaction), userId(interaction), emoji.id);
+  recordMemberUse(interaction, emoji, 'member_browser');
   const payload = { content: emoji.mention, allowedMentions: { parse: [] } };
   if (interaction.deferred || interaction.replied) return interaction.followUp(payload);
   return interaction.reply(payload);
