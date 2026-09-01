@@ -378,12 +378,10 @@ async function buildSettingsPanel(guild) {
       row(
         button('admin:roleSelector:stats', '📊 View Stats', ButtonStyle.Primary),
         button('admin:roleSelector:health', '🩺 Health & Repair', ButtonStyle.Primary),
-      ),
-      row(
         button('admin:roleSelector:scanStyle', '🔎 Scan Guild Style', ButtonStyle.Primary),
-        button('admin:roleSelector:applyStyle', '✅ Apply Suggested Style', hasSuggestion ? ButtonStyle.Success : ButtonStyle.Secondary, !hasSuggestion),
       ),
       row(
+        button('admin:roleSelector:applyStyle', '✅ Apply Suggested Style', hasSuggestion ? ButtonStyle.Success : ButtonStyle.Secondary, !hasSuggestion),
         button(enabled ? 'admin:roleSelector:disable' : 'admin:roleSelector:enable', enabled ? '⏸ Disable Role Selector' : '▶ Enable Role Selector', enabled ? ButtonStyle.Danger : ButtonStyle.Success),
       ),
       nav('admin:roleSelector', true),
