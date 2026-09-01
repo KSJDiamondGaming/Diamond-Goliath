@@ -47,7 +47,7 @@ module.exports = {
         return interaction.reply(selection);
       }
 
-      return interaction.reply({ ...(await emojisUserPanel.buildPanel(interaction)), flags: MessageFlags.Ephemeral });
+      return interaction.reply({ ...emojisUserPanel.buildLauncher(), flags: MessageFlags.Ephemeral });
     } catch (error) {
       if (error?.code === 10062 || error?.code === 40060) return;
       console.error('Emoji alias command failed:', error);
