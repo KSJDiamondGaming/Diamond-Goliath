@@ -221,7 +221,7 @@ async function buildPanel(interaction, selectedPage = 'all:0') {
         value: page.key,
         description: `${page.items.length} emoji${page.items.length === 1 ? '' : 's'}`,
         default: page.key === active.key,
-      })))));
+      }))));
   }
   if (active.items.length) {
     components.push(row(new StringSelectMenuBuilder()
@@ -338,7 +338,7 @@ async function handleInteraction(interaction, updatePanel) {
   }
 
   if (id === 'user:emojis:browse-category' && interaction.isStringSelectMenu?.()) {
-    await updatePanel(interaction, await buildPanel(interaction, String(interaction.values?.[0] || 'all:0')));
+    await updatePanel(interaction, await buildPanel(interaction, interaction.values?.[0] || 'all:0'));
     return true;
   }
 
@@ -347,15 +347,16 @@ async function handleInteraction(interaction, updatePanel) {
     return true;
   }
 
-  const convertMatch = id.match(/^user:emojis:convert-post:(\d{16,20}):(\d{16,20})$/);
-  if (convertMatch && interaction.isButton?.()) {
-    const channel = await interaction.client.channels.fetch(convertMatch[1]).catch(() => null);
-    const message = await channel?.messages?.fetch?.(convertMatch[2]).catch(() => null);
-    if (!message || String(message.author?.id || '') !== userId(interaction)) throw new Error('The original message is no longer available to convert.');
+  if (id.startsWith('user:emojis:convert-post:') && interaction.isButton?.()) {
+    const [, , , channelId, messageId] = id.split(':');
+    const channel = await interaction.client.channels.fetch(channelId).catch(() => null);
+    const message = channel?.messages ? await channel.messages.fetch(messageId).catch(() => null) : null;
+    if (!message) throw new Error('That message is no longer available.');
+    if (String(message.author?.id || '') !== userId(interaction)) throw new Error('You can only convert your own messages.');
     const result = await resolveMessageText(interaction, message.content);
     if (!result.changed) throw new Error('That message no longer contains available Emoji Studio shortcodes.');
-    await channel.send({ content: result.resolved, reply: { messageReference: message.id, failIfNotExists: false }, allowedMentions: { parse: [] } });
-    await updatePanel(interaction, { content: '✅ Converted message posted as a reply. Your original message was left untouched.', embeds: [], components: [] });
+    await message.reply({ content: result.resolved, allowedMentions: { parse: [] } });
+    await interaction.update({ content: 'Posted the converted version as a reply to your message.', embeds: [], components: [] });
     return true;
   }
 
@@ -363,12 +364,11 @@ async function handleInteraction(interaction, updatePanel) {
 }
 
 module.exports = {
-  buildLauncher,
-  buildPanel,
-  buildMessageConversionPreview,
-  handleInteraction,
   autocomplete,
+  buildLauncher,
+  buildMessageConversionPreview,
+  buildPanel,
   commandSelection,
+  handleInteraction,
   resolveMessageText,
-  getUserPreferences,
 };
