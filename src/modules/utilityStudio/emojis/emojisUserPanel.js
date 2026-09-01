@@ -221,7 +221,7 @@ async function buildPanel(interaction, selectedPage = 'all:0') {
         value: page.key,
         description: `${page.items.length} emoji${page.items.length === 1 ? '' : 's'}`,
         default: page.key === active.key,
-      }))));
+      })))));
   }
   if (active.items.length) {
     components.push(row(new StringSelectMenuBuilder()
