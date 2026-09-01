@@ -4,6 +4,27 @@ const { MessageFlags, SlashCommandBuilder } = require('discord.js');
 const { enforceCommandAccess } = require('../../commands/commandAccess');
 const emojisUserPanel = require('../../../modules/utilityStudio/emojis/emojisUserPanel');
 
+const CORE_DEFAULT_EMOJIS = new Set([
+  'activision',
+  'blizzard',
+  'discord',
+  'epic',
+  'facebook',
+  'instagram',
+  'kick',
+  'nintendo',
+  'pc',
+  'playstation',
+  'snapchat',
+  'steam',
+  'tiktok',
+  'twitch',
+  'whatsapp',
+  'x',
+  'xbox',
+  'youtube',
+]);
+
 module.exports = {
   category: 'Utility',
   help: {
@@ -53,10 +74,16 @@ module.exports = {
       }
 
       if (message) {
+        const directName = String(message).trim().toLowerCase().replace(/^:+|:+$/g, '');
+        if (CORE_DEFAULT_EMOJIS.has(directName)) {
+          const selection = await emojisUserPanel.commandSelection(interaction, directName);
+          if (selection) return interaction.reply(selection);
+        }
+
         const result = await emojisUserPanel.resolveMessageText(interaction, message);
         if (!result.changed) {
           return interaction.reply({
-            content: 'No available Emoji Studio shortcodes were found. Try something like `:discord:`, `:youtube:` or `:twitch:`.',
+            content: 'No available Emoji Studio shortcodes were found. For built-in emojis, use the emoji name directly (for example `snapchat`), or use shortcodes such as `:discord:` in a full message.',
             flags: MessageFlags.Ephemeral,
           });
         }
