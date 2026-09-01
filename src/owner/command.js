@@ -44,6 +44,9 @@ function ownerHomePayload(interaction, notice = null) {
   const billing = devOverride.getPaywallBypassState();
   const isDev = currentMode === 'DEV';
   const ownersLoaded = security.getBotOwnerIds().length;
+  const guildContext = interaction?.guild
+    ? `${interaction.guild.name} • ${interaction.guild.id}`
+    : 'User-installed external context';
 
   const embed = new EmbedBuilder()
     .setColor(0x5865F2)
@@ -57,6 +60,7 @@ function ownerHomePayload(interaction, notice = null) {
       { name: 'Environment', value: `\`${currentMode}\``, inline: true },
       { name: 'Owner Gate', value: `**${ownersLoaded}** configured owner IDs`, inline: true },
       { name: 'Panel Visibility', value: 'Ephemeral • owner ID checked on every action', inline: true },
+      { name: 'Context', value: guildContext, inline: false },
       { name: 'DEV Override', value: isDev ? (devState.enabled ? '🟢 Enabled' : '🔴 Disabled') : '⚪ DEV only', inline: true },
       { name: 'DEV Billing Unlock', value: isDev ? (billing.active ? `🟢 ${billing.plan || 'enabled'}` : '🔴 Disabled') : '⚪ DEV only', inline: true },
       { name: 'Owner Tools', value: isDev ? '🟢 Security • Server Tools • Command Center' : '⚪ DEV only', inline: true },
@@ -303,10 +307,6 @@ module.exports = {
 
   async execute(interaction, client) {
     wireClient(client || interaction.client);
-
-    if (!interaction.guild) {
-      return interaction.reply({ content: '❌ /owner can only be used inside a server.', flags: MessageFlags.Ephemeral });
-    }
 
     if (!ownerAllowed(interaction)) {
       return interaction.reply(ownerDeniedPayload());
