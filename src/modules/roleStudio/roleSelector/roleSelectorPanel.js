@@ -359,24 +359,32 @@ async function buildSettingsPanel(guild) {
   const section = roleSelector.getSection(guild.id);
   const hasSuggestion = Boolean(section.style.detectedFormat);
   return {
-    embeds: [new EmbedBuilder().setColor(health.healthy ? 0x57F287 : 0xFAA61A).setTitle('⚙️ Role Selector · Settings').setDescription([
-      `**Module:** ${enabled ? 'Enabled ✅' : 'Disabled ❌'}`,
-      `**Health:** ${health.healthy ? 'Healthy ✅' : 'Needs attention ⚠️'}`,
-      '',
-      '**Guild Style Detection**',
-      hasSuggestion ? `Suggested role style: \`${section.style.detectedFormat}\`` : 'No style scan has been run yet.',
-      '',
-      'System controls, usage, diagnostics and guild-style detection live here.',
-    ].join('\n'))],
+    embeds: [new EmbedBuilder()
+      .setColor(!enabled ? 0x747F8D : health.healthy ? 0x57F287 : 0xFAA61A)
+      .setTitle('⚙️ Role Selector · Settings')
+      .setDescription([
+        '**Module Status**',
+        enabled ? 'Enabled ✅' : 'Disabled ❌',
+        '',
+        '**System Health**',
+        health.healthy ? 'Healthy ✅' : 'Needs attention ⚠️',
+        '',
+        '**Guild Role Style**',
+        hasSuggestion ? `Detected: \`${section.style.detectedFormat}\`` : 'No guild role style has been scanned yet.',
+        '',
+        'Manage Role Selector status, diagnostics, usage and automatic role styling.',
+      ].join('\n'))],
     components: [
       row(
-        button(enabled ? 'admin:roleSelector:disable' : 'admin:roleSelector:enable', enabled ? '⏸ Disable' : '▶ Enable', enabled ? ButtonStyle.Danger : ButtonStyle.Success),
-        button('admin:roleSelector:stats', '📊 Stats', ButtonStyle.Primary),
-        button('admin:roleSelector:health', '🩺 Health / Repair', ButtonStyle.Secondary),
+        button('admin:roleSelector:stats', '📊 View Stats', ButtonStyle.Primary),
+        button('admin:roleSelector:health', '🩺 Health & Repair', ButtonStyle.Primary),
       ),
       row(
         button('admin:roleSelector:scanStyle', '🔎 Scan Guild Style', ButtonStyle.Primary),
         button('admin:roleSelector:applyStyle', '✅ Apply Suggested Style', hasSuggestion ? ButtonStyle.Success : ButtonStyle.Secondary, !hasSuggestion),
+      ),
+      row(
+        button(enabled ? 'admin:roleSelector:disable' : 'admin:roleSelector:enable', enabled ? '⏸ Disable Role Selector' : '▶ Enable Role Selector', enabled ? ButtonStyle.Danger : ButtonStyle.Success),
       ),
       nav('admin:roleSelector', true),
     ],
@@ -467,10 +475,12 @@ function buildAppearance(guild, rolePage = 0) {
     components: [
       ...rolePicker.rows,
       row(
+        button('admin:roleSelector:createDivider', '➕ Create Divider', ButtonStyle.Success),
+        button('admin:roleSelector:styleOpen', '✏️ Edit Role Style', ButtonStyle.Primary),
+      ),
+      row(
         button('admin:roleSelector:togglePlacement', section.style.placement === 'above' ? '⬆️ Place Above' : '⬇️ Place Below', ButtonStyle.Primary),
         button('admin:roleSelector:toggleGrouped', section.style.keepGrouped ? '🧲 Keep Together: On' : '🧲 Keep Together: Off', ButtonStyle.Primary),
-        button('admin:roleSelector:styleOpen', '✏️ Edit Role Style', ButtonStyle.Primary),
-        button('admin:roleSelector:createDivider', '➕ Create Divider', ButtonStyle.Success),
       ),
       nav(),
     ],
