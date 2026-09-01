@@ -757,6 +757,17 @@ async function syncPanels(guild, changedGroupId = null) {
   await Promise.allSettled([syncDeploymentState(guild, changedGroupId), syncStatsDeploymentState(guild)]);
 }
 
+function queueAppearanceSync(guild) {
+  void Promise.allSettled([
+    roleSelector.syncManagedRoleHierarchy(guild),
+    syncPanels(guild),
+  ]).then((results) => {
+    for (const result of results) {
+      if (result.status === 'rejected') console.error('[RoleSelector] Deferred appearance sync failed:', result.reason);
+    }
+  });
+}
+
 function tail(id, prefix) {
   return id.startsWith(`${prefix}:`) ? id.slice(prefix.length + 1) : null;
 }
@@ -874,8 +885,11 @@ async function handleRoleSelectorInteraction(i) {
       return i.reply({ content: '✅ Role appearance updated.', ...buildAppearance(i.guild), flags: 64 });
     }
     if (id === 'admin:roleSelector:togglePlacement' || id === 'admin:roleSelector:toggleGrouped') {
+      await i.deferUpdate();
       roleSelector.updateSection(i.guildId, (section) => ({ ...section, style: { ...section.style, ...(id.endsWith('togglePlacement') ? { placement: section.style.placement === 'above' ? 'below' : 'above' } : { keepGrouped: !section.style.keepGrouped }) } }), { ...actor, action: id });
-      await roleSelector.syncManagedRoleHierarchy(i.guild); await syncPanels(i.guild); return respond(i, buildAppearance(i.guild));
+      await i.editReply(buildAppearance(i.guild));
+      queueAppearanceSync(i.guild);
+      return true;
     }
     if (id === 'admin:roleSelector:scanStyle') {
       const suggestion = roleSelector.suggestRoleStyle(i.guild);
