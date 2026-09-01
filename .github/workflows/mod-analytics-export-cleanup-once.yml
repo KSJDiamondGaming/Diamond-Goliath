@@ -36,7 +36,6 @@ jobs:
             if (!source.includes(from)) throw new Error(`${label}: source text not found`);
             return source.replace(from, to);
           }
-
           function removeBetween(source, startNeedle, endNeedle, label) {
             const start = source.indexOf(startNeedle);
             if (start < 0) throw new Error(`${label}: start not found`);
@@ -44,7 +43,6 @@ jobs:
             if (end < 0) throw new Error(`${label}: end not found`);
             return source.slice(0, start) + source.slice(end);
           }
-
           function removeFunction(source, name) {
             const re = new RegExp(`(?:async\\s+)?function\\s+${name}\\s*\\(`);
             const match = re.exec(source);
@@ -52,12 +50,9 @@ jobs:
             const start = match.index;
             const bodyStart = source.indexOf('{', start);
             if (bodyStart < 0) throw new Error(`${name}: body start not found`);
-            let depth = 0;
-            let state = 'code';
-            let escaped = false;
+            let depth = 0, state = 'code', escaped = false;
             for (let i = bodyStart; i < source.length; i += 1) {
-              const ch = source[i];
-              const next = source[i + 1];
+              const ch = source[i], next = source[i + 1];
               if (state === 'single') { if (escaped) escaped = false; else if (ch === '\\') escaped = true; else if (ch === "'") state = 'code'; continue; }
               if (state === 'double') { if (escaped) escaped = false; else if (ch === '\\') escaped = true; else if (ch === '"') state = 'code'; continue; }
               if (state === 'template') { if (escaped) escaped = false; else if (ch === '\\') escaped = true; else if (ch === '`') state = 'code'; continue; }
@@ -81,7 +76,6 @@ jobs:
             throw new Error(`${name}: unterminated function`);
           }
 
-          // panel.js
           const panelPath = 'src/core/administration/mod/panel.js';
           let panel = fs.readFileSync(panelPath, 'utf8');
           panel = panel.replace("const crypto = require('node:crypto');\n", '');
@@ -89,13 +83,7 @@ jobs:
           panel = panel.replace('const MAX_PRESETS = 20;\n', '');
           panel = removeBetween(panel, 'function normalizePreset(', 'function parseJsonValue(', 'preset implementation block');
           for (const name of ['openPresetManager', 'handlePresetInteraction', 'handlePresetModal']) panel = removeFunction(panel, name);
-          panel = panel.replace(/\n\s*openPresetManager,?/g, '');
-          panel = panel.replace(/\n\s*handlePresetInteraction,?/g, '');
-          panel = panel.replace(/\n\s*handlePresetModal,?/g, '');
-          panel = panel.replace(/\n\s*presetIdFromSubmission,?/g, '');
-          panel = panel.replace(/\n\s*markPresetUsed,?/g, '');
-          panel = panel.replace(/\n\s*getModerationPresets,?/g, '');
-          panel = panel.replace(/\n\s*getModerationPreset,?/g, '');
+          for (const token of ['openPresetManager','handlePresetInteraction','handlePresetModal','presetIdFromSubmission','markPresetUsed','getModerationPresets','getModerationPreset']) panel = panel.replace(new RegExp(`\\n\\s*${token},?`, 'g'), '');
 
           panel = removeBetween(panel, 'function buildDashboardNav(', 'function buildUserSelectRow(', 'dashboard nav');
           panel = panel.replace('function buildUserSelectRow(', `function buildDashboardNav(targetId, activeView, member, guild) {
@@ -103,23 +91,14 @@ jobs:
             const id = targetId || 'none';
             const rows = [];
             if (active !== 'actions' && targetId) {
-              const candidates = [
-                ['actions', '⚡ Moderation'],
-                ['intelligence', '🧠 Intelligence'],
-                ['cases', '📁 Cases'],
-              ]
+              const candidates = [['actions','⚡ Moderation'],['intelligence','🧠 Intelligence'],['cases','📁 Cases']]
                 .filter(([view]) => canViewDashboardSection(member, guild, view))
                 .filter(([view]) => view !== active);
-              const buttons = candidates.map(([view, label]) => new ButtonBuilder()
-                .setCustomId(\`mod_dashboard:\${id}:\${view}\`)
-                .setLabel(label)
-                .setStyle(ButtonStyle.Secondary));
+              const buttons = candidates.map(([view, label]) => new ButtonBuilder().setCustomId(\`mod_dashboard:\${id}:\${view}\`).setLabel(label).setStyle(ButtonStyle.Secondary));
               if (buttons.length) rows.push(new ActionRowBuilder().addComponents(buttons));
             }
             const finalButtons = [];
-            if (canUseModAction(member, guild, 'export_cases')) finalButtons.push(
-              new ButtonBuilder().setCustomId(\`mod_export_cases:\${id}\`).setLabel('📤 Export').setStyle(ButtonStyle.Secondary)
-            );
+            if (canUseModAction(member, guild, 'export_cases')) finalButtons.push(new ButtonBuilder().setCustomId(\`mod_export_cases:\${id}\`).setLabel('📤 Export').setStyle(ButtonStyle.Secondary));
             finalButtons.push(new ButtonBuilder().setCustomId('admin:home').setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary));
             rows.push(new ActionRowBuilder().addComponents(finalButtons));
             return rows;
@@ -146,30 +125,21 @@ jobs:
             return [buttonRow(row1), buttonRow(row2), buttonRow(row3)].filter(Boolean);
           }
           function buildIntelligenceRows(`);
-
-          panel = replaceOnce(panel,
-            'const embeds = []; const components = [buildUserSelectRow()];',
-            "const embeds = []; const components = safeView === 'analytics' ? [] : [buildUserSelectRow()];",
-            'analytics component row limit fix'
-          );
+          panel = replaceOnce(panel, 'const embeds = []; const components = [buildUserSelectRow()];', "const embeds = []; const components = safeView === 'analytics' ? [] : [buildUserSelectRow()];", 'analytics row limit fix');
           if (/preset/i.test(panel)) throw new Error('panel.js still contains preset references');
           fs.writeFileSync(panelPath, panel);
 
-          // interactions.js
           const interactionsPath = 'src/core/administration/mod/interactions.js';
           let interactions = fs.readFileSync(interactionsPath, 'utf8');
-          for (const token of ['openPresetManager', 'handlePresetInteraction', 'handlePresetModal', 'presetIdFromSubmission', 'markPresetUsed', 'getModerationPreset']) {
-            interactions = interactions.replace(new RegExp(`\\n\\s*${token},?`, 'g'), '');
-          }
-          for (const name of ['setInputValueIfPresent', 'buildSafePresetEditorModal', 'handlePresetEditorButton', 'trackPresetSubmission']) interactions = removeFunction(interactions, name);
-          interactions = interactions.replace(/\n\s*if \(result\?\.ok\) trackPresetSubmission\(i\);/g, '');
+          for (const token of ['openPresetManager','handlePresetInteraction','handlePresetModal','presetIdFromSubmission','markPresetUsed','getModerationPreset']) interactions = interactions.replace(new RegExp(`\\n\\s*${token},?`, 'g'), '');
+          interactions = interactions.replace(/if \(result\?\.ok\) trackPresetSubmission\(i\);\s*else auditFailure/g, 'if (!result?.ok) auditFailure');
+          for (const name of ['setInputValueIfPresent','buildSafePresetEditorModal','handlePresetEditorButton','trackPresetSubmission']) interactions = removeFunction(interactions, name);
           interactions = interactions.replace('[handlePresetInteraction, handleCaseSearchSelect]', '[handleCaseSearchSelect]');
           interactions = interactions.replace('[handleExportInteraction, handlePresetEditorButton, handlePresetInteraction, handleConfirmButton,', '[handleExportInteraction, handleConfirmButton,');
           interactions = interactions.replace('[submitInvestigationNote, handleExportInteraction, handlePresetModal, handleCaseSearchModal,', '[submitInvestigationNote, handleExportInteraction, handleCaseSearchModal,');
           if (/preset/i.test(interactions)) throw new Error('interactions.js still contains preset references');
           fs.writeFileSync(interactionsPath, interactions);
 
-          // permissions.js
           const permissionsPath = 'src/core/administration/mod/permissions.js';
           let permissions = fs.readFileSync(permissionsPath, 'utf8');
           permissions = permissions.split('\n').filter((line) => !/manage_presets|mod\.presets/.test(line)).join('\n');
