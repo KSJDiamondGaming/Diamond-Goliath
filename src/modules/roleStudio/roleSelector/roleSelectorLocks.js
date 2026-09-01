@@ -254,7 +254,32 @@ function installHardeningPatch() {
   });
 }
 
+function retryStatsExtensionAfterPanelLoad() {
+  // roleSelectorHealth is first loaded while roleSelectorPanel itself is still being
+  // evaluated. Its stats extension can therefore observe the panel before the final
+  // exported handler exists and quietly skip installation. Re-evaluate that module
+  // once on the next event-loop turn, when the panel is guaranteed to be complete.
+  // Restore the original cache entry immediately afterwards so the panel keeps the
+  // same health-service instance (including the hardening wrapper above).
+  setImmediate(() => {
+    let healthPath;
+    let cached;
+    try {
+      healthPath = require.resolve('./roleSelectorHealth');
+      cached = require.cache[healthPath];
+      if (!cached) return;
+      delete require.cache[healthPath];
+      require(healthPath);
+    } catch (error) {
+      console.warn('[RoleSelector] Stats routing retry failed:', error.message || error);
+    } finally {
+      if (healthPath && cached) require.cache[healthPath] = cached;
+    }
+  });
+}
+
 installHardeningPatch();
+retryStatsExtensionAfterPanelLoad();
 
 module.exports = {
   lockKey,
