@@ -18,18 +18,12 @@ const { openCaseTool, handleCaseAction, submitCaseModal, handleExternalAppealInt
 const { openCaseSearch, handleCaseSearchAction, handleCaseSearchSelect, handleCaseSearchModal } = require('./caseSearch');
 const {
   renderDashboard,
-  openPresetManager,
   openExportModal,
   refreshDashboard,
   refreshCasesDashboard,
   handleDashboardNavigation,
   handleUserSelectMenu,
-  handlePresetInteraction,
-  handlePresetModal,
   handleExportInteraction,
-  presetIdFromSubmission,
-  markPresetUsed,
-  getModerationPreset,
 } = require('./panel');
 
 const PUNISHMENT_ACTIONS = new Set(['timeout', 'kick', 'ban']);
@@ -45,45 +39,6 @@ function getBulkAction(customId) { return getPrefixedAction(customId, 'mod_submi
 function parseConfirmActionContext(customId) { const parts = String(customId || '').split(':'); const requestedPage = Number(parts[5]); return { token: parts[1] || null, context: { view: parts[2] || 'overview', actionFilter: parts[3] || 'all', statusFilter: parts[4] || 'all', page: Number.isFinite(requestedPage) ? Math.max(0, Math.trunc(requestedPage)) : 0 } }; }
 function fieldValue(i, key) { try { return String(i.fields?.getTextInputValue?.(key) || '').trim(); } catch { return ''; } }
 function auditFailure(i, event, action, targetId, reason, metadata = {}) { return recordModerationSystemEvent({ interaction: i, event, action, targetId, reason, metadata }); }
-function setInputValueIfPresent(input, value, maxLength) {
-  const text = String(value || '').slice(0, maxLength);
-  return text ? input.setValue(text) : input;
-}
-function buildSafePresetEditorModal(preset = null, targetId = 'none') {
-  const { ActionRowBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = Discord;
-  const action = String(preset?.action || 'warn').toLowerCase();
-  const secondary = action === 'warn' ? String(preset?.warnExpiry || 'never') : action === 'timeout' ? String(preset?.duration || '1h') : '';
-  const numeric = action === 'warn' ? String(preset?.strikeWeight || 1) : action === 'ban' ? String(preset?.deleteDays ?? 0) : '';
-  const nameInput = setInputValueIfPresent(new TextInputBuilder().setCustomId('name').setLabel('Preset Name').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(80), preset?.name, 80);
-  const actionInput = new TextInputBuilder().setCustomId('action').setLabel('Action: warn / timeout / kick / ban').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(10).setValue(action);
-  const reasonInput = setInputValueIfPresent(new TextInputBuilder().setCustomId('reason').setLabel('Reason').setStyle(TextInputStyle.Paragraph).setRequired(true).setMaxLength(500), preset?.reason, 500);
-  const secondaryInput = setInputValueIfPresent(new TextInputBuilder().setCustomId('secondary').setLabel('Warn expiry OR timeout duration').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(10).setPlaceholder('warn: 7d/2w/1m/never • timeout: 1h'), secondary, 10);
-  const numericInput = setInputValueIfPresent(new TextInputBuilder().setCustomId('numeric').setLabel('Warn weight (1-5) OR ban delete days (0-7)').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(1), numeric, 1);
-  return new ModalBuilder().setCustomId(`mod_preset_save:${preset?.id || 'new'}:${targetId}`).setTitle(preset ? 'Edit Moderation Preset' : 'Create Moderation Preset').addComponents(
-    new ActionRowBuilder().addComponents(nameInput),
-    new ActionRowBuilder().addComponents(actionInput),
-    new ActionRowBuilder().addComponents(reasonInput),
-    new ActionRowBuilder().addComponents(secondaryInput),
-    new ActionRowBuilder().addComponents(numericInput)
-  );
-}
-async function handlePresetEditorButton(i) {
-  const id = String(i.customId || '');
-  if (id.startsWith('mod_preset_create:')) {
-    const [, targetId = 'none'] = id.split(':');
-    await i.showModal(buildSafePresetEditorModal(null, targetId));
-    return true;
-  }
-  if (id.startsWith('mod_preset_edit:')) {
-    const [, presetId, targetId = 'none'] = id.split(':');
-    const preset = getModerationPreset(i.guild.id, presetId);
-    if (!preset) return safeReply(i, { content: '❌ Preset not found.', flags: 64 });
-    await i.showModal(buildSafePresetEditorModal(preset, targetId));
-    return true;
-  }
-  return false;
-}
-
 function scanTimestamp(ms) {
   const value = Number(ms);
   return Number.isFinite(value) && value > 0 ? `<t:${Math.floor(value / 1000)}:F> • <t:${Math.floor(value / 1000)}:R>` : 'Unknown';
@@ -604,21 +559,18 @@ async function handleBulkModal(i) {
   recordModerationSystemEvent({ interaction: i, event: 'moderation.bulk.requested', action, metadata: { operation: fieldValue(i, 'operation') || action } });
   return submitBulkModal(i, action);
 }
-function trackPresetSubmission(i) { const presetId = presetIdFromSubmission(i.customId); if (presetId && i.guild) markPresetUsed(i.guild, presetId, i.user?.id || null); }
 async function handleActionModal(i) {
   const id = String(i.customId || ''); const targetId = getTargetIdFromCustomId(id);
   if (id.startsWith('mod_submit_warn:')) {
     const result = await submitWarningModal(i, targetId, refreshCasesDashboard);
-    if (result?.ok) trackPresetSubmission(i);
-    else auditFailure(i, 'moderation.action.failed', 'warn', targetId, result?.error?.message || result?.error || 'Warning submission failed.');
+    if (!result?.ok) auditFailure(i, 'moderation.action.failed', 'warn', targetId, result?.error?.message || result?.error || 'Warning submission failed.');
     return result || true;
   }
   if (id.startsWith('mod_submit_remove_warning:')) return submitRemoveWarningRequest(i, targetId, createConfirmation);
   const action = getPunishmentSubmitAction(id); if (!action) return false;
   const target = await requireModeratableTarget(i, targetId, action); if (!target) return true;
   const result = await submitPunishmentRequest(i, target, action);
-  if (result?.ok) trackPresetSubmission(i);
-  else auditFailure(i, 'moderation.action.failed', action, targetId, result?.error?.message || result?.error || `${action} submission failed.`);
+  if (!result?.ok) auditFailure(i, 'moderation.action.failed', action, targetId, result?.error?.message || result?.error || `${action} submission failed.`);
   if (action === 'timeout' && result?.ok) await refreshCasesDashboard(i, target);
   return true;
 }
@@ -657,9 +609,9 @@ async function routeButtonsAndSelects(i) {
     if (scan) return scan;
     return handleUserSelectMenu(i);
   }
-  if (i.isStringSelectMenu?.()) return routeHandlers(i, [handlePresetInteraction, handleCaseSearchSelect]);
+  if (i.isStringSelectMenu?.()) return routeHandlers(i, [handleCaseSearchSelect]);
   if (!i.isButton?.()) return false;
-  return routeHandlers(i, [handleExportInteraction, handlePresetEditorButton, handlePresetInteraction, handleConfirmButton, value => handleCaseAction(value, { fetchTarget, createConfirmation }), handleDashboardNavigation, handleCancelButton, handleMemberScanButton, handleBulkButton, handleOpenActionButton, handleCaseToolButton]);
+  return routeHandlers(i, [handleExportInteraction, handleConfirmButton, value => handleCaseAction(value, { fetchTarget, createConfirmation }), handleDashboardNavigation, handleCancelButton, handleMemberScanButton, handleBulkButton, handleOpenActionButton, handleCaseToolButton]);
 }
 async function routeModModal(i) {
   if (!i?.customId?.startsWith('mod_')) return false;
@@ -674,7 +626,7 @@ async function routeModModal(i) {
       return result;
     }
   }
-  return routeHandlers(i, [submitInvestigationNote, handleExportInteraction, handlePresetModal, handleCaseSearchModal, handleCaseModal, handleBulkModal, handleActionModal]);
+  return routeHandlers(i, [submitInvestigationNote, handleExportInteraction, handleCaseSearchModal, handleCaseModal, handleBulkModal, handleActionModal]);
 }
 async function handleModInteraction(i) {
   if (!i?.customId || !isModCustomId(i.customId)) return false;

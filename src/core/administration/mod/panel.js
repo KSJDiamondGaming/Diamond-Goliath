@@ -1,6 +1,5 @@
 'use strict';
 
-const crypto = require('node:crypto');
 const Discord = require('discord.js');
 const {
   ActionRowBuilder,
@@ -51,8 +50,6 @@ const ANALYTICS_WINDOW_LABELS = Object.freeze({ '7d': '7 Days', '30d': '30 Days'
 const DEFAULT_CASES_CONTEXT = Object.freeze({ view: 'cases', actionFilter: 'all', statusFilter: 'all', page: 0 });
 const DEFAULT_ACTIONS_CONTEXT = Object.freeze({ view: 'actions', actionFilter: 'all', statusFilter: 'all', page: 0 });
 const DEFAULT_ANALYTICS_CONTEXT = Object.freeze({ view: 'analytics', analyticsWindow: '30d', analyticsMode: 'overview', analyticsModeratorId: null });
-const PRESET_ACTIONS = new Set(['warn', 'timeout', 'kick', 'ban']);
-const MAX_PRESETS = 20;
 const EXPORT_SCOPES = new Set(['all', 'user', 'moderator', 'case']);
 const EXPORT_FORMATS = new Set(['json', 'csv']);
 const EXPORT_INCLUDE_KEYS = new Set(['core', 'metadata', 'appeals', 'evidence', 'audit']);
@@ -142,28 +139,6 @@ function getModeratorAnalytics(guildId, moderatorId, windowKey = '30d') {
   return { ...analytics, moderatorId: String(moderatorId), moderatorCases: cases.length, moderatorActionCounts: actionCounts, moderatorStatusCounts: statusCounts, affectedUsers: Object.keys(affectedUsers).length, repeatTargets: Object.values(affectedUsers).filter((count) => count > 1).length, moderatorAppeals: appealCounts, moderatorAppealApprovalRate: percentage(appealCounts.approved, resolvedAppeals), moderatorReversalRate: percentage(statusCounts.reversed || 0, cases.length), moderatorAuditActions: auditRows.length, topAuditEvents: topEntries(eventCounts), recentCases: cases.slice().sort((a, b) => getCaseTime(b) - getCaseTime(a)).slice(0, 5) };
 }
 
-function normalizePreset(raw = {}) { const action = String(raw.action || '').toLowerCase(); return { id: String(raw.id || crypto.randomBytes(5).toString('hex')).slice(0, 24), name: String(raw.name || 'Untitled Preset').trim().slice(0, 80), action: PRESET_ACTIONS.has(action) ? action : 'warn', reason: String(raw.reason || '').trim().slice(0, 500), warnExpiry: String(raw.warnExpiry || 'never').trim().toLowerCase().slice(0, 10) || 'never', strikeWeight: Math.min(5, Math.max(1, Number(raw.strikeWeight) || 1)), duration: String(raw.duration || '1h').trim().toLowerCase().slice(0, 10) || '1h', deleteDays: Math.min(7, Math.max(0, Math.trunc(Number(raw.deleteDays) || 0))), enabled: raw.enabled !== false, createdBy: raw.createdBy ? String(raw.createdBy) : null, createdAt: raw.createdAt || new Date().toISOString(), updatedBy: raw.updatedBy ? String(raw.updatedBy) : null, updatedAt: raw.updatedAt || new Date().toISOString(), usageCount: Math.max(0, Math.trunc(Number(raw.usageCount) || 0)), lastUsedAt: raw.lastUsedAt || null, lastUsedBy: raw.lastUsedBy ? String(raw.lastUsedBy) : null } }
-function getModerationPresets(guildId) { const raw = guildManager.getGuildData(guildId)?.modules?.moderation?.presets; return Array.isArray(raw) ? raw.map(normalizePreset).slice(0, MAX_PRESETS) : []; }
-function saveModerationPresets(guild, presets) { const data = guildManager.getGuildData(guild.id); const modules = { ...(data.modules || {}) }; modules.moderation = { ...(modules.moderation || {}), presets: presets.map(normalizePreset).slice(0, MAX_PRESETS) }; guildManager.saveGuildData(guild.id, { modules }, guild); return modules.moderation.presets; }
-function getModerationPreset(guildId, presetId) { return getModerationPresets(guildId).find((preset) => preset.id === String(presetId)) || null; }
-function validatePresetInput(input = {}) {
-  const name = String(input.name || '').trim(); const action = String(input.action || '').trim().toLowerCase(); const reason = String(input.reason || '').trim();
-  if (!name) return { error: 'Preset name is required.' }; if (!PRESET_ACTIONS.has(action)) return { error: 'Action must be warn, timeout, kick, or ban.' }; if (!reason) return { error: 'Preset reason is required.' };
-  const preset = normalizePreset({ ...input, name, action, reason });
-  if (action === 'warn') { const expiry = String(input.warnExpiry || 'never').trim().toLowerCase() || 'never'; if (expiry !== 'never' && !/^\d+\s*[dwm]$/.test(expiry)) return { error: 'Warning expiry must be `7d`, `2w`, `1m`, or `never`.' }; const weight = Number(input.strikeWeight || 1); if (!Number.isInteger(weight) || weight < 1 || weight > 5) return { error: 'Strike weight must be 1-5.' }; preset.warnExpiry = expiry; preset.strikeWeight = weight; }
-  if (action === 'timeout') { const match = String(input.duration || '').trim().toLowerCase().match(/^(\d+(?:\.\d+)?)\s*([smhdw])$/); if (!match) return { error: 'Timeout duration must look like `10m`, `1h`, or `1d`.' }; const units = { s: 1000, m: 60000, h: 3600000, d: 86400000, w: 604800000 }; const ms = Number(match[1]) * units[match[2]]; if (!Number.isFinite(ms) || ms <= 0 || ms > 28 * 86400000) return { error: 'Timeout duration must be greater than 0 and no more than 28 days.' }; preset.duration = String(input.duration).trim().toLowerCase(); }
-  if (action === 'ban') { const days = Number(input.deleteDays || 0); if (!Number.isInteger(days) || days < 0 || days > 7) return { error: 'Ban delete-message days must be 0-7.' }; preset.deleteDays = days; }
-  return { preset };
-}
-function upsertModerationPreset(guild, input, actorId, presetId = null) { const presets = getModerationPresets(guild.id); const existingIndex = presetId ? presets.findIndex((preset) => preset.id === presetId) : -1; if (existingIndex < 0 && presets.length >= MAX_PRESETS) return { ok: false, error: `A server can have up to ${MAX_PRESETS} moderation presets.` }; const parsed = validatePresetInput(input); if (parsed.error) return { ok: false, error: parsed.error }; const now = new Date().toISOString(); const next = existingIndex >= 0 ? { ...presets[existingIndex], ...parsed.preset, id: presets[existingIndex].id, createdBy: presets[existingIndex].createdBy, createdAt: presets[existingIndex].createdAt, updatedBy: actorId, updatedAt: now } : { ...parsed.preset, id: crypto.randomBytes(5).toString('hex'), createdBy: actorId, createdAt: now, updatedBy: actorId, updatedAt: now }; if (existingIndex >= 0) presets[existingIndex] = next; else presets.push(next); saveModerationPresets(guild, presets); return { ok: true, preset: next }; }
-function deleteModerationPreset(guild, presetId) { const presets = getModerationPresets(guild.id); const next = presets.filter((preset) => preset.id !== String(presetId)); if (next.length === presets.length) return false; saveModerationPresets(guild, next); return true; }
-function toggleModerationPreset(guild, presetId, actorId) { const presets = getModerationPresets(guild.id); const index = presets.findIndex((preset) => preset.id === String(presetId)); if (index < 0) return null; presets[index] = { ...presets[index], enabled: !presets[index].enabled, updatedBy: actorId, updatedAt: new Date().toISOString() }; saveModerationPresets(guild, presets); return presets[index]; }
-function markPresetUsed(guild, presetId, actorId) { const presets = getModerationPresets(guild.id); const index = presets.findIndex((preset) => preset.id === String(presetId)); if (index < 0) return null; presets[index] = { ...presets[index], usageCount: presets[index].usageCount + 1, lastUsedAt: new Date().toISOString(), lastUsedBy: actorId || null }; saveModerationPresets(guild, presets); return presets[index]; }
-function buildPresetManagerPayload(guild, targetId = 'none') { const presets = getModerationPresets(guild.id); const embed = createEmbed({ title: '📋 Moderation Presets', description: presets.length ? `Reusable moderation templates for **${guild.name}**.` : 'No moderation presets exist yet.', color: COLORS.PRIMARY, fields: [{ name: 'Stored', value: `${presets.length}/${MAX_PRESETS}`, inline: true }, { name: 'Selected Member', value: targetId !== 'none' ? `<@${targetId}>` : 'None', inline: true }, { name: 'Safety', value: 'Presets still use normal authority, hierarchy, validation, confirmation, logging and appeal safeguards.', inline: false }] }); const rows = []; if (presets.length) rows.push(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`mod_preset_select:${targetId}`).setPlaceholder('Select a moderation preset').addOptions(presets.map((preset) => ({ label: preset.name.slice(0, 100), value: preset.id, description: `${preset.enabled ? 'Enabled' : 'Disabled'} • ${preset.action} • ${preset.usageCount} uses`.slice(0, 100) }))))); rows.push(new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`mod_preset_create:${targetId}`).setLabel('➕ Create Preset').setStyle(ButtonStyle.Primary).setDisabled(presets.length >= MAX_PRESETS), new ButtonBuilder().setCustomId(targetId !== 'none' ? `mod_dashboard:${targetId}:actions` : 'mod:overview').setLabel(targetId !== 'none' ? '← Moderation' : '← Moderation').setStyle(ButtonStyle.Secondary))); return { embeds: [embed], components: rows }; }
-function buildPresetDetailPayload(guild, preset, targetId = 'none') { const detail = preset.action === 'warn' ? `Weight **${preset.strikeWeight}** • Expiry **${preset.warnExpiry}**` : preset.action === 'timeout' ? `Duration **${preset.duration}**` : preset.action === 'ban' ? `Delete days **${preset.deleteDays}**` : 'No additional action settings'; const embed = createEmbed({ title: `📋 ${preset.name}`, description: `Action: **${preset.action.toUpperCase()}** • ${preset.enabled ? 'Enabled ✅' : 'Disabled ⛔'}`, color: COLORS.PRIMARY, fields: [{ name: 'Reason', value: preset.reason, inline: false }, { name: 'Settings', value: detail, inline: false }, { name: 'Usage', value: `**${preset.usageCount}** submissions${preset.lastUsedAt ? ` • last used ${timestamp(new Date(preset.lastUsedAt).getTime())}` : ''}`, inline: false }, { name: 'Selected Member', value: targetId !== 'none' ? `<@${targetId}>` : 'None selected', inline: false }] }); return { embeds: [embed], components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`mod_preset_apply:${preset.id}:${targetId}`).setLabel('▶ Apply').setStyle(ButtonStyle.Success).setDisabled(!preset.enabled || targetId === 'none'), new ButtonBuilder().setCustomId(`mod_preset_edit:${preset.id}:${targetId}`).setLabel('✏️ Edit').setStyle(ButtonStyle.Primary), new ButtonBuilder().setCustomId(`mod_preset_toggle:${preset.id}:${targetId}`).setLabel(preset.enabled ? '⏸ Disable' : '▶ Enable').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId(`mod_preset_delete:${preset.id}:${targetId}`).setLabel('🗑 Delete').setStyle(ButtonStyle.Danger), new ButtonBuilder().setCustomId(`mod_presets:${targetId}`).setLabel('← Presets').setStyle(ButtonStyle.Secondary))] }; }
-function buildPresetExecutionModal(preset, targetId) { const suffix = `:preset:${preset.id}`; if (preset.action === 'warn') return new ModalBuilder().setCustomId(`mod_submit_warn:${targetId}${suffix}`).setTitle(`Warn • ${preset.name}`.slice(0, 45)).addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('strike_weight').setLabel('Strike weight (1-5)').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(1).setValue(String(preset.strikeWeight))), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('warn_expiry').setLabel('Warn expiry (7d, 2w, 1m, or never)').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(10).setValue(preset.warnExpiry)), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('reason').setLabel('Reason').setStyle(TextInputStyle.Paragraph).setRequired(true).setMaxLength(500).setValue(preset.reason))); const modal = new ModalBuilder().setCustomId(`mod_submit_${preset.action}:${targetId}${suffix}`).setTitle(`${preset.action[0].toUpperCase()}${preset.action.slice(1)} • ${preset.name}`.slice(0, 45)); const rows = []; if (preset.action === 'ban') rows.push(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('days').setLabel('Delete message days (0-7)').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(1).setValue(String(preset.deleteDays)))); if (preset.action === 'timeout') rows.push(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('duration').setLabel('Duration (10m, 1h, 1d)').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(10).setValue(preset.duration))); rows.push(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('reason').setLabel('Reason').setStyle(TextInputStyle.Paragraph).setRequired(true).setMaxLength(500).setValue(preset.reason))); return modal.addComponents(...rows); }
-function presetIdFromSubmission(customId) { const match = String(customId || '').match(/:preset:([a-f0-9]{6,24})$/i); return match ? match[1] : null; }
-
 function parseJsonValue(value) { if (value === null || value === undefined || value === '') return null; try { return JSON.parse(value); } catch { return value; } }
 function normalizeExportInclude(raw) { const tokens = String(raw || 'all').toLowerCase().split(/[\s,;]+/).map((value) => value.trim()).filter(Boolean); if (!tokens.length || tokens.includes('all')) return new Set(EXPORT_INCLUDE_KEYS); const invalid = tokens.filter((value) => !EXPORT_INCLUDE_KEYS.has(value)); if (invalid.length) return { error: `Unknown include option: ${invalid.join(', ')}` }; const include = new Set(tokens); include.add('core'); return include; }
 function parseExportDate(raw, endOfDay = false) { const value = String(raw || '').trim(); if (!value) return null; const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(value); const parsed = new Date(dateOnly && endOfDay ? `${value}T23:59:59.999Z` : dateOnly ? `${value}T00:00:00.000Z` : value); return Number.isFinite(parsed.getTime()) ? parsed.getTime() : NaN; }
@@ -181,58 +156,42 @@ async function handleExportInteraction(interaction) { const id = String(interact
 
 function buttonRow(buttons) { return buttons.length ? new ActionRowBuilder().addComponents(buttons) : null; }
 function buildDashboardNav(targetId, activeView, member, guild) {
-    const active = normalizeView(activeView);
-    const id = targetId || 'none';
-    const rows = [];
-
-    if (active !== 'actions') {
-      const candidates = [
-        ['actions', '⚡ Moderation'],
-        ['intelligence', '🧠 Intelligence'],
-        ['cases', '📁 Cases'],
-      ]
-        .filter(([view]) => canViewDashboardSection(member, guild, view))
-        .filter(([view]) => view !== active);
-
-      const buttons = candidates.map(([view, label]) => new ButtonBuilder()
-        .setCustomId(`mod_dashboard:${id}:${view}`)
-        .setLabel(label)
-        .setStyle(ButtonStyle.Secondary)
-        .setDisabled(!targetId));
-      if (buttons.length) rows.push(new ActionRowBuilder().addComponents(buttons));
-    }
-
-    rows.push(new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('admin:home').setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary)
-    ));
-    return rows;
+  const active = normalizeView(activeView);
+  const id = targetId || 'none';
+  const rows = [];
+  if (active !== 'actions' && targetId) {
+    const candidates = [['actions','⚡ Moderation'],['intelligence','🧠 Intelligence'],['cases','📁 Cases']]
+      .filter(([view]) => canViewDashboardSection(member, guild, view))
+      .filter(([view]) => view !== active);
+    const buttons = candidates.map(([view, label]) => new ButtonBuilder().setCustomId(`mod_dashboard:${id}:${view}`).setLabel(label).setStyle(ButtonStyle.Secondary));
+    if (buttons.length) rows.push(new ActionRowBuilder().addComponents(buttons));
   }
+  const finalButtons = [];
+  if (canUseModAction(member, guild, 'export_cases')) finalButtons.push(new ButtonBuilder().setCustomId(`mod_export_cases:${id}`).setLabel('📤 Export').setStyle(ButtonStyle.Secondary));
+  finalButtons.push(new ButtonBuilder().setCustomId('admin:home').setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary));
+  rows.push(new ActionRowBuilder().addComponents(finalButtons));
+  return rows;
+}
 function buildUserSelectRow() { return new ActionRowBuilder().addComponents(new UserSelectMenuBuilder().setCustomId('mod_user_select').setPlaceholder('👤 Select a member to investigate or moderate').setMinValues(1).setMaxValues(1)); }
 function actionPermissions(member, guild) { return { warn: canUseModAction(member, guild, 'warn'), timeout: canUseModAction(member, guild, 'timeout'), kick: canUseModAction(member, guild, 'kick'), ban: canUseModAction(member, guild, 'ban'), removeWarning: canUseModAction(member, guild, 'remove_warning'), removeTimeout: canUseModAction(member, guild, 'remove_timeout') }; }
 function buildActionRows(target, stats, member, guild) {
-    const id = target?.id || 'none';
-    const p = actionPermissions(member, guild);
-    const disabled = !target;
-
-    const row1 = [];
-    if (canViewDashboardSection(member, guild, 'intelligence')) row1.push(new ButtonBuilder().setCustomId(`mod_dashboard:${id}:intelligence`).setLabel('🧠 Intelligence').setStyle(ButtonStyle.Secondary).setDisabled(disabled));
-    if (canViewDashboardSection(member, guild, 'cases')) row1.push(new ButtonBuilder().setCustomId(`mod_dashboard:${id}:cases`).setLabel('📁 Cases').setStyle(ButtonStyle.Secondary).setDisabled(disabled));
-    if (p.timeout) row1.push(createSecondaryButton(`mod_open_timeout:${id}`, 'Timeout', getEmoji('TIMEOUT', '⏳')).setDisabled(disabled));
-    if (p.warn) row1.push(createSecondaryButton(`mod_open_warn:${id}`, 'Warn', getEmoji('WARNING', '⚠️')).setDisabled(disabled));
-
-    const row2 = [];
-    if (p.kick) row2.push(createDangerButton(`mod_open_kick:${id}`, 'Kick', getEmoji('KICK', '👢')).setDisabled(disabled));
-    if (p.ban) row2.push(createDangerButton(`mod_open_ban:${id}`, 'Ban', getEmoji('BAN', '🔨')).setDisabled(disabled));
-    if (p.removeTimeout) row2.push(createSecondaryButton(`mod_remove_timeout:${id}`, 'Clear Timeout', getEmoji('SUCCESS', '✅')).setDisabled(disabled || !targetHasActiveTimeout(target)));
-    if (p.removeWarning) row2.push(createSecondaryButton(`mod_remove_warning:${id}`, 'Remove Warn', getEmoji('DELETE', '🗑️')).setDisabled(disabled || Number(stats?.warningCount || 0) <= 0));
-
-    const row3 = [];
-    if (canUseModAction(member, guild, 'manage_presets')) row3.push(new ButtonBuilder().setCustomId(`mod_presets:${id}`).setLabel('📋 Presets').setStyle(ButtonStyle.Secondary));
-    if (canUseModAction(member, guild, 'view_analytics')) row3.push(new ButtonBuilder().setCustomId(`mod_dashboard:${id}:analytics`).setLabel('📊 Analytics').setStyle(ButtonStyle.Secondary));
-    if (canUseModAction(member, guild, 'export_cases')) row3.push(new ButtonBuilder().setCustomId(`mod_export_cases:${id}`).setLabel('📤 Export').setStyle(ButtonStyle.Secondary));
-
-    return [buttonRow(row1), buttonRow(row2), buttonRow(row3)].filter(Boolean);
-  }
+  const id = target?.id || 'none';
+  const p = actionPermissions(member, guild);
+  const disabled = !target;
+  const row1 = [];
+  if (canViewDashboardSection(member, guild, 'intelligence')) row1.push(new ButtonBuilder().setCustomId(`mod_dashboard:${id}:intelligence`).setLabel('🧠 Intelligence').setStyle(ButtonStyle.Secondary).setDisabled(disabled));
+  if (canViewDashboardSection(member, guild, 'cases')) row1.push(new ButtonBuilder().setCustomId(`mod_dashboard:${id}:cases`).setLabel('📁 Cases').setStyle(ButtonStyle.Secondary).setDisabled(disabled));
+  if (p.timeout) row1.push(createSecondaryButton(`mod_open_timeout:${id}`, 'Timeout', getEmoji('TIMEOUT', '⏳')).setDisabled(disabled));
+  if (p.warn) row1.push(createSecondaryButton(`mod_open_warn:${id}`, 'Warn', getEmoji('WARNING', '⚠️')).setDisabled(disabled));
+  const row2 = [];
+  if (p.kick) row2.push(createDangerButton(`mod_open_kick:${id}`, 'Kick', getEmoji('KICK', '👢')).setDisabled(disabled));
+  if (p.ban) row2.push(createDangerButton(`mod_open_ban:${id}`, 'Ban', getEmoji('BAN', '🔨')).setDisabled(disabled));
+  if (p.removeTimeout) row2.push(createSecondaryButton(`mod_remove_timeout:${id}`, 'Clear Timeout', getEmoji('SUCCESS', '✅')).setDisabled(disabled || !targetHasActiveTimeout(target)));
+  if (p.removeWarning) row2.push(createSecondaryButton(`mod_remove_warning:${id}`, 'Remove Warn', getEmoji('DELETE', '🗑️')).setDisabled(disabled || Number(stats?.warningCount || 0) <= 0));
+  const row3 = [];
+  if (canUseModAction(member, guild, 'view_analytics')) row3.push(new ButtonBuilder().setCustomId(`mod_dashboard:${id}:analytics`).setLabel('📊 Analytics').setStyle(ButtonStyle.Secondary));
+  return [buttonRow(row1), buttonRow(row2), buttonRow(row3)].filter(Boolean);
+}
 function buildIntelligenceRows(targetId, member, guild) {
   if (!targetId) return [];
   const id = targetId; const rows = []; const first = [];
@@ -301,7 +260,7 @@ async function buildDashboardPayload(discord, interaction, target, view = DEFAUL
   const context = normalizeDashboardContext({ ...options, view }); let safeView = context.view;
   if (!canViewDashboardSection(interaction.member, interaction.guild, safeView)) safeView = DEFAULT_VIEW;
   const targetId = target?.id || null; const stats = buildTargetStats(interaction.guild.id, target); const staff = getStaffDisplay(interaction.member, interaction.guild); const staffDisplay = `${staff.badge} ${staff.label} • ${interaction.member}`;
-  const embeds = []; const components = [buildUserSelectRow()];
+  const embeds = []; const components = safeView === 'analytics' ? [] : [buildUserSelectRow()];
   if (safeView === 'actions') { embeds.push(buildActionsEmbed(interaction, target, stats, staffDisplay)); components.push(...buildActionRows(target, stats, interaction.member, interaction.guild)); }
   else if (safeView === 'intelligence') { embeds.push(buildIntelligenceEmbed(interaction, target, interaction.member, interaction.guild)); components.push(...buildIntelligenceRows(targetId, interaction.member, interaction.guild)); }
   else if (safeView === 'cases') { if (!target) { embeds.push(baseEmbed(interaction.client, COLORS.PRIMARY).setTitle('📁 Member Cases').setDescription('Select a member to open their case workspace.')); } else { const pageData = getCasesPageData(interaction.guild.id, target.id, context); embeds.push(buildCasesEmbed(target, pageData.pageCases, pageData.page, pageData.totalPages, pageData.actionFilter, pageData.statusFilter)); components.push(...buildCasesPageButtons(target.id, pageData.page, pageData.totalPages, pageData.actionFilter, pageData.statusFilter), ...buildCaseFilterButtons(target.id, pageData.actionFilter, pageData.statusFilter, pageData.page)); } }
@@ -330,46 +289,22 @@ async function handleDashboardNavigation(interaction) {
   return false;
 }
 async function handleUserSelectMenu(interaction) { if (String(interaction.customId || '').startsWith('mod_analytics_moderator_select:')) { if (!canUseModAction(interaction.member, interaction.guild, 'view_analytics')) return safeReply(interaction, ephemeralError('No permission to view moderation analytics.')); const [, window] = String(interaction.customId).split(':'); const moderatorId = interaction.values?.[0]; if (!moderatorId) return safeReply(interaction, ephemeralError('No moderator selected.')); return renderDashboard(interaction, 'none', 'analytics', { analyticsWindow: window, analyticsMode: 'moderator', analyticsModeratorId: moderatorId }); } if (interaction.customId !== 'mod_user_select') return false; const target = await fetchTarget(interaction.guild, interaction.values[0]); if (!target) return safeReply(interaction, ephemeralError('Could not find that member.')); return renderDashboard(interaction, target.id, 'actions'); }
-async function openPresetManager(interaction, targetId = 'none') {
-  if (!canUseModAction(interaction.member, interaction.guild, 'manage_presets')) return safeReply(interaction, ephemeralError('No permission to manage moderation presets.'));
-  return safeReply(interaction, { ...buildPresetManagerPayload(interaction.guild, targetId), flags: 64 });
-}
 async function openExportModal(interaction, targetId = 'none') {
   if (!canUseModAction(interaction.member, interaction.guild, 'export_cases')) return safeReply(interaction, ephemeralError('No permission to export moderation data.'));
   await interaction.showModal(buildExportModal(targetId));
   return true;
 }
-async function handlePresetInteraction(interaction) {
-  const id = String(interaction.customId || ''); const managesPresets = canUseModAction(interaction.member, interaction.guild, 'manage_presets');
-  if ((id.startsWith('mod_preset_') || id.startsWith('mod_presets:')) && !managesPresets) return safeReply(interaction, ephemeralError('No permission to manage moderation presets.'));
-  if (interaction.isStringSelectMenu?.() && id.startsWith('mod_preset_select:')) { const [, targetId = 'none'] = id.split(':'); const preset = getModerationPreset(interaction.guild.id, interaction.values?.[0]); if (!preset) return safeReply(interaction, ephemeralError('Preset not found.')); return safeReply(interaction, { ...buildPresetDetailPayload(interaction.guild, preset, targetId), flags: 64 }); }
-  if (!interaction.isButton?.()) return false;
-  if (id.startsWith('mod_presets:')) { const [, targetId = 'none'] = id.split(':'); return safeReply(interaction, { ...buildPresetManagerPayload(interaction.guild, targetId), flags: 64 }); }
-  if (id.startsWith('mod_preset_toggle:')) { const [, presetId, targetId = 'none'] = id.split(':'); const preset = toggleModerationPreset(interaction.guild, presetId, interaction.user?.id); if (!preset) return safeReply(interaction, ephemeralError('Preset not found.')); return safeReply(interaction, { ...buildPresetDetailPayload(interaction.guild, preset, targetId), flags: 64 }); }
-  if (id.startsWith('mod_preset_delete_confirm:')) { const [, presetId, targetId = 'none'] = id.split(':'); if (!deleteModerationPreset(interaction.guild, presetId)) return safeReply(interaction, ephemeralError('Preset not found.')); return safeReply(interaction, { ...buildPresetManagerPayload(interaction.guild, targetId), flags: 64 }); }
-  if (id.startsWith('mod_preset_delete:')) { const [, presetId, targetId = 'none'] = id.split(':'); const preset = getModerationPreset(interaction.guild.id, presetId); if (!preset) return safeReply(interaction, ephemeralError('Preset not found.')); return safeReply(interaction, { content: `Delete preset **${preset.name}**?`, components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`mod_preset_delete_confirm:${presetId}:${targetId}`).setLabel('Confirm Delete').setStyle(ButtonStyle.Danger), new ButtonBuilder().setCustomId(`mod_preset_edit:${presetId}:${targetId}`).setLabel('Cancel').setStyle(ButtonStyle.Secondary))], flags: 64 }); }
-  if (id.startsWith('mod_preset_apply:')) { const [, presetId, targetId = 'none'] = id.split(':'); const preset = getModerationPreset(interaction.guild.id, presetId); if (!preset || !preset.enabled) return safeReply(interaction, ephemeralError('Preset is unavailable or disabled.')); if (targetId === 'none') return safeReply(interaction, ephemeralError('Select a moderation target first.')); if (!canUseModAction(interaction.member, interaction.guild, preset.action)) return safeReply(interaction, ephemeralError(`No permission to use ${preset.action}.`)); const target = await fetchTarget(interaction.guild, targetId); if (!target) return safeReply(interaction, ephemeralError('Could not find the selected target.')); await interaction.showModal(buildPresetExecutionModal(preset, targetId)); return true; }
-  return false;
-}
-async function handlePresetModal(interaction) { const id = String(interaction.customId || ''); if (!id.startsWith('mod_preset_save:')) return false; if (!canUseModAction(interaction.member, interaction.guild, 'manage_presets')) return safeReply(interaction, ephemeralError('No permission to manage moderation presets.')); const [, presetIdRaw, targetId = 'none'] = id.split(':'); const presetId = presetIdRaw === 'new' ? null : presetIdRaw; const result = upsertModerationPreset(interaction.guild, { name: interaction.fields.getTextInputValue('name'), action: interaction.fields.getTextInputValue('action'), reason: interaction.fields.getTextInputValue('reason'), warnExpiry: interaction.fields.getTextInputValue('secondary') || 'never', duration: interaction.fields.getTextInputValue('secondary') || '1h', strikeWeight: interaction.fields.getTextInputValue('numeric') || 1, deleteDays: interaction.fields.getTextInputValue('numeric') || 0 }, interaction.user?.id || null, presetId); if (!result.ok) return safeReply(interaction, ephemeralError(result.error)); return safeReply(interaction, { ...buildPresetDetailPayload(interaction.guild, result.preset, targetId), flags: 64 }); }
 async function openModPanel(interaction, options = {}) { if (!canOpenModPanel(interaction)) return interaction.deferred || interaction.replied ? interaction.editReply(noAccessPayload()) : interaction.reply(noAccessPayload()); const view = normalizeView(options.view || DEFAULT_VIEW); const target = options.target || null; const payload = await buildDashboardPayload(Discord, interaction, target, view, options); const finalPayload = { ...payload, flags: 64 }; return interaction.deferred || interaction.replied ? interaction.editReply(finalPayload) : interaction.reply(finalPayload); }
 
 module.exports = {
   openModPanel,
   renderDashboard,
-  openPresetManager,
   openExportModal,
   refreshDashboard,
   refreshCasesDashboard,
   handleDashboardNavigation,
   handleUserSelectMenu,
-  handlePresetInteraction,
-  handlePresetModal,
   handleExportInteraction,
-  presetIdFromSubmission,
-  markPresetUsed,
   getModerationAnalytics,
   getModeratorAnalytics,
-  getModerationPresets,
-  getModerationPreset,
 };
