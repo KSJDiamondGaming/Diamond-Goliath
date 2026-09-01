@@ -49,7 +49,7 @@ const ANALYTICS_WINDOWS = Object.freeze({ '7d': 7, '30d': 30, '90d': 90, all: nu
 const ANALYTICS_WINDOW_LABELS = Object.freeze({ '7d': '7 Days', '30d': '30 Days', '90d': '90 Days', all: 'All Time' });
 const DEFAULT_CASES_CONTEXT = Object.freeze({ view: 'cases', actionFilter: 'all', statusFilter: 'all', page: 0 });
 const DEFAULT_ACTIONS_CONTEXT = Object.freeze({ view: 'actions', actionFilter: 'all', statusFilter: 'all', page: 0 });
-const DEFAULT_ANALYTICS_CONTEXT = Object.freeze({ view: 'analytics', analyticsWindow: '30d', analyticsMode: 'overview', analyticsModeratorId: null });
+const DEFAULT_ANALYTICS_CONTEXT = Object.freeze({ view: 'analytics', analyticsWindow: '30d', analyticsMode: 'overview', analyticsModeratorId: null, analyticsReturnTargetId: null });
 const EXPORT_SCOPES = new Set(['all', 'user', 'moderator', 'case']);
 const EXPORT_FORMATS = new Set(['json', 'csv']);
 const EXPORT_INCLUDE_KEYS = new Set(['core', 'metadata', 'appeals', 'evidence', 'audit']);
@@ -70,6 +70,7 @@ function normalizeDashboardContext(context = {}) {
     analyticsWindow: normalizeAnalyticsWindow(context.analyticsWindow),
     analyticsMode: context.analyticsMode === 'moderator' ? 'moderator' : 'overview',
     analyticsModeratorId: context.analyticsModeratorId ? String(context.analyticsModeratorId) : null,
+    analyticsReturnTargetId: context.analyticsReturnTargetId ? String(context.analyticsReturnTargetId) : null,
   };
 }
 function getEmoji(key, fallback) { return EMOJIS?.[key] || fallback; }
@@ -155,20 +156,32 @@ function makeExportAttachments(guildId, format, records, include, request) { con
 async function handleExportInteraction(interaction) { const id = String(interaction.customId || ''); if (interaction.isButton?.() && id.startsWith('mod_export_cases:')) { if (!canUseModAction(interaction.member, interaction.guild, 'export_cases')) return safeReply(interaction, ephemeralError('No permission to export moderation data.')); const [, targetId = 'none'] = id.split(':'); await interaction.showModal(buildExportModal(targetId)); return true; } if (interaction.isModalSubmit?.() && id.startsWith('mod_export_submit:')) { if (!canUseModAction(interaction.member, interaction.guild, 'export_cases')) return safeReply(interaction, ephemeralError('No permission to export moderation data.')); const request = parseExportRequest(interaction); if (request.error) return safeReply(interaction, ephemeralError(request.error)); const cases = selectExportCases(interaction.guild.id, request); if (!cases.length) return safeReply(interaction, ephemeralError('No moderation cases matched the export request.')); if (cases.length > MAX_EXPORT_CASES) return safeReply(interaction, ephemeralError(`Export matched ${cases.length} cases. Narrow the scope to ${MAX_EXPORT_CASES} cases or fewer.`)); const records = buildExportRecords(interaction.guild.id, cases, request.include); const generated = makeExportAttachments(interaction.guild.id, request.format, records, request.include, request); if (generated.error) return safeReply(interaction, ephemeralError(generated.error)); return safeReply(interaction, { content: `📤 Export ready • **${records.length}** case${records.length === 1 ? '' : 's'} • **${request.format.toUpperCase()}** • ${generated.attachments.length} attachment${generated.attachments.length === 1 ? '' : 's'}\nGenerated in memory only; no export file was persisted by Goliath.`, files: generated.attachments, flags: 64 }); } return false; }
 
 function buttonRow(buttons) { return buttons.length ? new ActionRowBuilder().addComponents(buttons) : null; }
-function buildDashboardNav(targetId, activeView, member, guild) {
+function buildDashboardNav(targetId, activeView, member, guild, context = {}) {
   const active = normalizeView(activeView);
   const id = targetId || 'none';
   const rows = [];
-  if (active !== 'actions' && targetId) {
-    const candidates = [['actions','⚡ Moderation'],['intelligence','🧠 Intelligence'],['cases','📁 Cases']]
-      .filter(([view]) => canViewDashboardSection(member, guild, view))
-      .filter(([view]) => view !== active);
+  if (active !== 'actions' && active !== 'analytics' && targetId) {
+    const candidates = [
+      ['actions', '⚡ Moderation'],
+      ['intelligence', '🧠 Intelligence'],
+      ['cases', '📁 Cases'],
+    ].filter(([view]) => canViewDashboardSection(member, guild, view)).filter(([view]) => view !== active);
     const buttons = candidates.map(([view, label]) => new ButtonBuilder().setCustomId(`mod_dashboard:${id}:${view}`).setLabel(label).setStyle(ButtonStyle.Secondary));
     if (buttons.length) rows.push(new ActionRowBuilder().addComponents(buttons));
   }
   const finalButtons = [];
-  if (canUseModAction(member, guild, 'export_cases')) finalButtons.push(new ButtonBuilder().setCustomId(`mod_export_cases:${id}`).setLabel('📤 Export').setStyle(ButtonStyle.Secondary));
-  finalButtons.push(new ButtonBuilder().setCustomId('admin:home').setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary));
+  if (active === 'actions') {
+    finalButtons.push(new ButtonBuilder().setCustomId('admin:home').setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary));
+    if (canUseModAction(member, guild, 'view_analytics')) finalButtons.push(new ButtonBuilder().setCustomId(`mod_dashboard:${id}:analytics`).setLabel('📊 Analytics').setStyle(ButtonStyle.Secondary));
+    if (canUseModAction(member, guild, 'export_cases')) finalButtons.push(new ButtonBuilder().setCustomId(`mod_export_cases:${id}`).setLabel('📤 Export').setStyle(ButtonStyle.Secondary));
+  } else if (active === 'analytics') {
+    const returnId = context.analyticsReturnTargetId || 'none';
+    finalButtons.push(new ButtonBuilder().setCustomId(`mod_dashboard:${returnId}:actions`).setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary));
+    if (canUseModAction(member, guild, 'export_cases')) finalButtons.push(new ButtonBuilder().setCustomId(`mod_export_cases:${returnId}`).setLabel('📤 Export').setStyle(ButtonStyle.Secondary));
+  } else {
+    finalButtons.push(new ButtonBuilder().setCustomId(`mod_dashboard:${id}:actions`).setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary));
+    if (canUseModAction(member, guild, 'export_cases')) finalButtons.push(new ButtonBuilder().setCustomId(`mod_export_cases:${id}`).setLabel('📤 Export').setStyle(ButtonStyle.Secondary));
+  }
   rows.push(new ActionRowBuilder().addComponents(finalButtons));
   return rows;
 }
@@ -188,9 +201,7 @@ function buildActionRows(target, stats, member, guild) {
   if (p.ban) row2.push(createDangerButton(`mod_open_ban:${id}`, 'Ban', getEmoji('BAN', '🔨')).setDisabled(disabled));
   if (p.removeTimeout) row2.push(createSecondaryButton(`mod_remove_timeout:${id}`, 'Clear Timeout', getEmoji('SUCCESS', '✅')).setDisabled(disabled || !targetHasActiveTimeout(target)));
   if (p.removeWarning) row2.push(createSecondaryButton(`mod_remove_warning:${id}`, 'Remove Warn', getEmoji('DELETE', '🗑️')).setDisabled(disabled || Number(stats?.warningCount || 0) <= 0));
-  const row3 = [];
-  if (canUseModAction(member, guild, 'view_analytics')) row3.push(new ButtonBuilder().setCustomId(`mod_dashboard:${id}:analytics`).setLabel('📊 Analytics').setStyle(ButtonStyle.Secondary));
-  return [buttonRow(row1), buttonRow(row2), buttonRow(row3)].filter(Boolean);
+  return [buttonRow(row1), buttonRow(row2)].filter(Boolean);
 }
 function buildIntelligenceRows(targetId, member, guild) {
   if (!targetId) return [];
@@ -249,9 +260,64 @@ function buildActionsEmbed(interaction, target, stats, staffDisplay) {
 }
 function buildIntelligenceEmbed(interaction, target, member, guild) { const capabilities = []; if (canUseModAction(member, guild, 'scan_suspects')) capabilities.push('Suspected-account correlation'); if (canUseModAction(member, guild, 'scan_network')) capabilities.push('Goliath network intelligence'); if (canUseModAction(member, guild, 'scan_links')) capabilities.push('Persistent link evidence'); if (canUseModAction(member, guild, 'scan_notes')) capabilities.push('Investigation notes'); if (canUseModAction(member, guild, 'scan_watch')) capabilities.push('Watch status'); return baseEmbed(interaction.client, COLORS.PRIMARY).setTitle('🧠 Member Intelligence').setDescription([target ? `**Active Member:** ${target.user} • \`${target.id}\`` : '**No member selected.**', '', 'Run Goliath Intelligence Scan to assemble the information this viewer is authorized to access.', '', capabilities.length ? `**Available Intelligence:**\n${capabilities.map((value) => `• ${value}`).join('\n')}` : 'Your authority profile provides basic scan access only.', '', 'Correlation results are evidence-led and never presented as confirmed identity unless Goliath has verified evidence.'].join('\n')); }
 function buildCasesEmbed(target, cases = [], page = 0, totalPages = 1, actionFilter = 'all', statusFilter = 'all') { const description = cases.length ? cases.map((entry) => `**#${entry.caseId}** • ${String(entry.action || 'unknown').toUpperCase()} • ${getStatusLabel(entry)}\n${entry.reason || 'No reason provided'}\n<t:${Math.floor(getCaseTime(entry) / 1000)}:R>`).join('\n\n') : 'No cases found for this member.'; return createEmbed({ title: target?.user?.tag ? `📁 Cases • ${target.user.tag}` : '📁 Member Cases', description, color: COLORS.PRIMARY, footer: `Action: ${actionFilter} | Status: ${statusFilter} | Page ${page + 1}/${totalPages}` }); }
-function buildAnalyticsOverviewEmbed(guild, analytics) { const trend = analytics.trend.map((entry) => `${entry.label}: **${entry.count}**`).join(' • '); const topModerators = analytics.topModerators.length ? analytics.topModerators.map(([id, count], index) => `${index + 1}. <@${id}> — **${count}**`).join('\n') : 'No moderator activity.'; const topUsers = analytics.topUsers.length ? analytics.topUsers.map(([id, count], index) => `${index + 1}. <@${id}> — **${count}**`).join('\n') : 'No moderated members.'; const appeal = analytics.appealCounts; const changeText = analytics.change === null ? 'No previous-period baseline' : `${analytics.change >= 0 ? '+' : ''}${analytics.change}% vs previous period`; return createEmbed({ title: `📊 Moderation Analytics • ${analytics.windowLabel}`, description: `Stats for **${guild?.name || 'this server'}**\n${changeText}`, color: COLORS.PRIMARY, fields: [{ name: 'Cases', value: `Total **${analytics.totalCases}** • Active **${analytics.activeCases}** • Reversed **${analytics.reversedCases}** • Expired **${analytics.expiredCases}**`, inline: false }, { name: 'Actions', value: formatActionBreakdown(analytics.actionCounts), inline: false }, { name: 'Members', value: `Unique **${analytics.uniqueUsers}** • Repeat offenders **${analytics.repeatOffenders}**`, inline: true }, { name: 'Reversal Rate', value: analytics.reversalRate, inline: true }, { name: 'Audit Activity', value: `${analytics.auditActions} events`, inline: true }, { name: 'Appeals', value: `Pending **${appeal.pending}** • Approved **${appeal.approved}** • Denied **${appeal.denied}** • Approval rate **${analytics.appealApprovalRate}**`, inline: false }, { name: 'Top Moderators', value: topModerators.slice(0, 1024), inline: true }, { name: 'Frequent Members', value: topUsers.slice(0, 1024), inline: true }, { name: 'Recent Daily Trend', value: trend || 'No recent cases.', inline: false }], footer: 'Recorded moderation activity only — not a staff quality score.' }); }
-function buildModeratorAnalyticsEmbed(guild, analytics) { const appeals = analytics.moderatorAppeals; const recentCases = analytics.recentCases.length ? analytics.recentCases.map((entry) => `#${entry.caseId} • ${entry.action} • ${entry.status || 'active'} • <@${entry.userId}>`).join('\n') : 'No cases in this period.'; const auditEvents = analytics.topAuditEvents.length ? analytics.topAuditEvents.map(([event, count]) => `${String(event).replace(/^case\./, '')}: **${count}**`).join('\n') : 'No audited activity.'; return createEmbed({ title: `👤 Moderator History • ${analytics.windowLabel}`, description: `Moderator <@${analytics.moderatorId}> • ${guild?.name || 'Server'}`, color: COLORS.PRIMARY, fields: [{ name: 'Case Activity', value: `Cases **${analytics.moderatorCases}** • Affected members **${analytics.affectedUsers}** • Repeat targets **${analytics.repeatTargets}**`, inline: false }, { name: 'Actions', value: formatActionBreakdown(analytics.moderatorActionCounts), inline: false }, { name: 'Case Outcomes', value: `Active **${analytics.moderatorStatusCounts.active || 0}** • Reversed **${analytics.moderatorStatusCounts.reversed || 0}** • Expired **${analytics.moderatorStatusCounts.expired || 0}** • Reversal rate **${analytics.moderatorReversalRate}**`, inline: false }, { name: 'Appeals on Their Cases', value: `Pending **${appeals.pending}** • Approved **${appeals.approved}** • Denied **${appeals.denied}** • Approval rate **${analytics.moderatorAppealApprovalRate}**`, inline: false }, { name: 'Audited Activity', value: `**${analytics.moderatorAuditActions}** events`, inline: true }, { name: 'Top Audit Events', value: auditEvents.slice(0, 1024), inline: true }, { name: 'Recent Cases', value: recentCases.slice(0, 1024), inline: false }], footer: 'Recorded moderation activity only — not a staff quality score.' }); }
-function buildAnalyticsRows(windowKey, mode = 'overview', moderatorId = null, currentUserId = null) { const window = normalizeAnalyticsWindow(windowKey); return [new ActionRowBuilder().addComponents(Object.keys(ANALYTICS_WINDOWS).map((key) => new ButtonBuilder().setCustomId(`mod_analytics_window:${key}:${mode}:${moderatorId || 'none'}`).setLabel(ANALYTICS_WINDOW_LABELS[key]).setStyle(window === key ? ButtonStyle.Primary : ButtonStyle.Secondary))), new ActionRowBuilder().addComponents(new UserSelectMenuBuilder().setCustomId(`mod_analytics_moderator_select:${window}`).setPlaceholder('👤 Select moderator for history').setMinValues(1).setMaxValues(1)), new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`mod_analytics_overview:${window}`).setLabel('📊 Server').setStyle(mode === 'overview' ? ButtonStyle.Primary : ButtonStyle.Secondary), new ButtonBuilder().setCustomId(`mod_analytics_my:${window}:${currentUserId || 'none'}`).setLabel('👤 My History').setStyle(mode === 'moderator' && moderatorId === currentUserId ? ButtonStyle.Primary : ButtonStyle.Secondary), new ButtonBuilder().setCustomId(`mod_analytics_refresh:${window}:${mode}:${moderatorId || 'none'}`).setLabel('🔄 Refresh').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId('mod_case_appeal_queue:0').setLabel('⚖️ Appeal Queue').setStyle(ButtonStyle.Secondary))]; }
+function buildAnalyticsOverviewEmbed(guild, analytics) {
+  const topModerators = analytics.topModerators.length ? analytics.topModerators.map(([id, count], index) => `${index + 1}. <@${id}> — **${count}**`).join('\n') : 'No moderator activity in this period.';
+  const topUsers = analytics.topUsers.length ? analytics.topUsers.map(([id, count], index) => `${index + 1}. <@${id}> — **${count}**`).join('\n') : 'No moderated members in this period.';
+  const trend = analytics.trend.length ? analytics.trend.map((entry) => `**${entry.label}** — ${entry.count}`).join('\n') : 'No recent cases.';
+  const appeal = analytics.appealCounts;
+  const changeText = analytics.change === null ? 'No previous-period baseline available.' : `${analytics.change >= 0 ? '+' : ''}${analytics.change}% compared with the previous period.`;
+  return createEmbed({
+    title: '📊 Moderation Analytics',
+    description: `**${guild?.name || 'Server'}** • **${analytics.windowLabel}**\n${changeText}`,
+    color: COLORS.PRIMARY,
+    fields: [
+      { name: '📁 Cases', value: `Total **${analytics.totalCases}** • Active **${analytics.activeCases}** • Reversed **${analytics.reversedCases}** • Expired **${analytics.expiredCases}**`, inline: false },
+      { name: '⚡ Actions', value: formatActionBreakdown(analytics.actionCounts), inline: false },
+      { name: '👥 Members', value: `Unique **${analytics.uniqueUsers}** • Repeat **${analytics.repeatOffenders}**`, inline: true },
+      { name: '↩️ Reversal Rate', value: analytics.reversalRate, inline: true },
+      { name: '🧾 Audit Activity', value: `**${analytics.auditActions}** events`, inline: true },
+      { name: '⚖️ Appeals', value: `Pending **${appeal.pending}** • Approved **${appeal.approved}** • Denied **${appeal.denied}** • Approval **${analytics.appealApprovalRate}**`, inline: false },
+      { name: '🏆 Top Moderators', value: topModerators.slice(0, 1024), inline: true },
+      { name: '👥 Frequent Members', value: topUsers.slice(0, 1024), inline: true },
+      { name: '📈 Recent Daily Trend', value: trend.slice(0, 1024), inline: false },
+    ],
+    footer: 'Recorded moderation activity only.'
+  });
+}
+function buildModeratorAnalyticsEmbed(guild, analytics) {
+  const appeals = analytics.moderatorAppeals;
+  const recentCases = analytics.recentCases.length ? analytics.recentCases.map((entry) => `#${entry.caseId} • ${String(entry.action || 'unknown').toUpperCase()} • ${entry.status || 'active'} • <@${entry.userId}>`).join('\n') : 'No cases in this period.';
+  const auditEvents = analytics.topAuditEvents.length ? analytics.topAuditEvents.map(([event, count]) => `${String(event).replace(/^case\./, '')}: **${count}**`).join('\n') : 'No audited activity.';
+  return createEmbed({
+    title: '👤 Moderator Analytics',
+    description: `<@${analytics.moderatorId}> • **${guild?.name || 'Server'}** • **${analytics.windowLabel}**`,
+    color: COLORS.PRIMARY,
+    fields: [
+      { name: '📁 Case Activity', value: `Cases **${analytics.moderatorCases}** • Members **${analytics.affectedUsers}** • Repeat targets **${analytics.repeatTargets}**`, inline: false },
+      { name: '⚡ Actions', value: formatActionBreakdown(analytics.moderatorActionCounts), inline: false },
+      { name: '↩️ Outcomes', value: `Active **${analytics.moderatorStatusCounts.active || 0}** • Reversed **${analytics.moderatorStatusCounts.reversed || 0}** • Expired **${analytics.moderatorStatusCounts.expired || 0}** • Reversal **${analytics.moderatorReversalRate}**`, inline: false },
+      { name: '⚖️ Appeals', value: `Pending **${appeals.pending}** • Approved **${appeals.approved}** • Denied **${appeals.denied}** • Approval **${analytics.moderatorAppealApprovalRate}**`, inline: false },
+      { name: '🧾 Audit Activity', value: `**${analytics.moderatorAuditActions}** events`, inline: true },
+      { name: 'Top Audit Events', value: auditEvents.slice(0, 1024), inline: true },
+      { name: 'Recent Cases', value: recentCases.slice(0, 1024), inline: false },
+    ],
+    footer: 'Recorded moderation activity only.'
+  });
+}
+function buildAnalyticsRows(windowKey, mode = 'overview', moderatorId = null, currentUserId = null, returnTargetId = 'none') {
+  const window = normalizeAnalyticsWindow(windowKey);
+  const returnId = returnTargetId || 'none';
+  return [
+    new ActionRowBuilder().addComponents(new UserSelectMenuBuilder().setCustomId(`mod_analytics_moderator_select:${window}:${returnId}`).setPlaceholder('👤 Select moderator for history').setMinValues(1).setMaxValues(1)),
+    new ActionRowBuilder().addComponents(Object.keys(ANALYTICS_WINDOWS).map((key) => new ButtonBuilder().setCustomId(`mod_analytics_window:${key}:${mode}:${moderatorId || 'none'}:${returnId}`).setLabel(ANALYTICS_WINDOW_LABELS[key]).setStyle(window === key ? ButtonStyle.Primary : ButtonStyle.Secondary))),
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`mod_analytics_overview:${window}:${returnId}`).setLabel('📊 Server').setStyle(mode === 'overview' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(`mod_analytics_my:${window}:${currentUserId || 'none'}:${returnId}`).setLabel('👤 My History').setStyle(mode === 'moderator' && moderatorId === currentUserId ? ButtonStyle.Primary : ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId('mod_case_appeal_queue:0').setLabel('⚖️ Appeal Queue').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(`mod_analytics_refresh:${window}:${mode}:${moderatorId || 'none'}:${returnId}`).setLabel('🔄 Refresh').setStyle(ButtonStyle.Secondary)
+    ),
+  ];
+}
 function buildTargetStats(guildId, target) { if (!target) return { warningCount: undefined, caseCount: undefined, lastCaseSummary: null }; const cases = getCasesForUser(guildId, target.id) || []; return { warningCount: getWarningCountForUser(guildId, target.id), caseCount: getCaseCountForUser(guildId, target.id), lastCaseSummary: cases[0] ? formatCaseSummary(cases[0]) : null }; }
 function getCasesPageData(guildId, targetId, options = {}) { const actionFilter = options.actionFilter || 'all'; const statusFilter = options.statusFilter || 'all'; const filters = {}; if (actionFilter !== 'all') filters.action = actionFilter; if (statusFilter !== 'all') filters.status = statusFilter; const allCases = getFilteredCases(guildId, targetId, filters) || []; const totalPages = Math.max(1, Math.ceil(allCases.length / CASES_PER_PAGE)); const page = Math.max(0, Math.min(Number(options.page) || 0, totalPages - 1)); return { actionFilter, statusFilter, page, totalPages, pageCases: allCases.slice(page * CASES_PER_PAGE, (page + 1) * CASES_PER_PAGE) }; }
 
@@ -264,8 +330,8 @@ async function buildDashboardPayload(discord, interaction, target, view = DEFAUL
   if (safeView === 'actions') { embeds.push(buildActionsEmbed(interaction, target, stats, staffDisplay)); components.push(...buildActionRows(target, stats, interaction.member, interaction.guild)); }
   else if (safeView === 'intelligence') { embeds.push(buildIntelligenceEmbed(interaction, target, interaction.member, interaction.guild)); components.push(...buildIntelligenceRows(targetId, interaction.member, interaction.guild)); }
   else if (safeView === 'cases') { if (!target) { embeds.push(baseEmbed(interaction.client, COLORS.PRIMARY).setTitle('📁 Member Cases').setDescription('Select a member to open their case workspace.')); } else { const pageData = getCasesPageData(interaction.guild.id, target.id, context); embeds.push(buildCasesEmbed(target, pageData.pageCases, pageData.page, pageData.totalPages, pageData.actionFilter, pageData.statusFilter)); components.push(...buildCasesPageButtons(target.id, pageData.page, pageData.totalPages, pageData.actionFilter, pageData.statusFilter), ...buildCaseFilterButtons(target.id, pageData.actionFilter, pageData.statusFilter, pageData.page)); } }
-  else if (safeView === 'analytics') { const window = context.analyticsWindow; if (context.analyticsMode === 'moderator' && context.analyticsModeratorId) embeds.push(buildModeratorAnalyticsEmbed(interaction.guild, getModeratorAnalytics(interaction.guild.id, context.analyticsModeratorId, window))); else embeds.push(buildAnalyticsOverviewEmbed(interaction.guild, getModerationAnalytics(interaction.guild.id, window))); components.push(...buildAnalyticsRows(window, context.analyticsMode, context.analyticsModeratorId, interaction.user?.id || null)); }
-  components.push(...buildDashboardNav(targetId, safeView, interaction.member, interaction.guild));
+  else if (safeView === 'analytics') { const window = context.analyticsWindow; if (context.analyticsMode === 'moderator' && context.analyticsModeratorId) embeds.push(buildModeratorAnalyticsEmbed(interaction.guild, getModeratorAnalytics(interaction.guild.id, context.analyticsModeratorId, window))); else embeds.push(buildAnalyticsOverviewEmbed(interaction.guild, getModerationAnalytics(interaction.guild.id, window))); components.push(...buildAnalyticsRows(window, context.analyticsMode, context.analyticsModeratorId, interaction.user?.id || null, context.analyticsReturnTargetId || 'none')); }
+  components.push(...buildDashboardNav(targetId, safeView, interaction.member, interaction.guild, context));
   return { embeds, components: validateDashboardComponents(components, safeView) };
 }
 async function renderDashboard(interaction, targetId, view = DEFAULT_VIEW, context = {}) { const requestedView = normalizeView(view); if (!canViewDashboardSection(interaction.member, interaction.guild, requestedView)) return safeReply(interaction, ephemeralError('That moderation workspace is not available to your authority profile.')); const target = targetId && targetId !== 'none' ? await fetchTarget(interaction.guild, targetId) : null; if (targetId && targetId !== 'none' && !target) return safeReply(interaction, ephemeralError('Could not find the selected member.')); await interaction.update(await buildDashboardPayload(Discord, interaction, target, requestedView, context)); return true; }
@@ -280,15 +346,15 @@ async function handleDashboardNavigation(interaction) {
   const id = String(interaction.customId || '');
   if (id === 'mod:overview') return renderDashboard(interaction, 'none', 'actions');
   if (id.startsWith('mod_analytics_') && !canViewDashboardSection(interaction.member, interaction.guild, 'analytics')) return safeReply(interaction, ephemeralError('No permission to view moderation analytics.'));
-  if (id.startsWith('mod_analytics_window:')) { const [, window, mode = 'overview', moderatorId = 'none'] = id.split(':'); return renderDashboard(interaction, 'none', 'analytics', { analyticsWindow: window, analyticsMode: mode, analyticsModeratorId: moderatorId === 'none' ? null : moderatorId }); }
-  if (id.startsWith('mod_analytics_overview:')) { const [, window] = id.split(':'); return renderDashboard(interaction, 'none', 'analytics', { analyticsWindow: window, analyticsMode: 'overview' }); }
-  if (id.startsWith('mod_analytics_my:')) { const [, window, moderatorId] = id.split(':'); return renderDashboard(interaction, 'none', 'analytics', { analyticsWindow: window, analyticsMode: 'moderator', analyticsModeratorId: moderatorId }); }
-  if (id.startsWith('mod_analytics_refresh:')) { const [, window, mode, moderatorId = 'none'] = id.split(':'); return renderDashboard(interaction, 'none', 'analytics', { analyticsWindow: window, analyticsMode: mode, analyticsModeratorId: moderatorId === 'none' ? null : moderatorId }); }
-  if (id.startsWith('mod_dashboard:') || id.startsWith('mod_refresh:')) { const [, targetId = 'none', requested = DEFAULT_VIEW] = id.split(':'); return renderDashboard(interaction, targetId, requested, normalizeView(requested) === 'analytics' ? DEFAULT_ANALYTICS_CONTEXT : {}); }
+  if (id.startsWith('mod_analytics_window:')) { const [, window, mode = 'overview', moderatorId = 'none', returnTargetId = 'none'] = id.split(':'); return renderDashboard(interaction, 'none', 'analytics', { analyticsWindow: window, analyticsMode: mode, analyticsModeratorId: moderatorId === 'none' ? null : moderatorId, analyticsReturnTargetId: returnTargetId === 'none' ? null : returnTargetId }); }
+  if (id.startsWith('mod_analytics_overview:')) { const [, window, returnTargetId = 'none'] = id.split(':'); return renderDashboard(interaction, 'none', 'analytics', { analyticsWindow: window, analyticsMode: 'overview', analyticsReturnTargetId: returnTargetId === 'none' ? null : returnTargetId }); }
+  if (id.startsWith('mod_analytics_my:')) { const [, window, moderatorId, returnTargetId = 'none'] = id.split(':'); return renderDashboard(interaction, 'none', 'analytics', { analyticsWindow: window, analyticsMode: 'moderator', analyticsModeratorId: moderatorId, analyticsReturnTargetId: returnTargetId === 'none' ? null : returnTargetId }); }
+  if (id.startsWith('mod_analytics_refresh:')) { const [, window, mode, moderatorId = 'none', returnTargetId = 'none'] = id.split(':'); return renderDashboard(interaction, 'none', 'analytics', { analyticsWindow: window, analyticsMode: mode, analyticsModeratorId: moderatorId === 'none' ? null : moderatorId, analyticsReturnTargetId: returnTargetId === 'none' ? null : returnTargetId }); }
+  if (id.startsWith('mod_dashboard:') || id.startsWith('mod_refresh:')) { const [, targetId = 'none', requested = DEFAULT_VIEW] = id.split(':'); return renderDashboard(interaction, normalizeView(requested) === 'analytics' ? 'none' : targetId, requested, normalizeView(requested) === 'analytics' ? { ...DEFAULT_ANALYTICS_CONTEXT, analyticsReturnTargetId: targetId === 'none' ? null : targetId } : {}); }
   if (id.startsWith('mod_filter_cases:') || id.startsWith('mod_case_page:')) { if (!canViewDashboardSection(interaction.member, interaction.guild, 'cases')) return safeReply(interaction, ephemeralError('No permission to view moderation cases.')); const [, targetId = 'none', actionFilter = 'all', statusFilter = 'all', page = '0'] = id.split(':'); return renderDashboard(interaction, targetId, 'cases', { actionFilter, statusFilter, page }); }
   return false;
 }
-async function handleUserSelectMenu(interaction) { if (String(interaction.customId || '').startsWith('mod_analytics_moderator_select:')) { if (!canUseModAction(interaction.member, interaction.guild, 'view_analytics')) return safeReply(interaction, ephemeralError('No permission to view moderation analytics.')); const [, window] = String(interaction.customId).split(':'); const moderatorId = interaction.values?.[0]; if (!moderatorId) return safeReply(interaction, ephemeralError('No moderator selected.')); return renderDashboard(interaction, 'none', 'analytics', { analyticsWindow: window, analyticsMode: 'moderator', analyticsModeratorId: moderatorId }); } if (interaction.customId !== 'mod_user_select') return false; const target = await fetchTarget(interaction.guild, interaction.values[0]); if (!target) return safeReply(interaction, ephemeralError('Could not find that member.')); return renderDashboard(interaction, target.id, 'actions'); }
+async function handleUserSelectMenu(interaction) { if (String(interaction.customId || '').startsWith('mod_analytics_moderator_select:')) { if (!canUseModAction(interaction.member, interaction.guild, 'view_analytics')) return safeReply(interaction, ephemeralError('No permission to view moderation analytics.')); const [, window, returnTargetId = 'none'] = String(interaction.customId).split(':'); const moderatorId = interaction.values?.[0]; if (!moderatorId) return safeReply(interaction, ephemeralError('No moderator selected.')); return renderDashboard(interaction, 'none', 'analytics', { analyticsWindow: window, analyticsMode: 'moderator', analyticsModeratorId: moderatorId, analyticsReturnTargetId: returnTargetId === 'none' ? null : returnTargetId }); } if (interaction.customId !== 'mod_user_select') return false; const target = await fetchTarget(interaction.guild, interaction.values[0]); if (!target) return safeReply(interaction, ephemeralError('Could not find that member.')); return renderDashboard(interaction, target.id, 'actions'); }
 async function openExportModal(interaction, targetId = 'none') {
   if (!canUseModAction(interaction.member, interaction.guild, 'export_cases')) return safeReply(interaction, ephemeralError('No permission to export moderation data.'));
   await interaction.showModal(buildExportModal(targetId));
