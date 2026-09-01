@@ -372,11 +372,10 @@ async function buildSettingsPanel(guild) {
         '**Guild Role Style**',
         hasSuggestion ? `Detected: \`${section.style.detectedFormat}\`` : 'No guild role style has been scanned yet.',
         '',
-        'Manage Role Selector status, diagnostics, usage and automatic role styling.',
+        'Manage Role Selector status, diagnostics and automatic role styling.',
       ].join('\n'))],
     components: [
       row(
-        button('admin:roleSelector:stats', '📊 View Stats', ButtonStyle.Primary),
         button('admin:roleSelector:health', '🩺 Health & Repair', ButtonStyle.Primary),
         button('admin:roleSelector:scanStyle', '🔎 Scan Guild Style', ButtonStyle.Primary),
       ),
@@ -510,10 +509,17 @@ async function buildDeploymentsPanel(i, selectedId = null) {
     return {
       content: null,
       embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('📍 Role Selector · Deployments').setDescription([
-        'Deploy different Role Selector panels to different channels. The same group can appear on multiple panels.', '',
+        'Deploy member Role Selector panels and public stats panels from one place. The same group can appear on multiple member panels.', '',
         lines.join('\n\n') || '`No deployments yet`',
       ].join('\n').slice(0, 4096))],
-      components: [deploymentSelect(i.guildId), row(button('admin:roleSelector:deploymentCreate', '➕ Create Deployment', ButtonStyle.Success)), nav()],
+      components: [
+        deploymentSelect(i.guildId),
+        row(
+          button('admin:roleSelector:deploymentCreate', '➕ Create Deployment', ButtonStyle.Success),
+          button('admin:roleSelector:statsPublic', '📊 Deploy Stats', ButtonStyle.Success),
+        ),
+        nav(),
+      ],
     };
   }
 
@@ -657,7 +663,7 @@ async function buildStats(guild) {
       `**Total selections:** ${total}`, '', '**🏆 Most Selected**',
       rows.filter((x) => x.count).slice(0, 10).map((x, index) => `${index + 1}. ${x.groupEmoji} **${x.label}** — ${x.count} · ${x.groupName}`).join('\n') || '`No selections yet`',
     ].join('\n'))],
-    components: [groupMenu(guild.id, null, 'admin:roleSelector:statsGroup'), row(button('admin:roleSelector:statsPublic', '📣 Public Stats Panel', ButtonStyle.Primary)), nav('admin:roleSelector:settings', true)],
+    components: [groupMenu(guild.id, null, 'admin:roleSelector:statsGroup'), nav('admin:roleSelector:deployment', true)],
   };
 }
 
@@ -690,12 +696,12 @@ async function buildStatsDeploymentPanel(i) {
   const menu = new ChannelSelectMenuBuilder().setCustomId('admin:roleSelector:statsDeploymentChannel').setPlaceholder(channelName ? `Current: #${channelName} · choose to change` : 'Choose public stats channel').setMinValues(1).setMaxValues(1).setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement);
   const jump = message ? `https://discord.com/channels/${i.guildId}/${message.channel.id}/${message.id}` : null;
   return {
-    embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('📣 Role Selector · Public Stats Panel').setDescription([
+    embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('📊 Role Selector · Deploy Stats').setDescription([
       `**Channel:** ${deployment.channelId ? `<#${deployment.channelId}>` : '`Not selected`'}`,
       `**Message:** ${message ? 'Deployed ✅' : 'Not deployed'}`, '',
       'Deploy a user-visible community leaderboard. Counts update in place; member names remain admin-only.',
     ].join('\n'))],
-    components: [row(menu), row(button('admin:roleSelector:statsDeploy', message ? '🔄 Update Public Panel' : '📨 Deploy Public Panel', ButtonStyle.Success, !deployment.channelId), jump ? linkButton('↗️ Jump to Panel', jump) : null), nav('admin:roleSelector:stats', true)],
+    components: [row(menu), row(button('admin:roleSelector:statsDeploy', message ? '🔄 Update Stats Panel' : '📨 Deploy Stats Panel', ButtonStyle.Success, !deployment.channelId), jump ? linkButton('↗️ Jump to Panel', jump) : null), nav('admin:roleSelector:deployment', true)],
   };
 }
 
@@ -1011,7 +1017,7 @@ async function handleRoleSelectorInteraction(i) {
     if (id === 'admin:roleSelector:stats') return respond(i, await buildStats(i.guild));
     if (id === 'admin:roleSelector:statsGroup' && i.values?.[0] !== '__none__') {
       const usage = await roleSelector.getUsage(i.guild, i.values[0]); const group = usage.groups?.[0];
-      return respond(i, { embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle(`📊 ${group?.emoji || '🏷️'} ${group?.name || 'Group'}`).setDescription((group?.rows || []).map((x, index) => `${index + 1}. **${x.label}** — ${x.count || 0}`).join('\n') || '`No selections yet`')], components: [nav('admin:roleSelector:stats', true)] });
+      return respond(i, { embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle(`📊 ${group?.emoji || '🏷️'} ${group?.name || 'Group'}`).setDescription((group?.rows || []).map((x, index) => `${index + 1}. **${x.label}** — ${x.count || 0}`).join('\n') || '`No selections yet`')], components: [nav('admin:roleSelector:deployment', true)] });
     }
     if (id === 'admin:roleSelector:statsPublic') return respond(i, await buildStatsDeploymentPanel(i));
     if (id === 'admin:roleSelector:statsDeploymentChannel') {
