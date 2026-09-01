@@ -181,14 +181,14 @@ function emojiOption(emoji) {
   return {
     label: `:${shortcode}:`.slice(0, 100),
     value: String(emoji.id),
-    description: `${categoryName(emoji)}${emoji.core ? ' • Built-in' : ''}`.slice(0, 100),
+    description: categoryName(emoji).slice(0, 100),
     emoji: emoji.component || undefined,
   };
 }
 
 function buildLauncher() {
   return {
-    content: 'Choose an emoji with `/e find`, or browse every emoji available in this server.',
+    content: 'Looking for an emoji? Search with `/e find`, or open the full emoji list below.',
     components: [row(button('user:emojis:browse', 'Browse Emojis', ButtonStyle.Primary, '😀'))],
   };
 }
@@ -200,13 +200,13 @@ async function buildPanel(interaction, selectedPage = 'all:0') {
 
   const sections = orderedCategories(catalog).map((category) => {
     const items = sortAlphabetically(catalog.filter((emoji) => categoryName(emoji) === category));
-    const names = items.map((emoji) => `\`:${emojiShortcode(emoji)}:\``).join('  ');
+    const names = items.map((emoji) => `${emoji.mention} \`:${emojiShortcode(emoji)}:\``).join('  ');
     return `**${category}** (${items.length})\n${names || 'None'}`;
   });
 
   const description = [
-    `**${catalog.length} emojis available in this server.**`,
-    'They are sorted alphabetically and grouped automatically by category.',
+    `**${catalog.length} emojis ready to use.**`,
+    'Choose a category below, then pick the emoji you want to post.',
     '',
     ...sections,
   ].join('\n\n').slice(0, 4096);
@@ -226,14 +226,15 @@ async function buildPanel(interaction, selectedPage = 'all:0') {
   if (active.items.length) {
     components.push(row(new StringSelectMenuBuilder()
       .setCustomId('user:emojis:browse-pick')
-      .setPlaceholder('Choose an emoji to post')
+      .setPlaceholder('Pick an emoji')
       .addOptions(active.items.map(emojiOption))));
   }
 
   return {
+    content: null,
     embeds: [new EmbedBuilder()
       .setColor(PANEL_COLOR)
-      .setTitle('😀 Server Emojis')
+      .setTitle('😀 Emoji Browser')
       .setDescription(description)
       .setFooter({ text: `Requested by ${displayName(interaction)}` })
       .setTimestamp()],
@@ -321,7 +322,7 @@ async function buildMessageConversionPreview(interaction, message) {
 async function postSelectedEmoji(interaction, emojiId) {
   const catalog = await availableCatalog(interaction);
   const emoji = catalog.find((entry) => String(entry.id) === String(emojiId));
-  if (!emoji) throw new Error('That emoji is no longer available in this server.');
+  if (!emoji) throw new Error('That emoji is no longer available here.');
   touchUserRecent(guildId(interaction), userId(interaction), emoji.id);
   const payload = { content: emoji.mention, allowedMentions: { parse: [] } };
   if (interaction.deferred || interaction.replied) return interaction.followUp(payload);
