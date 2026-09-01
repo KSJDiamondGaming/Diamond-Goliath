@@ -468,8 +468,8 @@ function buildAppearance(guild, rolePage = 0) {
       ...rolePicker.rows,
       row(
         button('admin:roleSelector:togglePlacement', section.style.placement === 'above' ? '⬆️ Place Above' : '⬇️ Place Below', ButtonStyle.Primary),
-        button('admin:roleSelector:toggleGrouped', section.style.keepGrouped ? '🧲 Keep Together: On' : '🧲 Keep Together: Off', section.style.keepGrouped ? ButtonStyle.Success : ButtonStyle.Secondary),
-        button('admin:roleSelector:styleOpen', '✏️ Edit Role Style', ButtonStyle.Secondary),
+        button('admin:roleSelector:toggleGrouped', section.style.keepGrouped ? '🧲 Keep Together: On' : '🧲 Keep Together: Off', ButtonStyle.Primary),
+        button('admin:roleSelector:styleOpen', '✏️ Edit Role Style', ButtonStyle.Primary),
         button('admin:roleSelector:createDivider', '➕ Create Divider', ButtonStyle.Success),
       ),
       nav(),
