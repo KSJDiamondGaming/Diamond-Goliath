@@ -18,6 +18,7 @@ const PUBLIC_COMMAND_NAMES = new Set(
   [...CANONICAL_COMMAND_NAMES].filter((name) => !RETIRED_GUILD_COMMAND_NAMES.has(name)),
 );
 const ALLOWED_GLOBAL_COMMAND_NAMES = new Set([...PUBLIC_COMMAND_NAMES, OWNER_COMMAND_NAME]);
+const OWNER_USER_CONTEXTS = [0, 1, 2];
 
 function resolveMode() {
   const fromArg = String(process.argv[2] || '').trim().toLowerCase();
@@ -90,7 +91,7 @@ function loadCanonicalCommands() {
   }
 
   if (seen.size !== CANONICAL_COMMAND_NAMES.size) {
-    throw new Error(`Expected /admin, /mod, /user, /owner, /e and Convert Emoji Shortcodes; loaded ${[...seen].join(', ')}`);
+    throw new Error(`Expected /admin, /mod, /user, /owner and /e; loaded ${[...seen].join(', ')}`);
   }
 
   return commands;
@@ -118,10 +119,11 @@ function buildUserInstalledOwnerCommand(ownerCommand) {
 
   // /owner is deliberately NOT a guild-installed command. A guild owner or
   // administrator must never be able to expose it through Server Settings >
-  // Integrations. It is published globally for USER_INSTALL only, while the
-  // runtime OWNER_IDS check remains the final execution gate.
+  // Integrations. Publish it globally for USER_INSTALL only. Discord's own
+  // user-install tutorial uses all three supported interaction contexts for a
+  // user-installed command that must be discoverable from guild channels.
   command.integration_types = [1]; // ApplicationIntegrationType.UserInstall
-  command.contexts = [0]; // InteractionContextType.Guild
+  command.contexts = [...OWNER_USER_CONTEXTS]; // Guild, BotDM, PrivateChannel
   delete command.default_member_permissions;
   delete command.default_permission;
   delete command.dm_permission;
@@ -132,12 +134,12 @@ function buildUserInstalledOwnerCommand(ownerCommand) {
 function assertOwnerCommandUserInstall(ownerCommand) {
   if (!ownerCommand) throw new Error('Missing /owner command payload.');
   const integrationTypes = Array.isArray(ownerCommand.integration_types) ? ownerCommand.integration_types : [];
-  const contexts = Array.isArray(ownerCommand.contexts) ? ownerCommand.contexts : [];
+  const contexts = Array.isArray(ownerCommand.contexts) ? [...ownerCommand.contexts].sort() : [];
   if (integrationTypes.length !== 1 || integrationTypes[0] !== 1) {
     throw new Error('Refusing to sync /owner unless it is USER_INSTALL only.');
   }
-  if (contexts.length !== 1 || contexts[0] !== 0) {
-    throw new Error('Refusing to sync /owner outside guild interaction context.');
+  if (contexts.length !== OWNER_USER_CONTEXTS.length || !OWNER_USER_CONTEXTS.every((value) => contexts.includes(value))) {
+    throw new Error('Refusing to sync /owner without the complete USER_INSTALL interaction-context set.');
   }
 }
 
@@ -252,15 +254,11 @@ async function syncCommands() {
   let removedGuildCommands = [];
 
   if (commandMode === 'global') {
-    // Production public commands remain global. /owner is added separately as
-    // USER_INSTALL only so it never appears in a guild's Integration command list.
     await putGlobalCommands(rest, clientId, publicCommands, dryRun);
     await upsertGlobalOwnerCommand(rest, clientId, ownerCommand, dryRun);
   } else {
     if (!guildIds.length) throw new Error(`No guild IDs configured for ${mode}`);
     for (const guildId of guildIds) {
-      // A PUT replaces each guild command set, automatically stripping /owner,
-      // /commandcenter and Convert Emoji Shortcodes from configured guilds.
       await putGuildCommands(rest, clientId, guildId, publicCommands, dryRun);
     }
     await upsertGlobalOwnerCommand(rest, clientId, ownerCommand, dryRun);
