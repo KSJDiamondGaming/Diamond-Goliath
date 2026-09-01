@@ -25,6 +25,7 @@ permissions:
 concurrency:
   group: deploy-${{ github.event_name == 'push' && 'dev' || inputs.environment }}
   cancel-in-progress: false
+  queue: max
 
 jobs:
   resolve:
