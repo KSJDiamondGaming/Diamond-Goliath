@@ -282,7 +282,7 @@ function flushUsage(guildId) {
 
 function recordUsage(guildId, emojiId, context = 'unknown', count = 1) {
   const id = String(emojiId || '').trim();
-  if (!/^\d{16,20}$/.test(id)) return getSection(guildId);
+  if (!/^\d{16,20}$/.test(id)) return;
 
   const guildKey = String(guildId);
   const contextKey = cleanKey(context, 60) || 'unknown';
@@ -302,8 +302,6 @@ function recordUsage(guildId, emojiId, context = 'unknown', count = 1) {
   entry.lastUsedAt = at;
   entry.contexts[contextKey] = (entry.contexts[contextKey] || 0) + increment;
   queued.entries.set(id, entry);
-
-  return getSection(guildId);
 }
 
 function setTemporary(guildId, emojiId, expiresAt, removeWhenUnused = true, guildOrMeta = {}) {
@@ -325,9 +323,6 @@ function clearTemporary(guildId, emojiId, guildOrMeta = {}) {
 
 module.exports = {
   MAX_GUILD_EMOJIS,
-  MAX_ALIASES,
-  MAX_PACKS,
-  MAX_RECENT,
   getSection,
   saveSection,
   setFavourite,
