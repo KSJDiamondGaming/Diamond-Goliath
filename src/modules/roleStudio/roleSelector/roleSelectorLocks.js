@@ -278,8 +278,46 @@ function retryStatsExtensionAfterPanelLoad() {
   });
 }
 
+function installStatsEphemeralNavigationPatch() {
+  // The public stats message should open one private drill-down. Once inside that
+  // ephemeral message, moving between Member Leaderboard and Full Breakdown must
+  // update the existing message rather than creating a new ephemeral reply each time.
+  setImmediate(() => {
+    try {
+      const panel = require('./roleSelectorPanel');
+      if (!panel || panel.__statsEphemeralNavigationPatched || typeof panel.handleRoleSelectorInteraction !== 'function') return;
+
+      const original = panel.handleRoleSelectorInteraction;
+      panel.handleRoleSelectorInteraction = async function handleRoleSelectorInteractionWithEphemeralStatsNavigation(i) {
+        const id = String(i.customId || '');
+        const isStatsPanelNavigation = id.startsWith('roleSelector:statsMembers:') || id.startsWith('roleSelector:statsBreakdown:');
+        const isEphemeralMessage = Boolean(i.isMessageComponent?.() && i.message?.flags?.has?.(64));
+        if (!isStatsPanelNavigation || !isEphemeralMessage) return original(i);
+
+        const originalReply = i.reply;
+        i.reply = async (payload = {}) => {
+          const next = { ...payload };
+          delete next.flags;
+          return i.update(next);
+        };
+
+        try {
+          return await original(i);
+        } finally {
+          i.reply = originalReply;
+        }
+      };
+
+      panel.__statsEphemeralNavigationPatched = true;
+    } catch (error) {
+      console.warn('[RoleSelector] Stats ephemeral navigation patch failed:', error.message || error);
+    }
+  });
+}
+
 installHardeningPatch();
 retryStatsExtensionAfterPanelLoad();
+installStatsEphemeralNavigationPatch();
 
 module.exports = {
   lockKey,
