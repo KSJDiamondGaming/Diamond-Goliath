@@ -167,15 +167,6 @@ function buildDashboardNav(targetId, activeView, member, guild, context = {}) {
   const active = normalizeView(activeView);
   const id = targetId || 'none';
   const rows = [];
-  if (active !== 'actions' && active !== 'analytics' && targetId) {
-    const candidates = [
-      ['actions', '⚡ Moderation'],
-      ['intelligence', '🧠 Intelligence'],
-      ['cases', '📁 Cases'],
-    ].filter(([view]) => canViewDashboardSection(member, guild, view)).filter(([view]) => view !== active);
-    const buttons = candidates.map(([view, label]) => new ButtonBuilder().setCustomId(`mod_dashboard:${id}:${view}`).setLabel(label).setStyle(ButtonStyle.Secondary));
-    if (buttons.length) rows.push(new ActionRowBuilder().addComponents(buttons));
-  }
   const finalButtons = [];
   if (active === 'actions') {
     finalButtons.push(new ButtonBuilder().setCustomId('admin:home').setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary));
@@ -219,9 +210,9 @@ function buildIntelligenceRows(targetId, member, guild) {
   const id = targetId; const rows = []; const first = [];
   if (canUseModAction(member, guild, 'scan_run')) first.push(createPrimaryButton(`mod_member_scan:${id}`, 'Full Member Scan', '🔎'));
   if (canUseModAction(member, guild, 'scan_history')) first.push(createSecondaryButton(`mod_scan_history:${id}`, 'Scan History', '📜'));
-  if (canUseModAction(member, guild, 'scan_compare')) first.push(createSecondaryButton(`mod_scan_compare:${id}`, 'Compare', '⚖️'));
-  if (canUseModAction(member, guild, 'scan_links')) first.push(createSecondaryButton(`mod_scan_links:${id}`, 'Link Evidence', '🔗'));
+  if (canUseModAction(member, guild, 'scan_compare')) first.push(createSecondaryButton(`mod_scan_compare:${id}`, 'Compare Member', '⚖️'));
   const second = [];
+  if (canUseModAction(member, guild, 'scan_links')) second.push(createSecondaryButton(`mod_scan_links:${id}`, 'Link Evidence', '🔗'));
   if (canUseModAction(member, guild, 'scan_notes')) second.push(createSecondaryButton(`mod_scan_note:${id}`, 'Add Note', '📝'));
   if (canUseModAction(member, guild, 'scan_watch')) second.push(createSecondaryButton(`mod_scan_watch:${id}`, 'Watch Status', '👁️'));
   for (const row of [buttonRow(first), buttonRow(second)]) if (row) rows.push(row);
