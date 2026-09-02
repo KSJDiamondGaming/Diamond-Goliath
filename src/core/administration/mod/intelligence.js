@@ -557,7 +557,7 @@ async function reportWatchChange(interaction, targetId, change) {
   } catch (error) { console.warn('[Member Intelligence] Sentinel report failed:', error?.message || error); }
 }
 
-async function handleInteraction(interaction, { ensureCapability } = {}) {
+async function handleInteraction(interaction, { ensureCapability, canCapability } = {}) {
   const id = String(interaction?.customId || '');
   if (!id.startsWith('mod_intel_')) return false;
   const parts = id.split(':'); const action = parts[0]; const targetId = parts[1];
@@ -588,9 +588,9 @@ async function handleInteraction(interaction, { ensureCapability } = {}) {
 
   if (action === 'mod_intel_watchlist') {
     if (!(await need('scan_network', '❌ You do not have permission to view Goliath intelligence.'))) return true;
-    const canManage = await need('scan_watch', '');
+    const canManage = typeof canCapability === 'function' ? Boolean(canCapability(interaction, 'scan_watch')) : false;
     const context = await buildContext(interaction.client, target, {});
-    await safeReply(interaction, { embeds: [watchlistEmbed(target, context)], components: watchlistRows(targetId, Boolean(canManage)), flags: 64 }); return true;
+    await safeReply(interaction, { embeds: [watchlistEmbed(target, context)], components: watchlistRows(targetId, canManage), flags: 64 }); return true;
   }
   if (action === 'mod_intel_guilds') {
     if (!(await need('scan_network', '❌ You do not have permission to view cross-guild intelligence.'))) return true;

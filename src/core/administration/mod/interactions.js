@@ -16,6 +16,7 @@ const { buildPunishmentModal, buildBulkModal, submitPunishmentRequest, submitBul
 const { getWarningCountForUser, syncExpiredWarningsToCases, showWarningModal, showRemoveWarningModal, submitWarningModal, submitRemoveWarningRequest } = require('./warns');
 const { openCaseTool, handleCaseAction, submitCaseModal, handleExternalAppealInteraction } = require('./cases');
 const { openCaseSearch, handleCaseSearchAction, handleCaseSearchSelect, handleCaseSearchModal } = require('./caseSearch');
+const memberIntelligence = require('./intelligence');
 const {
   renderDashboard,
   openExportModal,
@@ -386,6 +387,7 @@ async function runMemberScan(i, targetId) {
   const target = await fetchTarget(i.guild, targetId);
   if (!target) return safeReply(i, { content: '❌ Could not find that member in this server.', flags: 64 });
   const report = buildMemberScanPayload(i, target);
+  await memberIntelligence.decorateScan(i, target, report);
   recordModerationSystemEvent({
     interaction: i,
     event: 'moderation.member_scan.completed',
@@ -504,6 +506,8 @@ async function handleMemberScanButton(i) {
   if (id.startsWith('mod_member_scan:')) return runMemberScan(i, id.split(':')[1]);
   if (id.startsWith('mod_scan_history:')) return showMemberScanHistory(i, id.split(':')[1]);
   if (id.startsWith('mod_scan_links:')) return showPersistentLinkEvidence(i, id.split(':')[1]);
+  const intelligenceHandled = await memberIntelligence.handleInteraction(i, { ensureCapability: ensureScanCapability, canCapability: canScanCapability });
+  if (intelligenceHandled) return true;
   if (id.startsWith('mod_scan_watch:')) return toggleMemberWatch(i, id.split(':')[1]);
   if (id.startsWith('mod_scan_note:')) {
     const targetId = id.split(':')[1];
