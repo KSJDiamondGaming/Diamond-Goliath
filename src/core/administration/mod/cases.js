@@ -456,13 +456,14 @@ function buildAppealQueuePayload(guildId, requestedPage = 0, filters = { status:
   if (extraFilters.length) embed.addFields({ name: '🔎 Additional Filters', value: extraFilters.join(' • '), inline: false });
   embed.setFooter({ text: `${results.length} matching appeal${results.length === 1 ? '' : 's'} • Page ${page + 1}/${totalPages}` }).setTimestamp();
   const statusRow = new ActionRowBuilder().addComponents(
-    ...['pending', 'approved', 'denied', 'all'].map((status) => new ButtonBuilder()
+    ...['pending', 'approved', 'denied'].map((status) => new ButtonBuilder()
       .setCustomId(`mod_case_appeal_queue_status:${activeToken}:${status}`)
-      .setLabel(status === 'pending' ? 'Pending' : status === 'approved' ? 'Approved' : status === 'denied' ? 'Denied' : 'All')
+      .setLabel(status === 'pending' ? 'Pending' : status === 'approved' ? 'Approved' : 'Denied')
       .setStyle(normalizedStatus === status ? ButtonStyle.Primary : ButtonStyle.Secondary))
   );
   const pageRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId(`mod_case_appeal_queue:${activeToken}:${Math.max(0, page - 1)}`).setLabel('◀ Previous').setStyle(ButtonStyle.Secondary).setDisabled(page <= 0),
+    new ButtonBuilder().setCustomId(`mod_case_appeal_queue_status:${activeToken}:all`).setLabel('All').setStyle(normalizedStatus === 'all' ? ButtonStyle.Primary : ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId(`mod_case_appeal_queue:${activeToken}:${Math.min(totalPages - 1, page + 1)}`).setLabel('Next ▶').setStyle(ButtonStyle.Secondary).setDisabled(page >= totalPages - 1)
   );
   const rows = [statusRow, pageRow];
