@@ -7,6 +7,8 @@ const MAX_ALIASES = 200;
 const MAX_PACKS = 50;
 const MAX_RECENT = 25;
 const MAX_USAGE_CONTEXTS = 50;
+const USAGE_FLUSH_MS = 2000;
+const pendingUsage = new Map();
 
 function uniqueIds(values, max = Number.MAX_SAFE_INTEGER) {
   return [...new Set((Array.isArray(values) ? values : []).map((value) => String(value || '').trim()).filter((value) => /^\d{16,20}$/.test(value)))].slice(0, max);
@@ -249,21 +251,63 @@ function touchRecent(guildId, emojiId, at = new Date().toISOString()) {
   return saveSection(guildId, { recent: [{ id, at }, ...current.recent.filter((entry) => entry.id !== id)] });
 }
 
+function flushUsage(guildId) {
+  const queued = pendingUsage.get(String(guildId));
+  if (!queued) return;
+  pendingUsage.delete(String(guildId));
+
+  try {
+    const current = getSection(guildId);
+    const usage = { ...current.usage };
+    const recentIds = new Set();
+    const recent = [];
+
+    for (const [id, entry] of queued.entries) {
+      const previous = usage[id] || { count: 0, lastUsedAt: null, contexts: {} };
+      const contexts = { ...previous.contexts };
+      for (const [context, count] of Object.entries(entry.contexts)) contexts[context] = (contexts[context] || 0) + count;
+      usage[id] = {
+        count: previous.count + entry.count,
+        lastUsedAt: entry.lastUsedAt,
+        contexts,
+      };
+      recent.push({ id, at: entry.lastUsedAt });
+      recentIds.add(id);
+    }
+
+    saveSection(guildId, {
+      usage,
+      recent: [...recent, ...current.recent.filter((entry) => !recentIds.has(entry.id))],
+    });
+  } catch (error) {
+    console.warn(`[Emoji Studio] Usage flush failed for ${guildId}: ${error?.message || error}`);
+  }
+}
+
 function recordUsage(guildId, emojiId, context = 'unknown', count = 1) {
   const id = String(emojiId || '').trim();
   if (!/^\d{16,20}$/.test(id)) return getSection(guildId);
-  const current = getSection(guildId);
-  const previous = current.usage[id] || { count: 0, lastUsedAt: null, contexts: {} };
-  const key = cleanKey(context, 60) || 'unknown';
-  const usage = {
-    ...current.usage,
-    [id]: {
-      count: previous.count + Math.max(1, Number(count) || 1),
-      lastUsedAt: new Date().toISOString(),
-      contexts: { ...previous.contexts, [key]: (previous.contexts[key] || 0) + Math.max(1, Number(count) || 1) },
-    },
-  };
-  return saveSection(guildId, { usage, recent: [{ id, at: new Date().toISOString() }, ...current.recent.filter((entry) => entry.id !== id)] });
+
+  const guildKey = String(guildId);
+  const contextKey = cleanKey(context, 60) || 'unknown';
+  const increment = Math.max(1, Number(count) || 1);
+  const at = new Date().toISOString();
+  let queued = pendingUsage.get(guildKey);
+
+  if (!queued) {
+    queued = { entries: new Map(), timer: null };
+    queued.timer = setTimeout(() => flushUsage(guildKey), USAGE_FLUSH_MS);
+    queued.timer.unref?.();
+    pendingUsage.set(guildKey, queued);
+  }
+
+  const entry = queued.entries.get(id) || { count: 0, lastUsedAt: at, contexts: {} };
+  entry.count += increment;
+  entry.lastUsedAt = at;
+  entry.contexts[contextKey] = (entry.contexts[contextKey] || 0) + increment;
+  queued.entries.set(id, entry);
+
+  return getSection(guildId);
 }
 
 function setTemporary(guildId, emojiId, expiresAt, removeWhenUnused = true, guildOrMeta = {}) {
