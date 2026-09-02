@@ -2,7 +2,8 @@ name: Apply Moderation Navigation Layout Once
 
 on:
   push:
-    branches: [dev]
+    branches:
+      - dev
     paths:
       - '.github/workflows/mod-nav-layout-once.yml'
 
@@ -20,40 +21,8 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: '22'
-      - name: Standardise moderation final navigation rows
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          path = Path('src/core/administration/mod/panel.js')
-          s = path.read_text()
-
-          old_actions = """    finalButtons.push(new ButtonBuilder().setCustomId('admin:home').setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary));
-    if (canUseModAction(member, guild, 'view_analytics')) finalButtons.push(new ButtonBuilder().setCustomId(`mod_dashboard:${id}:analytics`).setLabel('📊 Analytics').setStyle(ButtonStyle.Secondary));
-    if (canUseModAction(member, guild, 'export_cases')) finalButtons.push(new ButtonBuilder().setCustomId(`mod_export_cases:${id}`).setLabel('📤 Export').setStyle(ButtonStyle.Secondary));"""
-          new_actions = """    finalButtons.push(new ButtonBuilder().setCustomId('admin:home').setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary));
-    if (canUseModAction(member, guild, 'export_cases')) finalButtons.push(new ButtonBuilder().setCustomId(`mod_export_cases:${id}`).setLabel('📤 Export').setStyle(ButtonStyle.Secondary));
-    if (canUseModAction(member, guild, 'view_analytics')) finalButtons.push(new ButtonBuilder().setCustomId(`mod_dashboard:${id}:analytics`).setLabel('📊 Analytics').setStyle(ButtonStyle.Secondary));"""
-
-          old_analytics = """    finalButtons.push(new ButtonBuilder().setCustomId(`mod_dashboard:${returnId}:actions`).setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary));
-    finalButtons.push(new ButtonBuilder()
-      .setCustomId(`mod_analytics_refresh:${context.analyticsWindow || '30d'}:${context.analyticsMode || 'overview'}:${context.analyticsModeratorId || 'none'}:${returnId}`)
-      .setLabel('🔄 Refresh')
-      .setStyle(ButtonStyle.Secondary));
-    if (canUseModAction(member, guild, 'export_cases')) finalButtons.push(new ButtonBuilder().setCustomId(`mod_export_cases:${returnId}`).setLabel('📤 Export').setStyle(ButtonStyle.Secondary));"""
-          new_analytics = """    finalButtons.push(new ButtonBuilder().setCustomId(`mod_dashboard:${returnId}:actions`).setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary));
-    if (canUseModAction(member, guild, 'export_cases')) finalButtons.push(new ButtonBuilder().setCustomId(`mod_export_cases:${returnId}`).setLabel('📤 Export').setStyle(ButtonStyle.Secondary));
-    finalButtons.push(new ButtonBuilder()
-      .setCustomId(`mod_analytics_refresh:${context.analyticsWindow || '30d'}:${context.analyticsMode || 'overview'}:${context.analyticsModeratorId || 'none'}:${returnId}`)
-      .setLabel('🔄 Refresh')
-      .setStyle(ButtonStyle.Secondary));"""
-
-          if old_actions not in s:
-              raise SystemExit('Actions navigation block not found')
-          if old_analytics not in s:
-              raise SystemExit('Analytics navigation block not found')
-          s = s.replace(old_actions, new_actions, 1).replace(old_analytics, new_analytics, 1)
-          path.write_text(s)
-          PY
+      - name: Apply patch
+        run: node scripts/mod-nav-layout-once.js
       - name: Validate
         run: |
           node --check src/core/administration/mod/panel.js
@@ -63,7 +32,7 @@ jobs:
         run: |
           git config user.name 'KSJHub Actions'
           git config user.email 'actions@users.noreply.github.com'
-          git rm .github/workflows/mod-nav-layout-once.yml
+          git rm .github/workflows/mod-nav-layout-once.yml scripts/mod-nav-layout-once.js
           git add src/core/administration/mod/panel.js
           git commit -m 'refactor(mod): standardise final navigation rows'
           git push origin HEAD:dev
