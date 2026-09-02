@@ -244,13 +244,6 @@ function deletePack(guildId, packKey, guildOrMeta = {}) {
   return saveSection(guildId, { packs }, guildOrMeta);
 }
 
-function touchRecent(guildId, emojiId, at = new Date().toISOString()) {
-  const id = String(emojiId || '').trim();
-  if (!/^\d{16,20}$/.test(id)) return getSection(guildId);
-  const current = getSection(guildId);
-  return saveSection(guildId, { recent: [{ id, at }, ...current.recent.filter((entry) => entry.id !== id)] });
-}
-
 function flushUsage(guildId) {
   const queued = pendingUsage.get(String(guildId));
   if (!queued) return;
@@ -340,7 +333,6 @@ module.exports = {
   setTags,
   savePack,
   deletePack,
-  touchRecent,
   recordUsage,
   setTemporary,
   clearTemporary,
