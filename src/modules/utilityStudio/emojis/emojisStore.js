@@ -245,9 +245,9 @@ function deletePack(guildId, packKey, guildOrMeta = {}) {
 }
 
 function flushUsage(guildId) {
-  const queued = pendingUsage.get(String(guildId));
+  const guildKey = String(guildId);
+  const queued = pendingUsage.get(guildKey);
   if (!queued) return;
-  pendingUsage.delete(String(guildId));
 
   try {
     const current = getSection(guildId);
@@ -272,8 +272,11 @@ function flushUsage(guildId) {
       usage,
       recent: [...recent, ...current.recent.filter((entry) => !recentIds.has(entry.id))],
     });
+    pendingUsage.delete(guildKey);
   } catch (error) {
     console.warn(`[Emoji Studio] Usage flush failed for ${guildId}: ${error?.message || error}`);
+    queued.timer = setTimeout(() => flushUsage(guildKey), USAGE_FLUSH_MS);
+    queued.timer.unref?.();
   }
 }
 
