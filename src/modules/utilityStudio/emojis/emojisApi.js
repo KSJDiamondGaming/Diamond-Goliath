@@ -7,7 +7,7 @@ const https = require('node:https');
 const net = require('node:net');
 const path = require('node:path');
 const fetch = require('node-fetch');
-const emojiProcessor = require('../../../core/mediaTools/emojiMaker/emojiProcessor');
+const emojiMedia = require('./emojiMedia');
 
 const API_URL = 'https://emoji.gg/api';
 const MAX_BYTES = 256 * 1024;
@@ -182,27 +182,55 @@ async function search(query, limit = 25) {
 
 function assetUrl(entry) { return entry ? (entry.image || entry.url || entry.src || null) : null; }
 
+async function boundedResponseBuffer(response, maxBytes) {
+  const contentLength = Number(response.headers.get('content-length')) || 0;
+  if (contentLength > maxBytes) throw new Error(`Emoji source is too large (${contentLength} bytes; max ${maxBytes}).`);
+
+  const chunks = [];
+  let total = 0;
+  for await (const chunk of response.body) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    total += buffer.length;
+    if (total > maxBytes) {
+      response.body.destroy?.();
+      throw new Error(`Emoji source is too large (over ${maxBytes} bytes).`);
+    }
+    chunks.push(buffer);
+  }
+  if (!total) throw new Error('Emoji asset was empty.');
+  return Buffer.concat(chunks, total);
+}
+
 async function downloadAsset(url, options = {}) {
   const maxBytes = Math.max(MAX_BYTES, Math.min(MAX_SOURCE_BYTES, Number(options.maxBytes) || MAX_BYTES));
   const response = await safeFetch(url, { headers: { 'User-Agent': 'KSJHub-Goliath/1.0' }, timeout: 15000 });
   if (!response.ok) throw new Error(`Emoji download failed (${response.status})`);
-  const contentLength = Number(response.headers.get('content-length')) || 0;
-  if (contentLength > maxBytes) throw new Error(`Emoji source is too large (${contentLength} bytes; max ${maxBytes}).`);
-  const buffer = await response.buffer();
-  if (!buffer.length) throw new Error('Emoji asset was empty.');
-  if (buffer.length > maxBytes) throw new Error(`Emoji source is too large (${buffer.length} bytes; max ${maxBytes}).`);
-  return buffer;
+  return boundedResponseBuffer(response, maxBytes);
+}
+
+async function prepareSourceBuffer(source, options = {}) {
+  const prepared = await emojiMedia.prepareEmojiAsset(source, {
+    size: options.size || 512,
+    padding: options.padding ?? 32,
+    animatedSize: options.animatedSize || 128,
+    maxBytes: MAX_BYTES,
+    maxSourceBytes: options.maxSourceBytes || MAX_SOURCE_BYTES,
+  });
+  if (prepared.buffer.length > MAX_BYTES) throw new Error(`Processed emoji is too large (${prepared.buffer.length} bytes; Discord limit ${MAX_BYTES}).`);
+  return prepared;
 }
 
 async function prepareDownloadedAsset(url, options = {}) {
   const source = await downloadAsset(url, { maxBytes: options.maxSourceBytes || MAX_SOURCE_BYTES });
-  const prepared = await emojiProcessor.prepareEmojiBuffer(source, {
-    size: options.size || 512,
-    padding: options.padding ?? 32,
-    maxBytes: MAX_BYTES,
-  });
-  if (prepared.buffer.length > MAX_BYTES) throw new Error(`Processed emoji is too large (${prepared.buffer.length} bytes; Discord limit ${MAX_BYTES}).`);
-  return prepared;
+  return prepareSourceBuffer(source, options);
+}
+
+async function prepareAttachmentAsset(attachment, options = {}) {
+  if (!attachment?.url) throw new Error('Emoji upload did not include a usable attachment URL.');
+  const declaredSize = Math.max(0, Number(attachment.size) || 0);
+  const maxSourceBytes = options.maxSourceBytes || MAX_SOURCE_BYTES;
+  if (declaredSize > maxSourceBytes) throw new Error(`Emoji source is too large (${declaredSize} bytes; max ${maxSourceBytes}).`);
+  return prepareDownloadedAsset(attachment.url, { ...options, maxSourceBytes });
 }
 
 function normaliseCoreFilename(filename) {
@@ -243,11 +271,10 @@ async function syncCoreAssets(client, aliases = [], prefix = 'goliath_') {
     if (!asset) { result.missingAssets.push(alias); continue; }
     try {
       const source = fs.readFileSync(asset.path);
-      const prepared = await emojiProcessor.prepareEmojiBuffer(source, { size: 512, padding: 32, maxBytes: MAX_BYTES });
-      if (prepared.buffer.length > MAX_BYTES) throw new Error(`processed image is ${prepared.buffer.length} bytes; Discord limit is ${MAX_BYTES}`);
+      const prepared = await prepareSourceBuffer(source, { size: 512, padding: 32 });
       const created = await manager.create({ attachment: prepared.buffer, name: discordName });
       byName.set(discordName, created);
-      result.created.push({ alias, emojiId: String(created.id), source: asset.name });
+      result.created.push({ alias, emojiId: String(created.id), source: asset.name, animated: prepared.animated === true });
     } catch (error) {
       result.failed.push({ alias, source: asset.name, error: String(error?.message || error) });
     }
@@ -269,7 +296,9 @@ module.exports = {
   search,
   assetUrl,
   downloadAsset,
+  prepareSourceBuffer,
   prepareDownloadedAsset,
+  prepareAttachmentAsset,
   listCoreAssetFiles,
   coreAssetForAlias,
   syncCoreAssets,
