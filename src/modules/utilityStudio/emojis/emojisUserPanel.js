@@ -208,8 +208,7 @@ async function autocomplete(interaction) {
     .slice(0, 25);
   return interaction.respond(matches.map((emoji) => {
     const shortcode = emojiShortcode(emoji);
-    const value = emoji.core ? `core:${shortcode}` : String(emoji.id);
-    return { name: `:${shortcode}: · ${categoryName(emoji)}`.slice(0, 100), value };
+    return { name: `:${shortcode}: · ${categoryName(emoji)}`.slice(0, 100), value: String(emoji.id) };
   })).catch(() => null);
 }
 
