@@ -21,25 +21,36 @@ const duplicator = require('./dev/duplicator');
 const auditEvents = require('./auditIntelligence/auditEvents');
 
 const OWNER_PREFIX = 'ownerpanel:';
+const SERVER_CONTEXT_MARKER = ':guild:';
 const wiredClients = new WeakSet();
 
-function mode() {
-  return normalizeBotMode(process.env.BOT_MODE);
+function mode() { return normalizeBotMode(process.env.BOT_MODE); }
+function ownerAllowed(interaction) { return Boolean(interaction?.user?.id && security.isBotOwner(interaction.user.id)); }
+function ownerDeniedPayload() { return { content: '❌ This control panel is restricted to the configured Goliath owners.', flags: MessageFlags.Ephemeral }; }
+
+function embeddedGuildId(customId) {
+  const id = String(customId || '');
+  const index = id.lastIndexOf(SERVER_CONTEXT_MARKER);
+  if (index < 0) return null;
+  const guildId = id.slice(index + SERVER_CONTEXT_MARKER.length).trim();
+  return /^\d{16,25}$/.test(guildId) ? guildId : null;
 }
 
-function ownerAllowed(interaction) {
-  return Boolean(interaction?.user?.id && security.isBotOwner(interaction.user.id));
-}
-
-function ownerDeniedPayload() {
-  return {
-    content: '❌ This control panel is restricted to the configured Goliath owners.',
-    flags: MessageFlags.Ephemeral,
-  };
+function baseOwnerCustomId(customId) {
+  const id = String(customId || '');
+  const index = id.lastIndexOf(SERVER_CONTEXT_MARKER);
+  return index < 0 ? id : id.slice(0, index);
 }
 
 function interactionGuildId(interaction) {
-  return String(interaction?.guildId || interaction?.guild?.id || '').trim() || null;
+  return String(interaction?.guildId || interaction?.guild?.id || embeddedGuildId(interaction?.customId) || '').trim() || null;
+}
+
+function contextualOwnerId(action, interactionOrGuildId) {
+  const guildId = typeof interactionOrGuildId === 'string'
+    ? interactionOrGuildId
+    : interactionGuildId(interactionOrGuildId);
+  return guildId ? `${OWNER_PREFIX}${action}${SERVER_CONTEXT_MARKER}${guildId}` : `${OWNER_PREFIX}${action}`;
 }
 
 function cachedInteractionGuild(interaction) {
@@ -51,20 +62,12 @@ function cachedInteractionGuild(interaction) {
 async function resolveInteractionGuild(interaction) {
   const cached = cachedInteractionGuild(interaction);
   if (cached) return cached;
-
   const guildId = interactionGuildId(interaction);
   if (!guildId || !interaction?.client?.guilds?.fetch) return null;
-
-  try {
-    return await interaction.client.guilds.fetch(guildId);
-  } catch {
-    return null;
-  }
+  try { return await interaction.client.guilds.fetch(guildId); } catch { return null; }
 }
 
-function hasGuildContext(interaction) {
-  return Boolean(interactionGuildId(interaction));
-}
+function hasGuildContext(interaction) { return Boolean(interactionGuildId(interaction)); }
 
 function ownerHomePayload(interaction, notice = null) {
   const currentMode = mode();
@@ -74,20 +77,12 @@ function ownerHomePayload(interaction, notice = null) {
   const ownersLoaded = security.getBotOwnerIds().length;
   const guild = cachedInteractionGuild(interaction);
   const guildId = interactionGuildId(interaction);
-  const guildContext = guild
-    ? `${guild.name} • ${guild.id}`
-    : guildId
-      ? `Server • ${guildId}`
-      : 'User-installed external context';
+  const guildContext = guild ? `${guild.name} • ${guild.id}` : guildId ? `Server • ${guildId}` : 'User-installed external context';
 
   const embed = new EmbedBuilder()
     .setColor(0x5865F2)
     .setTitle('👑 Goliath Owner Control Panel')
-    .setDescription([
-      'Private owner-only controls for Goliath development, security testing, server tooling and the Command Center.',
-      '',
-      notice ? `**Status:** ${notice}` : null,
-    ].filter(Boolean).join('\n'))
+    .setDescription(['Private owner-only controls for Goliath development, security testing, server tooling and the Command Center.', '', notice ? `**Status:** ${notice}` : null].filter(Boolean).join('\n'))
     .addFields(
       { name: 'Environment', value: `\`${currentMode}\``, inline: true },
       { name: 'Owner Gate', value: `**${ownersLoaded}** configured owner IDs`, inline: true },
@@ -101,291 +96,98 @@ function ownerHomePayload(interaction, notice = null) {
     .setTimestamp();
 
   const primary = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`${OWNER_PREFIX}dev-toggle`)
-      .setLabel(devState.enabled ? 'Disable DEV Override' : 'Enable DEV Override')
-      .setEmoji('🧪')
-      .setStyle(devState.enabled ? ButtonStyle.Danger : ButtonStyle.Success)
-      .setDisabled(!isDev),
-    new ButtonBuilder()
-      .setCustomId(`${OWNER_PREFIX}security`)
-      .setLabel('Security Tests')
-      .setEmoji('🛡️')
-      .setStyle(ButtonStyle.Secondary)
-      .setDisabled(!isDev),
-    new ButtonBuilder()
-      .setCustomId(`${OWNER_PREFIX}server-tools`)
-      .setLabel('Server Tools')
-      .setEmoji('🧰')
-      .setStyle(ButtonStyle.Secondary)
-      .setDisabled(!isDev),
-    new ButtonBuilder()
-      .setCustomId(`${OWNER_PREFIX}commandcenter`)
-      .setLabel('Command Center')
-      .setEmoji('📡')
-      .setStyle(ButtonStyle.Secondary)
-      .setDisabled(!isDev)
+    new ButtonBuilder().setCustomId(`${OWNER_PREFIX}dev-toggle`).setLabel(devState.enabled ? 'Disable DEV Override' : 'Enable DEV Override').setEmoji('🧪').setStyle(devState.enabled ? ButtonStyle.Danger : ButtonStyle.Success).setDisabled(!isDev),
+    new ButtonBuilder().setCustomId(`${OWNER_PREFIX}security`).setLabel('Security Tests').setEmoji('🛡️').setStyle(ButtonStyle.Secondary).setDisabled(!isDev),
+    new ButtonBuilder().setCustomId(contextualOwnerId('server-tools', interaction)).setLabel('Server Tools').setEmoji('🧰').setStyle(ButtonStyle.Secondary).setDisabled(!isDev),
+    new ButtonBuilder().setCustomId(`${OWNER_PREFIX}commandcenter`).setLabel('Command Center').setEmoji('📡').setStyle(ButtonStyle.Secondary).setDisabled(!isDev)
   );
-
-  const navigation = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`${OWNER_PREFIX}refresh`)
-      .setLabel('Refresh')
-      .setEmoji('🔄')
-      .setStyle(ButtonStyle.Secondary)
-  );
-
+  const navigation = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`${OWNER_PREFIX}refresh`).setLabel('Refresh').setEmoji('🔄').setStyle(ButtonStyle.Secondary));
   return { embeds: [embed], components: [primary, navigation] };
 }
 
 function serverToolsPayload(interaction) {
-  const guildContextAvailable = hasGuildContext(interaction);
+  const guildId = interactionGuildId(interaction);
+  const guildContextAvailable = Boolean(guildId);
   const embed = new EmbedBuilder()
     .setColor(0x5865F2)
     .setTitle('🧰 Owner Server Tools')
-    .setDescription([
-      'The original owner-only server developer tools are consolidated here.',
-      '',
-      '**Copy** — copy selected server structure/settings.',
-      '**Analyse** — compare a source and destination server.',
-      '**Export** — save a server as a reusable Duplicator template.',
-      '**Build** — build from a saved/default template.',
-      '',
-      guildContextAvailable ? null : '⚠️ **Server context required.** Open `/owner` from a server channel to use these tools.',
-    ].filter(Boolean).join('\n'))
+    .setDescription(['The original owner-only server developer tools are consolidated here.', '', '**Copy** — copy selected server structure/settings.', '**Analyse** — compare a source and destination server.', '**Export** — save a server as a reusable Duplicator template.', '**Build** — build from a saved/default template.', '', guildContextAvailable ? null : '⚠️ **Server context required.** Open `/owner` from a server channel to use these tools.'].filter(Boolean).join('\n'))
     .setFooter({ text: 'DEV only • Duplicator retains its own owner and safety checks' });
-
   const tools = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`${OWNER_PREFIX}server-copy`).setLabel('Copy').setEmoji('📋').setStyle(ButtonStyle.Secondary).setDisabled(!guildContextAvailable),
-    new ButtonBuilder().setCustomId(`${OWNER_PREFIX}server-analyse`).setLabel('Analyse').setEmoji('🔎').setStyle(ButtonStyle.Secondary).setDisabled(!guildContextAvailable),
-    new ButtonBuilder().setCustomId(`${OWNER_PREFIX}server-export`).setLabel('Export').setEmoji('📤').setStyle(ButtonStyle.Secondary).setDisabled(!guildContextAvailable),
-    new ButtonBuilder().setCustomId(`${OWNER_PREFIX}server-build`).setLabel('Build').setEmoji('🏗️').setStyle(ButtonStyle.Secondary).setDisabled(!guildContextAvailable)
+    new ButtonBuilder().setCustomId(contextualOwnerId('server-copy', guildId)).setLabel('Copy').setEmoji('📋').setStyle(ButtonStyle.Secondary).setDisabled(!guildContextAvailable),
+    new ButtonBuilder().setCustomId(contextualOwnerId('server-analyse', guildId)).setLabel('Analyse').setEmoji('🔎').setStyle(ButtonStyle.Secondary).setDisabled(!guildContextAvailable),
+    new ButtonBuilder().setCustomId(contextualOwnerId('server-export', guildId)).setLabel('Export').setEmoji('📤').setStyle(ButtonStyle.Secondary).setDisabled(!guildContextAvailable),
+    new ButtonBuilder().setCustomId(contextualOwnerId('server-build', guildId)).setLabel('Build').setEmoji('🏗️').setStyle(ButtonStyle.Secondary).setDisabled(!guildContextAvailable)
   );
-  const navigation = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`${OWNER_PREFIX}home`).setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary)
-  );
+  const navigation = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(contextualOwnerId('home', guildId)).setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary));
   return { embeds: [embed], components: [tools, navigation] };
 }
 
-function serverContextRequiredPayload() {
-  return {
-    content: '❌ Server Tools require a server context. Open `/owner` from the server you want to manage, then open **Server Tools** again.',
-    flags: MessageFlags.Ephemeral,
-  };
+function serverContextRequiredPayload() { return { content: '❌ Server Tools require a server context. Open `/owner` from the server you want to manage, then open **Server Tools** again.', flags: MessageFlags.Ephemeral }; }
+
+function analyseModal(interaction) {
+  return new ModalBuilder().setCustomId(contextualOwnerId('server-analyse-submit', interaction)).setTitle('Analyse Servers').addComponents(
+    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('source_server').setLabel('Source server ID').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(25)),
+    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('destination_server').setLabel('Destination server ID').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(25))
+  );
 }
 
-function analyseModal() {
-  return new ModalBuilder()
-    .setCustomId(`${OWNER_PREFIX}server-analyse-submit`)
-    .setTitle('Analyse Servers')
-    .addComponents(
-      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('source_server').setLabel('Source server ID').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(25)),
-      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('destination_server').setLabel('Destination server ID').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(25))
-    );
+function exportModal(interaction) {
+  return new ModalBuilder().setCustomId(contextualOwnerId('server-export-submit', interaction)).setTitle('Export Server Template').addComponents(
+    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('source_server').setLabel('Source server ID (blank = current)').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(25)),
+    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('name').setLabel('Template name').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(80)),
+    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('template_id').setLabel('Template ID (optional)').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(60)),
+    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('version').setLabel('Version (optional)').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(30)),
+    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('description').setLabel('Description (optional)').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(100))
+  );
 }
 
-function exportModal() {
-  return new ModalBuilder()
-    .setCustomId(`${OWNER_PREFIX}server-export-submit`)
-    .setTitle('Export Server Template')
-    .addComponents(
-      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('source_server').setLabel('Source server ID (blank = current)').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(25)),
-      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('name').setLabel('Template name').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(80)),
-      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('template_id').setLabel('Template ID (optional)').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(60)),
-      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('version').setLabel('Version (optional)').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(30)),
-      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('description').setLabel('Description (optional)').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(100))
-    );
-}
-
-function readModalValue(interaction, key) {
-  try { return String(interaction.fields.getTextInputValue(key) || '').trim() || null; }
-  catch { return null; }
-}
+function readModalValue(interaction, key) { try { return String(interaction.fields.getTextInputValue(key) || '').trim() || null; } catch { return null; } }
 
 function withOwnerOptions(interaction, values = {}, guildOverride = null) {
-  const options = {
-    getString(name, required = false) {
-      const value = values[name] === undefined || values[name] === null ? null : String(values[name]);
-      if (required && !value) throw new Error(`Missing owner tool option: ${name}`);
-      return value;
-    },
-  };
-  return new Proxy(interaction, {
-    get(target, property) {
-      if (property === 'options') return options;
-      if (property === 'guild') return guildOverride || cachedInteractionGuild(target);
-      if (property === 'guildId') return interactionGuildId(target);
-      const value = Reflect.get(target, property, target);
-      return typeof value === 'function' ? value.bind(target) : value;
-    },
-  });
+  const options = { getString(name, required = false) { const value = values[name] === undefined || values[name] === null ? null : String(values[name]); if (required && !value) throw new Error(`Missing owner tool option: ${name}`); return value; } };
+  return new Proxy(interaction, { get(target, property) { if (property === 'options') return options; if (property === 'guild') return guildOverride || cachedInteractionGuild(target); if (property === 'guildId') return interactionGuildId(target); const value = Reflect.get(target, property, target); return typeof value === 'function' ? value.bind(target) : value; } });
 }
 
 async function runDuplicator(interaction, values) {
   const guild = await resolveInteractionGuild(interaction);
-  if (!guild) {
-    if (interaction.deferred || interaction.replied) await interaction.editReply(serverContextRequiredPayload()).catch(() => null);
-    else await interaction.reply(serverContextRequiredPayload()).catch(() => null);
-    return null;
-  }
+  if (!guild) { if (interaction.deferred || interaction.replied) await interaction.editReply(serverContextRequiredPayload()).catch(() => null); else await interaction.reply(serverContextRequiredPayload()).catch(() => null); return null; }
   return duplicator.run(withOwnerOptions(interaction, values, guild));
 }
 
 async function handleOwnerPanelInteraction(interaction) {
-  const id = String(interaction?.customId || '');
+  const rawId = String(interaction?.customId || '');
+  const id = baseOwnerCustomId(rawId);
   if (!id.startsWith(OWNER_PREFIX) && !id.startsWith('testsecurity:')) return false;
+  if (!ownerAllowed(interaction)) { if (interaction.deferred || interaction.replied) await interaction.editReply(ownerDeniedPayload()).catch(() => null); else await interaction.reply(ownerDeniedPayload()).catch(() => null); return true; }
+  if (id.startsWith('testsecurity:')) { await testSecurity.handleButton(interaction); return true; }
 
-  if (!ownerAllowed(interaction)) {
-    if (interaction.deferred || interaction.replied) await interaction.editReply(ownerDeniedPayload()).catch(() => null);
-    else await interaction.reply(ownerDeniedPayload()).catch(() => null);
-    return true;
-  }
+  if (id === `${OWNER_PREFIX}home` || id === `${OWNER_PREFIX}refresh`) { await interaction.update(ownerHomePayload(interaction)); return true; }
+  if (id === `${OWNER_PREFIX}dev-toggle`) { if (!devOverride.isDevMode()) { await interaction.update(ownerHomePayload(interaction, 'DEV Override is unavailable outside DEV.')); return true; } const state = devOverride.toggle(interaction.user.id); await interaction.update(ownerHomePayload(interaction, state.blocked ? `❌ ${state.reason || 'Toggle blocked.'}` : (state.enabled ? '🟢 DEV Override enabled.' : '🔴 DEV Override disabled.'))); return true; }
+  if (id === `${OWNER_PREFIX}security`) { if (!devOverride.isDevMode()) { await interaction.update(ownerHomePayload(interaction, 'Security test controls are DEV only.')); return true; } await testSecurity.execute(interaction); return true; }
+  if (id === `${OWNER_PREFIX}server-tools`) { if (!devOverride.isDevMode()) { await interaction.update(ownerHomePayload(interaction, 'Server developer tools are DEV only.')); return true; } await interaction.update(serverToolsPayload(interaction)); return true; }
 
-  if (id.startsWith('testsecurity:')) {
-    await testSecurity.handleButton(interaction);
-    return true;
-  }
+  if (id === `${OWNER_PREFIX}server-copy`) { if (!hasGuildContext(interaction)) { await interaction.reply(serverContextRequiredPayload()); return true; } await runDuplicator(interaction, { action: 'copy' }); return true; }
+  if (id === `${OWNER_PREFIX}server-build`) { if (!hasGuildContext(interaction)) { await interaction.reply(serverContextRequiredPayload()); return true; } await runDuplicator(interaction, { action: 'build' }); return true; }
+  if (id === `${OWNER_PREFIX}server-analyse`) { if (!hasGuildContext(interaction)) { await interaction.reply(serverContextRequiredPayload()); return true; } await interaction.showModal(analyseModal(interaction)); return true; }
+  if (id === `${OWNER_PREFIX}server-export`) { if (!hasGuildContext(interaction)) { await interaction.reply(serverContextRequiredPayload()); return true; } await interaction.showModal(exportModal(interaction)); return true; }
+  if (id === `${OWNER_PREFIX}server-analyse-submit`) { if (!hasGuildContext(interaction)) { await interaction.reply(serverContextRequiredPayload()); return true; } await runDuplicator(interaction, { action: 'analyse', source_server: readModalValue(interaction, 'source_server'), destination_server: readModalValue(interaction, 'destination_server') }); return true; }
+  if (id === `${OWNER_PREFIX}server-export-submit`) { if (!hasGuildContext(interaction)) { await interaction.reply(serverContextRequiredPayload()); return true; } await runDuplicator(interaction, { action: 'export', source_server: readModalValue(interaction, 'source_server'), name: readModalValue(interaction, 'name'), template_id: readModalValue(interaction, 'template_id'), version: readModalValue(interaction, 'version'), description: readModalValue(interaction, 'description') }); return true; }
 
-  if (id === `${OWNER_PREFIX}home` || id === `${OWNER_PREFIX}refresh`) {
-    await interaction.update(ownerHomePayload(interaction));
-    return true;
-  }
-
-  if (id === `${OWNER_PREFIX}dev-toggle`) {
-    if (!devOverride.isDevMode()) {
-      await interaction.update(ownerHomePayload(interaction, 'DEV Override is unavailable outside DEV.'));
-      return true;
-    }
-    const state = devOverride.toggle(interaction.user.id);
-    await interaction.update(ownerHomePayload(interaction, state.blocked ? `❌ ${state.reason || 'Toggle blocked.'}` : (state.enabled ? '🟢 DEV Override enabled.' : '🔴 DEV Override disabled.')));
-    return true;
-  }
-
-  if (id === `${OWNER_PREFIX}security`) {
-    if (!devOverride.isDevMode()) {
-      await interaction.update(ownerHomePayload(interaction, 'Security test controls are DEV only.'));
-      return true;
-    }
-    await testSecurity.execute(interaction);
-    return true;
-  }
-
-  if (id === `${OWNER_PREFIX}server-tools`) {
-    if (!devOverride.isDevMode()) {
-      await interaction.update(ownerHomePayload(interaction, 'Server developer tools are DEV only.'));
-      return true;
-    }
-    await interaction.update(serverToolsPayload(interaction));
-    return true;
-  }
-
-  if (id === `${OWNER_PREFIX}server-copy`) {
-    if (!hasGuildContext(interaction)) {
-      await interaction.reply(serverContextRequiredPayload());
-      return true;
-    }
-    await runDuplicator(interaction, { action: 'copy' });
-    return true;
-  }
-  if (id === `${OWNER_PREFIX}server-build`) {
-    if (!hasGuildContext(interaction)) {
-      await interaction.reply(serverContextRequiredPayload());
-      return true;
-    }
-    await runDuplicator(interaction, { action: 'build' });
-    return true;
-  }
-  if (id === `${OWNER_PREFIX}server-analyse`) {
-    if (!hasGuildContext(interaction)) {
-      await interaction.reply(serverContextRequiredPayload());
-      return true;
-    }
-    await interaction.showModal(analyseModal());
-    return true;
-  }
-  if (id === `${OWNER_PREFIX}server-export`) {
-    if (!hasGuildContext(interaction)) {
-      await interaction.reply(serverContextRequiredPayload());
-      return true;
-    }
-    await interaction.showModal(exportModal());
-    return true;
-  }
-  if (id === `${OWNER_PREFIX}server-analyse-submit`) {
-    if (!hasGuildContext(interaction)) {
-      await interaction.reply(serverContextRequiredPayload());
-      return true;
-    }
-    await runDuplicator(interaction, {
-      action: 'analyse',
-      source_server: readModalValue(interaction, 'source_server'),
-      destination_server: readModalValue(interaction, 'destination_server'),
-    });
-    return true;
-  }
-  if (id === `${OWNER_PREFIX}server-export-submit`) {
-    if (!hasGuildContext(interaction)) {
-      await interaction.reply(serverContextRequiredPayload());
-      return true;
-    }
-    await runDuplicator(interaction, {
-      action: 'export',
-      source_server: readModalValue(interaction, 'source_server'),
-      name: readModalValue(interaction, 'name'),
-      template_id: readModalValue(interaction, 'template_id'),
-      version: readModalValue(interaction, 'version'),
-      description: readModalValue(interaction, 'description'),
-    });
-    return true;
-  }
-
-  if (id === `${OWNER_PREFIX}commandcenter`) {
-    if (!devOverride.isDevMode()) {
-      await interaction.update(ownerHomePayload(interaction, 'Command Center controls are owned by the DEV control plane.'));
-      return true;
-    }
-    await auditEvents.execute(interaction);
-    return true;
-  }
-
+  if (id === `${OWNER_PREFIX}commandcenter`) { if (!devOverride.isDevMode()) { await interaction.update(ownerHomePayload(interaction, 'Command Center controls are owned by the DEV control plane.')); return true; } await auditEvents.execute(interaction); return true; }
   return false;
 }
 
 function wireClient(client) {
   if (!client || wiredClients.has(client)) return false;
   wiredClients.add(client);
-  client.on(Events.InteractionCreate, async (interaction) => {
-    try {
-      await handleOwnerPanelInteraction(interaction);
-    } catch (error) {
-      console.error('[OwnerPanel] Interaction failed:', error?.stack || error?.message || error);
-      if (!interaction?.replied && !interaction?.deferred) {
-        await interaction?.reply?.({ content: '❌ Owner control action failed.', flags: MessageFlags.Ephemeral }).catch(() => null);
-      }
-    }
-  });
+  client.on(Events.InteractionCreate, async (interaction) => { try { await handleOwnerPanelInteraction(interaction); } catch (error) { console.error('[OwnerPanel] Interaction failed:', error?.stack || error?.message || error); if (!interaction?.replied && !interaction?.deferred) await interaction?.reply?.({ content: '❌ Owner control action failed.', flags: MessageFlags.Ephemeral }).catch(() => null); } });
   return true;
 }
 
 module.exports = {
-  category: 'Owner',
-  access: { ownerOnly: true },
-  data: new SlashCommandBuilder()
-    .setName('owner')
-    .setDescription('Open the private Goliath owner control panel.')
-    .setDMPermission(false)
-    .setDefaultMemberPermissions(0n),
-
-  wireClient,
-  handleOwnerPanelInteraction,
-
-  async execute(interaction, client) {
-    wireClient(client || interaction.client);
-
-    if (!ownerAllowed(interaction)) {
-      return interaction.reply(ownerDeniedPayload());
-    }
-
-    return interaction.reply({ ...ownerHomePayload(interaction), flags: MessageFlags.Ephemeral });
-  },
+  category: 'Owner', access: { ownerOnly: true },
+  data: new SlashCommandBuilder().setName('owner').setDescription('Open the private Goliath owner control panel.').setDMPermission(false).setDefaultMemberPermissions(0n),
+  wireClient, handleOwnerPanelInteraction,
+  async execute(interaction, client) { wireClient(client || interaction.client); if (!ownerAllowed(interaction)) return interaction.reply(ownerDeniedPayload()); return interaction.reply({ ...ownerHomePayload(interaction), flags: MessageFlags.Ephemeral }); },
 };
