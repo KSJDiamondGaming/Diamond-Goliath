@@ -2,7 +2,7 @@
 
 const { EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 const starboardStore = require('./starboardStore');
-const emojis = require('../../utilityStudio/emojis/emojis');
+const emojiPayload = require('../../utilityStudio/emojis/emojiPayload');
 const { isModuleEnabled, setModuleEnabled } = require('../../../core/guild/guildManager');
 
 const IMAGE_EXTENSION_PATTERN = /\.(png|jpe?g|gif|webp)(\?.*)?$/i;
@@ -121,13 +121,12 @@ function buildPostPayload(message, starboardMessage, starUserIds) {
 }
 
 async function resolveStarboardPayload(message, payload = {}) {
-  return {
-    ...payload,
-    content: payload.content == null
-      ? payload.content
-      : await emojis.resolveText(message.guild.client, message.guild.id, payload.content),
-    embeds: await emojis.resolveEmbeds(message.guild.client, message.guild.id, payload.embeds || []),
-  };
+  return emojiPayload.resolveMessagePayload(
+    message.guild.client,
+    message.guild.id,
+    payload,
+    'starboard',
+  );
 }
 
 async function upsertStarboardPost(message, section, starUserIds) {
