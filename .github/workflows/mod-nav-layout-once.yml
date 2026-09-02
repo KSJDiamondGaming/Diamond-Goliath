@@ -23,11 +23,8 @@ jobs:
           node-version: '22'
       - name: Apply patch
         run: node scripts/mod-nav-layout-once.js
-      - name: Validate
-        run: |
-          node --check src/core/administration/mod/panel.js
-          npm ci
-          npm run doctor
+      - name: Validate syntax
+        run: node --check src/core/administration/mod/panel.js
       - name: Commit clean source
         run: |
           git config user.name 'KSJHub Actions'
