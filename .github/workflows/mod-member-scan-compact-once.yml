@@ -4,6 +4,7 @@ on:
     branches: [dev]
     paths:
       - '.github/workflows/mod-member-scan-compact-once.yml'
+      - 'scripts/mod-member-scan-compact-temp.js'
 permissions:
   contents: write
 jobs:
