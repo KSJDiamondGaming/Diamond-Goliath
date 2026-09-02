@@ -11,8 +11,8 @@ function getCanonicalCommandFiles() {
     path.join(root, 'src', 'core', 'administration', 'mod', 'command.js'),
     path.join(root, 'src', 'core', 'administration', 'user', 'command.js'),
     path.join(root, 'src', 'owner', 'userInstallCommand.js'),
-    path.join(root, 'src', 'core', 'administration', 'user', 'emojiAliasCommand.js'),
-    path.join(root, 'src', 'core', 'administration', 'user', 'emojiMessageCommand.js'),
+    path.join(root, 'src', 'modules', 'utilityStudio', 'emojis', 'emojiAliasCommand.js'),
+    path.join(root, 'src', 'modules', 'utilityStudio', 'emojis', 'emojiMessageCommand.js'),
   ];
 }
 
