@@ -315,9 +315,36 @@ function installStatsEphemeralNavigationPatch() {
   });
 }
 
+function installStatsRankingFastAckPatch() {
+  // Ranking changes persist immediately and then refresh the public stats message.
+  // Acknowledge the component before that network edit so Discord never times out.
+  setImmediate(() => {
+    try {
+      const panel = require('./roleSelectorPanel');
+      if (!panel || panel.__statsRankingFastAckPatched || typeof panel.handleRoleSelectorInteraction !== 'function') return;
+
+      const original = panel.handleRoleSelectorInteraction;
+      panel.handleRoleSelectorInteraction = async function handleRoleSelectorInteractionWithStatsRankingFastAck(i) {
+        const id = String(i.customId || '');
+        if (!id.startsWith('admin:roleSelector:statsDeploymentLimit:')) return original(i);
+
+        if (!i.deferred && !i.replied && typeof i.deferUpdate === 'function') {
+          await i.deferUpdate();
+        }
+        return original(i);
+      };
+
+      panel.__statsRankingFastAckPatched = true;
+    } catch (error) {
+      console.warn('[RoleSelector] Stats ranking fast-ack patch failed:', error.message || error);
+    }
+  });
+}
+
 installHardeningPatch();
 retryStatsExtensionAfterPanelLoad();
 installStatsEphemeralNavigationPatch();
+installStatsRankingFastAckPatch();
 
 module.exports = {
   lockKey,
