@@ -41,3 +41,5 @@ git merge beta
 git push origin production
 
 npm run dev
+
+Validated one-shot source updates must finish their checks and land as a clean source commit before the normal dev deployment is triggered.
