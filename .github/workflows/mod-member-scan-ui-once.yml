@@ -1,0 +1,44 @@
+name: Apply Moderation Member Scan UI
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - 'scripts/mod-member-scan-ui-patch-temp.js'
+      - '.github/workflows/mod-member-scan-ui-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: dev
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Apply member scan UI cleanup
+        run: node scripts/mod-member-scan-ui-patch-temp.js
+      - name: Remove temporary patch files
+        run: |
+          rm -f scripts/mod-member-scan-ui-patch-temp.js
+          rm -f .github/workflows/mod-member-scan-ui-once.yml
+      - name: Validate source
+        run: |
+          node --check src/core/administration/mod/interactions.js
+          npm run doctor
+      - name: Commit clean source to dev
+        run: |
+          git config user.name "KSJHub Actions"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "refactor(mod): tidy member intelligence scan"
+          git push origin dev
