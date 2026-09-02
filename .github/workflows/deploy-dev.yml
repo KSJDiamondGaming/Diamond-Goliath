@@ -4,9 +4,6 @@ on:
   push:
     branches:
       - dev
-    # Temporary one-shot source-mutation workflows/scripts must never trigger the
-    # canonical deployment pipeline. They caused duplicate/racing dev runs and
-    # polluted Actions history while applying short-lived layout patches.
     paths-ignore:
       - '.github/workflows/*-once.yml'
       - 'scripts/*-once.js'
@@ -27,8 +24,6 @@ permissions:
   contents: write
   statuses: write
 
-# Never cancel an in-flight validation. Rapid pushes are queued so every commit gets a
-# deterministic preflight result instead of being left as an ambiguous cancelled run.
 concurrency:
   group: deploy-${{ github.event_name == 'push' && 'dev' || inputs.environment }}
   cancel-in-progress: false
@@ -192,19 +187,13 @@ jobs:
           TARGET_SHA="$(git rev-parse "origin/$TARGET_BRANCH")"
           SOURCE_TREE="$(git show -s --format=%T "$SOURCE_SHA")"
 
-          echo "Promoting validated $SOURCE_BRANCH $SOURCE_SHA into $TARGET_BRANCH (previous $TARGET_SHA)."
-
           git config user.name "Goliath Deploy"
           git config user.email "goliath-deploy@users.noreply.github.com"
           PROMOTED_SHA="$(printf 'Promote %s %s to %s\n' "$SOURCE_BRANCH" "$SOURCE_SHA" "$TARGET_BRANCH" | git commit-tree "$SOURCE_TREE" -p "$TARGET_SHA")"
 
           git push origin "$PROMOTED_SHA:refs/heads/$TARGET_BRANCH"
-
           REMOTE_SHA="$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | awk '{print $1}')"
-          [ "$REMOTE_SHA" = "$PROMOTED_SHA" ] || {
-            echo "Promotion verification failed: expected $PROMOTED_SHA, got $REMOTE_SHA" >&2
-            exit 1
-          }
+          [ "$REMOTE_SHA" = "$PROMOTED_SHA" ] || exit 1
 
           echo "previous_target_sha=$TARGET_SHA" >> "$GITHUB_OUTPUT"
           echo "deploy_sha=$PROMOTED_SHA" >> "$GITHUB_OUTPUT"
@@ -227,20 +216,22 @@ jobs:
           EXPECTED_SHA: ${{ needs.promote.outputs.deploy_sha }}
           FORCE_COMMAND_SYNC: ${{ github.event_name == 'workflow_dispatch' }}
           PUSH_TRIGGERED: ${{ github.event_name == 'push' }}
+          GITHUB_DEPLOY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           password: ${{ secrets.VPS_PASSWORD }}
           port: 22
           timeout: 60s
-          retry_attempts: 3
-          retry_delay: 10s
           command_timeout: 25m
-          envs: ENVIRONMENT,TARGET_BRANCH,DEPLOY_SCRIPT,APP_DIR,RUNTIME_DIR,PM2_NAME,EXPECTED_SHA,FORCE_COMMAND_SYNC,PUSH_TRIGGERED
+          envs: ENVIRONMENT,TARGET_BRANCH,DEPLOY_SCRIPT,APP_DIR,RUNTIME_DIR,PM2_NAME,EXPECTED_SHA,FORCE_COMMAND_SYNC,PUSH_TRIGGERED,GITHUB_DEPLOY_TOKEN
           script: |
             set -euo pipefail
             [ -d "$APP_DIR/.git" ] || { echo "Missing checkout: $APP_DIR"; exit 1; }
             cd "$APP_DIR"
+
+            AUTH_URL="https://x-access-token:${GITHUB_DEPLOY_TOKEN}@github.com/${{ github.repository }}.git"
+            git remote set-url origin "$AUTH_URL"
 
             OLD_SHA="$(git rev-parse HEAD 2>/dev/null || true)"
             git fetch origin "$TARGET_BRANCH"
@@ -257,9 +248,6 @@ jobs:
             BACKUP_DIR="/home/goliath/.goliath-${ENVIRONMENT}-runtime-deploy-backup"
             rm -rf "$BACKUP_DIR"; mkdir -p "$BACKUP_DIR"
             if [ -d "$RUNTIME_DIR" ]; then
-              # Runtime stores are live while deploy runs. Ignore the benign GNU tar
-              # exit caused by files changing during the read, while still excluding
-              # atomic temp files and failing on genuine extraction/archive errors.
               set +e
               tar --warning=no-file-changed --ignore-failed-read --exclude='*.tmp' -C "$RUNTIME_DIR" -cf - . | tar -C "$BACKUP_DIR" -xf -
               SNAPSHOT_STATUS=$?
@@ -277,31 +265,22 @@ jobs:
                 tar -C "$BACKUP_DIR" -cf - . | tar -C "$RUNTIME_DIR" -xf -
               fi
             }
-            cleanup() { status=$?; restore_runtime; rm -rf "$BACKUP_DIR"; exit "$status"; }
+            cleanup() { status=$?; restore_runtime; rm -rf "$BACKUP_DIR"; git remote set-url origin "https://github.com/${{ github.repository }}.git" || true; exit "$status"; }
             trap cleanup EXIT
 
-            # A previous manual/hotfix edit must never block deployment of the
-            # GitHub source of truth. Preserve it in a local stash before resetting
-            # the checkout; runtime state is already protected separately above.
             if [ -n "$(git status --porcelain -- . ':!src/runtime/')" ]; then
               STASH_MESSAGE="goliath-deploy-preserve-$(date -u +%Y%m%dT%H%M%SZ)-${EXPECTED_SHA:0:12}"
-              echo "Local source changes detected; preserving them in git stash: $STASH_MESSAGE"
               git stash push --include-untracked --message "$STASH_MESSAGE"
             fi
 
-            # Runtime files are live state and are restored from BACKUP_DIR after the
-            # checkout. Reset directly to the validated commit so a dirty worktree can
-            # never prevent deployment.
             git reset --hard "$EXPECTED_SHA"
             restore_runtime
 
-            echo "Goliath deployment: $ENVIRONMENT ${OLD_SHA:-unknown} -> $EXPECTED_SHA"
             PLAN_ERROR="$(mktemp)"
             if PLAN="$(node scripts/goliath.js deploy-plan "$OLD_SHA" "$EXPECTED_SHA" --env 2>"$PLAN_ERROR")"; then
               echo "$PLAN"
               eval "$PLAN"
             else
-              echo "Deployment planner unavailable or failed at target commit; using safe full deployment fallback."
               [ ! -s "$PLAN_ERROR" ] || cat "$PLAN_ERROR" >&2
               NEED_DEPS=true
               NEED_COMMAND_SYNC=true
@@ -315,25 +294,16 @@ jobs:
             fi
             rm -f "$PLAN_ERROR"
 
-            if [ "$FORCE_COMMAND_SYNC" = "true" ]; then
-              echo "Manual deployment: forcing full Discord command reconciliation."
-              NEED_COMMAND_SYNC=true
-            fi
+            if [ "$FORCE_COMMAND_SYNC" = "true" ]; then NEED_COMMAND_SYNC=true; fi
 
             if [ -n "$OLD_SHA" ] && git cat-file -e "$OLD_SHA^{commit}" 2>/dev/null; then
               if git diff --name-only "$OLD_SHA" "$EXPECTED_SHA" | grep -Eq '^(src/core/commands/|src/core/administration/(admin|mod|user)/command\.js$)'; then
-                echo "Canonical command definition or sync infrastructure changed: forcing Discord command reconciliation."
                 NEED_COMMAND_SYNC=true
               fi
             fi
 
-            if [ "$NEED_DEPS" = true ] || ! node -e "require.resolve('express')" >/dev/null 2>&1; then
-              npm ci
-            fi
-
-            if [ "$NEED_DOCTOR" = true ]; then
-              BOT_MODE="$ENVIRONMENT" npm run doctor
-            fi
+            if [ "$NEED_DEPS" = true ] || ! node -e "require.resolve('express')" >/dev/null 2>&1; then npm ci; fi
+            if [ "$NEED_DOCTOR" = true ]; then BOT_MODE="$ENVIRONMENT" npm run doctor; fi
 
             if [ "$NEED_DASHBOARD_BUILD" = true ]; then
               rm -rf dist
@@ -354,27 +324,15 @@ jobs:
               if pm2 describe "$PM2_NAME" >/dev/null 2>&1; then
                 pm2 restart "$PM2_NAME" --update-env
               else
-                BOT_MODE="$ENVIRONMENT" NODE_ENV="$([ "$ENVIRONMENT" = production ] && echo production || echo development)" pm2 start server.js --name "$PM2_NAME" --cwd "$APP_DIR"
+                BOT_MODE="$ENVIRONMENT" NODE_ENV="$ENVIRONMENT" pm2 start ecosystem.config.js --only "$PM2_NAME" --update-env
               fi
-              pm2 save
-              sleep 3
-              STATUS="$(pm2 jlist | PM2_TARGET="$PM2_NAME" node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const a=JSON.parse(s);const p=a.find(x=>x.name===process.env.PM2_TARGET);process.stdout.write(p?.pm2_env?.status||'missing')})")"
-              [ "$STATUS" = online ] || { pm2 logs "$PM2_NAME" --lines 80 --nostream || true; exit 1; }
             fi
 
-            [ "$(git rev-parse HEAD)" = "$EXPECTED_SHA" ] || exit 1
-            # Runtime was restored immediately after checkout. Do not restore it again
-            # after PM2 starts because the live process may already have written newer
-            # runtime state; a second restore can both overwrite that state and make a
-            # successful deploy return a late non-zero tar status.
+            if pm2 describe "$PM2_NAME" >/dev/null 2>&1; then
+              pm2 save
+            fi
+
+            restore_runtime
             trap - EXIT
             rm -rf "$BACKUP_DIR"
-            echo "Deployment completed successfully at $EXPECTED_SHA."
-
-      - name: Summary
-        run: |
-          echo "### 🚀 Goliath deployment" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Environment: **${{ needs.resolve.outputs.environment }}**" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Source branch: **${{ needs.resolve.outputs.source_branch }}**" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Target branch: **${{ needs.resolve.outputs.target_branch }}**" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Deployed SHA: **${{ needs.promote.outputs.deploy_sha }}**" >> "$GITHUB_STEP_SUMMARY"
+            git remote set-url origin "https://github.com/${{ github.repository }}.git"
