@@ -239,26 +239,49 @@ function buildMemberScanPayload(i, target) {
     : '⚪ **NO LINK FOUND** — No evidence-based suspected account match in the current guild cache.';
   const recent = cases.slice(0, 5).map((entry) => `#${entry.caseId} • ${entry.action} • ${entry.status || 'active'} • ${entry.reason || 'No reason'}`).join('\n') || 'No recorded moderation cases.';
   const scanId = `scan_${Date.now().toString(36)}_${target.id.slice(-6)}`;
-  const fields = [
-    { name: '🪪 Identity', value: [`Username: \`${target.user.username}\``, `Global name: ${target.user.globalName || 'None'}`, `Server display: ${target.displayName || target.user.username}`, `Bot: ${target.user.bot ? 'Yes' : 'No'}`, `Account created: ${scanTimestamp(target.user.createdTimestamp)}`].join('\n'), inline: true },
-    { name: '🏠 Guild Membership', value: [`Joined: ${scanTimestamp(target.joinedTimestamp)}`, `Boosting since: ${scanTimestamp(target.premiumSinceTimestamp)}`, `Pending screening: ${target.pending ? 'Yes' : 'No'}`, `Timeout until: ${target.communicationDisabledUntilTimestamp ? scanTimestamp(target.communicationDisabledUntilTimestamp) : 'None'}`].join('\n'), inline: true },
-    { name: `🎭 Roles (${roles.length})`, value: (roles.slice(0, 15).map((role) => `${role}`).join(', ') || 'None').slice(0, 1024), inline: true },
-    { name: '🔐 Key Permissions', value: keyPermissions.length ? keyPermissions.map((name) => `\`${name}\``).join(' • ') : 'No elevated Discord permissions detected.', inline: true },
-    { name: '🚩 Account Flags', value: flags.length ? flags.join(', ') : 'None exposed by Discord.', inline: true },
-    { name: '⚖️ Moderation Intelligence', value: [`Warnings: **${warningCount}**`, `Cases: **${cases.length}** • Active: **${activeCases}**`, `Timeout cases: **${timeouts}** • Ban cases: **${bans}**`, `Appeals: **${appeals}** • Active evidence refs: **${evidence}**`].join('\n'), inline: false },
-    { name: '📈 Moderation Risk Score', value: [`**${risk.score}/100 • ${risk.label}**`, risk.reasons.length ? risk.reasons.map((reason) => `• ${reason}`).join('\n') : 'No recorded moderation-risk signals.', 'Score is based only on intelligence this viewer is permitted to access; identity-correlation guesses do not increase it.'].join('\n').slice(0, 1024), inline: false },
-    { name: '🕘 Recent Case History', value: recent.slice(0, 1024), inline: false },
+  const identityLines = [
+    'Username: ' + String(target.user.username) + ' • Global: ' + String(target.user.globalName || 'None'),
+    'Display: ' + String(target.displayName || target.user.username) + ' • Bot: ' + (target.user.bot ? 'Yes' : 'No'),
+    'Created: ' + scanTimestamp(target.user.createdTimestamp),
   ];
-  if (access.history) fields.splice(1, 0, { name: '🧾 Historical Identity', value: historicalNames.length ? `${historicalNames.slice(0, 12).map((name) => `\`${name}\``).join(' • ')}\nBuilt from **${history.scanCount}** prior Goliath scan snapshot(s).` : `No prior identity changes captured yet. Goliath has ${history.scanCount} previous scan snapshot(s) for this member.`, inline: false });
-  if (access.notes || access.watch) {
-    const status = [];
-    if (access.watch) status.push(`Watch list: **${investigation.watched ? 'ON' : 'OFF'}**`, investigation.watch?.reason ? `Reason: ${investigation.watch.reason}` : 'No watch reason recorded.');
-    if (access.notes) status.push(`Investigation notes: **${investigation.notes.length}**`, investigation.notes[0] ? `Latest: ${investigation.notes[0].note.slice(0, 500)}` : 'No investigation notes yet.');
-    fields.push({ name: '👁️ Investigation Status', value: status.join('\n').slice(0, 1024), inline: false });
-  }
-  if (access.network) fields.push({ name: '🌐 Goliath Network Intelligence', value: crossGuild.guildCount ? `Same Discord ID has **${crossGuild.caseCount}** moderation case(s) across **${crossGuild.guildCount}** other Goliath guild(s).\n${crossGuild.rows.map((row) => `• Guild \`${row.guild_id}\` — ${row.case_count} case(s) • last ${row.last_case_at || 'unknown'}`).join('\n').slice(0, 850)}` : 'No moderation cases for this Discord ID were found in other Goliath guilds.', inline: false });
-  if (access.suspects) fields.push({ name: '🧬 Suspected Accounts', value: suspectText.slice(0, 1024), inline: false });
-  if (access.links) fields.push({ name: '🔗 Confirmed Linked Accounts', value: 'No verified linked account is currently available for this member.', inline: false });
+  if (access.history) identityLines.push(historicalNames.length
+    ? 'Previous: ' + historicalNames.slice(0, 8).join(' • ') + ' • ' + history.scanCount + ' prior scan(s)'
+    : 'History: No identity changes captured • ' + history.scanCount + ' prior scan(s)');
+
+  const membershipLines = [
+    'Joined: ' + scanTimestamp(target.joinedTimestamp),
+    'Boosting: ' + (target.premiumSinceTimestamp ? scanTimestamp(target.premiumSinceTimestamp) : 'No') + ' • Screening: ' + (target.pending ? 'Pending' : 'Complete'),
+    'Timeout: ' + (target.communicationDisabledUntilTimestamp ? scanTimestamp(target.communicationDisabledUntilTimestamp) : 'None'),
+    'Roles (' + roles.length + '): ' + ((roles.slice(0, 10).map((role) => String(role)).join(', ') || 'None').slice(0, 500)),
+    'Elevated permissions: ' + (keyPermissions.length ? keyPermissions.join(', ') : 'None'),
+    'Account flags: ' + (flags.length ? flags.join(', ') : 'None'),
+  ];
+
+  const moderationLines = [
+    'Warnings: **' + warningCount + '** • Cases: **' + cases.length + '** (' + activeCases + ' active) • Appeals: **' + appeals + '**',
+    'Timeouts: **' + timeouts + '** • Bans: **' + bans + '** • Evidence: **' + evidence + '**',
+    'Risk: **' + risk.score + '/100 • ' + risk.label + '**',
+  ];
+  if (risk.reasons.length) moderationLines.push(risk.reasons.map((reason) => '• ' + reason).join('\n'));
+  moderationLines.push('Risk uses only intelligence this viewer is authorized to access.');
+
+  const investigationLines = [];
+  if (access.watch) investigationLines.push('Watch: **' + (investigation.watched ? 'ON' : 'OFF') + '**' + (investigation.watch?.reason ? ' • ' + investigation.watch.reason : ''));
+  if (access.notes) investigationLines.push('Notes: **' + investigation.notes.length + '**' + (investigation.notes[0] ? ' • Latest: ' + investigation.notes[0].note.slice(0, 240) : ''));
+  if (access.network) investigationLines.push(crossGuild.guildCount
+    ? 'Network: **' + crossGuild.caseCount + '** case(s) across **' + crossGuild.guildCount + '** other Goliath guild(s)'
+    : 'Network: No cases for this Discord ID in other Goliath guilds.');
+  if (access.suspects) investigationLines.push('Suspected accounts: ' + (suspects.length ? '**' + suspects.length + ' match(es)**\n' + suspectText.slice(0, 500) : '**None found**'));
+  if (access.links) investigationLines.push('Confirmed links: ' + (persistentLinks.length ? '**' + persistentLinks.length + ' evidence record(s)**' : 'None'));
+
+  const fields = [
+    { name: '🪪 Identity & History', value: identityLines.join('\n').slice(0, 1024), inline: false },
+    { name: '🏠 Membership & Access', value: membershipLines.join('\n').slice(0, 1024), inline: false },
+    { name: '⚖️ Moderation & Risk', value: moderationLines.join('\n').slice(0, 1024), inline: false },
+    { name: '🕘 Recent Cases', value: recent.slice(0, 1024), inline: false },
+  ];
+  if (investigationLines.length) fields.push({ name: '👁️ Investigation Intelligence', value: investigationLines.join('\n').slice(0, 1024), inline: false });
+
   const sources = ['Discord API', 'guild member cache', 'Goliath moderation cases', 'warnings', 'case metadata', 'appeals', 'evidence'];
   if (access.history) sources.push('scan history');
   if (access.network) sources.push('same-ID cross-guild case intelligence');
