@@ -106,7 +106,8 @@ function ownerHomePayload(interaction, notice = null) {
   return { embeds: [embed], components: [primary, navigation] };
 }
 
-function serverToolsPayload() {
+function serverToolsPayload(interaction) {
+  const hasGuildContext = Boolean(interaction?.guildId || interaction?.guild?.id);
   const embed = new EmbedBuilder()
     .setColor(0x5865F2)
     .setTitle('🧰 Owner Server Tools')
@@ -117,19 +118,28 @@ function serverToolsPayload() {
       '**Analyse** — compare a source and destination server.',
       '**Export** — save a server as a reusable Duplicator template.',
       '**Build** — build from a saved/default template.',
-    ].join('\n'))
+      '',
+      hasGuildContext ? null : '⚠️ **Server context required.** Open `/owner` from a server channel to use these tools.',
+    ].filter(Boolean).join('\n'))
     .setFooter({ text: 'DEV only • Duplicator retains its own owner and safety checks' });
 
   const tools = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`${OWNER_PREFIX}server-copy`).setLabel('Copy').setEmoji('📋').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId(`${OWNER_PREFIX}server-analyse`).setLabel('Analyse').setEmoji('🔎').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId(`${OWNER_PREFIX}server-export`).setLabel('Export').setEmoji('📤').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId(`${OWNER_PREFIX}server-build`).setLabel('Build').setEmoji('🏗️').setStyle(ButtonStyle.Secondary)
+    new ButtonBuilder().setCustomId(`${OWNER_PREFIX}server-copy`).setLabel('Copy').setEmoji('📋').setStyle(ButtonStyle.Secondary).setDisabled(!hasGuildContext),
+    new ButtonBuilder().setCustomId(`${OWNER_PREFIX}server-analyse`).setLabel('Analyse').setEmoji('🔎').setStyle(ButtonStyle.Secondary).setDisabled(!hasGuildContext),
+    new ButtonBuilder().setCustomId(`${OWNER_PREFIX}server-export`).setLabel('Export').setEmoji('📤').setStyle(ButtonStyle.Secondary).setDisabled(!hasGuildContext),
+    new ButtonBuilder().setCustomId(`${OWNER_PREFIX}server-build`).setLabel('Build').setEmoji('🏗️').setStyle(ButtonStyle.Secondary).setDisabled(!hasGuildContext)
   );
   const navigation = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId(`${OWNER_PREFIX}home`).setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary)
   );
   return { embeds: [embed], components: [tools, navigation] };
+}
+
+function serverContextRequiredPayload() {
+  return {
+    content: '❌ Server Tools require a server context. Open `/owner` from the server you want to manage, then open **Server Tools** again.',
+    flags: MessageFlags.Ephemeral,
+  };
 }
 
 function analyseModal() {
@@ -225,27 +235,47 @@ async function handleOwnerPanelInteraction(interaction) {
       await interaction.update(ownerHomePayload(interaction, 'Server developer tools are DEV only.'));
       return true;
     }
-    await interaction.update(serverToolsPayload());
+    await interaction.update(serverToolsPayload(interaction));
     return true;
   }
 
   if (id === `${OWNER_PREFIX}server-copy`) {
+    if (!interaction.guild) {
+      await interaction.reply(serverContextRequiredPayload());
+      return true;
+    }
     await runDuplicator(interaction, { action: 'copy' });
     return true;
   }
   if (id === `${OWNER_PREFIX}server-build`) {
+    if (!interaction.guild) {
+      await interaction.reply(serverContextRequiredPayload());
+      return true;
+    }
     await runDuplicator(interaction, { action: 'build' });
     return true;
   }
   if (id === `${OWNER_PREFIX}server-analyse`) {
+    if (!interaction.guild) {
+      await interaction.reply(serverContextRequiredPayload());
+      return true;
+    }
     await interaction.showModal(analyseModal());
     return true;
   }
   if (id === `${OWNER_PREFIX}server-export`) {
+    if (!interaction.guild) {
+      await interaction.reply(serverContextRequiredPayload());
+      return true;
+    }
     await interaction.showModal(exportModal());
     return true;
   }
   if (id === `${OWNER_PREFIX}server-analyse-submit`) {
+    if (!interaction.guild) {
+      await interaction.reply(serverContextRequiredPayload());
+      return true;
+    }
     await runDuplicator(interaction, {
       action: 'analyse',
       source_server: readModalValue(interaction, 'source_server'),
@@ -254,6 +284,10 @@ async function handleOwnerPanelInteraction(interaction) {
     return true;
   }
   if (id === `${OWNER_PREFIX}server-export-submit`) {
+    if (!interaction.guild) {
+      await interaction.reply(serverContextRequiredPayload());
+      return true;
+    }
     await runDuplicator(interaction, {
       action: 'export',
       source_server: readModalValue(interaction, 'source_server'),
