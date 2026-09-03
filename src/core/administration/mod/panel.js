@@ -175,11 +175,11 @@ function buildDashboardNav(targetId, activeView, member, guild, context = {}) {
   } else if (active === 'analytics') {
     const returnId = context.analyticsReturnTargetId || 'none';
     finalButtons.push(new ButtonBuilder().setCustomId(`mod_dashboard:${returnId}:actions`).setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary));
-    if (canUseModAction(member, guild, 'export_cases')) finalButtons.push(new ButtonBuilder().setCustomId(`mod_export_cases:${returnId}`).setLabel('📤 Export').setStyle(ButtonStyle.Secondary));
     finalButtons.push(new ButtonBuilder()
       .setCustomId(`mod_analytics_refresh:${context.analyticsWindow || '30d'}:${context.analyticsMode || 'overview'}:${context.analyticsModeratorId || 'none'}:${returnId}`)
       .setLabel('🔄 Refresh')
       .setStyle(ButtonStyle.Secondary));
+    if (canUseModAction(member, guild, 'export_cases')) finalButtons.push(new ButtonBuilder().setCustomId(`mod_export_cases:${returnId}`).setLabel('📤 Export').setStyle(ButtonStyle.Secondary));
   } else {
     finalButtons.push(new ButtonBuilder().setCustomId(`mod_dashboard:${id}:actions`).setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary));
     if (canUseModAction(member, guild, 'export_cases')) finalButtons.push(new ButtonBuilder().setCustomId(`mod_export_cases:${id}`).setLabel('📤 Export').setStyle(ButtonStyle.Secondary));
@@ -294,28 +294,34 @@ function buildAnalyticsOverviewEmbed(guild, analytics) {
     footer: `Moderation activity • ${analytics.windowLabel.toLowerCase()} view`,
   });
 }
-function buildModeratorAnalyticsEmbed(guild, analytics) {
+function buildModeratorAnalyticsEmbed(guild, analytics, currentUserId = null) {
   const appeals = analytics.moderatorAppeals;
-  const recentCases = analytics.recentCases.length
-    ? analytics.recentCases.map((entry) => `**#${entry.caseId}** • ${String(entry.action || 'unknown').toUpperCase()} • ${entry.status || 'active'} • <@${entry.userId}>`).join('\n')
-    : 'No cases in this period.';
-  const auditEvents = analytics.topAuditEvents.length
-    ? analytics.topAuditEvents.map(([event, count]) => `${String(event).replace(/^case\./, '')}: **${count}**`).join('\n')
-    : 'No audited activity.';
+  const ownHistory = currentUserId && String(currentUserId) === String(analytics.moderatorId);
+  const statuses = analytics.moderatorStatusCounts;
+  const totalAppeals = Number(appeals.pending || 0) + Number(appeals.approved || 0) + Number(appeals.denied || 0);
+  const recentActions = analytics.recentCases.length
+    ? analytics.recentCases.map((entry) => {
+        const when = getCaseTime(entry);
+        return `**#${entry.caseId}** • ${String(entry.action || 'unknown').toUpperCase()} • <@${entry.userId}>\n${getStatusLabel(entry)} • ${timestamp(when, 'f')}`;
+      }).join('\n\n')
+    : 'No moderation actions in this period.';
   return createEmbed({
-    title: `👤 Moderator Analytics • ${analytics.windowLabel}`,
-    description: `**Moderator:** <@${analytics.moderatorId}>\n**Server:** ${guild?.name || 'Server'}`,
+    title: ownHistory ? '👤 My Moderation History' : '👤 Moderator History',
+    description: [
+      ownHistory ? 'Your moderation activity and case history.' : `Moderation activity and case history for <@${analytics.moderatorId}>.`,
+      '',
+      `**Period:** ${analytics.windowLabel}`,
+    ].join('\n'),
     color: COLORS.PRIMARY,
     fields: [
-      { name: '📁 Case Activity', value: `**${analytics.moderatorCases} cases** • ${analytics.affectedUsers} members • ${analytics.repeatTargets} repeat targets`, inline: false },
-      { name: '⚡ Actions', value: formatActionBreakdown(analytics.moderatorActionCounts), inline: false },
-      { name: '↩️ Outcomes', value: `Active **${analytics.moderatorStatusCounts.active || 0}** • Reversed **${analytics.moderatorStatusCounts.reversed || 0}** • Expired **${analytics.moderatorStatusCounts.expired || 0}**\nReversal rate **${analytics.moderatorReversalRate}**`, inline: false },
-      { name: '⚖️ Appeals', value: `**${appeals.pending} pending** • ${appeals.approved} approved • ${appeals.denied} denied\nApproval rate **${analytics.moderatorAppealApprovalRate}**`, inline: false },
-      { name: '🧾 Audit Activity', value: `**${analytics.moderatorAuditActions}** events`, inline: true },
-      { name: 'Top Audit Events', value: auditEvents.slice(0, 1024), inline: true },
-      { name: 'Recent Cases', value: recentCases.slice(0, 1024), inline: false },
+      { name: '📁 Cases Handled', value: `Total **${analytics.moderatorCases}** • Active **${statuses.active || 0}** • Reversed **${statuses.reversed || 0}** • Expired **${statuses.expired || 0}**`, inline: false },
+      { name: '⚡ Actions Taken', value: `Warnings **${Number(analytics.moderatorActionCounts.warn || 0)}** • Timeouts **${Number(analytics.moderatorActionCounts.timeout || 0)}** • Kicks **${Number(analytics.moderatorActionCounts.kick || 0)}** • Bans **${Number(analytics.moderatorActionCounts.ban || 0)}**`, inline: false },
+      { name: '👥 Members Moderated', value: `**${analytics.affectedUsers}**`, inline: true },
+      { name: '↩️ Reversal Rate', value: `**${analytics.moderatorReversalRate}**`, inline: true },
+      { name: '⚖️ Appeals', value: `**${totalAppeals}**`, inline: true },
+      { name: '🕘 Recent Actions', value: recentActions.slice(0, 1024), inline: false },
     ],
-    footer: `Moderator activity • ${analytics.windowLabel.toLowerCase()} view`,
+    footer: `${guild?.name || 'Server'} • ${analytics.windowLabel.toLowerCase()}`,
   });
 }
 function buildAnalyticsRows(windowKey, mode = 'overview', moderatorId = null, currentUserId = null, returnTargetId = 'none') {
@@ -367,7 +373,7 @@ async function buildDashboardPayload(discord, interaction, target, view = DEFAUL
   if (safeView === 'actions') { embeds.push(buildActionsEmbed(interaction, target, stats, staffDisplay)); components.push(...buildActionRows(target, stats, interaction.member, interaction.guild)); }
   else if (safeView === 'intelligence') { embeds.push(buildIntelligenceEmbed(interaction, target, interaction.member, interaction.guild)); components.push(...buildIntelligenceRows(targetId, interaction.member, interaction.guild)); }
   else if (safeView === 'cases') { if (!target) { embeds.push(baseEmbed(interaction.client, COLORS.PRIMARY).setTitle('📁 Member Cases').setDescription('Select a member to open their case workspace.')); } else { const pageData = getCasesPageData(interaction.guild.id, target.id, context); embeds.push(buildCasesEmbed(target, pageData.pageCases, pageData.page, pageData.totalPages, pageData.actionFilter, pageData.statusFilter)); components.push(...buildCasesPageButtons(target.id, pageData.page, pageData.totalPages, pageData.actionFilter, pageData.statusFilter), ...buildCaseFilterButtons(target.id, pageData.actionFilter, pageData.statusFilter, pageData.page)); } }
-  else if (safeView === 'analytics') { const window = context.analyticsWindow; if (context.analyticsMode === 'moderator' && context.analyticsModeratorId) embeds.push(buildModeratorAnalyticsEmbed(interaction.guild, getModeratorAnalytics(interaction.guild.id, context.analyticsModeratorId, window))); else embeds.push(buildAnalyticsOverviewEmbed(interaction.guild, getModerationAnalytics(interaction.guild.id, window))); components.push(...buildAnalyticsRows(window, context.analyticsMode, context.analyticsModeratorId, interaction.user?.id || null, context.analyticsReturnTargetId || 'none')); }
+  else if (safeView === 'analytics') { const window = context.analyticsWindow; if (context.analyticsMode === 'moderator' && context.analyticsModeratorId) embeds.push(buildModeratorAnalyticsEmbed(interaction.guild, getModeratorAnalytics(interaction.guild.id, context.analyticsModeratorId, window), interaction.user?.id || null)); else embeds.push(buildAnalyticsOverviewEmbed(interaction.guild, getModerationAnalytics(interaction.guild.id, window))); components.push(...buildAnalyticsRows(window, context.analyticsMode, context.analyticsModeratorId, interaction.user?.id || null, context.analyticsReturnTargetId || 'none')); }
   components.push(...buildDashboardNav(targetId, safeView, interaction.member, interaction.guild, context));
   return { embeds, components: validateDashboardComponents(components, safeView) };
 }
