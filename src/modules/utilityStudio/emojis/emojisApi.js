@@ -103,7 +103,7 @@ async function validateRemoteUrl(rawUrl) {
 }
 
 function pinnedAgent(parsed, addresses) {
-  const selected = addresses[0];
+  const selected = addresses.find((entry) => Number(entry.family) === 4) || addresses[0];
   const Agent = parsed.protocol === 'https:' ? https.Agent : http.Agent;
   return new Agent({
     lookup(hostname, options, callback) {
@@ -230,7 +230,11 @@ async function prepareAttachmentAsset(attachment, options = {}) {
   const declaredSize = Math.max(0, Number(attachment.size) || 0);
   const maxSourceBytes = options.maxSourceBytes || MAX_SOURCE_BYTES;
   if (declaredSize > maxSourceBytes) throw new Error(`Emoji source is too large (${declaredSize} bytes; max ${maxSourceBytes}).`);
-  return prepareDownloadedAsset(attachment.url, { ...options, maxSourceBytes });
+  try {
+    return await prepareDownloadedAsset(attachment.url, { ...options, maxSourceBytes });
+  } catch (error) {
+    throw new Error(`Discord attachment download failed: ${error?.message || error}`);
+  }
 }
 
 function normaliseCoreFilename(filename) {
