@@ -1,0 +1,32 @@
+name: Patch Duplicator Flow Once
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - '.github/workflows/patch-duplicator-flow-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+          fetch-depth: 0
+      - name: Apply patch
+        run: node scripts/patch-duplicator-flow-once.js
+      - name: Validate syntax
+        run: node --check src/owner/dev/duplicatorV2.js
+      - name: Commit patch
+        shell: bash
+        run: |
+          git config user.name 'KSJ Hub'
+          git config user.email 'sycomorgan@gmail.com'
+          git add src/owner/dev/duplicatorV2.js
+          git diff --cached --quiet && exit 0
+          git commit -m 'Add post-dry-run copy confirmation flow'
+          git push origin HEAD:dev
