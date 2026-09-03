@@ -3,6 +3,7 @@
 const { PermissionFlagsBits } = require('discord.js');
 const suggestions = require('./suggestions');
 const emojis = require('../../utilityStudio/emojis/emojis');
+const emojiPayload = require('../../utilityStudio/emojis/emojiPayload');
 const { isModuleEnabled } = require('../../../core/guild/guildManager');
 
 const locks = new Map();
@@ -40,11 +41,7 @@ async function resolveSendableChannel(guild, channelId, label) {
 }
 
 async function resolveSuggestionPayload(guild, payload = {}) {
-  return {
-    ...payload,
-    content: payload.content == null ? payload.content : await emojis.resolveText(guild.client, guild.id, payload.content),
-    embeds: await emojis.resolveEmbeds(guild.client, guild.id, payload.embeds || []),
-  };
+  return emojiPayload.resolveMessagePayload(guild.client, guild.id, payload, 'suggestions');
 }
 
 async function submitSuggestion(interaction, panel) {
