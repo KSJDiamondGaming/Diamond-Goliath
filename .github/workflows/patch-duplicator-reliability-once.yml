@@ -31,12 +31,14 @@ jobs:
         run: node scripts/patch-duplicator-reliability-once.js
       - name: Syntax check Duplicator
         run: node --check src/owner/dev/duplicatorV2.js
+      - name: Remove temporary patch script before doctor
+        run: rm -f scripts/patch-duplicator-reliability-once.js
       - name: Full project doctor
         run: npm run doctor
       - name: Build project
         run: npm run build
-      - name: Remove one-off patch files
-        run: rm -f scripts/patch-duplicator-reliability-once.js .github/workflows/patch-duplicator-reliability-once.yml
+      - name: Remove one-off workflow
+        run: rm -f .github/workflows/patch-duplicator-reliability-once.yml
       - name: Commit repair
         run: |
           git config user.name 'github-actions[bot]'
