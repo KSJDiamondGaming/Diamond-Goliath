@@ -16,6 +16,7 @@ const MAX_REDIRECTS = 5;
 const CATALOGUE_CACHE_MS = 60 * 1000;
 const CORE_ASSET_DIR = path.join(__dirname, 'assets');
 const SUPPORTED_CORE_ASSET_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif']);
+const TRUSTED_DISCORD_ATTACHMENT_HOSTS = new Set(['cdn.discordapp.com', 'media.discordapp.net']);
 
 let catalogueCache = { expiresAt: 0, data: null, pending: null };
 
@@ -131,6 +132,21 @@ async function safeFetch(rawUrl, options = {}, redirects = 0) {
   return response;
 }
 
+function trustedDiscordAttachmentUrl(rawUrl) {
+  let parsed;
+  try { parsed = new URL(String(rawUrl || '').trim()); }
+  catch { throw new Error('Discord attachment URL is invalid.'); }
+
+  const hostname = parsed.hostname.toLowerCase().replace(/\.$/, '');
+  if (parsed.protocol !== 'https:' || parsed.username || parsed.password || (parsed.port && parsed.port !== '443')) {
+    throw new Error('Discord attachment URL must use trusted HTTPS.');
+  }
+  if (!TRUSTED_DISCORD_ATTACHMENT_HOSTS.has(hostname)) {
+    throw new Error(`Discord attachment host is not trusted (${hostname || 'unknown'}).`);
+  }
+  return parsed;
+}
+
 async function requestJson(url) {
   const response = await safeFetch(url, {
     headers: {
@@ -208,6 +224,30 @@ async function downloadAsset(url, options = {}) {
   return boundedResponseBuffer(response, maxBytes);
 }
 
+async function downloadDiscordAttachment(rawUrl, maxBytes, redirects = 0) {
+  if (redirects > 3) throw new Error('Discord attachment download exceeded 3 redirects.');
+  const parsed = trustedDiscordAttachmentUrl(rawUrl);
+  const response = await fetch(parsed.toString(), {
+    headers: {
+      'User-Agent': 'KSJHub-Goliath/1.0',
+      Accept: 'image/*,*/*;q=0.8',
+    },
+    timeout: 15000,
+    redirect: 'manual',
+  });
+
+  if ([301, 302, 303, 307, 308].includes(response.status)) {
+    const location = response.headers.get('location');
+    if (!location) throw new Error(`Discord attachment redirect (${response.status}) did not include a destination.`);
+    const nextUrl = new URL(location, parsed).toString();
+    trustedDiscordAttachmentUrl(nextUrl);
+    return downloadDiscordAttachment(nextUrl, maxBytes, redirects + 1);
+  }
+
+  if (!response.ok) throw new Error(`Discord attachment download failed (${response.status}).`);
+  return boundedResponseBuffer(response, maxBytes);
+}
+
 async function prepareSourceBuffer(source, options = {}) {
   const prepared = await emojiMedia.prepareEmojiAsset(source, {
     size: options.size || 512,
@@ -226,15 +266,22 @@ async function prepareDownloadedAsset(url, options = {}) {
 }
 
 async function prepareAttachmentAsset(attachment, options = {}) {
-  if (!attachment?.url) throw new Error('Emoji upload did not include a usable attachment URL.');
+  if (!attachment?.url && !attachment?.proxyURL) throw new Error('Emoji upload did not include a usable attachment URL.');
   const declaredSize = Math.max(0, Number(attachment.size) || 0);
   const maxSourceBytes = options.maxSourceBytes || MAX_SOURCE_BYTES;
   if (declaredSize > maxSourceBytes) throw new Error(`Emoji source is too large (${declaredSize} bytes; max ${maxSourceBytes}).`);
-  try {
-    return await prepareDownloadedAsset(attachment.url, { ...options, maxSourceBytes });
-  } catch (error) {
-    throw new Error(`Discord attachment download failed: ${error?.message || error}`);
+
+  const candidates = [...new Set([attachment.url, attachment.proxyURL].filter(Boolean))];
+  const failures = [];
+  for (const url of candidates) {
+    try {
+      const source = await downloadDiscordAttachment(url, maxSourceBytes);
+      return await prepareSourceBuffer(source, { ...options, maxSourceBytes });
+    } catch (error) {
+      failures.push(String(error?.message || error));
+    }
   }
+  throw new Error(`Discord attachment download failed: ${failures.join(' | ') || 'unknown error'}`);
 }
 
 function normaliseCoreFilename(filename) {
