@@ -2,7 +2,8 @@ name: Patch Duplicator Dry Run Once
 
 on:
   push:
-    branches: [dev]
+    branches:
+      - dev
     paths:
       - '.github/workflows/patch-duplicator-dryrun-once.yml'
 
@@ -17,106 +18,11 @@ jobs:
         with:
           ref: dev
           fetch-depth: 0
-
-      - name: Apply dry-run planning patch
-        shell: bash
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          p = Path('src/owner/dev/duplicatorV2.js')
-          s = p.read_text()
-
-          s = s.replace(
-          "  ['ManageWebhooks', PermissionFlagsBits.ManageWebhooks], ['ViewAuditLog', PermissionFlagsBits.ViewAuditLog],\n",
-          "  ['ManageWebhooks', PermissionFlagsBits.ManageWebhooks],\n"
-          )
-
-          anchor = "function runLog(session, snap) { return { status: session.dryRun ? 'dry-run' : 'running', dryRun: Boolean(session.dryRun), conflictMode: session.conflictMode, rollbackBackupId: null, snapshotStats: snap.stats, copied: { serverSettings: 0, roles: 0, categories: 0, channels: 0, permissionOverwrites: 0, emojis: 0 }, deleted: { roles: 0, channels: 0 }, skipped: [], errors: [], notes: [] }; }\n"
-          addition = r'''function dryRunPlan(guild, snap, conflictMode) {
-  const plan = {
-    create: { serverSettings: 0, roles: 0, categories: 0, channels: 0, permissionOverwrites: 0, emojis: 0 },
-    rename: { roles: 0, categories: 0, channels: 0, emojis: 0 },
-    skip: { roles: 0, categories: 0, channels: 0, emojis: 0 },
-    delete: { roles: 0, channels: 0 },
-  };
-
-  if (snap.settings) {
-    const s = snap.settings;
-    const current = {
-      name: guild.name,
-      description: guild.description || null,
-      verificationLevel: guild.verificationLevel,
-      explicitContentFilter: guild.explicitContentFilter,
-      defaultMessageNotifications: guild.defaultMessageNotifications,
-      afkTimeout: guild.afkTimeout,
-    };
-    plan.create.serverSettings = Object.entries(current).reduce((total, [key, value]) => total + (s[key] !== undefined && s[key] !== value ? 1 : 0), 0);
-    if (s.iconURL) plan.create.serverSettings += 1;
-    if (s.bannerURL) plan.create.serverSettings += 1;
-    if (s.splashURL) plan.create.serverSettings += 1;
-  }
-
-  for (const role of snap.roles || []) {
-    const found = existingRole(guild, role.name);
-    if (!found) { plan.create.roles += 1; continue; }
-    if (conflictMode === 'skip') plan.skip.roles += 1;
-    else if (conflictMode === 'rename') { plan.rename.roles += 1; plan.create.roles += 1; }
-    else if (conflictMode === 'replace') { plan.delete.roles += 1; plan.create.roles += 1; }
-  }
-
-  for (const channel of snap.channels || []) {
-    const found = existingChannel(guild, channel);
-    const isCategory = channel.type === ChannelType.GuildCategory;
-    const key = isCategory ? 'categories' : 'channels';
-    if (!found) { plan.create[key] += 1; continue; }
-    if (conflictMode === 'skip') plan.skip[key] += 1;
-    else if (conflictMode === 'rename') { plan.rename[key] += 1; plan.create[key] += 1; }
-    else if (conflictMode === 'replace') { plan.delete.channels += 1; plan.create[key] += 1; }
-  }
-
-  plan.create.permissionOverwrites = (snap.channels || []).reduce((total, channel) => total + (channel.permissionOverwrites?.length || 0), 0);
-
-  const emojiNames = new Set(guild.emojis.cache.map((emoji) => String(emoji.name || '').toLowerCase()));
-  for (const emoji of snap.emojis || []) {
-    const exists = emojiNames.has(String(emoji.name || '').toLowerCase());
-    if (!exists) { plan.create.emojis += 1; continue; }
-    if (conflictMode === 'skip') plan.skip.emojis += 1;
-    else if (conflictMode === 'rename') { plan.rename.emojis += 1; plan.create.emojis += 1; }
-    else if (conflictMode === 'replace') plan.create.emojis += 1;
-  }
-
-  return plan;
-}
-function applyDryRunPlan(log, plan) {
-  log.copied = { ...log.copied, ...plan.create };
-  log.deleted = { ...log.deleted, ...plan.delete };
-  const renameTotal = Object.values(plan.rename).reduce((a, b) => a + b, 0);
-  const skipTotal = Object.values(plan.skip).reduce((a, b) => a + b, 0);
-  if (renameTotal) log.notes.push(`Would rename: roles ${plan.rename.roles}, categories ${plan.rename.categories}, channels ${plan.rename.channels}, emojis ${plan.rename.emojis}`);
-  if (skipTotal) log.notes.push(`Would skip existing: roles ${plan.skip.roles}, categories ${plan.skip.categories}, channels ${plan.skip.channels}, emojis ${plan.skip.emojis}`);
-  if (plan.delete.roles || plan.delete.channels) log.notes.push(`Would replace/delete first: roles ${plan.delete.roles}, channels/categories ${plan.delete.channels}`);
-  log.notes.push('Dry run only — no changes were made.');
-}
-'''
-          if addition not in s:
-              if anchor not in s:
-                  raise SystemExit('runLog anchor not found')
-              s = s.replace(anchor, anchor + addition)
-
-          old = "  await fetchGuildState(guild); const log = runLog(session, snap); const missing = missingPermissions(guild); if (missing.length) log.errors.push(`Preflight missing permissions: ${missing.join(', ')}`); const hierarchy = hierarchyWarning(guild); if (hierarchy) log.errors.push(`Preflight hierarchy warning: ${hierarchy} Discord does not allow bots to bypass role hierarchy.`); for (const [key, item] of Object.entries(snap.future || {})) if (item?.requested && !item.supported) log.notes.push(`${COPY_OPTIONS[key] || key}: ${item.reason}`); if (session.dryRun) { log.status = 'dry-run'; return log; }\n"
-          new = "  await fetchGuildState(guild); const log = runLog(session, snap); const missing = missingPermissions(guild); if (missing.length) log.errors.push(`Preflight missing permissions: ${missing.join(', ')}`); const hierarchy = hierarchyWarning(guild); if (hierarchy) log.errors.push(`Preflight hierarchy warning: ${hierarchy} Discord does not allow bots to bypass role hierarchy.`); for (const [key, item] of Object.entries(snap.future || {})) if (item?.requested && !item.supported) log.notes.push(`${COPY_OPTIONS[key] || key}: ${item.reason}`); if (session.dryRun) { applyDryRunPlan(log, dryRunPlan(guild, snap, session.conflictMode)); log.status = 'dry-run'; return log; }\n"
-          if old not in s:
-              raise SystemExit('dry-run execution anchor not found')
-          s = s.replace(old, new)
-
-          p.write_text(s)
-          PY
-
+      - name: Apply patch
+        run: node scripts/patch-duplicator-dryrun-once.js
       - name: Validate syntax
         run: node --check src/owner/dev/duplicatorV2.js
-
       - name: Commit patch
-        shell: bash
         run: |
           git config user.name 'KSJ Hub'
           git config user.email 'sycomorgan@gmail.com'
