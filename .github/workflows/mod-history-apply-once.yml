@@ -30,12 +30,12 @@ jobs:
         run: node scripts/mod-history-redesign-once.js
       - name: Validate moderation source
         run: node --check src/core/administration/mod/panel.js
+      - name: Clean temporary patch files
+        run: rm -f scripts/mod-history-redesign-once.js .github/workflows/mod-history-apply-once.yml
       - name: Run project doctor
         run: npm run doctor
       - name: Build dashboard
         run: npm run dashboard:build
-      - name: Clean temporary patch files
-        run: rm -f scripts/mod-history-redesign-once.js .github/workflows/mod-history-apply-once.yml
       - name: Commit validated source
         run: |
           git config user.name 'github-actions[bot]'
