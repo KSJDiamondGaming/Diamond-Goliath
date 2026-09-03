@@ -1,0 +1,108 @@
+name: Fix Duplicator Copy Failures Once
+
+on:
+  push:
+    branches:
+      - dev
+    paths:
+      - '.github/workflows/fix-duplicator-copy-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout dev
+        uses: actions/checkout@v5
+        with:
+          ref: dev
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Patch Duplicator copy engine
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          p = Path('src/owner/dev/duplicatorV2.js')
+          s = p.read_text()
+
+          # Discord cannot create thread/DM channel types through guild.channels.create().
+          # Preserve the channel in a copy by converting unsupported source types to GuildText.
+          if 'function duplicatorCreateChannelType(' not in s:
+              anchor = 'function uniqueName('
+              idx = s.find(anchor)
+              if idx < 0:
+                  raise SystemExit('uniqueName anchor not found')
+              helper = """function duplicatorCreateChannelType(type) {
+  const supported = new Set([
+    ChannelType.GuildText, ChannelType.GuildVoice, ChannelType.GuildCategory,
+    ChannelType.GuildAnnouncement, ChannelType.GuildStageVoice, ChannelType.GuildForum,
+    ChannelType.GuildMedia,
+  ]);
+  return supported.has(type) ? type : ChannelType.GuildText;
+}
+function duplicatorRolePosition(guild, sourcePosition) {
+  const botPosition = Number(guild.members.me?.roles?.highest?.position || 1);
+  return Math.max(1, Math.min(Number(sourcePosition || 1), Math.max(1, botPosition - 1)));
+}
+"""
+              s = s[:idx] + helper + s[idx:]
+
+          # Never request an unmanageable source position while creating a role. Discord 50013
+          # is otherwise returned for source roles whose position is at/above Goliath's role.
+          role_start = s.find('async function applyRoles(')
+          channel_start = s.find('async function applyChannels(', role_start)
+          if role_start < 0 or channel_start < 0:
+              raise SystemExit('applyRoles/applyChannels anchors not found')
+          role_block = s[role_start:channel_start]
+          role_block = re.sub(r',\s*position\s*:\s*role\.position', '', role_block)
+          role_block = re.sub(r',\s*position\s*:\s*sourceRole\.position', '', role_block)
+          role_block = role_block.replace("log.copied.roles += 1;", "await created.setPosition(duplicatorRolePosition(guild, role.position), 'Goliath duplicator: preserve role order').catch(() => null); log.copied.roles += 1;")
+          role_block = role_block.replace("log.copied.roles++;", "await created.setPosition(duplicatorRolePosition(guild, role.position), 'Goliath duplicator: preserve role order').catch(() => null); log.copied.roles++;")
+          s = s[:role_start] + role_block + s[channel_start:]
+
+          # Normalize every copied channel type before sending it to Discord.
+          channel_start = s.find('async function applyChannels(')
+          permissions_start = s.find('async function applyPermissions(', channel_start)
+          if channel_start < 0 or permissions_start < 0:
+              raise SystemExit('applyChannels/applyPermissions anchors not found')
+          channel_block = s[channel_start:permissions_start]
+          channel_block = re.sub(r'type\s*:\s*(?:channel|sourceChannel)\.type', lambda m: 'type: duplicatorCreateChannelType(' + ('sourceChannel.type' if 'sourceChannel' in m.group(0) else 'channel.type') + ')', channel_block)
+          s = s[:channel_start] + channel_block + s[permissions_start:]
+
+          p.write_text(s)
+          PY
+
+      - name: Validate source
+        run: node --check src/owner/dev/duplicatorV2.js
+
+      - name: Remove temporary workflow
+        run: rm -f .github/workflows/fix-duplicator-copy-once.yml
+
+      - name: Run project doctor
+        run: npm run doctor
+
+      - name: Build project
+        run: npm run build
+
+      - name: Commit clean fix
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --quiet && exit 0
+          git commit -m 'fix(duplicator): handle role hierarchy and unsupported channel types'
+          git push origin HEAD:dev
