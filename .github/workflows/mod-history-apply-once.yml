@@ -35,7 +35,7 @@ jobs:
       - name: Run project doctor
         run: npm run doctor
       - name: Build dashboard
-        run: npm run dashboard:build
+        run: npm run build
       - name: Commit validated source
         run: |
           git config user.name 'github-actions[bot]'
