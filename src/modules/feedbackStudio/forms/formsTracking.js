@@ -8,6 +8,7 @@ const ticketChannelManager = require('../tickets/ticketsChannels');
 const { sendTicketControlMessage } = require('../tickets/ticketsPanel');
 const { updateTicket } = require('../tickets/tickets');
 const emojis = require('../../utilityStudio/emojis/emojis');
+const emojiPayload = require('../../utilityStudio/emojis/emojiPayload');
 const { isModuleEnabled } = require('../../../core/guild/guildManager');
 const {
   TICKET_CHANNEL_PERMISSIONS,
@@ -104,11 +105,7 @@ function buildFormTicketPanel(form = {}) {
 }
 
 async function resolveFormPayload(guild, payload = {}) {
-  return {
-    ...payload,
-    content: payload.content == null ? payload.content : await emojis.resolveText(guild.client, guild.id, payload.content),
-    embeds: await emojis.resolveEmbeds(guild.client, guild.id, payload.embeds || []),
-  };
+  return emojiPayload.resolveMessagePayload(guild.client, guild.id, payload, 'forms');
 }
 
 function addTimeline(guildId, submissionId, entry, guild) {
