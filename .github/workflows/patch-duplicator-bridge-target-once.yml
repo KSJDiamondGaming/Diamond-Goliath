@@ -1,0 +1,49 @@
+name: Patch Duplicator Bridge Target Once
+
+on:
+  push:
+    branches:
+      - dev
+    paths:
+      - 'scripts/patch-duplicator-bridge-target-once.js'
+      - '.github/workflows/patch-duplicator-bridge-target-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout DEV
+        uses: actions/checkout@v5
+        with:
+          ref: dev
+          fetch-depth: 0
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Apply bridge target patch
+        run: node scripts/patch-duplicator-bridge-target-once.js
+      - name: Syntax check Duplicator
+        run: node --check src/owner/dev/duplicatorV2.js
+      - name: Remove temporary patch script before doctor
+        run: rm -f scripts/patch-duplicator-bridge-target-once.js
+      - name: Full project doctor
+        run: npm run doctor
+      - name: Build project
+        run: npm run build
+      - name: Remove one-off workflow
+        run: rm -f .github/workflows/patch-duplicator-bridge-target-once.yml
+      - name: Commit repair
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --quiet && exit 0
+          git commit -m 'fix(duplicator): enforce exact bridge destination'
+          git push origin HEAD:dev
