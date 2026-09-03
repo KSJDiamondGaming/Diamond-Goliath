@@ -2,7 +2,7 @@
 
 const { EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 const stickyStore = require('./stickyStore');
-const emojis = require('../../utilityStudio/emojis/emojis');
+const emojiPayload = require('../../utilityStudio/emojis/emojiPayload');
 
 const channelLocks = new Map();
 
@@ -84,10 +84,12 @@ function buildStickyPayload(sticky) {
 }
 
 async function resolveStickyPayload(channel, sticky) {
-  const payload = buildStickyPayload(sticky);
-  payload.content = await emojis.resolveText(channel.client, channel.guild.id, payload.content);
-  payload.embeds = await emojis.resolveEmbeds(channel.client, channel.guild.id, payload.embeds);
-  return payload;
+  return emojiPayload.resolveMessagePayload(
+    channel.client,
+    channel.guild.id,
+    buildStickyPayload(sticky),
+    'sticky',
+  );
 }
 
 async function fetchLastSticky(channel, sticky) {
