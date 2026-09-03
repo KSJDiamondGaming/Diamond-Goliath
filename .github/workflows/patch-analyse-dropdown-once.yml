@@ -1,0 +1,68 @@
+name: Patch Analyse Dropdown Once
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - '.github/workflows/patch-analyse-dropdown-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Apply analyse dropdown patch
+        shell: python
+        run: |
+          from pathlib import Path
+
+          p = Path('src/owner/dev/duplicatorV2.js')
+          s = p.read_text()
+
+          s = s.replace("const COPY_PREFIX = 'duplicator-copy';\nconst BUILD_PREFIX = 'duplicator-build';", "const COPY_PREFIX = 'duplicator-copy';\nconst BUILD_PREFIX = 'duplicator-build';\nconst ANALYSE_PREFIX = 'duplicator-analyse';")
+          s = s.replace("const copySessions = new Map();\nconst buildSessions = new Map();", "const copySessions = new Map();\nconst buildSessions = new Map();\nconst analyseSessions = new Map();")
+
+          marker = "function channelTemplate(id, name, type, parentId, position)"
+          insert = '''function makeAnalyseSession(interaction) {\n  const session = {\n    id: `${interaction.user.id}-${Date.now().toString(36)}`,\n    ownerId: interaction.user.id,\n    controlGuildId: interaction.guild.id,\n    sourceGuildId: null,\n    destinationGuildId: interaction.guild.id,\n    guildDirectory: [],\n    expiresAt: Date.now() + SESSION_TTL_MS,\n  };\n  analyseSessions.set(session.id, session);\n  return session;\n}\n\nasync function analysePanel(interaction, session) {\n  if (!session.guildDirectory?.length) await refreshSessionDirectory(interaction.client, session);\n  return {\n    embeds: [embed('🔎 Server Duplicator — Analyse', [\n      `**Source:** ${guildDisplay(session, interaction.client, session.sourceGuildId)}`,\n      `**Destination:** ${guildDisplay(session, interaction.client, session.destinationGuildId)}`,\n      '',\n      'Choose the source and destination servers from Goliath’s connected guilds, then press **Analyse Servers**.',\n    ].join('\\n'))],\n    components: [\n      new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(componentId(ANALYSE_PREFIX, session.id, 'source')).setPlaceholder('Source server').addOptions(guildChoices(session, session.sourceGuildId))),\n      new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(componentId(ANALYSE_PREFIX, session.id, 'destination')).setPlaceholder('Destination server').addOptions(guildChoices(session, session.destinationGuildId))),\n      new ActionRowBuilder().addComponents(\n        new ButtonBuilder().setCustomId(componentId(ANALYSE_PREFIX, session.id, 'start')).setLabel('Analyse Servers').setEmoji('🔎').setStyle(ButtonStyle.Primary).setDisabled(!session.sourceGuildId || !session.destinationGuildId || session.sourceGuildId === session.destinationGuildId),\n        new ButtonBuilder().setCustomId(componentId(ANALYSE_PREFIX, session.id, 'refresh')).setLabel('Refresh Guilds').setStyle(ButtonStyle.Secondary),\n        new ButtonBuilder().setCustomId(componentId(ANALYSE_PREFIX, session.id, 'cancel')).setLabel('Cancel').setStyle(ButtonStyle.Danger)\n      ),\n    ],\n    flags: MessageFlags.Ephemeral,\n  };\n}\n\n'''
+          if insert not in s:
+              s = s.replace(marker, insert + marker)
+
+          start = s.index('async function analyse(interaction)')
+          end = s.index('async function run(interaction)', start)
+          old = s[start:end]
+          new = '''async function performAnalyse(interaction, sourceGuildId, destinationGuildId, session = null) {\n  const access = assertAccess(interaction);\n  if (!access.allowed) return interaction.reply({ content: `❌ ${access.reason}`, flags: MessageFlags.Ephemeral });\n  initializeBridge(interaction.client);\n  if (!/^\\d{16,25}$/.test(String(sourceGuildId || '')) || !/^\\d{16,25}$/.test(String(destinationGuildId || ''))) return interaction.reply({ content: '❌ Source and destination must be valid Discord servers.', flags: MessageFlags.Ephemeral });\n  if (!interaction.deferred && !interaction.replied) await interaction.deferReply({ flags: MessageFlags.Ephemeral });\n  const directory = session?.guildDirectory?.length ? session.guildDirectory : await getGuildDirectory(interaction.client);\n  const routeSession = { guildDirectory: directory };\n  const snap = await snapshotForGuild(interaction.client, sourceGuildId, [...ACTIVE_OPTIONS], routeSession);\n  const destinationRoute = await resolveGuildRoute(interaction.client, destinationGuildId, routeSession);\n  if (!destinationRoute) return interaction.editReply({ content: '❌ Destination server is unavailable to every Goliath environment.', embeds: [], components: [] });\n  if (!destinationRoute.local) return interaction.editReply({ embeds: [embed('🔎 Duplicator Analyse', `**Source:** ${snap.sourceGuild?.name || sourceGuildId}\\n**Destination:** ${guildDisplay(routeSession, interaction.client, destinationGuildId)}\\n\\n✅ Both servers are reachable across Goliath environments.\\n\\nDetailed destination conflict analysis is performed by the destination instance during dry-run.`, 0x22c55e)], components: [] });\n  const result = await fetchGuildById(interaction.client, destinationGuildId);\n  const destinationGuild = result.guild;\n  await fetchGuildState(destinationGuild);\n  const destRoles = new Set(destinationGuild.roles.cache.map((r) => r.name.toLowerCase()));\n  const destChannels = new Set(destinationGuild.channels.cache.map((c) => `${c.type}:${c.name.toLowerCase()}`));\n  const destEmojis = new Set(destinationGuild.emojis.cache.map((e) => e.name.toLowerCase()));\n  const permissionLines = REQUIRED_BOT_PERMISSIONS.map(([name, bit]) => `${destinationGuild.members.me?.permissions?.has(bit) ? '✅' : '❌'} ${name}`).join('\\n');\n  return interaction.editReply({ embeds: [embed('🔎 Duplicator Analyse', `**Source:** ${snap.sourceGuild?.name}\\n**Destination:** ${destinationGuild.name}\\n\\nMissing roles: \\`${snap.roles.filter((r) => !destRoles.has(r.name.toLowerCase())).length}\\`\\nMissing channels: \\`${snap.channels.filter((c) => !destChannels.has(`${c.type}:${c.name.toLowerCase()}`)).length}\\`\\nMissing emojis: \\`${snap.emojis.filter((e) => !destEmojis.has(e.name.toLowerCase())).length}\\`\\n\\n**Bot permissions:**\\n${permissionLines}\\n\\n**Hierarchy:** ${hierarchyWarning(destinationGuild) ? `⚠️ ${hierarchyWarning(destinationGuild)}` : '✅ Goliath role has usable hierarchy.'}`, 0x22c55e)], components: [] });\n}\n\nasync function analyse(interaction) {\n  const access = assertAccess(interaction);\n  if (!access.allowed) return interaction.reply({ content: `❌ ${access.reason}`, flags: MessageFlags.Ephemeral });\n  initializeBridge(interaction.client);\n  const sourceGuildId = String(interaction.options.getString('source_server') || '').trim();\n  const destinationGuildId = String(interaction.options.getString('destination_server') || '').trim();\n  if (sourceGuildId && destinationGuildId) return performAnalyse(interaction, sourceGuildId, destinationGuildId);\n  const session = makeAnalyseSession(interaction);\n  await refreshSessionDirectory(interaction.client, session);\n  return interaction.reply(await analysePanel(interaction, session));\n}\n\n'''
+          s = s[:start] + new + s[end:]
+
+          old_handle = "async function handleInteraction(interaction) { if (!interaction?.customId) return false; const copy = parseComponentId(interaction.customId, COPY_PREFIX); if (copy) { await handleCopy(interaction, copy); return true; } const build = parseComponentId(interaction.customId, BUILD_PREFIX); if (build) { await handleBuild(interaction, build); return true; } return false; }"
+          new_handle = '''async function handleAnalyse(interaction, data) {\n  initializeBridge(interaction.client);\n  const session = getSession(analyseSessions, interaction, data.sessionId);\n  if (!session) return interaction.reply({ content: '❌ Analyse session expired or you do not own it.', flags: MessageFlags.Ephemeral }).catch(() => null);\n  if (data.action === 'source') session.sourceGuildId = interaction.values?.[0];\n  else if (data.action === 'destination') session.destinationGuildId = interaction.values?.[0];\n  else if (data.action === 'refresh') await refreshSessionDirectory(interaction.client, session);\n  else if (data.action === 'cancel') { analyseSessions.delete(session.id); return interaction.update({ embeds: [embed('❌ Analyse Cancelled', 'No changes were made.', 0xef4444)], components: [] }); }\n  else if (data.action === 'start') {\n    const sourceGuildId = session.sourceGuildId;\n    const destinationGuildId = session.destinationGuildId;\n    await interaction.update({ embeds: [embed('🔎 Analysing Servers', 'Working...', 0x5865f2)], components: [] });\n    await performAnalyse(interaction, sourceGuildId, destinationGuildId, session);\n    analyseSessions.delete(session.id);\n    return true;\n  }\n  return interaction.update(await analysePanel(interaction, session));\n}\n\nasync function handleInteraction(interaction) {\n  if (!interaction?.customId) return false;\n  const analyseData = parseComponentId(interaction.customId, ANALYSE_PREFIX);\n  if (analyseData) { await handleAnalyse(interaction, analyseData); return true; }\n  const copy = parseComponentId(interaction.customId, COPY_PREFIX);\n  if (copy) { await handleCopy(interaction, copy); return true; }\n  const build = parseComponentId(interaction.customId, BUILD_PREFIX);\n  if (build) { await handleBuild(interaction, build); return true; }\n  return false;\n}'''
+          if old_handle not in s:
+              raise SystemExit('handleInteraction marker not found')
+          s = s.replace(old_handle, new_handle)
+          p.write_text(s)
+
+          p = Path('src/owner/command.js')
+          s = p.read_text()
+          old = '''  if (id === `${OWNER_PREFIX}server-analyse`) {\n    if (!contextGuildId) {\n      await interaction.reply(serverContextRequiredPayload());\n      return true;\n    }\n    await interaction.showModal(analyseModal(interaction, contextGuildId));\n    return true;\n  }'''
+          new = '''  if (id === `${OWNER_PREFIX}server-analyse`) {\n    await runDuplicator(interaction, { action: 'analyse' }, contextGuildId);\n    return true;\n  }'''
+          if old not in s:
+              raise SystemExit('owner analyse handler marker not found')
+          s = s.replace(old, new)
+          p.write_text(s)
+      - name: Validate syntax
+        run: |
+          node --check src/owner/dev/duplicatorV2.js
+          node --check src/owner/command.js
+      - name: Commit patch
+        run: |
+          git config user.name "KSJ Hub"
+          git config user.email "sycomorgan@gmail.com"
+          git add src/owner/dev/duplicatorV2.js src/owner/command.js
+          git commit -m "Make server analyse use connected guild dropdowns"
+          git push origin dev
