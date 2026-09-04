@@ -28,15 +28,18 @@ function temporaryBotOverwrite(guild) {
   const me = guild?.members?.me;
   if (!botId || !me) return null;
   let allow = 0n;
-  for (const bit of [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.ManageRoles]) {
+  // Only channel-scoped permissions belong in a channel overwrite. ManageRoles is a
+  // guild-level permission and including it in the bootstrap overwrite can make Discord
+  // reject channel/category creation with 50013.
+  for (const bit of [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ManageChannels]) {
     if (me.permissions?.has(bit)) allow |= bit;
   }
   return allow ? { id: botId, type: 1, allow, deny: 0n } : null;
 }
 
-// Snapshot correction: a manually-created role named for Goliath can be assigned to the
-// source bot even though Discord does not mark it as managed. Treat that specific bot role
-// as a remap-only dependency so selective copy does not create a second fake Goliath role.
+// Snapshot correction for local-source copies. Remote source snapshots are still handled
+// safely by the role mapper/manifest; this prevents a local manually-created Goliath role
+// assigned to the source bot from being duplicated as a normal role.
 if (!core[SNAPSHOT_PATCH_KEY]) {
   const originalSnapshot = core.snapshot.bind(core);
   Object.defineProperty(core, SNAPSHOT_PATCH_KEY, { value: true });
@@ -81,10 +84,10 @@ if (!Client.prototype[BOOTSTRAP_KEY]) {
   };
 }
 
-// Create every transferred channel/category with a temporary bot-member overwrite. This
-// prevents a restricted parent category from locking the bot out of a newly-created child
-// before the child's exact source overwrites can be written. Unsupported special channel
-// types are retried as the closest normal Discord equivalent instead of failing the copy.
+// Structure creation must be permission-neutral. Categories/channels are created first,
+// then their exact source overwrites are applied in the permission stage. Injecting a bot
+// overwrite into the create payload caused all four selected structure objects to fail
+// with Discord 50013 in the live DEV test.
 if (GuildChannelManager?.prototype?.create && !GuildChannelManager.prototype[CHANNEL_CREATE_PATCH_KEY]) {
   const originalCreate = GuildChannelManager.prototype.create;
   Object.defineProperty(GuildChannelManager.prototype, CHANNEL_CREATE_PATCH_KEY, { value: true });
@@ -94,7 +97,6 @@ if (GuildChannelManager?.prototype?.create && !GuildChannelManager.prototype[CHA
     const guild = this.guild;
     const payload = { ...options };
     const hasCommunity = new Set(guild?.features || []).has('COMMUNITY');
-    const botOverwrite = temporaryBotOverwrite(guild);
 
     if (!hasCommunity) {
       if (payload.type === ChannelType.GuildStageVoice) payload.type = ChannelType.GuildVoice;
@@ -102,7 +104,7 @@ if (GuildChannelManager?.prototype?.create && !GuildChannelManager.prototype[CHA
     }
 
     if (payload.type === ChannelType.GuildStageVoice) delete payload.userLimit;
-    if (botOverwrite && !payload.permissionOverwrites) payload.permissionOverwrites = [botOverwrite];
+    delete payload.permissionOverwrites;
 
     try {
       return await originalCreate.call(this, payload);
@@ -115,7 +117,6 @@ if (GuildChannelManager?.prototype?.create && !GuildChannelManager.prototype[CHA
 
       const minimal = { name: payload.name, type: fallbackType, reason: payload.reason };
       if (payload.parent) minimal.parent = payload.parent;
-      if (botOverwrite) minimal.permissionOverwrites = [botOverwrite];
       if (fallbackType === ChannelType.GuildVoice) {
         if (payload.bitrate) minimal.bitrate = payload.bitrate;
         if (payload.rtcRegion) minimal.rtcRegion = payload.rtcRegion;
@@ -159,10 +160,11 @@ if (Role?.prototype?.setPosition && !Role.prototype[ROLE_ORDER_PATCH_KEY]) {
   };
 }
 
-// Write EXACT source category/channel overwrites, not a materialised category merge. A
-// child that was synced remains synced when its source overwrite set matches the category;
-// a child with explicit overrides remains deliberately unsynced. Temporary bot access is
-// included only while Discord applies/verifies the transfer and is removed afterwards.
+// Apply the source overwrite set exactly. A temporary bot-member overwrite is added only
+// during the permission write/verification window, never during channel creation. It uses
+// channel-scoped permissions only, so it cannot trigger the 50013 structure failure seen
+// in the previous build. Core verification ignores this temporary extra entry and checks
+// every expected source overwrite bit-for-bit before the bypass is removed.
 if (PermissionOverwriteManager?.prototype?.set && !PermissionOverwriteManager.prototype[OVERWRITE_PATCH_KEY]) {
   const originalSet = PermissionOverwriteManager.prototype.set;
   Object.defineProperty(PermissionOverwriteManager.prototype, OVERWRITE_PATCH_KEY, { value: true });
@@ -176,7 +178,6 @@ if (PermissionOverwriteManager?.prototype?.set && !PermissionOverwriteManager.pr
     const botOverwrite = temporaryBotOverwrite(channel.guild);
     const botId = channel.guild.client.user?.id;
     const sourceHadBotMemberOverwrite = botId && explicit.some((item) => String(item.id) === String(botId) && Number(item.type) === 1);
-
     const payload = [...explicit];
     if (botOverwrite && !sourceHadBotMemberOverwrite) payload.push(botOverwrite);
 
@@ -184,8 +185,10 @@ if (PermissionOverwriteManager?.prototype?.set && !PermissionOverwriteManager.pr
     try {
       result = await originalSet.call(this, payload, reason);
     } catch (error) {
-      if (![50001, 50013].includes(Number(error?.code)) || !botOverwrite) throw error;
-      await this.edit(botId, { ViewChannel: true, ManageChannels: true, ManageRoles: true }, 'Goliath duplicator: temporary transfer access');
+      if (![50001, 50013].includes(Number(error?.code)) || !botOverwrite || !botId) throw error;
+      // The channel exists unrestricted at this point, so bootstrap access can be applied
+      // independently and the exact source set retried once.
+      await this.edit(botId, { ViewChannel: true, ManageChannels: true }, 'Goliath duplicator: temporary transfer access');
       result = await originalSet.call(this, payload, reason);
     }
 
