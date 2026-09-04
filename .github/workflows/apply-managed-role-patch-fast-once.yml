@@ -18,6 +18,7 @@ jobs:
         with:
           ref: dev
           fetch-depth: 0
+      - run: sed -i "/result role label/d" scripts/patch-duplicator-managed-roles-once.js
       - run: node scripts/patch-duplicator-managed-roles-once.js
       - run: |
           node --check src/owner/dev/duplicator/core.js
