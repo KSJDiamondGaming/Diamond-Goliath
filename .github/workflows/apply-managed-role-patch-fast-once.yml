@@ -1,0 +1,36 @@
+name: Apply Managed Role Patch Fast Once
+
+on:
+  push:
+    branches:
+      - dev
+    paths:
+      - '.github/workflows/apply-managed-role-patch-fast-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: dev
+          fetch-depth: 0
+      - run: node scripts/patch-duplicator-managed-roles-once.js
+      - run: |
+          node --check src/owner/dev/duplicator/core.js
+          node --check src/owner/dev/duplicator/selective.js
+          node --check src/owner/dev/duplicator/index.js
+          node --check src/owner/dev/duplicator/history.js
+      - run: |
+          rm -f .github/workflows/apply-managed-role-patch-fast-once.yml
+          rm -f .github/workflows/run-managed-role-patch-once.yml
+          rm -f scripts/patch-duplicator-managed-roles-once.js
+      - run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix(duplicator): remap managed permission roles'
+          git push origin HEAD:dev
