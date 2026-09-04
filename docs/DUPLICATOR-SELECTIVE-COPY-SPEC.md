@@ -1,6 +1,6 @@
 # Server Duplicator — Selective Copy & Transfer Manifest
 
-Status: DEV implementation started. Selective structure scanning, permission-role dependency carry, transfer history/manifests, and DEV-local bulk channel/category deletion are implemented for live testing. Full specification below remains the acceptance target; features are not considered production-ready until verified in Discord.
+Status: DEV implementation started. Selective structure scanning, permission-role dependency carry, managed role remapping, transfer history/manifests, and DEV-local bulk channel/category deletion are implemented for live testing. Full specification below remains the acceptance target; features are not considered production-ready until verified in Discord.
 
 ## Goal
 Allow Server Duplicator to copy only selected categories/channels instead of requiring a full server copy, while preserving the permissions those selected items depend on and keeping a permanent audit/transfer record of exactly what was moved.
@@ -31,6 +31,10 @@ For each referenced source role, Duplicator must use a clear role-transfer decis
 - Preserve the role's base/advanced Discord permission bitfield when Discord permits it.
 - Preserve role name, colour, hoist, mentionable state and intended hierarchy position where possible.
 - Map every copied/reused role to its new destination role ID before permission overwrites are written.
+- Discord-managed bot/integration roles must never be recreated as ordinary roles. They must be detected separately and remapped to the corresponding destination managed role where possible.
+- The source Goliath bot role should remap to the destination Goliath bot role even when DEV/BETA/PRODUCTION use different bot users.
+- Other managed bot roles should remap by bot identity where the same bot exists in the destination, with a unique managed-role name match only as a fallback.
+- If a required managed role cannot be remapped, record an explicit warning/error explaining that the matching bot/integration must exist in the destination.
 - Never silently drop a role overwrite because the role was not mapped.
 - If Discord hierarchy/permissions prevent an exact role transfer, fail or warn explicitly and list exactly what could not be preserved.
 
@@ -53,7 +57,7 @@ Each manifest should retain at minimum:
 - Every permission overwrite encountered for the selection.
 - Every source role required by those overwrites.
 - Source role -> destination role mapping.
-- Whether each role was created, reused, renamed, skipped, failed, or could not be reproduced exactly.
+- Whether each role was created, reused, renamed, remapped as managed, skipped, failed, or could not be reproduced exactly.
 - Original source role base/advanced permissions.
 - Destination role permissions actually verified after transfer.
 - Permission overwrites expected vs permission overwrites actually verified on destination channels/categories.
@@ -91,6 +95,7 @@ Before reporting success, Duplicator must refetch the exact destination guild an
 - Selected categories/channels exist in the intended destination.
 - Required role mappings exist.
 - Copied role base permissions match the intended source permissions where Discord allows them.
+- Managed role dependencies are remapped rather than recreated as ordinary roles.
 - Category/channel permission overwrites match the source after source-role IDs are translated to destination-role IDs.
 - Counts displayed to the user are based on verified destination state.
 
