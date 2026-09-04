@@ -178,17 +178,21 @@ function filteredSnapshot(snapshot, selected) {
   const roleIds = dependencyRoleIds(snapshot, selected);
   const channels = (snapshot.channels || []).filter((channel) => requiredChannels.has(channel.id));
   const roles = (snapshot.roles || []).filter((role) => roleIds.has(role.id));
+  const managedRoles = (snapshot.managedRoles || []).filter((role) => roleIds.has(role.id));
   const permissionOverwrites = channels.reduce((sum, channel) => sum + (channel.permissionOverwrites || []).length, 0);
   return {
     ...snapshot,
     options: ['roles', 'categories', 'channels', 'permissions'],
     settings: null,
     roles,
+    managedRoles,
     channels,
     emojis: [],
     future: {},
     stats: {
       roles: roles.length,
+      managedRoles: managedRoles.length,
+      roleDependencies: roles.length + managedRoles.length,
       categories: channels.filter((c) => c.type === ChannelType.GuildCategory).length,
       channels: channels.filter((c) => c.type !== ChannelType.GuildCategory).length,
       permissionOverwrites,
@@ -266,7 +270,7 @@ function scanPayload(session) {
 }
 function reviewPayload(session, dryRun = null) {
   const snap = filteredSnapshot(session.snapshot, session.selected);
-  const roleNames = snap.roles.slice(0, 15).map((role) => `• ${role.name}`).join('\n') || '• None';
+  const roleNames = [...snap.roles.map((role) => `• ${role.name}`), ...(snap.managedRoles || []).map((role) => `• 🔗 ${role.name} (managed → remap only)`)].slice(0, 15).join('\n') || '• None';
   const dry = dryRun ? [
     '', '**Dry Run**', `Status: \`${dryRun.status || 'dry-run'}\``,
     `Would create/reuse: Roles \`${dryRun.copied?.roles || 0}\` • Categories \`${dryRun.copied?.categories || 0}\` • Channels \`${dryRun.copied?.channels || 0}\` • Permissions \`${dryRun.copied?.permissionOverwrites || 0}\``,
@@ -277,7 +281,7 @@ function reviewPayload(session, dryRun = null) {
       `**Source:** ${session.snapshot?.sourceGuild?.name || session.sourceGuildId}`,
       `**Destination:** ${guildLabel(session, session.destinationGuildId)}`,
       '', `Categories: **${snap.stats.categories}**`, `Channels: **${snap.stats.channels}**`,
-      `Required roles: **${snap.stats.roles}**`, `Permission overwrites: **${snap.stats.permissionOverwrites}**`,
+      `Required role dependencies: **${snap.stats.roleDependencies ?? snap.stats.roles}**`, `Managed role remaps: **${snap.stats.managedRoles || 0}**`, `Permission overwrites: **${snap.stats.permissionOverwrites}**`,
       '', '**Roles carried/mapped because selected permissions depend on them:**', roleNames, ...dry,
     ].join('\n'), dryRun?.errors?.length ? 0xf59e0b : 0x5865f2)],
     components: [new ActionRowBuilder().addComponents(
@@ -294,7 +298,7 @@ function confirmPayload(session) {
       `**Source:** ${session.snapshot?.sourceGuild?.name || session.sourceGuildId}`,
       `**Destination:** ${guildLabel(session, session.destinationGuildId)}`,
       '',
-      `This will transfer **${snap.stats.categories} categories**, **${snap.stats.channels} channels**, **${snap.stats.roles} required roles**, and rebuild **${snap.stats.permissionOverwrites} permission overwrites**.`,
+      `This will transfer **${snap.stats.categories} categories**, **${snap.stats.channels} channels**, **${snap.stats.roleDependencies ?? snap.stats.roles} required role dependencies** (${snap.stats.managedRoles || 0} managed/remapped), and rebuild **${snap.stats.permissionOverwrites} permission overwrites**.`,
       '', 'Missing permission roles are created before channel/category overwrites are applied.',
     ].join('\n'), 0xf59e0b)],
     components: [new ActionRowBuilder().addComponents(
@@ -316,7 +320,7 @@ async function applyFiltered(interaction, session, dryRun) {
 }
 function destinationMappings(sourceSnapshot, destinationSnapshot, selected) {
   const filtered = filteredSnapshot(sourceSnapshot, selected);
-  const roleMappings = filtered.roles.map((role) => {
+  const standardRoleMappings = filtered.roles.map((role) => {
     const candidates = (destinationSnapshot.roles || []).filter((dest) => dest.name === role.name);
     return {
       sourceId: role.id, sourceName: role.name, sourcePermissions: role.permissions,
@@ -325,6 +329,26 @@ function destinationMappings(sourceSnapshot, destinationSnapshot, selected) {
       status: candidates.length === 1 ? 'mapped' : candidates.length > 1 ? 'ambiguous' : 'missing',
     };
   });
+  const managedRoleMappings = (filtered.managedRoles || []).map((role) => {
+    const managed = destinationSnapshot.managedRoles || [];
+    let candidates = [];
+    if (role.tags?.botId && role.tags.botId === filtered.sourceGuild?.botUserId && destinationSnapshot.sourceGuild?.botUserId) {
+      candidates = managed.filter((dest) => dest.tags?.botId === destinationSnapshot.sourceGuild.botUserId);
+    }
+    if (!candidates.length && role.tags?.botId) candidates = managed.filter((dest) => dest.tags?.botId === role.tags.botId);
+    if (!candidates.length) candidates = managed.filter((dest) => dest.name === role.name);
+    const match = candidates.length === 1 ? candidates[0] : null;
+    return {
+      sourceId: role.id,
+      sourceName: role.name,
+      sourcePermissions: role.permissions,
+      managed: true,
+      destinationId: match?.id || null,
+      destinationName: match?.name || null,
+      status: match ? 'mapped' : candidates.length > 1 ? 'ambiguous-managed' : 'missing-managed',
+    };
+  });
+  const roleMappings = [...standardRoleMappings, ...managedRoleMappings];
   const categoryMap = new Map();
   for (const source of filtered.channels.filter((c) => c.type === ChannelType.GuildCategory)) {
     const candidates = (destinationSnapshot.channels || []).filter((dest) => dest.type === ChannelType.GuildCategory && dest.name === source.name);
@@ -415,7 +439,7 @@ function manifestPayload(session, manifest) {
     ].filter(Boolean).join('\n'))],
     components: [new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(componentId(session, 'history')).setLabel('Back to History').setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId(componentId(session, 'delete-manifest-view')).setLabel('Delete Transfer Channels').setEmoji('🗑️').setStyle(ButtonStyle.Danger).setDisabled(manifest.type !== 'selective-copy'),
+      new ButtonBuilder().setCustomId(componentId(session, 'delete-manifest-view')).setLabel('Delete Transfer Channels').setEmoji('🗑️').setStyle(ButtonStyle.Danger).setDisabled(manifest.type !== 'selective-copy' || !(manifest.channels || []).some((item) => item.destinationId)),
     )],
   };
 }

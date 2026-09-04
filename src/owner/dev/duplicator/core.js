@@ -207,14 +207,30 @@ const DEFAULT_TEMPLATES = Object.freeze({
   'creator-streamer': makeTemplate('creator-streamer', 'Creator / Streamer', 'Creator community layout for streams, content and announcements.', [['Creator', 0xffc107], ['Admin', 0xef4444], ['Moderator', 0x3b82f6], ['Subscriber', 0xa855f7], ['Community', 0x22c55e]], [['START HERE', [['welcome', ChannelType.GuildText], ['rules', ChannelType.GuildText], ['stream-announcements', ChannelType.GuildAnnouncement]]], ['CONTENT', [['clips', ChannelType.GuildText], ['youtube', ChannelType.GuildText], ['socials', ChannelType.GuildText]]], ['COMMUNITY', [['general', ChannelType.GuildText], ['suggestions', ChannelType.GuildText], ['Stream Room', ChannelType.GuildVoice]]]]),
 });
 function serializeChannel(channel) { return { id: channel.id, name: channel.name, type: channel.type, parentId: channel.parentId || null, position: channel.rawPosition ?? channel.position ?? 0, topic: channel.topic || null, nsfw: Boolean(channel.nsfw), rateLimitPerUser: channel.rateLimitPerUser || 0, bitrate: channel.bitrate || null, userLimit: channel.userLimit || 0, rtcRegion: channel.rtcRegion || null, videoQualityMode: channel.videoQualityMode || null, defaultAutoArchiveDuration: channel.defaultAutoArchiveDuration || null, defaultThreadRateLimitPerUser: channel.defaultThreadRateLimitPerUser || 0, availableTags: Array.isArray(channel.availableTags) ? channel.availableTags.map((tag) => ({ name: tag.name, moderated: Boolean(tag.moderated), emojiId: tag.emojiId || null, emojiName: tag.emojiName || null })) : [], permissionOverwrites: channel.permissionOverwrites?.cache ? channel.permissionOverwrites.cache.map((o) => ({ id: o.id, type: o.type, allow: o.allow.bitfield.toString(), deny: o.deny.bitfield.toString() })) : [] }; }
+function serializeManagedRole(role) {
+  const tags = role.tags || {};
+  return {
+    id: role.id,
+    name: role.name,
+    managed: true,
+    permissions: role.permissions.bitfield.toString(),
+    position: role.position,
+    tags: {
+      botId: tags.botId || null,
+      integrationId: tags.integrationId || null,
+      subscriptionListingId: tags.subscriptionListingId || null,
+    },
+  };
+}
 function snapshot(guild, selectedOptions = [...ACTIVE_OPTIONS]) {
   const selected = new Set(selectedOptions);
   const channels = selected.has('categories') || selected.has('channels') || selected.has('permissions') ? guild.channels.cache.filter((c) => selected.has('channels') || c.type === ChannelType.GuildCategory).sort((a, b) => (a.rawPosition ?? a.position ?? 0) - (b.rawPosition ?? b.position ?? 0)).map(serializeChannel) : [];
   const roles = selected.has('roles') || selected.has('permissions') ? guild.roles.cache.filter((r) => r.id !== guild.id && !r.managed).sort((a, b) => a.position - b.position).map((r) => ({ id: r.id, name: r.name, color: r.color, hoist: r.hoist, mentionable: r.mentionable, permissions: r.permissions.bitfield.toString(), position: r.position })) : [];
+  const managedRoles = selected.has('permissions') ? guild.roles.cache.filter((r) => r.id !== guild.id && r.managed).sort((a, b) => a.position - b.position).map(serializeManagedRole) : [];
   const emojis = selected.has('emojis') ? guild.emojis.cache.map((e) => ({ id: e.id, name: e.name, animated: e.animated, url: typeof e.imageURL === 'function' ? e.imageURL({ extension: e.animated ? 'gif' : 'png' }) : e.url })) : [];
   const settings = selected.has('serverSettings') ? { name: guild.name, description: guild.description || null, verificationLevel: guild.verificationLevel, explicitContentFilter: guild.explicitContentFilter, defaultMessageNotifications: guild.defaultMessageNotifications, afkTimeout: guild.afkTimeout, iconURL: guild.iconURL({ extension: 'png', size: 1024 }) || null, bannerURL: guild.bannerURL({ extension: 'png', size: 2048 }) || null, splashURL: guild.splashURL({ extension: 'png', size: 2048 }) || null } : null;
   const future = {}; for (const key of FUTURE_OPTIONS) if (selected.has(key)) future[key] = { requested: true, supported: false, reason: 'Reserved for Duplicator API expansion.' };
-  return { sourceGuild: { id: guild.id, name: guild.name }, options: [...selected], settings, roles, channels, emojis, future, stats: { roles: roles.length, categories: channels.filter((c) => c.type === ChannelType.GuildCategory).length, channels: channels.filter((c) => c.type !== ChannelType.GuildCategory).length, permissionOverwrites: channels.reduce((total, c) => total + (c.permissionOverwrites?.length || 0), 0), emojis: emojis.length } };
+  return { sourceGuild: { id: guild.id, name: guild.name, botUserId: guild.client.user?.id || null }, options: [...selected], settings, roles, managedRoles, channels, emojis, future, stats: { roles: roles.length, managedRoles: managedRoles.length, categories: channels.filter((c) => c.type === ChannelType.GuildCategory).length, channels: channels.filter((c) => c.type !== ChannelType.GuildCategory).length, permissionOverwrites: channels.reduce((total, c) => total + (c.permissionOverwrites?.length || 0), 0), emojis: emojis.length } };
 }
 function readTemplates(guildId) { const cfg = moduleConfig(guildId); return cfg.templates && typeof cfg.templates === 'object' && !Array.isArray(cfg.templates) ? cfg.templates : {}; }
 function saveTemplates(guildId, value, guildOrMeta = {}) { guildManager.updateGuildSection(guildId, 'modules', (modules) => ({ ...modules, duplicator: { ...(modules.duplicator || {}), enabled: modules.duplicator?.enabled ?? true, hidden: true, ownerOnly: true, templates: value } }), {}, guildOrMeta); return value; }
@@ -356,6 +372,31 @@ function exactPermissionPreflight(guild, snap) {
 function exactRolePermissions(raw) { return new PermissionsBitField(BigInt(raw || 0)); }
 async function clearDestination(guild, log) { for (const channel of [...guild.channels.cache.values()].sort((a, b) => b.position - a.position)) try { await channel.delete('Goliath duplicator: replace destination'); log.deleted.channels += 1; } catch (error) { pushError(log, `Delete channel ${channel.name}`, error); } const botHighest = guild.members.me?.roles?.highest?.position ?? 0; const roles = guild.roles.cache.filter((r) => r.id !== guild.id && !r.managed && r.editable && r.position < botHighest).sort((a, b) => b.position - a.position); for (const role of roles.values()) try { await role.delete('Goliath duplicator: replace roles'); log.deleted.roles += 1; } catch (error) { pushError(log, `Delete role ${role.name}`, error); } }
 async function applySettings(guild, snap, log) { if (!snap.settings) return; const s = snap.settings; const payload = {}; if (s.name) payload.name = s.name; if (s.description !== undefined) payload.description = s.description || null; if (Number.isFinite(s.verificationLevel)) payload.verificationLevel = s.verificationLevel; if (Number.isFinite(s.explicitContentFilter)) payload.explicitContentFilter = s.explicitContentFilter; if (Number.isFinite(s.defaultMessageNotifications)) payload.defaultMessageNotifications = s.defaultMessageNotifications; if (Number.isFinite(s.afkTimeout)) payload.afkTimeout = s.afkTimeout; if (s.iconURL) payload.icon = await bufferFromUrl(s.iconURL).catch(() => null); if (s.bannerURL) payload.banner = await bufferFromUrl(s.bannerURL).catch(() => null); if (s.splashURL) payload.splash = await bufferFromUrl(s.splashURL).catch(() => null); if (Object.keys(payload).length) { await guild.edit(payload, 'Goliath duplicator: settings'); log.copied.serverSettings = Object.keys(payload).length; } }
+async function applyManagedRoleMappings(guild, snap, maps, log) {
+  const dependencies = snap.managedRoles || [];
+  if (!dependencies.length) return;
+  const destinationManaged = [...guild.roles.cache.values()].filter((role) => role.managed);
+  for (const sourceRole of dependencies) {
+    let target = null;
+    const sourceBotId = sourceRole.tags?.botId || null;
+    if (sourceBotId && sourceBotId === snap.sourceGuild?.botUserId) {
+      target = destinationManaged.find((role) => role.tags?.botId === guild.client.user?.id) || null;
+    }
+    if (!target && sourceBotId) target = destinationManaged.find((role) => role.tags?.botId === sourceBotId) || null;
+    if (!target) {
+      const sameName = destinationManaged.filter((role) => role.name.toLowerCase() === String(sourceRole.name || '').toLowerCase());
+      if (sameName.length === 1) target = sameName[0];
+    }
+    if (target) {
+      maps.roles.set(sourceRole.id, target.id);
+      log.notes.push(`Managed role remapped: ${sourceRole.name} (${sourceRole.id}) -> ${target.name} (${target.id}).`);
+    } else {
+      const message = `Managed permission role could not be remapped: ${sourceRole.name} (${sourceRole.id}). Discord-managed roles cannot be recreated; the matching bot/integration must exist in the destination.`;
+      log.errors.push(message);
+      log.notes.push(message);
+    }
+  }
+}
 async function applyRoles(guild, snap, maps, log, conflictMode) {
   const names = new Set(guild.roles.cache.map((r) => r.name.toLowerCase()));
   const botHighest = guild.members.me?.roles?.highest?.position ?? 0;
@@ -634,6 +675,7 @@ async function executeSnapshotOnGuild(guild, session, snap, title, actorId = 'br
   if (String(guild.id) !== String(session.destinationGuildId)) throw new Error(`Destination mismatch before copy: expected ${session.destinationGuildId}, got ${guild.id}`);
   const maps = { roles: new Map([[snap.sourceGuild?.id, guild.id]]), channels: new Map(), createdRoles: new Set(), createdCategories: new Set(), createdChannels: new Set(), createdEmojis: new Set(), rolePositions: new Map(), channelPositions: new Map() };
   await executeStage('Server settings', log, () => applySettings(guild, snap, log));
+  await executeStage('Managed role remap', log, () => applyManagedRoleMappings(guild, snap, maps, log));
   await executeStage('Roles', log, () => applyRoles(guild, snap, maps, log, session.conflictMode));
   await executeStage('Channels', log, () => applyChannels(guild, snap, maps, log, session.conflictMode));
   await executeStage('Permissions', log, () => applyPermissions(guild, snap, maps, log));
