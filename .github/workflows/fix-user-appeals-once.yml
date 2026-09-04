@@ -1,0 +1,113 @@
+name: Fix User Appeals Flow Once
+
+on:
+  push:
+    branches:
+      - dev
+    paths:
+      - '.github/workflows/fix-user-appeals-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout dev
+        uses: actions/checkout@v5
+        with:
+          ref: dev
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Patch appeals flow
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          # /mod is management-only: remove member-facing appeal option and DM path.
+          p = Path('src/core/administration/mod/command.js')
+          s = p.read_text()
+          s = s.replace("const { openExternalAppealFromCommand } = require('./cases');\n", '')
+          s = s.replace("help: { name: 'mod', description: '🔐 Open moderation hub and staff tools, or appeal a case by DM.', usage: '/mod or /mod appeal:SERVER_ID:CASE_ID' },", "help: { name: 'mod', description: '🔐 Open Goliath’s moderation hub and management tools.', usage: '/mod' },")
+          s = s.replace("    .setDescription('🔐 Open Goliath’s moderation hub and staff tools')\n    .addStringOption((option) => option.setName('appeal').setDescription('Appeal a case using SERVER_ID:CASE_ID (works in bot DMs)').setRequired(false).setMaxLength(40)),", "    .setDescription('🔐 Open Goliath’s moderation hub and management tools'),")
+          start = s.find("    const appealReference = interaction.options?.getString?.('appeal') || null;\n")
+          end = s.find("    const denied = await enforceCommandAccess(interaction, command);\n", start)
+          if start >= 0 and end > start:
+              s = s[:start] + s[end:]
+          s = s.replace("        return safeEditReply(interaction, { embeds: [errorEmbed('Use `/mod appeal:SERVER_ID:CASE_ID` in DM to appeal a moderation case. The moderation panel itself can only be used inside a server.')] });", "        return safeEditReply(interaction, { embeds: [errorEmbed('The moderation hub can only be used inside a server. Member appeals are submitted from `/user` → Account → Appeals.')] });")
+          p.write_text(s)
+
+          # Turn Account > Appeals into a live personal panel driven by the moderation case store.
+          p = Path('src/core/administration/user/panel.js')
+          s = p.read_text()
+          s = s.replace("{ key: 'appeals', category: 'account', label: 'Appeals', emoji: '📝', summary: 'Planned personal appeal access.', status: 'planned' },", "{ key: 'appeals', category: 'account', label: 'Appeals', emoji: '📝', summary: 'Review eligible cases and submit or track your own appeals.', status: 'live' },")
+          anchor = "function buildPlannedModulePanel(moduleKey, interactionOrName = 'Unknown User') {\n"
+          helper = '''function buildUserAppealsPanel(interaction, cases = [], getAppealEligibility = null, getCaseAppeals = null) {\n  const memberDisplayName = getMemberDisplayName(interaction);\n  const userId = String(interaction?.user?.id || '');\n  const mine = (Array.isArray(cases) ? cases : []).filter((modCase) => String(modCase.userId) === userId).sort((a, b) => Number(b.caseId || 0) - Number(a.caseId || 0));\n  const lines = [];\n  const buttons = [];\n  for (const modCase of mine.slice(0, 10)) {\n    const appeals = typeof getCaseAppeals === 'function' ? getCaseAppeals(modCase) : [];\n    const latest = appeals[appeals.length - 1] || null;\n    const eligibility = typeof getAppealEligibility === 'function' ? getAppealEligibility(modCase, userId) : { ok: false };\n    const action = String(modCase.action || 'unknown').toUpperCase();\n    const status = latest ? String(latest.status || 'pending') : (eligibility.ok ? 'eligible' : 'not eligible');\n    lines.push(`**Case #${modCase.caseId}** • ${action} • ${status}`);\n    if (latest?.submittedAt) lines.push(`↳ Appeal submitted <t:${Math.floor(new Date(latest.submittedAt).getTime() / 1000)}:R>`);\n    else if (!eligibility.ok && eligibility.error) lines.push(`↳ ${eligibility.error}`);\n    if (eligibility.ok && buttons.length < 5) buttons.push(button(`user:appeal:${modCase.caseId}`, `Appeal #${modCase.caseId}`, ButtonStyle.Primary, false, '📝'));\n  }\n  if (!mine.length) lines.push('You do not currently have any moderation cases on this server.');\n  const description = [\n    'Review your own moderation cases and appeal information.',\n    '',\n    ...lines,\n    '',\n    'If you are banned from the server, this in-server route will not be available. External Goliath DM and web appeal access will be handled separately.',\n  ].join('\\n');\n  const components = [];\n  if (buttons.length) components.push(row(...buttons));\n  components.push(navigationRow({ backId: 'user:account:record' }));\n  return { embeds: [markLiveEmbed(createEmbed('📝 Your Appeals', description, memberDisplayName))], components };\n}\n\n'''
+          if 'function buildUserAppealsPanel(' not in s:
+              if anchor not in s: raise SystemExit('panel anchor not found')
+              s = s.replace(anchor, helper + anchor)
+          s = s.replace("  if (moduleKey === 'giveaways') return buildGiveawaysMemoPanel(interactionOrName);\n", "  if (moduleKey === 'giveaways') return buildGiveawaysMemoPanel(interactionOrName);\n")
+          s = s.replace("  buildAccountRecordPanel,\n", "  buildAccountRecordPanel,\n  buildUserAppealsPanel,\n")
+          p.write_text(s)
+
+          # Wire /user > Account > Appeals to live case data and existing appeal modal flow.
+          p = Path('src/core/administration/user/interactions.js')
+          s = p.read_text()
+          s = s.replace("  buildAccountRecordPanel,\n", "  buildAccountRecordPanel,\n  buildUserAppealsPanel,\n")
+          import_anchor = "const profileDevelopmentPage = require('./profileDevelopmentPage');\n"
+          import_line = "const { getAllCases } = require('../mod/storage');\nconst { getAppealEligibility, getCaseAppeals, openExternalAppealFromCommand } = require('../mod/cases');\n"
+          if import_line not in s:
+              s = s.replace(import_anchor, import_anchor + import_line)
+          helper_anchor = "async function showProgress(interaction) {\n"
+          helper_code = "async function showUserAppeals(interaction) {\n  const cases = getAllCases(interaction.guildId) || [];\n  return updatePanel(interaction, buildUserAppealsPanel(interaction, cases, getAppealEligibility, getCaseAppeals));\n}\n\n"
+          if 'async function showUserAppeals(' not in s:
+              s = s.replace(helper_anchor, helper_code + helper_anchor)
+          s = s.replace("    if (moduleKey === 'leveling') return showLeveling(interaction);\n", "    if (moduleKey === 'leveling') return showLeveling(interaction);\n    if (moduleKey === 'appeals') return showUserAppeals(interaction);\n", 1)
+          # button module branch - insert after leveling in the second occurrence too
+          first = s.find("    if (moduleKey === 'leveling') return showLeveling(interaction);\n")
+          second = s.find("    if (moduleKey === 'leveling') return showLeveling(interaction);\n", first + 1)
+          if second >= 0 and "moduleKey === 'appeals'" not in s[second:second+180]:
+              pos = second + len("    if (moduleKey === 'leveling') return showLeveling(interaction);\n")
+              s = s[:pos] + "    if (moduleKey === 'appeals') return showUserAppeals(interaction);\n" + s[pos:]
+          # Appeal case button reuses the existing validated appeal form using current guild + selected case.
+          marker = "  const categoryMatch = customId.match(/^user:category:([a-zA-Z0-9_-]+)$/);\n"
+          appeal_handler = "  const userAppealMatch = customId.match(/^user:appeal:(\\d+)$/);\n  if (userAppealMatch && interaction.isButton?.()) {\n    const reference = `${interaction.guildId}:${userAppealMatch[1]}`;\n    return openExternalAppealFromCommand(interaction, reference);\n  }\n"
+          if appeal_handler not in s:
+              s = s.replace(marker, appeal_handler + marker)
+          p.write_text(s)
+          PY
+
+      - name: Validate source
+        run: |
+          node --check src/core/administration/mod/command.js
+          node --check src/core/administration/user/panel.js
+          node --check src/core/administration/user/interactions.js
+
+      - name: Remove temporary workflow
+        run: rm -f .github/workflows/fix-user-appeals-once.yml
+
+      - name: Run project doctor
+        run: npm run doctor
+
+      - name: Build project
+        run: npm run build
+
+      - name: Commit clean fix
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --quiet && exit 0
+          git commit -m 'fix(mod): route member appeals through user account panel'
+          git push origin HEAD:dev
