@@ -14,8 +14,8 @@ const selective = require('./selective');
 
 const BOOTSTRAP_KEY = Symbol.for('goliath.duplicator.bridge-bootstrap');
 const OVERWRITE_PATCH_KEY = Symbol.for('goliath.duplicator.permission-overwrite-exact');
-const CHANNEL_CREATE_PATCH_KEY = Symbol.for('goliath.duplicator.channel-create-compat-v2');
-const ROLE_ORDER_PATCH_KEY = Symbol.for('goliath.duplicator.role-order-v2');
+const CHANNEL_CREATE_PATCH_KEY = Symbol.for('goliath.duplicator.channel-create-compat');
+const ROLE_ORDER_PATCH_KEY = Symbol.for('goliath.duplicator.role-order');
 const SNAPSHOT_PATCH_KEY = Symbol.for('goliath.duplicator.snapshot-bot-role-remap');
 const roleOrderState = new WeakMap();
 
@@ -184,10 +184,8 @@ if (PermissionOverwriteManager?.prototype?.set && !PermissionOverwriteManager.pr
     try {
       result = await originalSet.call(this, payload, reason);
     } catch (error) {
-      // A stale inherited restriction can still cause 50001/50013 on some channel types.
-      // Re-assert temporary member access first, then retry the exact source payload.
       if (![50001, 50013].includes(Number(error?.code)) || !botOverwrite) throw error;
-      await this.edit(botId, { ViewChannel: true, ManageChannels: true, ManageRoles: true }, { reason: 'Goliath duplicator: temporary transfer access' });
+      await this.edit(botId, { ViewChannel: true, ManageChannels: true, ManageRoles: true }, 'Goliath duplicator: temporary transfer access');
       result = await originalSet.call(this, payload, reason);
     }
 
