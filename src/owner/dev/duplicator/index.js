@@ -165,11 +165,10 @@ if (Role?.prototype?.setPosition && !Role.prototype[ROLE_ORDER_PATCH_KEY]) {
   };
 }
 
-// Rebuild the source permission graph one target at a time. This avoids Discord rejecting
-// a large bulk overwrite request with 50013 and makes the real destination roles — not the
-// Goliath bot member — the permanent permission targets. Temporary bot access exists only
-// while the overwrite set is being rebuilt and is removed before this call returns for
-// normal channels. Categories keep it briefly so restricted children remain writable.
+// Rebuild source overwrites without replacing a child channel's inherited category
+// permissions with the temporary bot member. Apply mapped role/member targets explicitly,
+// @everyone last, remove extras only after successful upserts, and always clean temporary
+// bot access even when a single target fails.
 if (PermissionOverwriteManager?.prototype?.set && !PermissionOverwriteManager.prototype[OVERWRITE_PATCH_KEY]) {
   const originalSet = PermissionOverwriteManager.prototype.set;
   Object.defineProperty(PermissionOverwriteManager.prototype, OVERWRITE_PATCH_KEY, { value: true });
@@ -180,39 +179,103 @@ if (PermissionOverwriteManager?.prototype?.set && !PermissionOverwriteManager.pr
     if (!isDuplicatorTransfer || !channel?.guild) return originalSet.call(this, overwrites, reason);
 
     const expected = Array.isArray(overwrites) ? [...overwrites] : [...(overwrites || [])];
-    const botOverwrite = temporaryBotOverwrite(channel.guild);
-    const botId = channel.guild.client.user?.id;
-    const sourceHadBotMemberOverwrite = Boolean(botId && expected.some((item) => String(item.id) === String(botId) && Number(item.type) === 1));
+    const guild = channel.guild;
+    const botOverwrite = temporaryBotOverwrite(guild);
+    const botId = guild.client.user?.id;
+    const sourceHadBotMemberOverwrite = Boolean(
+      botId && expected.some((item) => String(item.id) === String(botId) && Number(item.type) === 1),
+    );
+    const expectedIds = new Set(expected.map((item) => String(item.id)));
+    const failures = [];
 
-    // Start from a clean destination overwrite set while retaining only temporary transfer
-    // access. Newly-created channels have no meaningful destination-specific overwrites to keep.
-    const bootstrap = botOverwrite && !sourceHadBotMemberOverwrite ? [botOverwrite] : [];
-    await originalSet.call(this, bootstrap, 'Goliath duplicator: permission bootstrap');
+    const upsertExplicit = async (item, targetReason) => {
+      const options = overwriteOptions(item);
+      if (typeof this.upsert === 'function') {
+        return this.upsert(item.id, options, { type: Number(item.type), reason: targetReason });
+      }
+      return this.edit(item.id, options, targetReason);
+    };
 
-    for (const item of expected) {
-      try {
-        await this.edit(item.id, overwriteOptions(item), `Goliath duplicator: mapped overwrite ${item.id}`);
-      } catch (error) {
-        error.message = `Mapped overwrite ${item.id} failed on ${channel.name}: ${error.message}`;
+    try {
+      // Never bulk-replace the channel with only the Goliath member. That was the reason
+      // child channels ended up showing @everyone + .Goliath.#xxxx and no mapped roles.
+      if (botOverwrite && !sourceHadBotMemberOverwrite) {
+        await upsertExplicit(botOverwrite, 'Goliath duplicator: temporary transfer access');
+      }
+
+      // Role overwrites first, member overwrites next, @everyone last. This minimizes the
+      // chance that a restrictive @everyone rule removes useful access before mapped roles
+      // have been written.
+      const ordered = [...expected].sort((a, b) => {
+        const aEveryone = String(a.id) === String(guild.id);
+        const bEveryone = String(b.id) === String(guild.id);
+        if (aEveryone !== bEveryone) return aEveryone ? 1 : -1;
+        return Number(a.type) - Number(b.type);
+      });
+
+      for (const item of ordered) {
+        try {
+          await upsertExplicit(item, `Goliath duplicator: mapped overwrite ${item.id}`);
+        } catch (error) {
+          failures.push({
+            id: String(item.id),
+            code: Number(error?.code) || null,
+            message: error?.message || String(error),
+          });
+        }
+      }
+
+      // Refresh before pruning inherited/extraneous targets. Source channel overwrites are
+      // authoritative: inherited entries that do not exist on an intentionally unsynced
+      // source channel must be removed from the destination.
+      const refreshed = await guild.channels.fetch(channel.id).catch(() => null);
+      const cache = refreshed?.permissionOverwrites?.cache || channel.permissionOverwrites?.cache;
+      if (cache) {
+        for (const overwrite of cache.values()) {
+          const id = String(overwrite.id);
+          if (expectedIds.has(id)) continue;
+          if (botId && id === String(botId) && !sourceHadBotMemberOverwrite) continue;
+          try {
+            await channel.permissionOverwrites.delete(id, 'Goliath duplicator: remove non-source overwrite');
+          } catch (error) {
+            failures.push({
+              id,
+              code: Number(error?.code) || null,
+              message: `Cleanup failed: ${error?.message || String(error)}`,
+            });
+          }
+        }
+      }
+
+      if (failures.length) {
+        const details = failures
+          .slice(0, 8)
+          .map((item) => `${item.id}${item.code ? ` [${item.code}]` : ''}: ${item.message}`)
+          .join('; ');
+        const error = new Error(`Permission targets failed on ${channel.name}: ${details}`);
+        error.code = failures.find((item) => item.code)?.code || 'DUPLICATOR_PERMISSION_TARGETS';
         throw error;
       }
-    }
 
-    if (botId && botOverwrite && !sourceHadBotMemberOverwrite) {
-      if (channel.type === ChannelType.GuildCategory) {
-        setTimeout(() => {
-          channel.permissionOverwrites.delete(botId, 'Goliath duplicator: remove temporary category access').catch((error) => {
-            console.warn(`[Duplicator] Temporary category access cleanup failed for ${channel.name}: ${error.message}`);
+      return channel.permissionOverwrites;
+    } finally {
+      // A temporary Goliath *member* overwrite must never be the final copied permission.
+      // Always remove it for channels, including failure paths. Categories keep it briefly
+      // so restrictive parents cannot block their child channel pass, then it is removed.
+      if (botId && botOverwrite && !sourceHadBotMemberOverwrite) {
+        if (channel.type === ChannelType.GuildCategory) {
+          setTimeout(() => {
+            channel.permissionOverwrites.delete(botId, 'Goliath duplicator: remove temporary category access').catch((error) => {
+              console.warn(`[Duplicator] Temporary category access cleanup failed for ${channel.name}: ${error.message}`);
+            });
+          }, 8000).unref?.();
+        } else {
+          await channel.permissionOverwrites.delete(botId, 'Goliath duplicator: remove temporary transfer access').catch((error) => {
+            console.warn(`[Duplicator] Temporary access cleanup failed for ${channel.name}: ${error.message}`);
           });
-        }, 5000).unref?.();
-      } else {
-        await channel.permissionOverwrites.delete(botId, 'Goliath duplicator: remove temporary transfer access').catch((error) => {
-          console.warn(`[Duplicator] Temporary access cleanup failed for ${channel.name}: ${error.message}`);
-        });
+        }
       }
     }
-
-    return channel.permissionOverwrites;
   };
 }
 
@@ -230,7 +293,7 @@ function installRunningState(interaction) {
           .setDescription([
             'Goliath is applying this transfer now.',
             '',
-            '**Stages:** Roles → Role Order → Categories → Channels → Per-Role Category/Channel Permissions → Verification → Transfer Manifest',
+            '**Stages:** Roles → Role Order → Categories → Channels → Exact Per-Target Category/Channel Permissions → Verification → Transfer Manifest',
             '',
             'The confirmation controls have been removed so this transfer cannot be started twice. The result will replace this message when the copy finishes.',
           ].join('\n'))
