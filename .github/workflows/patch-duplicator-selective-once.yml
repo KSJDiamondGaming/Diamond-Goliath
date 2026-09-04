@@ -1,0 +1,965 @@
+name: Patch Duplicator Selective Copy Once
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - '.github/workflows/patch-duplicator-selective-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  build-selective-duplicator:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout DEV
+        uses: actions/checkout@v4
+        with:
+          ref: dev
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Restructure duplicator into four-file DEV module
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf src/owner/dev/duplicator
+          mkdir -p src/owner/dev/duplicator
+          mv src/owner/dev/duplicatorV2.js src/owner/dev/duplicator/core.js
+          rm -f src/owner/dev/duplicator.js
+
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('src/owner/dev/duplicator/core.js')
+          s = p.read_text()
+          s = s.replace("require('../../core/security/protection/core')", "require('../../../core/security/protection/core')")
+          s = s.replace("require('../../core/guild/guildManager')", "require('../../../core/guild/guildManager')")
+          s = s.replace("require('../../core/security/restoreBackup/backup')", "require('../../../core/security/restoreBackup/backup')")
+          p.write_text(s)
+          PY
+
+          cat > src/owner/dev/duplicator/history.js <<'EOF'
+          'use strict';
+
+          const guildManager = require('../../../core/guild/guildManager');
+
+          const MAX_HISTORY = 100;
+
+          function readConfig(controlGuildId) {
+            const modules = guildManager.getGuildSection(controlGuildId, 'modules', {});
+            const duplicator = modules.duplicator || {};
+            const transferHistory = Array.isArray(duplicator.transferHistory) ? duplicator.transferHistory : [];
+            return { modules, duplicator, transferHistory };
+          }
+
+          function saveHistory(controlGuildId, history, guildOrMeta = {}) {
+            const { modules, duplicator } = readConfig(controlGuildId);
+            const next = history.slice(0, MAX_HISTORY);
+            guildManager.replaceGuildSection(controlGuildId, 'modules', {
+              ...modules,
+              duplicator: {
+                ...duplicator,
+                transferHistory: next,
+              },
+            }, guildOrMeta);
+            return next;
+          }
+
+          function makeId(prefix = 'TR') {
+            return `${prefix}-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+          }
+
+          function add(controlGuildId, manifest, guildOrMeta = {}) {
+            const { transferHistory } = readConfig(controlGuildId);
+            const entry = {
+              id: manifest.id || makeId(manifest.type === 'bulk-delete' ? 'DEL' : 'TR'),
+              createdAt: manifest.createdAt || new Date().toISOString(),
+              ...manifest,
+            };
+            saveHistory(controlGuildId, [entry, ...transferHistory.filter((item) => item?.id !== entry.id)], guildOrMeta);
+            return entry;
+          }
+
+          function list(controlGuildId, limit = 25) {
+            return readConfig(controlGuildId).transferHistory.slice(0, Math.max(1, Math.min(100, limit)));
+          }
+
+          function get(controlGuildId, id) {
+            return readConfig(controlGuildId).transferHistory.find((item) => item?.id === id) || null;
+          }
+
+          function update(controlGuildId, id, patch, guildOrMeta = {}) {
+            const { transferHistory } = readConfig(controlGuildId);
+            const index = transferHistory.findIndex((item) => item?.id === id);
+            if (index < 0) return null;
+            const nextEntry = { ...transferHistory[index], ...(patch || {}), updatedAt: new Date().toISOString() };
+            const next = [...transferHistory];
+            next[index] = nextEntry;
+            saveHistory(controlGuildId, next, guildOrMeta);
+            return nextEntry;
+          }
+
+          module.exports = { add, list, get, update, makeId };
+          EOF
+
+          cat > src/owner/dev/duplicator/selective.js <<'EOF'
+          'use strict';
+
+          const http = require('node:http');
+          const {
+            ActionRowBuilder,
+            ButtonBuilder,
+            ButtonStyle,
+            ChannelType,
+            EmbedBuilder,
+            MessageFlags,
+            StringSelectMenuBuilder,
+          } = require('discord.js');
+          const core = require('./core');
+          const history = require('./history');
+
+          const PREFIX = 'dupselect';
+          const SESSION_TTL = 30 * 60 * 1000;
+          const PAGE_SIZE = 20;
+          const BRIDGE_PORTS = Object.freeze({ DEV: 3002, BETA: 3012, PRODUCTION: 3022 });
+          const sessions = new Map();
+
+          function mode() { return String(process.env.BOT_MODE || 'DEV').trim().toUpperCase(); }
+          function bridgePort(environment) { return Number(process.env[`DUPLICATOR_BRIDGE_PORT_${environment}`] || BRIDGE_PORTS[environment]); }
+          function bridgeSecret() { return String(process.env.DUPLICATOR_BRIDGE_SECRET || '').trim(); }
+          function componentId(session, action) { return `${PREFIX}:${session.id}:${action}`; }
+          function parseId(customId) {
+            const [prefix, sessionId, ...rest] = String(customId || '').split(':');
+            return prefix === PREFIX && sessionId && rest.length ? { sessionId, action: rest.join(':') } : null;
+          }
+          function prune() {
+            const now = Date.now();
+            for (const [id, session] of sessions.entries()) if (!session || session.expiresAt <= now) sessions.delete(id);
+          }
+          function sessionFor(interaction, id) {
+            prune();
+            const session = sessions.get(id);
+            if (!session || session.ownerId !== interaction.user?.id) return null;
+            session.expiresAt = Date.now() + SESSION_TTL;
+            return session;
+          }
+          function makeSession(interaction) {
+            const session = {
+              id: `${interaction.user.id}-${Date.now().toString(36)}`,
+              ownerId: interaction.user.id,
+              controlGuildId: interaction.guild.id,
+              sourceGuildId: null,
+              destinationGuildId: interaction.guild.id,
+              directory: [],
+              snapshot: null,
+              selected: new Set(),
+              page: 0,
+              deletePage: 0,
+              deleteSelected: new Set(),
+              deleteItems: [],
+              lastManifestId: null,
+              expiresAt: Date.now() + SESSION_TTL,
+            };
+            sessions.set(session.id, session);
+            return session;
+          }
+          function embed(title, description, color = 0x5865f2) {
+            return new EmbedBuilder().setColor(color).setTitle(title).setDescription(description).setTimestamp();
+          }
+          function guildEntry(session, id) { return session.directory.find((item) => item.id === String(id || '')) || null; }
+          function guildLabel(session, id) {
+            const item = guildEntry(session, id);
+            return item ? `${item.name} · ${(item.environments || [item.environment]).join('/')}` : (id || 'Not selected');
+          }
+          function guildOptions(session, selectedId) {
+            return session.directory.slice(0, 25).map((guild) => ({
+              label: String(guild.name || guild.id).slice(0, 100),
+              description: `${(guild.environments || [guild.environment]).join('/')} • ${guild.id}`.slice(0, 100),
+              value: guild.id,
+              default: guild.id === selectedId,
+            }));
+          }
+          function destinationEnvironment(interaction, session, guildId) {
+            if (interaction.client.guilds.cache.has(guildId)) return mode();
+            const entry = guildEntry(session, guildId);
+            const envs = entry?.environments || [entry?.environment].filter(Boolean);
+            return envs[0] || entry?.environment || mode();
+          }
+          function bridgeRequest(environment, method, path, payload = null, timeoutMs = 120000) {
+            return new Promise((resolve, reject) => {
+              const body = payload == null ? null : Buffer.from(JSON.stringify(payload));
+              const headers = { accept: 'application/json' };
+              if (body) {
+                headers['content-type'] = 'application/json';
+                headers['content-length'] = String(body.length);
+              }
+              if (bridgeSecret()) headers['x-goliath-duplicator-secret'] = bridgeSecret();
+              const req = http.request({ host: '127.0.0.1', port: bridgePort(environment), method, path, headers }, (res) => {
+                const chunks = [];
+                res.on('data', (chunk) => chunks.push(chunk));
+                res.on('end', () => {
+                  let data = {};
+                  try { data = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'); } catch {}
+                  if (res.statusCode >= 200 && res.statusCode < 300) resolve(data);
+                  else reject(new Error(data.error || `Bridge ${environment} returned ${res.statusCode}`));
+                });
+              });
+              req.setTimeout(timeoutMs, () => req.destroy(new Error(`Bridge ${environment} timed out`)));
+              req.on('error', reject);
+              if (body) req.write(body);
+              req.end();
+            });
+          }
+          async function snapshotFor(interaction, session, guildId) {
+            const local = interaction.client.guilds.cache.get(guildId);
+            if (local) {
+              await local.roles.fetch().catch(() => null);
+              await local.channels.fetch().catch(() => null);
+              await local.members.fetchMe().catch(() => null);
+              return core.snapshot(local, ['roles', 'categories', 'channels', 'permissions']);
+            }
+            const env = destinationEnvironment(interaction, session, guildId);
+            const response = await bridgeRequest(env, 'POST', '/snapshot', {
+              guildId,
+              selectedOptions: ['roles', 'categories', 'channels', 'permissions'],
+            });
+            return response.snapshot;
+          }
+          function orderedSnapshotItems(snapshot) {
+            const all = snapshot?.channels || [];
+            const categories = all.filter((c) => c.type === ChannelType.GuildCategory).sort((a, b) => a.position - b.position);
+            const childrenByParent = new Map();
+            const roots = [];
+            for (const channel of all.filter((c) => c.type !== ChannelType.GuildCategory).sort((a, b) => a.position - b.position)) {
+              if (channel.parentId) {
+                if (!childrenByParent.has(channel.parentId)) childrenByParent.set(channel.parentId, []);
+                childrenByParent.get(channel.parentId).push(channel);
+              } else roots.push(channel);
+            }
+            const output = [];
+            for (const category of categories) {
+              output.push({ ...category, itemKind: 'category' });
+              for (const child of childrenByParent.get(category.id) || []) output.push({ ...child, itemKind: 'channel' });
+            }
+            for (const root of roots) output.push({ ...root, itemKind: 'channel' });
+            return output;
+          }
+          function typeEmoji(channel) {
+            if (channel.type === ChannelType.GuildCategory) return '📁';
+            if ([ChannelType.GuildVoice, ChannelType.GuildStageVoice].includes(channel.type)) return '🔊';
+            return '#';
+          }
+          function pageSlice(items, page) {
+            const pageCount = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
+            const safePage = Math.max(0, Math.min(pageCount - 1, page));
+            return { safePage, pageCount, items: items.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE) };
+          }
+          function categoryChildren(snapshot, categoryId) {
+            return (snapshot?.channels || []).filter((channel) => channel.parentId === categoryId).map((channel) => channel.id);
+          }
+          function normalizeSelection(snapshot, selected) {
+            const required = new Set(selected);
+            for (const id of [...required]) {
+              const channel = (snapshot?.channels || []).find((item) => item.id === id);
+              if (channel?.parentId) required.add(channel.parentId);
+            }
+            return required;
+          }
+          function dependencyRoleIds(snapshot, selected) {
+            const requiredChannels = normalizeSelection(snapshot, selected);
+            const ids = new Set();
+            for (const channel of snapshot?.channels || []) {
+              if (!requiredChannels.has(channel.id)) continue;
+              for (const overwrite of channel.permissionOverwrites || []) {
+                if (Number(overwrite.type) !== 0) continue;
+                if (overwrite.id === snapshot.sourceGuild?.id) continue;
+                ids.add(overwrite.id);
+              }
+            }
+            return ids;
+          }
+          function filteredSnapshot(snapshot, selected) {
+            const requiredChannels = normalizeSelection(snapshot, selected);
+            const roleIds = dependencyRoleIds(snapshot, selected);
+            const channels = (snapshot.channels || []).filter((channel) => requiredChannels.has(channel.id));
+            const roles = (snapshot.roles || []).filter((role) => roleIds.has(role.id));
+            const permissionOverwrites = channels.reduce((sum, channel) => sum + (channel.permissionOverwrites || []).length, 0);
+            return {
+              ...snapshot,
+              options: ['roles', 'categories', 'channels', 'permissions'],
+              settings: null,
+              roles,
+              channels,
+              emojis: [],
+              future: {},
+              stats: {
+                roles: roles.length,
+                categories: channels.filter((c) => c.type === ChannelType.GuildCategory).length,
+                channels: channels.filter((c) => c.type !== ChannelType.GuildCategory).length,
+                permissionOverwrites,
+                emojis: 0,
+              },
+            };
+          }
+          function landingPayload(session) {
+            const ready = Boolean(session.sourceGuildId && session.destinationGuildId && session.sourceGuildId !== session.destinationGuildId);
+            const canDelete = Boolean(session.destinationGuildId);
+            return {
+              embeds: [embed('📋 Server Duplicator — Selective Copy', [
+                `**Source:** ${guildLabel(session, session.sourceGuildId)}`,
+                `**Destination:** ${guildLabel(session, session.destinationGuildId)}`,
+                '',
+                'Scan the source, select only the categories/channels you want, and Goliath will carry the roles required by their permissions.',
+                '',
+                '**DEV only.** Full-fidelity role permissions and category/channel overwrites are treated as dependencies of the selected structure.',
+              ].join('\n'))],
+              components: [
+                new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(componentId(session, 'source')).setPlaceholder('Source server').addOptions(guildOptions(session, session.sourceGuildId))),
+                new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(componentId(session, 'destination')).setPlaceholder('Destination server').addOptions(guildOptions(session, session.destinationGuildId))),
+                new ActionRowBuilder().addComponents(
+                  new ButtonBuilder().setCustomId(componentId(session, 'scan')).setLabel('Scan Source').setEmoji('🔎').setStyle(ButtonStyle.Primary).setDisabled(!ready),
+                  new ButtonBuilder().setCustomId(componentId(session, 'history')).setLabel('Transfer History').setEmoji('📜').setStyle(ButtonStyle.Secondary),
+                  new ButtonBuilder().setCustomId(componentId(session, 'delete-scan')).setLabel('Bulk Delete').setEmoji('🗑️').setStyle(ButtonStyle.Danger).setDisabled(!canDelete),
+                ),
+              ],
+              flags: MessageFlags.Ephemeral,
+            };
+          }
+          function scanPayload(session) {
+            const items = orderedSnapshotItems(session.snapshot);
+            const page = pageSlice(items, session.page);
+            session.page = page.safePage;
+            const options = page.items.map((item) => ({
+              label: `${item.itemKind === 'category' ? 'CATEGORY • ' : ''}${item.name}`.slice(0, 100),
+              description: `${typeEmoji(item)} ${item.itemKind === 'category' ? 'Selects category + children' : `ID ${item.id}`}`.slice(0, 100),
+              value: item.id,
+              default: session.selected.has(item.id),
+            }));
+            const required = normalizeSelection(session.snapshot, session.selected);
+            const roles = dependencyRoleIds(session.snapshot, session.selected);
+            return {
+              embeds: [embed('🧭 Select Source Structure', [
+                `**Source:** ${session.snapshot?.sourceGuild?.name || session.sourceGuildId}`,
+                `**Destination:** ${guildLabel(session, session.destinationGuildId)}`,
+                `**Page:** ${page.safePage + 1}/${page.pageCount}`,
+                '',
+                `Selected: **${session.selected.size}** explicit items • **${required.size}** including required parents • **${roles.size}** permission role dependencies`,
+                '',
+                'Selecting a category selects its child channels. Selecting a channel automatically carries its parent category during transfer.',
+              ].join('\n'))],
+              components: [
+                new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(componentId(session, 'items')).setPlaceholder('Choose categories/channels on this page').setMinValues(0).setMaxValues(Math.max(1, options.length)).addOptions(options)),
+                new ActionRowBuilder().addComponents(
+                  new ButtonBuilder().setCustomId(componentId(session, 'prev')).setLabel('Previous').setStyle(ButtonStyle.Secondary).setDisabled(page.safePage === 0),
+                  new ButtonBuilder().setCustomId(componentId(session, 'next')).setLabel('Next').setStyle(ButtonStyle.Secondary).setDisabled(page.safePage >= page.pageCount - 1),
+                  new ButtonBuilder().setCustomId(componentId(session, 'select-page')).setLabel('Select Page').setStyle(ButtonStyle.Secondary),
+                  new ButtonBuilder().setCustomId(componentId(session, 'clear-page')).setLabel('Clear Page').setStyle(ButtonStyle.Secondary),
+                ),
+                new ActionRowBuilder().addComponents(
+                  new ButtonBuilder().setCustomId(componentId(session, 'review')).setLabel('Review Transfer').setEmoji('✅').setStyle(ButtonStyle.Success).setDisabled(session.selected.size === 0),
+                  new ButtonBuilder().setCustomId(componentId(session, 'select-all')).setLabel('Select All').setStyle(ButtonStyle.Primary),
+                  new ButtonBuilder().setCustomId(componentId(session, 'back')).setLabel('Back').setStyle(ButtonStyle.Secondary),
+                ),
+              ],
+            };
+          }
+          function reviewPayload(session, dryRun = null) {
+            const snap = filteredSnapshot(session.snapshot, session.selected);
+            const roleNames = snap.roles.slice(0, 15).map((role) => `• ${role.name}`).join('\n') || '• None';
+            const dry = dryRun ? [
+              '',
+              '**Dry Run**',
+              `Status: \`${dryRun.status || 'dry-run'}\``,
+              `Would create/reuse: Roles \`${dryRun.copied?.roles || 0}\` • Categories \`${dryRun.copied?.categories || 0}\` • Channels \`${dryRun.copied?.channels || 0}\` • Permissions \`${dryRun.copied?.permissionOverwrites || 0}\``,
+              ...(dryRun.errors || []).slice(0, 4).map((e) => `⚠️ ${e}`),
+            ] : [];
+            return {
+              embeds: [embed('🧾 Selective Transfer Plan', [
+                `**Source:** ${session.snapshot?.sourceGuild?.name || session.sourceGuildId}`,
+                `**Destination:** ${guildLabel(session, session.destinationGuildId)}`,
+                '',
+                `Categories: **${snap.stats.categories}**`,
+                `Channels: **${snap.stats.channels}**`,
+                `Required roles: **${snap.stats.roles}**`,
+                `Permission overwrites: **${snap.stats.permissionOverwrites}**`,
+                '',
+                '**Roles carried/mapped because selected permissions depend on them:**',
+                roleNames,
+                ...dry,
+              ].join('\n'), dryRun?.errors?.length ? 0xf59e0b : 0x5865f2)],
+              components: [new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId(componentId(session, 'dryrun')).setLabel('Run Dry-Run').setEmoji('🧪').setStyle(ButtonStyle.Secondary),
+                new ButtonBuilder().setCustomId(componentId(session, 'confirm-view')).setLabel('Continue').setEmoji('➡️').setStyle(ButtonStyle.Success),
+                new ButtonBuilder().setCustomId(componentId(session, 'scan-back')).setLabel('Back to Selection').setStyle(ButtonStyle.Secondary),
+              )],
+            };
+          }
+          function confirmPayload(session) {
+            const snap = filteredSnapshot(session.snapshot, session.selected);
+            return {
+              embeds: [embed('⚠️ Confirm Selective Copy', [
+                `**Source:** ${session.snapshot?.sourceGuild?.name || session.sourceGuildId}`,
+                `**Destination:** ${guildLabel(session, session.destinationGuildId)}`,
+                '',
+                `This will transfer **${snap.stats.categories} categories**, **${snap.stats.channels} channels**, **${snap.stats.roles} required roles**, and rebuild **${snap.stats.permissionOverwrites} permission overwrites**.`,
+                '',
+                'Existing roles/channels with matching names are reused where the core Duplicator can map them. Missing permission roles are created before channel overwrites are applied.',
+              ].join('\n'), 0xf59e0b)],
+              components: [new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId(componentId(session, 'copy-now')).setLabel('Confirm Copy').setEmoji('⚠️').setStyle(ButtonStyle.Danger),
+                new ButtonBuilder().setCustomId(componentId(session, 'review-back')).setLabel('Back').setStyle(ButtonStyle.Secondary),
+              )],
+            };
+          }
+          async function applyFiltered(interaction, session, dryRun) {
+            const environment = destinationEnvironment(interaction, session, session.destinationGuildId);
+            const snapshot = filteredSnapshot(session.snapshot, session.selected);
+            return bridgeRequest(environment, 'POST', '/apply', {
+              guildId: session.destinationGuildId,
+              session: { dryRun, conflictMode: 'skip', destinationGuildId: session.destinationGuildId },
+              snapshot,
+              title: dryRun ? 'Selective Copy Dry-Run' : 'Selective Copy',
+              actorId: interaction.user.id,
+            });
+          }
+          function destinationMappings(sourceSnapshot, destinationSnapshot, selected) {
+            const filtered = filteredSnapshot(sourceSnapshot, selected);
+            const roleMappings = filtered.roles.map((role) => {
+              const candidates = (destinationSnapshot.roles || []).filter((dest) => dest.name === role.name);
+              return {
+                sourceId: role.id,
+                sourceName: role.name,
+                sourcePermissions: role.permissions,
+                destinationId: candidates.length === 1 ? candidates[0].id : null,
+                destinationName: candidates.length === 1 ? candidates[0].name : null,
+                status: candidates.length === 1 ? 'mapped' : candidates.length > 1 ? 'ambiguous' : 'missing',
+              };
+            });
+            const categoryMap = new Map();
+            for (const source of filtered.channels.filter((c) => c.type === ChannelType.GuildCategory)) {
+              const candidates = (destinationSnapshot.channels || []).filter((dest) => dest.type === ChannelType.GuildCategory && dest.name === source.name);
+              if (candidates.length === 1) categoryMap.set(source.id, candidates[0].id);
+            }
+            const channelMappings = filtered.channels.map((source) => {
+              let candidates = (destinationSnapshot.channels || []).filter((dest) => dest.name === source.name);
+              if (source.type === ChannelType.GuildCategory) candidates = candidates.filter((dest) => dest.type === ChannelType.GuildCategory);
+              else if (source.parentId && categoryMap.get(source.parentId)) candidates = candidates.filter((dest) => dest.parentId === categoryMap.get(source.parentId));
+              const match = candidates.length === 1 ? candidates[0] : null;
+              return {
+                sourceId: source.id,
+                sourceName: source.name,
+                sourceParentId: source.parentId || null,
+                destinationId: match?.id || null,
+                destinationName: match?.name || null,
+                destinationParentId: match?.parentId || null,
+                permissionOverwrites: source.permissionOverwrites || [],
+                status: match ? 'mapped' : candidates.length > 1 ? 'ambiguous' : 'missing',
+              };
+            });
+            return { roleMappings, channelMappings };
+          }
+          async function recordTransfer(interaction, session, response) {
+            const environment = destinationEnvironment(interaction, session, session.destinationGuildId);
+            const destinationSnapshot = (await bridgeRequest(environment, 'POST', '/snapshot', {
+              guildId: session.destinationGuildId,
+              selectedOptions: ['roles', 'categories', 'channels', 'permissions'],
+            })).snapshot;
+            const filtered = filteredSnapshot(session.snapshot, session.selected);
+            const mappings = destinationMappings(session.snapshot, destinationSnapshot, session.selected);
+            const manifest = history.add(session.controlGuildId, {
+              type: 'selective-copy',
+              sourceGuildId: session.sourceGuildId,
+              sourceGuildName: session.snapshot?.sourceGuild?.name || null,
+              destinationGuildId: session.destinationGuildId,
+              destinationGuildName: destinationSnapshot?.sourceGuild?.name || response.guild?.name || null,
+              environment,
+              status: response.log?.status || 'unknown',
+              rollbackBackupId: response.log?.rollbackBackupId || null,
+              selectedSourceChannelIds: [...normalizeSelection(session.snapshot, session.selected)],
+              stats: filtered.stats,
+              roles: mappings.roleMappings,
+              channels: mappings.channelMappings,
+              warnings: response.log?.errors || [],
+              notes: response.log?.notes || [],
+            }, interaction.guild);
+            session.lastManifestId = manifest.id;
+            return manifest;
+          }
+          function resultPayload(session, response, manifest) {
+            const unresolvedRoles = manifest.roles.filter((item) => item.status !== 'mapped').length;
+            const unresolvedChannels = manifest.channels.filter((item) => item.status !== 'mapped').length;
+            const status = response.log?.status || 'unknown';
+            const ok = status === 'success' && !unresolvedRoles && !unresolvedChannels;
+            return {
+              embeds: [embed(ok ? '✅ Selective Copy Verified' : '⚠️ Selective Copy Completed', [
+                `**Transfer:** \`${manifest.id}\``,
+                `**Destination:** ${manifest.destinationGuildName || manifest.destinationGuildId} (${manifest.destinationGuildId})`,
+                `**Status:** \`${status}\``,
+                '',
+                `Transferred plan: Categories \`${manifest.stats.categories}\` • Channels \`${manifest.stats.channels}\` • Required Roles \`${manifest.stats.roles}\` • Permission Overwrites \`${manifest.stats.permissionOverwrites}\``,
+                `Manifest mapping: Roles \`${manifest.roles.length - unresolvedRoles}/${manifest.roles.length}\` • Structure \`${manifest.channels.length - unresolvedChannels}/${manifest.channels.length}\``,
+                '',
+                'This transfer is permanently recorded in **Transfer History** with source → destination IDs and the source permission data.',
+                ...(manifest.warnings || []).slice(0, 5).map((warning) => `⚠️ ${warning}`),
+              ].join('\n'), ok ? 0x22c55e : 0xf59e0b)],
+              components: [new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId(componentId(session, 'manifest-last')).setLabel('View Transfer Manifest').setEmoji('📜').setStyle(ButtonStyle.Primary),
+                new ButtonBuilder().setCustomId(componentId(session, 'home')).setLabel('New Transfer').setStyle(ButtonStyle.Secondary),
+              )],
+            };
+          }
+          function historyPayload(session) {
+            const entries = history.list(session.controlGuildId, 25);
+            const lines = entries.slice(0, 10).map((item) => {
+              const stats = item.stats || {};
+              return `**${item.id}** • ${item.type || 'transfer'} • ${item.sourceGuildName || item.sourceGuildId || 'n/a'} → ${item.destinationGuildName || item.destinationGuildId || 'n/a'} • ${stats.channels ?? item.deletedCount ?? 0} channels`;
+            });
+            const components = [];
+            if (entries.length) {
+              components.push(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(componentId(session, 'history-pick')).setPlaceholder('Open transfer manifest').addOptions(entries.map((item) => ({
+                label: `${item.id} • ${item.destinationGuildName || item.destinationGuildId || 'destination'}`.slice(0, 100),
+                description: `${item.type || 'transfer'} • ${item.status || 'recorded'} • ${item.createdAt || ''}`.slice(0, 100),
+                value: item.id,
+              })))));
+            }
+            components.push(new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(componentId(session, 'home')).setLabel('Back').setStyle(ButtonStyle.Secondary)));
+            return { embeds: [embed('📜 Duplicator Transfer History', lines.join('\n') || 'No transfer manifests have been recorded yet.')], components };
+          }
+          function manifestPayload(session, manifest) {
+            const roleLines = (manifest.roles || []).slice(0, 12).map((item) => `• ${item.sourceName} \`${item.sourceId}\` → ${item.destinationId ? `\`${item.destinationId}\`` : `**${item.status}**`}`);
+            const channelLines = (manifest.channels || []).slice(0, 16).map((item) => `• ${item.sourceName} \`${item.sourceId}\` → ${item.destinationId ? `\`${item.destinationId}\`` : `**${item.status}**`}`);
+            return {
+              embeds: [embed(`📜 Transfer ${manifest.id}`, [
+                `**Type:** ${manifest.type || 'transfer'}`,
+                `**Created:** ${manifest.createdAt || 'unknown'}`,
+                `**Source:** ${manifest.sourceGuildName || manifest.sourceGuildId || 'n/a'} (${manifest.sourceGuildId || 'n/a'})`,
+                `**Destination:** ${manifest.destinationGuildName || manifest.destinationGuildId || 'n/a'} (${manifest.destinationGuildId || 'n/a'})`,
+                `**Status:** ${manifest.status || 'recorded'}`,
+                manifest.rollbackBackupId ? `**Rollback Backup:** \`${manifest.rollbackBackupId}\`` : null,
+                '',
+                '**Role mappings**',
+                ...(roleLines.length ? roleLines : ['• None']),
+                '',
+                '**Category / channel mappings**',
+                ...(channelLines.length ? channelLines : ['• None']),
+                (manifest.channels || []).length > 16 ? `…and ${(manifest.channels || []).length - 16} more structure mappings.` : null,
+                '',
+                `Stored permission overwrites: **${(manifest.channels || []).reduce((sum, item) => sum + (item.permissionOverwrites || []).length, 0)}**`,
+              ].filter(Boolean).join('\n'))],
+              components: [new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId(componentId(session, 'history')).setLabel('Back to History').setStyle(ButtonStyle.Secondary),
+                new ButtonBuilder().setCustomId(componentId(session, 'delete-manifest-view')).setLabel('Delete Transfer Channels').setEmoji('🗑️').setStyle(ButtonStyle.Danger),
+              )],
+            };
+          }
+          async function prepareDeleteScan(interaction, session) {
+            const guild = interaction.client.guilds.cache.get(session.destinationGuildId);
+            if (!guild) throw new Error('Bulk Delete is DEV-local only. The selected destination is owned by another Goliath environment.');
+            await guild.channels.fetch().catch(() => null);
+            const categories = [...guild.channels.cache.values()].filter((c) => c.type === ChannelType.GuildCategory).sort((a, b) => a.position - b.position);
+            const output = [];
+            const seen = new Set();
+            for (const category of categories) {
+              output.push({ id: category.id, name: category.name, type: category.type, parentId: null, itemKind: 'category' });
+              seen.add(category.id);
+              for (const child of [...guild.channels.cache.values()].filter((c) => c.parentId === category.id).sort((a, b) => a.position - b.position)) {
+                output.push({ id: child.id, name: child.name, type: child.type, parentId: category.id, itemKind: 'channel' });
+                seen.add(child.id);
+              }
+            }
+            for (const channel of [...guild.channels.cache.values()].filter((c) => !seen.has(c.id) && c.type !== ChannelType.GuildCategory).sort((a, b) => a.position - b.position)) {
+              output.push({ id: channel.id, name: channel.name, type: channel.type, parentId: channel.parentId || null, itemKind: 'channel' });
+            }
+            session.deleteItems = output;
+            session.deleteSelected = new Set();
+            session.deletePage = 0;
+          }
+          function deletePayload(session) {
+            const page = pageSlice(session.deleteItems, session.deletePage);
+            session.deletePage = page.safePage;
+            const options = page.items.map((item) => ({
+              label: `${item.itemKind === 'category' ? 'CATEGORY • ' : ''}${item.name}`.slice(0, 100),
+              description: `${typeEmoji(item)} ${item.id}`.slice(0, 100),
+              value: item.id,
+              default: session.deleteSelected.has(item.id),
+            }));
+            return {
+              embeds: [embed('🗑️ Bulk Delete Channels', [
+                `**Destination:** ${guildLabel(session, session.destinationGuildId)}`,
+                `**Page:** ${page.safePage + 1}/${page.pageCount}`,
+                `**Selected:** ${session.deleteSelected.size}`,
+                '',
+                'Select categories/channels to delete. Selecting a category also selects all of its child channels. Nothing is deleted until the final red confirmation.',
+              ].join('\n'), 0xed4245)],
+              components: [
+                new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(componentId(session, 'delete-items')).setPlaceholder('Select channels/categories to delete').setMinValues(0).setMaxValues(Math.max(1, options.length)).addOptions(options)),
+                new ActionRowBuilder().addComponents(
+                  new ButtonBuilder().setCustomId(componentId(session, 'delete-prev')).setLabel('Previous').setStyle(ButtonStyle.Secondary).setDisabled(page.safePage === 0),
+                  new ButtonBuilder().setCustomId(componentId(session, 'delete-next')).setLabel('Next').setStyle(ButtonStyle.Secondary).setDisabled(page.safePage >= page.pageCount - 1),
+                  new ButtonBuilder().setCustomId(componentId(session, 'delete-select-page')).setLabel('Select Page').setStyle(ButtonStyle.Secondary),
+                  new ButtonBuilder().setCustomId(componentId(session, 'delete-clear-page')).setLabel('Clear Page').setStyle(ButtonStyle.Secondary),
+                ),
+                new ActionRowBuilder().addComponents(
+                  new ButtonBuilder().setCustomId(componentId(session, 'delete-review')).setLabel('Review Delete').setEmoji('🗑️').setStyle(ButtonStyle.Danger).setDisabled(session.deleteSelected.size === 0),
+                  new ButtonBuilder().setCustomId(componentId(session, 'home')).setLabel('Cancel').setStyle(ButtonStyle.Secondary),
+                ),
+              ],
+            };
+          }
+          function deleteConfirmPayload(session, ids = null, manifestId = null) {
+            const selected = ids ? new Set(ids) : session.deleteSelected;
+            const names = (session.deleteItems || []).filter((item) => selected.has(item.id)).slice(0, 15).map((item) => `• ${item.itemKind === 'category' ? '📁' : typeEmoji(item)} ${item.name}`).join('\n');
+            return {
+              embeds: [embed('⚠️ Confirm Bulk Delete', [
+                `**Destination:** ${guildLabel(session, session.destinationGuildId)}`,
+                `**Objects selected:** ${selected.size}`,
+                manifestId ? `**Transfer manifest:** \`${manifestId}\`` : null,
+                '',
+                names || 'Selected transfer objects will be removed by stored destination IDs.',
+                selected.size > 15 ? `…and ${selected.size - 15} more.` : null,
+                '',
+                '**This action deletes Discord channels/categories.**',
+              ].filter(Boolean).join('\n'), 0xed4245)],
+              components: [new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId(componentId(session, manifestId ? `delete-manifest-now:${manifestId}` : 'delete-now')).setLabel('Confirm Delete').setEmoji('⚠️').setStyle(ButtonStyle.Danger),
+                new ButtonBuilder().setCustomId(componentId(session, manifestId ? 'history' : 'delete-back')).setLabel('Cancel').setStyle(ButtonStyle.Secondary),
+              )],
+            };
+          }
+          async function deleteIds(interaction, session, ids, sourceManifestId = null) {
+            const guild = interaction.client.guilds.cache.get(session.destinationGuildId);
+            if (!guild) throw new Error('Bulk Delete is DEV-local only for safety.');
+            await guild.channels.fetch().catch(() => null);
+            const selected = new Set(ids);
+            const channels = [...guild.channels.cache.values()].filter((channel) => selected.has(channel.id));
+            const nonCategories = channels.filter((c) => c.type !== ChannelType.GuildCategory).sort((a, b) => b.position - a.position);
+            const categories = channels.filter((c) => c.type === ChannelType.GuildCategory).sort((a, b) => b.position - a.position);
+            const deleted = [];
+            const failed = [];
+            for (const channel of [...nonCategories, ...categories]) {
+              try {
+                await channel.delete(`Goliath Duplicator bulk delete by ${interaction.user.id}`);
+                deleted.push({ id: channel.id, name: channel.name, type: channel.type });
+              } catch (error) {
+                failed.push({ id: channel.id, name: channel.name, error: error.message });
+              }
+            }
+            const manifest = history.add(session.controlGuildId, {
+              type: 'bulk-delete',
+              sourceGuildId: null,
+              destinationGuildId: guild.id,
+              destinationGuildName: guild.name,
+              status: failed.length ? 'completed-with-warnings' : 'success',
+              deletedCount: deleted.length,
+              deleted,
+              failed,
+              sourceManifestId,
+            }, interaction.guild);
+            if (sourceManifestId) history.update(session.controlGuildId, sourceManifestId, { deletedByManifestId: manifest.id }, interaction.guild);
+            return manifest;
+          }
+          async function startCopy(interaction) {
+            if (mode() !== 'DEV') return interaction.reply({ content: '❌ Selective Duplicator is DEV-only.', flags: MessageFlags.Ephemeral });
+            const access = core.assertAccess(interaction);
+            if (!access.allowed) return interaction.reply({ content: `❌ ${access.reason}`, flags: MessageFlags.Ephemeral });
+            core.initializeBridge(interaction.client);
+            const session = makeSession(interaction);
+            session.directory = await core.getGuildDirectory(interaction.client);
+            return interaction.reply(landingPayload(session));
+          }
+          async function handleInteraction(interaction) {
+            const parsed = parseId(interaction?.customId);
+            if (!parsed) return false;
+            const session = sessionFor(interaction, parsed.sessionId);
+            if (!session) {
+              await interaction.reply({ content: '❌ Selective Duplicator session expired.', flags: MessageFlags.Ephemeral }).catch(() => null);
+              return true;
+            }
+            try {
+              const action = parsed.action;
+              if (action === 'source') {
+                session.sourceGuildId = interaction.values?.[0] || null;
+                session.snapshot = null;
+                session.selected.clear();
+                await interaction.update(landingPayload(session));
+                return true;
+              }
+              if (action === 'destination') {
+                session.destinationGuildId = interaction.values?.[0] || null;
+                await interaction.update(landingPayload(session));
+                return true;
+              }
+              if (action === 'home' || action === 'back') {
+                session.snapshot = null;
+                session.selected.clear();
+                await interaction.update(landingPayload(session));
+                return true;
+              }
+              if (action === 'scan') {
+                await interaction.deferUpdate();
+                session.snapshot = await snapshotFor(interaction, session, session.sourceGuildId);
+                session.selected.clear();
+                session.page = 0;
+                await interaction.editReply(scanPayload(session));
+                return true;
+              }
+              if (action === 'items') {
+                const items = orderedSnapshotItems(session.snapshot);
+                const page = pageSlice(items, session.page);
+                const pageIds = new Set(page.items.map((item) => item.id));
+                for (const item of page.items) {
+                  if (item.itemKind === 'category' && !interaction.values.includes(item.id)) {
+                    session.selected.delete(item.id);
+                    for (const childId of categoryChildren(session.snapshot, item.id)) session.selected.delete(childId);
+                  } else session.selected.delete(item.id);
+                }
+                for (const id of interaction.values || []) {
+                  session.selected.add(id);
+                  const item = page.items.find((entry) => entry.id === id);
+                  if (item?.itemKind === 'category') for (const childId of categoryChildren(session.snapshot, id)) session.selected.add(childId);
+                  if (item?.parentId) session.selected.add(item.parentId);
+                }
+                for (const id of [...pageIds]) if (!interaction.values?.includes(id) && page.items.find((entry) => entry.id === id)?.itemKind !== 'category') session.selected.delete(id);
+                await interaction.update(scanPayload(session));
+                return true;
+              }
+              if (action === 'prev' || action === 'next') {
+                session.page += action === 'next' ? 1 : -1;
+                await interaction.update(scanPayload(session));
+                return true;
+              }
+              if (action === 'select-page' || action === 'clear-page') {
+                const items = pageSlice(orderedSnapshotItems(session.snapshot), session.page).items;
+                for (const item of items) {
+                  if (action === 'select-page') {
+                    session.selected.add(item.id);
+                    if (item.itemKind === 'category') for (const childId of categoryChildren(session.snapshot, item.id)) session.selected.add(childId);
+                    if (item.parentId) session.selected.add(item.parentId);
+                  } else {
+                    session.selected.delete(item.id);
+                    if (item.itemKind === 'category') for (const childId of categoryChildren(session.snapshot, item.id)) session.selected.delete(childId);
+                  }
+                }
+                await interaction.update(scanPayload(session));
+                return true;
+              }
+              if (action === 'select-all') {
+                session.selected = new Set((session.snapshot?.channels || []).map((channel) => channel.id));
+                await interaction.update(scanPayload(session));
+                return true;
+              }
+              if (action === 'review') {
+                await interaction.update(reviewPayload(session));
+                return true;
+              }
+              if (action === 'scan-back') {
+                await interaction.update(scanPayload(session));
+                return true;
+              }
+              if (action === 'dryrun') {
+                await interaction.deferUpdate();
+                const response = await applyFiltered(interaction, session, true);
+                await interaction.editReply(reviewPayload(session, response.log));
+                return true;
+              }
+              if (action === 'confirm-view') {
+                await interaction.update(confirmPayload(session));
+                return true;
+              }
+              if (action === 'review-back') {
+                await interaction.update(reviewPayload(session));
+                return true;
+              }
+              if (action === 'copy-now') {
+                await interaction.deferUpdate();
+                const response = await applyFiltered(interaction, session, false);
+                const manifest = await recordTransfer(interaction, session, response);
+                await interaction.editReply(resultPayload(session, response, manifest));
+                return true;
+              }
+              if (action === 'history') {
+                await interaction.update(historyPayload(session));
+                return true;
+              }
+              if (action === 'history-pick') {
+                const manifest = history.get(session.controlGuildId, interaction.values?.[0]);
+                if (!manifest) throw new Error('Transfer manifest not found.');
+                session.lastManifestId = manifest.id;
+                session.destinationGuildId = manifest.destinationGuildId || session.destinationGuildId;
+                await interaction.update(manifestPayload(session, manifest));
+                return true;
+              }
+              if (action === 'manifest-last') {
+                const manifest = history.get(session.controlGuildId, session.lastManifestId);
+                if (!manifest) throw new Error('Transfer manifest not found.');
+                await interaction.update(manifestPayload(session, manifest));
+                return true;
+              }
+              if (action === 'delete-scan') {
+                await interaction.deferUpdate();
+                await prepareDeleteScan(interaction, session);
+                await interaction.editReply(deletePayload(session));
+                return true;
+              }
+              if (action === 'delete-items') {
+                const page = pageSlice(session.deleteItems, session.deletePage);
+                for (const item of page.items) {
+                  if (item.itemKind === 'category' && !interaction.values.includes(item.id)) {
+                    session.deleteSelected.delete(item.id);
+                    for (const child of session.deleteItems.filter((entry) => entry.parentId === item.id)) session.deleteSelected.delete(child.id);
+                  } else session.deleteSelected.delete(item.id);
+                }
+                for (const id of interaction.values || []) {
+                  session.deleteSelected.add(id);
+                  const item = page.items.find((entry) => entry.id === id);
+                  if (item?.itemKind === 'category') for (const child of session.deleteItems.filter((entry) => entry.parentId === id)) session.deleteSelected.add(child.id);
+                }
+                await interaction.update(deletePayload(session));
+                return true;
+              }
+              if (action === 'delete-prev' || action === 'delete-next') {
+                session.deletePage += action === 'delete-next' ? 1 : -1;
+                await interaction.update(deletePayload(session));
+                return true;
+              }
+              if (action === 'delete-select-page' || action === 'delete-clear-page') {
+                const page = pageSlice(session.deleteItems, session.deletePage);
+                for (const item of page.items) {
+                  if (action === 'delete-select-page') {
+                    session.deleteSelected.add(item.id);
+                    if (item.itemKind === 'category') for (const child of session.deleteItems.filter((entry) => entry.parentId === item.id)) session.deleteSelected.add(child.id);
+                  } else {
+                    session.deleteSelected.delete(item.id);
+                    if (item.itemKind === 'category') for (const child of session.deleteItems.filter((entry) => entry.parentId === item.id)) session.deleteSelected.delete(child.id);
+                  }
+                }
+                await interaction.update(deletePayload(session));
+                return true;
+              }
+              if (action === 'delete-review') {
+                await interaction.update(deleteConfirmPayload(session));
+                return true;
+              }
+              if (action === 'delete-back') {
+                await interaction.update(deletePayload(session));
+                return true;
+              }
+              if (action === 'delete-now') {
+                await interaction.deferUpdate();
+                const manifest = await deleteIds(interaction, session, [...session.deleteSelected]);
+                await interaction.editReply({
+                  embeds: [embed('✅ Bulk Delete Complete', `Deleted **${manifest.deletedCount}** objects.\nTransfer record: \`${manifest.id}\`\n${manifest.failed?.length ? `Failed: **${manifest.failed.length}**` : 'No deletion failures.'}`, manifest.failed?.length ? 0xf59e0b : 0x22c55e)],
+                  components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(componentId(session, 'home')).setLabel('Back to Duplicator').setStyle(ButtonStyle.Secondary))],
+                });
+                return true;
+              }
+              if (action === 'delete-manifest-view') {
+                const manifest = history.get(session.controlGuildId, session.lastManifestId);
+                if (!manifest) throw new Error('Transfer manifest not found.');
+                const ids = (manifest.channels || []).map((item) => item.destinationId).filter(Boolean);
+                await interaction.update(deleteConfirmPayload(session, ids, manifest.id));
+                return true;
+              }
+              if (action.startsWith('delete-manifest-now:')) {
+                const manifestId = action.split(':')[1];
+                const manifest = history.get(session.controlGuildId, manifestId);
+                if (!manifest) throw new Error('Transfer manifest not found.');
+                session.destinationGuildId = manifest.destinationGuildId;
+                const ids = (manifest.channels || []).map((item) => item.destinationId).filter(Boolean);
+                await interaction.deferUpdate();
+                const deletion = await deleteIds(interaction, session, ids, manifest.id);
+                await interaction.editReply({
+                  embeds: [embed('✅ Transfer Channels Deleted', `Deleted **${deletion.deletedCount}** objects recorded by transfer \`${manifest.id}\`.\nDeletion manifest: \`${deletion.id}\``, deletion.failed?.length ? 0xf59e0b : 0x22c55e)],
+                  components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(componentId(session, 'history')).setLabel('Back to History').setStyle(ButtonStyle.Secondary))],
+                });
+                return true;
+              }
+              return false;
+            } catch (error) {
+              console.error('[Selective Duplicator]', error);
+              const payload = { content: `❌ ${error.message || String(error)}`, embeds: [], components: [] };
+              if (interaction.deferred || interaction.replied) await interaction.editReply(payload).catch(() => null);
+              else await interaction.reply({ ...payload, flags: MessageFlags.Ephemeral }).catch(() => null);
+              return true;
+            }
+          }
+
+          module.exports = { startCopy, handleInteraction, filteredSnapshot, dependencyRoleIds };
+          EOF
+
+          cat > src/owner/dev/duplicator/index.js <<'EOF'
+          'use strict';
+
+          const { Client } = require('discord.js');
+          const core = require('./core');
+          const selective = require('./selective');
+
+          const BOOTSTRAP_KEY = Symbol.for('goliath.duplicator.bridge-bootstrap');
+
+          if (!Client.prototype[BOOTSTRAP_KEY]) {
+            const originalLogin = Client.prototype.login;
+            Object.defineProperty(Client.prototype, BOOTSTRAP_KEY, { value: true });
+            Client.prototype.login = function goliathDuplicatorLogin(...args) {
+              core.initializeBridge(this);
+              return originalLogin.apply(this, args);
+            };
+          }
+
+          async function run(interaction) {
+            const action = interaction?.options?.getString?.('action', true);
+            if (action === 'copy') return selective.startCopy(interaction);
+            return core.run(interaction);
+          }
+
+          async function handleInteraction(interaction) {
+            if (await selective.handleInteraction(interaction)) return true;
+            return core.handleInteraction(interaction);
+          }
+
+          module.exports = {
+            ...core,
+            run,
+            handleInteraction,
+            selective,
+          };
+          EOF
+
+          test "$(find src/owner/dev/duplicator -maxdepth 1 -type f | wc -l)" -eq 4
+          test ! -e src/owner/dev/duplicator.js
+          test ! -e src/owner/dev/duplicatorV2.js
+
+      - name: Syntax check Duplicator module
+        run: |
+          node --check src/owner/dev/duplicator/index.js
+          node --check src/owner/dev/duplicator/core.js
+          node --check src/owner/dev/duplicator/selective.js
+          node --check src/owner/dev/duplicator/history.js
+
+      - name: Remove one-off workflow before project doctor
+        run: rm -f .github/workflows/patch-duplicator-selective-once.yml
+
+      - name: Full project doctor
+        run: npm run doctor
+
+      - name: Build project
+        run: npm run build
+
+      - name: Commit selective Duplicator
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet && exit 0
+          git commit -m "feat(duplicator): add selective structure copy and transfer manifests"
+          git push origin HEAD:dev
