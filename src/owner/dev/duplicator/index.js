@@ -7,13 +7,14 @@ const {
   GuildChannelManager,
   PermissionFlagsBits,
   PermissionOverwriteManager,
+  PermissionsBitField,
   Role,
 } = require('discord.js');
 const core = require('./core');
 const selective = require('./selective');
 
 const BOOTSTRAP_KEY = Symbol.for('goliath.duplicator.bridge-bootstrap');
-const OVERWRITE_PATCH_KEY = Symbol.for('goliath.duplicator.permission-overwrite-exact');
+const OVERWRITE_PATCH_KEY = Symbol.for('goliath.duplicator.permission-overwrite-per-target');
 const CHANNEL_CREATE_PATCH_KEY = Symbol.for('goliath.duplicator.channel-create-compat');
 const ROLE_ORDER_PATCH_KEY = Symbol.for('goliath.duplicator.role-order');
 const SNAPSHOT_PATCH_KEY = Symbol.for('goliath.duplicator.snapshot-bot-role-remap');
@@ -28,18 +29,25 @@ function temporaryBotOverwrite(guild) {
   const me = guild?.members?.me;
   if (!botId || !me) return null;
   let allow = 0n;
-  // Only channel-scoped permissions belong in a channel overwrite. ManageRoles is a
-  // guild-level permission and including it in the bootstrap overwrite can make Discord
-  // reject channel/category creation with 50013.
   for (const bit of [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ManageChannels]) {
     if (me.permissions?.has(bit)) allow |= bit;
   }
   return allow ? { id: botId, type: 1, allow, deny: 0n } : null;
 }
 
-// Snapshot correction for local-source copies. Remote source snapshots are still handled
-// safely by the role mapper/manifest; this prevents a local manually-created Goliath role
-// assigned to the source bot from being duplicated as a normal role.
+function overwriteOptions(item) {
+  const options = {};
+  let allowNames = [];
+  let denyNames = [];
+  try { allowNames = new PermissionsBitField(BigInt(item.allow || 0)).toArray(); } catch {}
+  try { denyNames = new PermissionsBitField(BigInt(item.deny || 0)).toArray(); } catch {}
+  for (const name of allowNames) options[name] = true;
+  for (const name of denyNames) options[name] = false;
+  return options;
+}
+
+// Snapshot correction for local-source copies. Remote snapshots retain their ordinary
+// source roles unless Discord marks them managed; this avoids guessing about custom roles.
 if (!core[SNAPSHOT_PATCH_KEY]) {
   const originalSnapshot = core.snapshot.bind(core);
   Object.defineProperty(core, SNAPSHOT_PATCH_KEY, { value: true });
@@ -84,10 +92,8 @@ if (!Client.prototype[BOOTSTRAP_KEY]) {
   };
 }
 
-// Structure creation must be permission-neutral. Categories/channels are created first,
-// then their exact source overwrites are applied in the permission stage. Injecting a bot
-// overwrite into the create payload caused all four selected structure objects to fail
-// with Discord 50013 in the live DEV test.
+// Structure creation stays permission-neutral. Exact permission reconstruction happens
+// only after roles/categories/channels exist and source IDs can be mapped safely.
 if (GuildChannelManager?.prototype?.create && !GuildChannelManager.prototype[CHANNEL_CREATE_PATCH_KEY]) {
   const originalCreate = GuildChannelManager.prototype.create;
   Object.defineProperty(GuildChannelManager.prototype, CHANNEL_CREATE_PATCH_KEY, { value: true });
@@ -126,9 +132,8 @@ if (GuildChannelManager?.prototype?.create && !GuildChannelManager.prototype[CHA
   };
 }
 
-// Preserve the relative source order of copied roles. Source absolute positions cannot be
-// reused in a different destination hierarchy, so copied roles form a contiguous block
-// immediately below Goliath's highest role while retaining their source low->high order.
+// Preserve copied roles as a contiguous source-ordered block below Goliath's highest
+// manageable role instead of reusing meaningless absolute positions from another guild.
 if (Role?.prototype?.setPosition && !Role.prototype[ROLE_ORDER_PATCH_KEY]) {
   const originalSetPosition = Role.prototype.setPosition;
   Object.defineProperty(Role.prototype, ROLE_ORDER_PATCH_KEY, { value: true });
@@ -160,11 +165,11 @@ if (Role?.prototype?.setPosition && !Role.prototype[ROLE_ORDER_PATCH_KEY]) {
   };
 }
 
-// Apply the source overwrite set exactly. A temporary bot-member overwrite is added only
-// during the permission write/verification window, never during channel creation. It uses
-// channel-scoped permissions only, so it cannot trigger the 50013 structure failure seen
-// in the previous build. Core verification ignores this temporary extra entry and checks
-// every expected source overwrite bit-for-bit before the bypass is removed.
+// Rebuild the source permission graph one target at a time. This avoids Discord rejecting
+// a large bulk overwrite request with 50013 and makes the real destination roles — not the
+// Goliath bot member — the permanent permission targets. Temporary bot access exists only
+// while the overwrite set is being rebuilt and is removed before this call returns for
+// normal channels. Categories keep it briefly so restricted children remain writable.
 if (PermissionOverwriteManager?.prototype?.set && !PermissionOverwriteManager.prototype[OVERWRITE_PATCH_KEY]) {
   const originalSet = PermissionOverwriteManager.prototype.set;
   Object.defineProperty(PermissionOverwriteManager.prototype, OVERWRITE_PATCH_KEY, { value: true });
@@ -174,33 +179,40 @@ if (PermissionOverwriteManager?.prototype?.set && !PermissionOverwriteManager.pr
     const isDuplicatorTransfer = reasonText.startsWith('Goliath duplicator: least-privilege channel/category permissions');
     if (!isDuplicatorTransfer || !channel?.guild) return originalSet.call(this, overwrites, reason);
 
-    const explicit = Array.isArray(overwrites) ? [...overwrites] : [...(overwrites || [])];
+    const expected = Array.isArray(overwrites) ? [...overwrites] : [...(overwrites || [])];
     const botOverwrite = temporaryBotOverwrite(channel.guild);
     const botId = channel.guild.client.user?.id;
-    const sourceHadBotMemberOverwrite = botId && explicit.some((item) => String(item.id) === String(botId) && Number(item.type) === 1);
-    const payload = [...explicit];
-    if (botOverwrite && !sourceHadBotMemberOverwrite) payload.push(botOverwrite);
+    const sourceHadBotMemberOverwrite = Boolean(botId && expected.some((item) => String(item.id) === String(botId) && Number(item.type) === 1));
 
-    let result;
-    try {
-      result = await originalSet.call(this, payload, reason);
-    } catch (error) {
-      if (![50001, 50013].includes(Number(error?.code)) || !botOverwrite || !botId) throw error;
-      // The channel exists unrestricted at this point, so bootstrap access can be applied
-      // independently and the exact source set retried once.
-      await this.edit(botId, { ViewChannel: true, ManageChannels: true }, 'Goliath duplicator: temporary transfer access');
-      result = await originalSet.call(this, payload, reason);
+    // Start from a clean destination overwrite set while retaining only temporary transfer
+    // access. Newly-created channels have no meaningful destination-specific overwrites to keep.
+    const bootstrap = botOverwrite && !sourceHadBotMemberOverwrite ? [botOverwrite] : [];
+    await originalSet.call(this, bootstrap, 'Goliath duplicator: permission bootstrap');
+
+    for (const item of expected) {
+      try {
+        await this.edit(item.id, overwriteOptions(item), `Goliath duplicator: mapped overwrite ${item.id}`);
+      } catch (error) {
+        error.message = `Mapped overwrite ${item.id} failed on ${channel.name}: ${error.message}`;
+        throw error;
+      }
     }
 
     if (botId && botOverwrite && !sourceHadBotMemberOverwrite) {
-      setTimeout(() => {
-        channel.permissionOverwrites.delete(botId, 'Goliath duplicator: remove temporary transfer access').catch((error) => {
+      if (channel.type === ChannelType.GuildCategory) {
+        setTimeout(() => {
+          channel.permissionOverwrites.delete(botId, 'Goliath duplicator: remove temporary category access').catch((error) => {
+            console.warn(`[Duplicator] Temporary category access cleanup failed for ${channel.name}: ${error.message}`);
+          });
+        }, 5000).unref?.();
+      } else {
+        await channel.permissionOverwrites.delete(botId, 'Goliath duplicator: remove temporary transfer access').catch((error) => {
           console.warn(`[Duplicator] Temporary access cleanup failed for ${channel.name}: ${error.message}`);
         });
-      }, 2500).unref?.();
+      }
     }
 
-    return result;
+    return channel.permissionOverwrites;
   };
 }
 
@@ -218,7 +230,7 @@ function installRunningState(interaction) {
           .setDescription([
             'Goliath is applying this transfer now.',
             '',
-            '**Stages:** Roles → Role Order → Categories → Channels → Exact Category/Channel Permissions → Verification → Transfer Manifest',
+            '**Stages:** Roles → Role Order → Categories → Channels → Per-Role Category/Channel Permissions → Verification → Transfer Manifest',
             '',
             'The confirmation controls have been removed so this transfer cannot be started twice. The result will replace this message when the copy finishes.',
           ].join('\n'))
