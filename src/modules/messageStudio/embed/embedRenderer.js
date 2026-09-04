@@ -17,6 +17,7 @@ const sharp = require('sharp');
 const { getCachedAsset, saveCachedAsset, ensureAssetCached } = require('./embedMedia');
 const { replaceVars } = require('./embedPanel');
 const emojis = require('../../utilityStudio/emojis/emojis');
+const emojiPayload = require('../../utilityStudio/emojis/emojiPayload');
 
 const CANVAS_WIDTH = 520;
 const PORTRAIT_WIDTH = 320;
@@ -291,7 +292,12 @@ async function buildEmbedPayload(options = {}) {
   const components = [];
   const files = [];
   const resolvedEmbeds = await resolveApplicationEmojiShortcodes(embeds, interaction);
-  await validateApplicationEmojiUsage(resolvedEmbeds, actionRows, interaction);
+  const client = interaction?.client || null;
+  const guildId = String(interaction?.guildId || interaction?.guild?.id || '').trim();
+  const resolvedActionRows = client && guildId
+    ? await emojiPayload.resolveComponents(client, guildId, actionRows, 'embed')
+    : actionRows;
+  await validateApplicationEmojiUsage(resolvedEmbeds, resolvedActionRows, interaction);
   if (allowUserPing && userId) components.push(new TextDisplayBuilder().setContent(`<@${userId}>`));
   for (let index = 0; index < resolvedEmbeds.length; index += 1) {
     const embed = resolvedEmbeds[index];
@@ -326,7 +332,7 @@ async function buildEmbedPayload(options = {}) {
     if (footer) container.addTextDisplayComponents(new TextDisplayBuilder().setContent(footer));
     components.push(container);
   }
-  for (const row of actionRows || []) components.push(row);
+  for (const row of resolvedActionRows || []) components.push(row);
   let flags = MessageFlags.IsComponentsV2;
   if (ephemeral) flags |= MessageFlags.Ephemeral;
   return { components, files, flags };
