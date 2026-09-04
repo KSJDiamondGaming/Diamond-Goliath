@@ -11,13 +11,66 @@ const {
 } = require('discord.js');
 const core = require('./core');
 const selective = require('./selective');
-selective.configure(core);
 
 const BOOTSTRAP_KEY = Symbol.for('goliath.duplicator.bridge-bootstrap');
-const OVERWRITE_PATCH_KEY = Symbol.for('goliath.duplicator.permission-overwrite-merge');
-const CHANNEL_CREATE_PATCH_KEY = Symbol.for('goliath.duplicator.channel-create-compat');
-const ROLE_ORDER_PATCH_KEY = Symbol.for('goliath.duplicator.role-order');
+const OVERWRITE_PATCH_KEY = Symbol.for('goliath.duplicator.permission-overwrite-exact');
+const CHANNEL_CREATE_PATCH_KEY = Symbol.for('goliath.duplicator.channel-create-compat-v2');
+const ROLE_ORDER_PATCH_KEY = Symbol.for('goliath.duplicator.role-order-v2');
+const SNAPSHOT_PATCH_KEY = Symbol.for('goliath.duplicator.snapshot-bot-role-remap');
 const roleOrderState = new WeakMap();
+
+function duplicatorReason(value) {
+  return String(value || '').startsWith('Goliath duplicator:');
+}
+
+function temporaryBotOverwrite(guild) {
+  const botId = guild?.client?.user?.id;
+  const me = guild?.members?.me;
+  if (!botId || !me) return null;
+  let allow = 0n;
+  for (const bit of [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.ManageRoles]) {
+    if (me.permissions?.has(bit)) allow |= bit;
+  }
+  return allow ? { id: botId, type: 1, allow, deny: 0n } : null;
+}
+
+// Snapshot correction: a manually-created role named for Goliath can be assigned to the
+// source bot even though Discord does not mark it as managed. Treat that specific bot role
+// as a remap-only dependency so selective copy does not create a second fake Goliath role.
+if (!core[SNAPSHOT_PATCH_KEY]) {
+  const originalSnapshot = core.snapshot.bind(core);
+  Object.defineProperty(core, SNAPSHOT_PATCH_KEY, { value: true });
+  core.snapshot = function goliathDuplicatorSnapshot(guild, selectedOptions) {
+    const snap = originalSnapshot(guild, selectedOptions);
+    const sourceBot = guild.members.me;
+    const botRoleIds = new Set(sourceBot?.roles?.cache?.keys?.() || []);
+    const pseudoManaged = [];
+
+    snap.roles = (snap.roles || []).filter((role) => {
+      const isBotAssigned = botRoleIds.has(role.id);
+      const looksLikeGoliath = /(^|\W)goliath($|\W)/i.test(String(role.name || ''));
+      if (!isBotAssigned || !looksLikeGoliath) return true;
+      pseudoManaged.push({
+        ...role,
+        managed: true,
+        tags: { botId: guild.client.user?.id || null, integrationId: null, subscriptionListingId: null },
+        remapOnly: true,
+      });
+      return false;
+    });
+
+    const managedById = new Map((snap.managedRoles || []).map((role) => [role.id, role]));
+    for (const role of pseudoManaged) managedById.set(role.id, role);
+    snap.managedRoles = [...managedById.values()];
+    if (snap.stats) {
+      snap.stats.roles = snap.roles.length;
+      snap.stats.managedRoles = snap.managedRoles.length;
+    }
+    return snap;
+  };
+}
+
+selective.configure(core);
 
 if (!Client.prototype[BOOTSTRAP_KEY]) {
   const originalLogin = Client.prototype.login;
@@ -28,13 +81,10 @@ if (!Client.prototype[BOOTSTRAP_KEY]) {
   };
 }
 
-function duplicatorReason(value) {
-  return String(value || '').startsWith('Goliath duplicator:');
-}
-
-// Some Discord channel types are only legal when the destination has Community enabled.
-// Selective copy must preserve the useful equivalent rather than failing the entire
-// structure stage. Stage -> Voice, Announcement/Forum/Media -> Text when Community is off.
+// Create every transferred channel/category with a temporary bot-member overwrite. This
+// prevents a restricted parent category from locking the bot out of a newly-created child
+// before the child's exact source overwrites can be written. Unsupported special channel
+// types are retried as the closest normal Discord equivalent instead of failing the copy.
 if (GuildChannelManager?.prototype?.create && !GuildChannelManager.prototype[CHANNEL_CREATE_PATCH_KEY]) {
   const originalCreate = GuildChannelManager.prototype.create;
   Object.defineProperty(GuildChannelManager.prototype, CHANNEL_CREATE_PATCH_KEY, { value: true });
@@ -42,31 +92,31 @@ if (GuildChannelManager?.prototype?.create && !GuildChannelManager.prototype[CHA
     if (!duplicatorReason(options.reason)) return originalCreate.call(this, options);
 
     const guild = this.guild;
-    const hasCommunity = new Set(guild?.features || []).has('COMMUNITY');
     const payload = { ...options };
+    const hasCommunity = new Set(guild?.features || []).has('COMMUNITY');
+    const botOverwrite = temporaryBotOverwrite(guild);
 
     if (!hasCommunity) {
       if (payload.type === ChannelType.GuildStageVoice) payload.type = ChannelType.GuildVoice;
       else if ([ChannelType.GuildAnnouncement, ChannelType.GuildForum, ChannelType.GuildMedia].includes(payload.type)) payload.type = ChannelType.GuildText;
     }
 
-    // Stage channels do not accept the same creation payload as normal voice channels.
     if (payload.type === ChannelType.GuildStageVoice) delete payload.userLimit;
+    if (botOverwrite && !payload.permissionOverwrites) payload.permissionOverwrites = [botOverwrite];
 
     try {
       return await originalCreate.call(this, payload);
     } catch (error) {
-      if (Number(error?.code) !== 50024) throw error;
+      if (![50024, 50035].includes(Number(error?.code))) throw error;
 
-      // Retry the same logical channel with a minimal, type-safe payload. This catches
-      // destination feature/type mismatches without duplicating an already-created object.
-      const minimal = {
-        name: payload.name,
-        type: payload.type,
-        reason: payload.reason,
-      };
+      let fallbackType = payload.type;
+      if (fallbackType === ChannelType.GuildStageVoice) fallbackType = ChannelType.GuildVoice;
+      else if ([ChannelType.GuildAnnouncement, ChannelType.GuildForum, ChannelType.GuildMedia].includes(fallbackType)) fallbackType = ChannelType.GuildText;
+
+      const minimal = { name: payload.name, type: fallbackType, reason: payload.reason };
       if (payload.parent) minimal.parent = payload.parent;
-      if (payload.type === ChannelType.GuildVoice) {
+      if (botOverwrite) minimal.permissionOverwrites = [botOverwrite];
+      if (fallbackType === ChannelType.GuildVoice) {
         if (payload.bitrate) minimal.bitrate = payload.bitrate;
         if (payload.rtcRegion) minimal.rtcRegion = payload.rtcRegion;
       }
@@ -75,10 +125,9 @@ if (GuildChannelManager?.prototype?.create && !GuildChannelManager.prototype[CHA
   };
 }
 
-// Core records each copied role's source position and then calls Role#setPosition.
-// Absolute source positions do not make sense in a destination containing other roles.
-// Preserve the copied roles' RELATIVE source order and keep the copied block directly
-// below Goliath's highest role, without moving pre-existing destination roles.
+// Preserve the relative source order of copied roles. Source absolute positions cannot be
+// reused in a different destination hierarchy, so copied roles form a contiguous block
+// immediately below Goliath's highest role while retaining their source low->high order.
 if (Role?.prototype?.setPosition && !Role.prototype[ROLE_ORDER_PATCH_KEY]) {
   const originalSetPosition = Role.prototype.setPosition;
   Object.defineProperty(Role.prototype, ROLE_ORDER_PATCH_KEY, { value: true });
@@ -88,41 +137,32 @@ if (Role?.prototype?.setPosition && !Role.prototype[ROLE_ORDER_PATCH_KEY]) {
     }
 
     const guild = this.guild;
+    const now = Date.now();
     let state = roleOrderState.get(guild);
-    if (!state) {
-      state = new Map();
-      roleOrderState.set(guild, state);
-    }
-    state.set(this.id, { role: this, sourcePosition: Number(position || 0) });
+    if (!state || now - state.lastTouch > 2500) state = { entries: new Map(), lastTouch: now };
+    state.lastTouch = now;
+    state.entries.set(this.id, { role: this, sourcePosition: Number(position || 0) });
+    roleOrderState.set(guild, state);
 
-    const ordered = [...state.values()].sort((a, b) => a.sourcePosition - b.sourcePosition);
+    const ordered = [...state.entries.values()]
+      .filter((entry) => guild.roles.cache.has(entry.role.id))
+      .sort((a, b) => a.sourcePosition - b.sourcePosition);
     const botHighest = Number(guild.members.me?.roles?.highest?.position || 1);
     const top = Math.max(1, botHighest - 1);
     const start = Math.max(1, top - ordered.length + 1);
 
     for (let index = 0; index < ordered.length; index += 1) {
-      const entry = ordered[index];
       const target = Math.min(top, start + index);
-      await originalSetPosition.call(entry.role, target, 'Goliath duplicator: relative role order');
+      await originalSetPosition.call(ordered[index].role, target, 'Goliath duplicator: relative role order');
     }
     return this;
   };
 }
 
-function manageableParentOverwrite(channel, overwrite) {
-  if (!channel?.guild) return true;
-  if (String(overwrite.id) === String(channel.guild.id)) return true;
-  if (Number(overwrite.type) !== 0) return true;
-  const role = channel.guild.roles.cache.get(String(overwrite.id));
-  if (!role) return false;
-  const botHighest = Number(channel.guild.members.me?.roles?.highest?.position || 0);
-  return role.position < botHighest;
-}
-
-// Keep effective category inheritance while preserving explicit channel overwrites.
-// During writes, temporarily give the destination bot member enough channel-level access
-// to finish the transfer. This prevents a category overwrite from locking Goliath out
-// before its children and their explicit overwrites have been applied/verified.
+// Write EXACT source category/channel overwrites, not a materialised category merge. A
+// child that was synced remains synced when its source overwrite set matches the category;
+// a child with explicit overrides remains deliberately unsynced. Temporary bot access is
+// included only while Discord applies/verifies the transfer and is removed afterwards.
 if (PermissionOverwriteManager?.prototype?.set && !PermissionOverwriteManager.prototype[OVERWRITE_PATCH_KEY]) {
   const originalSet = PermissionOverwriteManager.prototype.set;
   Object.defineProperty(PermissionOverwriteManager.prototype, OVERWRITE_PATCH_KEY, { value: true });
@@ -130,56 +170,33 @@ if (PermissionOverwriteManager?.prototype?.set && !PermissionOverwriteManager.pr
     const reasonText = String(reason || '');
     const channel = this.channel;
     const isDuplicatorTransfer = reasonText.startsWith('Goliath duplicator: least-privilege channel/category permissions');
+    if (!isDuplicatorTransfer || !channel?.guild) return originalSet.call(this, overwrites, reason);
 
-    if (!isDuplicatorTransfer || !channel?.guild) {
-      return originalSet.call(this, overwrites, reason);
-    }
-
-    const explicit = Array.isArray(overwrites) ? overwrites : [...(overwrites || [])];
-    const explicitIds = new Set(explicit.map((item) => String(item.id)));
-    const merged = new Map();
-    const parent = channel.parent;
-
-    // Only materialise inherited category entries that Goliath can actually manage.
-    // Explicit child entries always win over inherited ones.
-    if (parent?.permissionOverwrites?.cache) {
-      for (const overwrite of parent.permissionOverwrites.cache.values()) {
-        if (!manageableParentOverwrite(channel, overwrite)) continue;
-        merged.set(String(overwrite.id), {
-          id: overwrite.id,
-          type: overwrite.type,
-          allow: overwrite.allow.bitfield,
-          deny: overwrite.deny.bitfield,
-        });
-      }
-    }
-    for (const overwrite of explicit) merged.set(String(overwrite.id), overwrite);
-
+    const explicit = Array.isArray(overwrites) ? [...overwrites] : [...(overwrites || [])];
+    const botOverwrite = temporaryBotOverwrite(channel.guild);
     const botId = channel.guild.client.user?.id;
-    const hadExplicitBotMember = botId ? explicitIds.has(String(botId)) : false;
-    if (botId && !hadExplicitBotMember) {
-      let temporaryAllow = 0n;
-      const me = channel.guild.members.me;
-      for (const bit of [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.ManageRoles]) {
-        if (me?.permissions?.has(bit)) temporaryAllow |= bit;
-      }
-      if (temporaryAllow) {
-        merged.set(String(botId), { id: botId, type: 1, allow: temporaryAllow, deny: 0n });
-      }
+    const sourceHadBotMemberOverwrite = botId && explicit.some((item) => String(item.id) === String(botId) && Number(item.type) === 1);
+
+    const payload = [...explicit];
+    if (botOverwrite && !sourceHadBotMemberOverwrite) payload.push(botOverwrite);
+
+    let result;
+    try {
+      result = await originalSet.call(this, payload, reason);
+    } catch (error) {
+      // A stale inherited restriction can still cause 50001/50013 on some channel types.
+      // Re-assert temporary member access first, then retry the exact source payload.
+      if (![50001, 50013].includes(Number(error?.code)) || !botOverwrite) throw error;
+      await this.edit(botId, { ViewChannel: true, ManageChannels: true, ManageRoles: true }, { reason: 'Goliath duplicator: temporary transfer access' });
+      result = await originalSet.call(this, payload, reason);
     }
 
-    const payload = [...merged.values()];
-    const result = await originalSet.call(this, payload, reason);
-
-    // Remove only the temporary member overwrite after core has had time to refetch and
-    // verify the expected source overwrites. The delete request is authorised while the
-    // temporary allow is still active, so the final Discord state does not keep a bypass.
-    if (botId && !hadExplicitBotMember && merged.has(String(botId))) {
+    if (botId && botOverwrite && !sourceHadBotMemberOverwrite) {
       setTimeout(() => {
         channel.permissionOverwrites.delete(botId, 'Goliath duplicator: remove temporary transfer access').catch((error) => {
           console.warn(`[Duplicator] Temporary access cleanup failed for ${channel.name}: ${error.message}`);
         });
-      }, 5000).unref?.();
+      }, 2500).unref?.();
     }
 
     return result;
@@ -200,7 +217,7 @@ function installRunningState(interaction) {
           .setDescription([
             'Goliath is applying this transfer now.',
             '',
-            '**Stages:** Roles → Role Order → Categories → Channels → Explicit Channel Permissions → Verification → Transfer Manifest',
+            '**Stages:** Roles → Role Order → Categories → Channels → Exact Category/Channel Permissions → Verification → Transfer Manifest',
             '',
             'The confirmation controls have been removed so this transfer cannot be started twice. The result will replace this message when the copy finishes.',
           ].join('\n'))
