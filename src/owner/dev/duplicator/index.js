@@ -1,23 +1,7 @@
 'use strict';
 
-const fs = require('node:fs');
-const path = require('node:path');
-const Module = require('node:module');
 const { Client } = require('discord.js');
-
-function loadCoreAtLegacyLocation() {
-  const sourcePath = path.join(__dirname, 'core.js');
-  const legacyFilename = path.join(__dirname, '..', 'duplicatorV2.js');
-  const source = fs.readFileSync(sourcePath, 'utf8');
-  const legacyModule = new Module(legacyFilename, module);
-  legacyModule.filename = legacyFilename;
-  legacyModule.paths = Module._nodeModulePaths(path.dirname(legacyFilename));
-  require.cache[legacyFilename] = legacyModule;
-  legacyModule._compile(source, legacyFilename);
-  return legacyModule.exports;
-}
-
-const core = loadCoreAtLegacyLocation();
+const core = require('./core');
 const selective = require('./selective');
 selective.configure(core);
 
@@ -42,9 +26,4 @@ async function handleInteraction(interaction) {
   return core.handleInteraction(interaction);
 }
 
-module.exports = {
-  ...core,
-  run,
-  handleInteraction,
-  selective,
-};
+module.exports = { ...core, run, handleInteraction, selective };
