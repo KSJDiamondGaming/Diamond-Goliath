@@ -1,6 +1,6 @@
 # Server Duplicator — Selective Copy & Transfer Manifest
 
-Status: Locked specification. User chooses implementation priority.
+Status: DEV implementation started. Selective structure scanning, permission-role dependency carry, transfer history/manifests, and DEV-local bulk channel/category deletion are implemented for live testing. Full specification below remains the acceptance target; features are not considered production-ready until verified in Discord.
 
 ## Goal
 Allow Server Duplicator to copy only selected categories/channels instead of requiring a full server copy, while preserving the permissions those selected items depend on and keeping a permanent audit/transfer record of exactly what was moved.
@@ -74,6 +74,15 @@ The history must let the user open a previous transfer and see clearly:
 - Destination IDs for copied objects so later edits can be traced.
 
 The result embed for a completed copy should link/point to the permanent transfer record by transfer ID.
+
+## Bulk Destination Cleanup
+- DEV Duplicator must support scanning a destination guild and selecting multiple channels/categories for deletion.
+- Selecting a category must include its selected child channels in the deletion plan.
+- Bulk deletion must require an explicit final destructive confirmation.
+- Child channels must be deleted before their category.
+- Every bulk delete must create a permanent deletion manifest.
+- A previous selective-copy manifest should be able to target the destination channel/category IDs it recorded, enabling transfer-specific cleanup without relying on names such as `-copy`.
+- Initial implementation may restrict destructive deletion to guilds connected directly to the DEV bot for safety.
 
 ## Verification Rules
 A selective copy is not successful merely because create API calls returned successfully.
