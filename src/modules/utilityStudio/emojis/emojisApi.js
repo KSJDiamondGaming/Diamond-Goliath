@@ -105,10 +105,20 @@ async function validateRemoteUrl(rawUrl) {
 
 function pinnedAgent(parsed, addresses) {
   const selected = addresses.find((entry) => Number(entry.family) === 4) || addresses[0];
+  const address = String(selected?.address || '');
+  const family = Number(selected?.family) || net.isIP(address);
+  if (!address || !family) throw new Error('Emoji link hostname resolved to an invalid public address.');
+
   const Agent = parsed.protocol === 'https:' ? https.Agent : http.Agent;
   return new Agent({
     lookup(hostname, options, callback) {
-      callback(null, selected.address, selected.family);
+      // Node 20+ may request lookup({ all: true }). In that mode the callback
+      // must receive an array of address records rather than scalar address/family.
+      if (options?.all) {
+        callback(null, [{ address, family }]);
+        return;
+      }
+      callback(null, address, family);
     },
   });
 }
