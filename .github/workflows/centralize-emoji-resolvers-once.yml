@@ -1,0 +1,123 @@
+name: Centralize Emoji Resolvers Once
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - '.github/workflows/centralize-emoji-resolvers-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout dev
+        uses: actions/checkout@v5
+        with:
+          ref: dev
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Centralize verification preview and role selector emoji resolution
+        shell: bash
+        run: |
+          node <<'NODE'
+          'use strict';
+          const fs = require('fs');
+
+          function replaceOnce(source, from, to, label) {
+            if (!source.includes(from)) throw new Error(`Missing patch anchor: ${label}`);
+            return source.replace(from, to);
+          }
+
+          // Verification admin preview: resolve the preview payload exactly like a deployed panel.
+          {
+            const path = 'src/modules/securityStudio/verificationPanel.js';
+            let source = fs.readFileSync(path, 'utf8');
+            source = replaceOnce(
+              source,
+              "const verificationStore = require('./verificationStore');\n",
+              "const verificationStore = require('./verificationStore');\nconst emojiPayload = require('../utilityStudio/emojis/emojiPayload');\n",
+              'verification emojiPayload import'
+            );
+            source = replaceOnce(
+              source,
+              "      await interaction.reply({\n        embeds: [verificationManager.buildVerificationEmbed(preview, interaction.guild)],\n        components: verificationManager.buildVerificationRows(preview, interaction.guild),\n        flags: 64,\n      });",
+              "      const previewPayload = await emojiPayload.resolveMessagePayload(\n        interaction.guild.client,\n        interaction.guild.id,\n        {\n          embeds: [verificationManager.buildVerificationEmbed(preview, interaction.guild)],\n          components: verificationManager.buildVerificationRows(preview, interaction.guild),\n        },\n        'verification',\n      );\n      await interaction.reply({ ...previewPayload, flags: 64 });",
+              'verification preview payload'
+            );
+            fs.writeFileSync(path, source);
+          }
+
+          // Discord Role Selector panel: remove the local emoji parser/resolver and delegate centrally.
+          {
+            const path = 'src/modules/roleStudio/roleSelector/roleSelectorPanel.js';
+            let source = fs.readFileSync(path, 'utf8');
+            source = replaceOnce(
+              source,
+              "const emojis = require('../../utilityStudio/emojis/emojis');\n",
+              "const emojiPayload = require('../../utilityStudio/emojis/emojiPayload');\n",
+              'role selector panel emoji import'
+            );
+            const resolverPattern = /function safeSelectEmoji\(value, allowed\) \{[\s\S]*?async function resolvePayload\(guild, payload\) \{[\s\S]*?\n\}\n\nfunction groupMenu/;
+            if (!resolverPattern.test(source)) throw new Error('Missing Role Selector panel resolver block.');
+            source = source.replace(
+              resolverPattern,
+              "async function resolvePayload(guild, payload) {\n  return emojiPayload.resolveMessagePayload(guild.client, guild.id, payload, 'roleSelector');\n}\n\nfunction groupMenu"
+            );
+            fs.writeFileSync(path, source);
+          }
+
+          // Dashboard Role Selector route: same central resolver for deployed member payloads.
+          {
+            const path = 'src/server/routes/modules/roleStudio/roleSelector.js';
+            let source = fs.readFileSync(path, 'utf8');
+            source = replaceOnce(
+              source,
+              "const emojis = require('../../../../modules/utilityStudio/emojis/emojis');\n",
+              "const emojiPayload = require('../../../../modules/utilityStudio/emojis/emojiPayload');\n",
+              'role selector dashboard emoji import'
+            );
+            const resolverPattern = /async function resolveDashboardMemberPayload\(g, payload = \{\}\) \{[\s\S]*?\n\}\n\nasync function requireRoleSelectorGuildAccess/;
+            if (!resolverPattern.test(source)) throw new Error('Missing Role Selector dashboard resolver block.');
+            source = source.replace(
+              resolverPattern,
+              "async function resolveDashboardMemberPayload(g, payload = {}) {\n  return emojiPayload.resolveMessagePayload(g.client, g.id, payload, 'roleSelector');\n}\n\nasync function requireRoleSelectorGuildAccess"
+            );
+            fs.writeFileSync(path, source);
+          }
+          NODE
+
+      - name: Validate changed source
+        run: |
+          node --check src/modules/securityStudio/verificationPanel.js
+          node --check src/modules/roleStudio/roleSelector/roleSelectorPanel.js
+          node --check src/server/routes/modules/roleStudio/roleSelector.js
+
+      - name: Remove temporary workflow
+        run: rm -f .github/workflows/centralize-emoji-resolvers-once.yml
+
+      - name: Run project doctor
+        run: npm run doctor
+
+      - name: Commit clean feature
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --quiet && exit 0
+          git commit -m 'refactor(emojis): centralize verification and role selector payloads'
+          git fetch origin dev
+          git rebase origin/dev
+          git push origin HEAD:dev
