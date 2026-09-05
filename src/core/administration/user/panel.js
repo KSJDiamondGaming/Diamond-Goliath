@@ -26,7 +26,7 @@ const MODULE_CATALOG = [
   { key: 'warnings', category: 'account', label: 'Warnings', emoji: '⚠️', summary: 'Planned personal warning view.', status: 'planned' },
   { key: 'cases', category: 'account', label: 'Cases', emoji: '📁', summary: 'Planned view of your own cases.', status: 'planned' },
   { key: 'infractions', category: 'account', label: 'Infractions', emoji: '📋', summary: 'Planned personal infraction history.', status: 'planned' },
-  { key: 'appeals', category: 'account', label: 'Appeals', emoji: '📝', summary: 'Planned personal appeal access.', status: 'planned' },
+  { key: 'appeals', category: 'account', label: 'Appeals', emoji: '📝', summary: 'Review eligible cases and submit or track your own appeals.', status: 'live' },
   { key: 'birthdays', category: 'community', label: 'Birthdays', emoji: '🎂', summary: 'Manage your birthday and privacy settings.', status: 'live' },
   { key: 'giveaways', category: 'community', label: 'Giveaways', emoji: '🎉', summary: 'Member giveaway dashboard plan.', status: 'locked' },
   { key: 'invites', category: 'community', label: 'Invites', emoji: '📨', summary: 'Planned member invite view.', status: 'planned' },
@@ -598,6 +598,37 @@ function buildSocialAccessDeniedPanel(interactionOrName = 'Unknown User') {
   };
 }
 
+function buildUserAppealsPanel(interaction, cases = [], getAppealEligibility = null, getCaseAppeals = null) {
+  const memberDisplayName = getMemberDisplayName(interaction);
+  const userId = String(interaction?.user?.id || '');
+  const mine = (Array.isArray(cases) ? cases : []).filter((modCase) => String(modCase.userId) === userId).sort((a, b) => Number(b.caseId || 0) - Number(a.caseId || 0));
+  const lines = [];
+  const buttons = [];
+  for (const modCase of mine.slice(0, 10)) {
+    const appeals = typeof getCaseAppeals === 'function' ? getCaseAppeals(modCase) : [];
+    const latest = appeals[appeals.length - 1] || null;
+    const eligibility = typeof getAppealEligibility === 'function' ? getAppealEligibility(modCase, userId) : { ok: false };
+    const action = String(modCase.action || 'unknown').toUpperCase();
+    const status = latest ? String(latest.status || 'pending') : (eligibility.ok ? 'eligible' : 'not eligible');
+    lines.push(`**Case #${modCase.caseId}** • ${action} • ${status}`);
+    if (latest?.submittedAt) lines.push(`↳ Appeal submitted <t:${Math.floor(new Date(latest.submittedAt).getTime() / 1000)}:R>`);
+    else if (!eligibility.ok && eligibility.error) lines.push(`↳ ${eligibility.error}`);
+    if (eligibility.ok && buttons.length < 5) buttons.push(button(`user:appeal:${modCase.caseId}`, `Appeal #${modCase.caseId}`, ButtonStyle.Primary, false, '📝'));
+  }
+  if (!mine.length) lines.push('You do not currently have any moderation cases on this server.');
+  const description = [
+    'Review your own moderation cases and appeal information.',
+    '',
+    ...lines,
+    '',
+    'If you are banned from the server, this in-server route will not be available. External Goliath DM and web appeal access will be handled separately.',
+  ].join('\n');
+  const components = [];
+  if (buttons.length) components.push(row(...buttons));
+  components.push(navigationRow({ backId: 'user:account:record' }));
+  return { embeds: [markLiveEmbed(createEmbed('📝 Your Appeals', description, memberDisplayName))], components };
+}
+
 function buildPlannedModulePanel(moduleKey, interactionOrName = 'Unknown User') {
   const memberDisplayName = getMemberDisplayName(interactionOrName);
   const module = MODULE_BY_KEY[moduleKey];
@@ -630,6 +661,7 @@ module.exports = {
   buildModulePanel,
   buildProfilePanel,
   buildAccountRecordPanel,
+  buildUserAppealsPanel,
   buildInProgressPanel,
   buildHelpPanel,
   buildProgressPanel,

@@ -20,11 +20,14 @@ const notesUserPanel = require('../../../modules/utilityStudio/notes/notesUserPa
 const emojisUserPanel = require('../../../modules/utilityStudio/emojis/emojisUserPanel');
 const userUtilities = require('./utilities');
 const profileDevelopmentPage = require('./profileDevelopmentPage');
+const { getAllCases } = require('../mod/storage');
+const { getAppealEligibility, getCaseAppeals, openExternalAppealFromCommand } = require('../mod/cases');
 const {
   buildCategoryPanel,
   buildModulePanel,
   buildProfilePanel,
   buildAccountRecordPanel,
+  buildUserAppealsPanel,
   buildInProgressPanel,
   buildHelpPanel,
   buildProgressPanel,
@@ -125,6 +128,11 @@ async function executeUtilityCommand(interaction, command) {
 
 async function showProfile(interaction) {
   return updatePanel(interaction, buildUserHomePanel(interaction));
+}
+
+async function showUserAppeals(interaction) {
+  const cases = getAllCases(interaction.guildId) || [];
+  return updatePanel(interaction, buildUserAppealsPanel(interaction, cases, getAppealEligibility, getCaseAppeals));
 }
 
 async function showProgress(interaction) {
@@ -655,11 +663,17 @@ async function handleUserPanelInteraction(interaction) {
     if (moduleKey === 'birthdays') return showBirthdays(interaction);
     if (moduleKey === 'social') return updatePanel(interaction, socialStudio.user.buildLanding(interaction));
     if (moduleKey === 'leveling') return showLeveling(interaction);
+    if (moduleKey === 'appeals') return showUserAppeals(interaction);
     if (moduleKey === 'ping') return executeUtilityCommand(interaction, userUtilities.adapters.ping);
     if (moduleKey === 'help') return executeUtilityCommand(interaction, userUtilities.adapters.help);
     if (moduleKey === 'serverinfo') return executeUtilityCommand(interaction, userUtilities.adapters.serverinfo);
     if (moduleKey === 'translate') return executeUtilityCommand(interaction, userUtilities.adapters.translate);
     return updatePanel(interaction, buildModulePanel(moduleKey, memberDisplayName));
+  }
+  const userAppealMatch = customId.match(/^user:appeal:(\d+)$/);
+  if (userAppealMatch && interaction.isButton?.()) {
+    const reference = `${interaction.guildId}:${userAppealMatch[1]}`;
+    return openExternalAppealFromCommand(interaction, reference);
   }
   const categoryMatch = customId.match(/^user:category:([a-zA-Z0-9_-]+)$/);
   if (categoryMatch && interaction.isButton?.()) return updatePanel(interaction, buildCategoryPanel(categoryMatch[1], memberDisplayName));
@@ -669,6 +683,7 @@ async function handleUserPanelInteraction(interaction) {
     if (moduleKey === 'profile') return showProfile(interaction);
     if (moduleKey === 'birthdays') return showBirthdays(interaction);
     if (moduleKey === 'leveling') return showLeveling(interaction);
+    if (moduleKey === 'appeals') return showUserAppeals(interaction);
     if (moduleKey === 'ping') return executeUtilityCommand(interaction, userUtilities.adapters.ping);
     if (moduleKey === 'help') return executeUtilityCommand(interaction, userUtilities.adapters.help);
     if (moduleKey === 'serverinfo') return executeUtilityCommand(interaction, userUtilities.adapters.serverinfo);
