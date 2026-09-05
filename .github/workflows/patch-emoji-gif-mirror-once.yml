@@ -33,7 +33,7 @@ jobs:
       - name: Remove temporary patch files
         run: |
           git rm .github/workflows/patch-emoji-gif-mirror-once.yml
-          git rm scripts/patch-emoji-gif-mirror-once.js
+          git rm -f scripts/patch-emoji-gif-mirror-once.js
           git rm scripts/repair-emoji-gif-mirror-generator-once.js
       - name: Run doctor
         run: npm run doctor
@@ -49,4 +49,4 @@ jobs:
           git rebase origin/dev
           git push origin HEAD:dev
 
-# retry after generator syntax repair
+# retry after forced temporary generator cleanup
