@@ -39,8 +39,17 @@ jobs:
         run: npx vite build src/dashboard --outDir ../../dist --emptyOutDir --logLevel warn
       - name: Commit clean source
         run: |
+          set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add src/modules/utilityStudio/emojis/emojiMedia.js src/modules/utilityStudio/emojis/emojisApi.js src/modules/utilityStudio/emojis/emojisPanel.js
           git commit -m 'fix(emojis): separate static emoji and GIF add flows'
-          git push origin HEAD:dev
+          for attempt in 1 2 3; do
+            git fetch origin dev
+            git rebase origin/dev
+            if git push origin HEAD:dev; then
+              exit 0
+            fi
+            sleep 2
+          done
+          exit 1
