@@ -150,7 +150,7 @@ function shortcodeSuggestions(bank, guildId, query = '', context = 'unknown', li
       const key = String(name || '').toLowerCase();
       if (!key || seen.has(key)) continue;
       seen.add(key);
-      output.push({ name: key, shortcode: `:${key}:`, emojiId: String(emoji.id), core: emoji.core === true, category: emoji.category, tags: emoji.tags });
+      output.push({ name: key, shortcode: `:${key}:`, emojiId: String(emoji.id), core: emoji.core === true, animated: Boolean(emoji.animated), category: emoji.category, tags: emoji.tags });
       if (output.length >= Math.max(1, Math.min(100, Number(limit) || 25))) return output;
     }
   }
