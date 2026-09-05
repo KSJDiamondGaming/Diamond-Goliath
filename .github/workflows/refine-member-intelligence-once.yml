@@ -22,10 +22,10 @@ jobs:
       - run: npm ci
       - name: Patch source
         run: python3 scripts/refine-member-intelligence-once.py
-      - name: Validate
+      - name: Validate changed surface
         run: |
           node --check src/core/administration/mod/intelligence.js
-          npm run doctor
+          npm run contracts
           npm run build --if-present
       - name: Commit
         run: |
