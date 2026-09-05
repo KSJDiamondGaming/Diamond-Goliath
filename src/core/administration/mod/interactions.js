@@ -318,7 +318,7 @@ function buildMemberScanPayload(i, target) {
   components.push(new Discord.ActionRowBuilder().addComponents(...navButtons));
   return { scanId, cases, suspects, history, crossGuild, investigation, persistentLinks, risk, access, embed, components };
 }
-function buildScanHistoryPayload(i, target) {
+function buildScanHistoryPayload(i, target, origin = 'scan') {
   const rows = scanAuditRows(i.guild.id, target.id, 25);
   const historyText = rows.length ? rows.slice(0, 10).map((row) => {
     const after = parseJson(row.after_value, {});
@@ -344,7 +344,7 @@ function buildScanHistoryPayload(i, target) {
   const canManageHistory = rows.length && canScanCapability(i, 'scan_notes', 'add_case_note');
   if (canManageHistory) {
     const select = new Discord.StringSelectMenuBuilder()
-      .setCustomId(`mod_scan_delete_select:${target.id}`)
+      .setCustomId(`mod_scan_delete_select:${target.id}:${origin}`)
       .setPlaceholder('🗑️ Select a scan to delete')
       .setMinValues(1)
       .setMaxValues(1)
@@ -360,13 +360,14 @@ function buildScanHistoryPayload(i, target) {
     components.push(new Discord.ActionRowBuilder().addComponents(select));
   }
   const buttons = [];
-  if (canScanCapability(i, 'scan_run')) buttons.push(new Discord.ButtonBuilder().setCustomId(`mod_scan_view:${target.id}`).setLabel('Back to Scan').setEmoji('🔎').setStyle(Discord.ButtonStyle.Primary));
-  if (canScanCapability(i, 'scan_compare')) buttons.push(new Discord.ButtonBuilder().setCustomId(`mod_scan_history_compare:${target.id}`).setLabel('Compare Account').setEmoji('🧬').setStyle(Discord.ButtonStyle.Secondary));
-  if (canManageHistory) buttons.push(new Discord.ButtonBuilder().setCustomId(`mod_scan_clear_history:${target.id}`).setLabel('Clear History').setEmoji('🧹').setStyle(Discord.ButtonStyle.Danger));
+  if (origin === 'landing') buttons.push(new Discord.ButtonBuilder().setCustomId(`mod_dashboard:${target.id}:intelligence`).setLabel('⬅️ Back to Intelligence').setStyle(Discord.ButtonStyle.Secondary));
+  else if (canScanCapability(i, 'scan_run')) buttons.push(new Discord.ButtonBuilder().setCustomId(`mod_scan_view:${target.id}`).setLabel('⬅️ Back to Scan').setStyle(Discord.ButtonStyle.Secondary));
+  if (canScanCapability(i, 'scan_compare')) buttons.push(new Discord.ButtonBuilder().setCustomId(`mod_scan_history_compare:${target.id}:${origin}`).setLabel('Compare Account').setEmoji('🧬').setStyle(Discord.ButtonStyle.Secondary));
+  if (canManageHistory) buttons.push(new Discord.ButtonBuilder().setCustomId(`mod_scan_clear_history:${target.id}:${origin}`).setLabel('Clear History').setEmoji('🧹').setStyle(Discord.ButtonStyle.Danger));
   if (buttons.length) components.push(new Discord.ActionRowBuilder().addComponents(...buttons));
   return { embed, components };
 }
-function buildComparisonPayload(i, primary, secondary) {
+function buildComparisonPayload(i, primary, secondary, origin = 'scan') {
   const correlation = compareIdentitySignals(primary, secondary);
   const left = moderationSummary(i.guild.id, primary.id);
   const right = moderationSummary(i.guild.id, secondary.id);
@@ -393,7 +394,7 @@ function buildComparisonPayload(i, primary, secondary) {
     .setFooter({ text: 'Evidence-based comparison • no private Discord data is exposed to bots' })
     .setTimestamp();
   const buttons = [
-    new Discord.ButtonBuilder().setCustomId(`mod_scan_history:${primary.id}`).setLabel('⬅️ Back to Scan History').setStyle(Discord.ButtonStyle.Secondary),
+    new Discord.ButtonBuilder().setCustomId(`mod_scan_history:${primary.id}:${origin}`).setLabel('⬅️ Back to Scan History').setStyle(Discord.ButtonStyle.Secondary),
   ];
   return { correlation, embed, components: [new Discord.ActionRowBuilder().addComponents(...buttons)] };
 }
@@ -432,16 +433,16 @@ async function runMemberScan(i, targetId, { record = true } = {}) {
   });
   return safeUpdate(i, { content: null, embeds: [report.embed], components: report.components });
 }
-async function showMemberScanHistory(i, targetId) {
+async function showMemberScanHistory(i, targetId, origin = 'scan') {
   const allowed = await ensureScanCapability(i, 'scan_history', '❌ You do not have permission to view member scan history.');
   if (!allowed) return true;
   const target = await fetchTarget(i.guild, targetId);
   if (!target) return safeReply(i, { content: '❌ Could not find that member in this server.', flags: 64 });
-  const payload = buildScanHistoryPayload(i, target);
+  const payload = buildScanHistoryPayload(i, target, origin);
   recordModerationSystemEvent({ interaction: i, event: 'moderation.member_scan.history_viewed', action: 'member_scan_history', targetId: target.id });
   return safeUpdate(i, { content: null, embeds: [payload.embed], components: payload.components });
 }
-async function showScanDeleteConfirmation(i, targetId, auditId) {
+async function showScanDeleteConfirmation(i, targetId, auditId, origin = 'scan') {
   const allowed = await ensureScanCapability(i, 'scan_notes', '❌ You do not have permission to delete intelligence scan snapshots.', 'add_case_note');
   if (!allowed) return true;
   const row = db.prepare("SELECT audit_id, after_value, metadata FROM case_audit WHERE guild_id = ? AND audit_id = ? AND event = 'moderation.member_scan.completed' LIMIT 1").get(String(i.guild.id), String(auditId));
@@ -449,35 +450,35 @@ async function showScanDeleteConfirmation(i, targetId, auditId) {
   const after = parseJson(row.after_value, {});
   const label = after.scanId || row.audit_id;
   const components = [new Discord.ActionRowBuilder().addComponents(
-    new Discord.ButtonBuilder().setCustomId(`mod_scan_delete_confirm:${targetId}:${row.audit_id}`).setLabel('Delete Scan').setEmoji('🗑️').setStyle(Discord.ButtonStyle.Danger),
-    new Discord.ButtonBuilder().setCustomId(`mod_scan_history:${targetId}`).setLabel('Cancel').setStyle(Discord.ButtonStyle.Secondary),
+    new Discord.ButtonBuilder().setCustomId(`mod_scan_delete_confirm:${targetId}:${row.audit_id}:${origin}`).setLabel('Delete Scan').setEmoji('🗑️').setStyle(Discord.ButtonStyle.Danger),
+    new Discord.ButtonBuilder().setCustomId(`mod_scan_history:${targetId}:${origin}`).setLabel('Cancel').setStyle(Discord.ButtonStyle.Secondary),
   )];
   return safeUpdate(i, { content: `⚠️ Delete scan snapshot \`${String(label).slice(0, 80)}\`? This removes only the stored scan snapshot, not cases, warnings, evidence, notes, watchlist records or other audit history.`, embeds: [], components });
 }
 
-async function deleteScanSnapshot(i, targetId, auditId) {
+async function deleteScanSnapshot(i, targetId, auditId, origin = 'scan') {
   const allowed = await ensureScanCapability(i, 'scan_notes', '❌ You do not have permission to delete intelligence scan snapshots.', 'add_case_note');
   if (!allowed) return true;
   const row = db.prepare("SELECT audit_id, metadata FROM case_audit WHERE guild_id = ? AND audit_id = ? AND event = 'moderation.member_scan.completed' LIMIT 1").get(String(i.guild.id), String(auditId));
   if (!row || String(parseJson(row.metadata, {}).targetId || '') !== String(targetId)) return safeUpdate(i, { content: '❌ That scan snapshot no longer exists.', embeds: [], components: [] });
   db.prepare("DELETE FROM case_audit WHERE guild_id = ? AND audit_id = ? AND event = 'moderation.member_scan.completed'").run(String(i.guild.id), String(auditId));
   recordModerationSystemEvent({ interaction: i, event: 'moderation.member_scan.snapshot_deleted', action: 'member_scan_history_delete', targetId, metadata: { deletedAuditId: String(auditId) } });
-  return showMemberScanHistory(i, targetId);
+  return showMemberScanHistory(i, targetId, origin);
 }
 
-async function showClearScanHistoryConfirmation(i, targetId) {
+async function showClearScanHistoryConfirmation(i, targetId, origin = 'scan') {
   const allowed = await ensureScanCapability(i, 'scan_notes', '❌ You do not have permission to clear intelligence scan history.', 'add_case_note');
   if (!allowed) return true;
   const count = scanAuditRows(i.guild.id, targetId, 100).length;
-  if (!count) return showMemberScanHistory(i, targetId);
+  if (!count) return showMemberScanHistory(i, targetId, origin);
   const components = [new Discord.ActionRowBuilder().addComponents(
-    new Discord.ButtonBuilder().setCustomId(`mod_scan_clear_history_confirm:${targetId}`).setLabel('Clear All Scan History').setEmoji('🧹').setStyle(Discord.ButtonStyle.Danger),
-    new Discord.ButtonBuilder().setCustomId(`mod_scan_history:${targetId}`).setLabel('Cancel').setStyle(Discord.ButtonStyle.Secondary),
+    new Discord.ButtonBuilder().setCustomId(`mod_scan_clear_history_confirm:${targetId}:${origin}`).setLabel('Clear All Scan History').setEmoji('🧹').setStyle(Discord.ButtonStyle.Danger),
+    new Discord.ButtonBuilder().setCustomId(`mod_scan_history:${targetId}:${origin}`).setLabel('Cancel').setStyle(Discord.ButtonStyle.Secondary),
   )];
   return safeUpdate(i, { content: `⚠️ Clear all **${count}** stored Member Intelligence scan snapshot(s) for <@${targetId}>? Cases, warnings, evidence, notes, watchlist records and other moderation audit events will be retained.`, embeds: [], components });
 }
 
-async function clearScanHistory(i, targetId) {
+async function clearScanHistory(i, targetId, origin = 'scan') {
   const allowed = await ensureScanCapability(i, 'scan_notes', '❌ You do not have permission to clear intelligence scan history.', 'add_case_note');
   if (!allowed) return true;
   const rows = db.prepare("SELECT audit_id, metadata FROM case_audit WHERE guild_id = ? AND event = 'moderation.member_scan.completed'").all(String(i.guild.id));
@@ -486,25 +487,27 @@ async function clearScanHistory(i, targetId) {
   const tx = db.transaction((auditIds) => { for (const auditId of auditIds) remove.run(String(i.guild.id), auditId); });
   tx(ids);
   recordModerationSystemEvent({ interaction: i, event: 'moderation.member_scan.history_cleared', action: 'member_scan_history_clear', targetId, metadata: { deletedSnapshots: ids.length } });
-  return showMemberScanHistory(i, targetId);
+  return showMemberScanHistory(i, targetId, origin);
 }
 
 async function handleMemberScanStringSelect(i) {
   const id = String(i.customId || '');
   if (!id.startsWith('mod_scan_delete_select:')) return false;
-  const targetId = id.split(':')[1];
+  const parts = id.split(':');
+  const targetId = parts[1];
+  const origin = parts[2] || 'scan';
   const auditId = i.values?.[0];
   if (!targetId || !auditId) return safeUpdate(i, { content: '❌ Select a scan snapshot to delete.', embeds: [], components: [] });
-  return showScanDeleteConfirmation(i, targetId, auditId);
+  return showScanDeleteConfirmation(i, targetId, auditId, origin);
 }
 
-async function runMemberComparison(i, primaryId, secondaryId) {
+async function runMemberComparison(i, primaryId, secondaryId, origin = 'scan') {
   const allowed = await ensureScanCapability(i, 'scan_compare', '❌ You do not have permission to compare member intelligence.');
   if (!allowed) return true;
   if (!primaryId || !secondaryId || String(primaryId) === String(secondaryId)) return safeReply(i, { content: '❌ Select a different member to compare against.', flags: 64 });
   const [primary, secondary] = await Promise.all([fetchTarget(i.guild, primaryId), fetchTarget(i.guild, secondaryId)]);
   if (!primary || !secondary) return safeReply(i, { content: '❌ One of those members could not be found in this server.', flags: 64 });
-  const payload = buildComparisonPayload(i, primary, secondary);
+  const payload = buildComparisonPayload(i, primary, secondary, origin);
   recordModerationSystemEvent({ interaction: i, event: 'moderation.member_scan.compared', action: 'member_compare', targetId: primary.id, after: { comparedUserId: secondary.id, score: payload.correlation.score, signals: payload.correlation.signals } });
   return safeUpdate(i, { content: null, embeds: [payload.embed], components: payload.components });
 }
@@ -529,6 +532,29 @@ async function showPersistentLinkEvidence(i, targetId) {
   const components = canScanCapability(i, 'scan_run') ? [new Discord.ActionRowBuilder().addComponents(new Discord.ButtonBuilder().setCustomId(`mod_scan_view:${target.id}`).setLabel('Back to Scan').setEmoji('🔎').setStyle(Discord.ButtonStyle.Primary))] : [];
   return safeUpdate(i, { content: null, embeds: [embed], components });
 }
+async function showInvestigationWatch(i, targetId) {
+  const allowed = await ensureScanCapability(i, 'scan_watch', '❌ You do not have permission to view investigation watch state.');
+  if (!allowed) return true;
+  const target = await fetchTarget(i.guild, targetId);
+  if (!target) return safeReply(i, { content: '❌ Could not find that member in this server.', flags: 64 });
+  const state = getInvestigationState(i.guild.id, target.id);
+  const embed = new Discord.EmbedBuilder()
+    .setColor(state.watched ? 0xF0A202 : 0x5865F2)
+    .setTitle(`👁️ Investigation Watch • ${target.user.tag}`)
+    .setDescription([
+      `**Status:** ${state.watched ? '🟠 ON' : '⚪ OFF'}`,
+      state.watch?.reason ? `**Reason:** ${state.watch.reason}` : '**Reason:** No active investigation watch reason.',
+      state.watch?.at ? `**Updated:** ${scanTimestamp(new Date(state.watch.at).getTime())}` : '**Updated:** Never',
+      '',
+      'Investigation Watch is a management review flag. It is separate from the persistent Goliath Watchlist state.',
+    ].join('\n'))
+    .setTimestamp();
+  const buttons = [
+    new Discord.ButtonBuilder().setCustomId(`mod_scan_watch_toggle:${target.id}`).setLabel(state.watched ? 'Remove Investigation Watch' : 'Enable Investigation Watch').setEmoji('👁️').setStyle(state.watched ? Discord.ButtonStyle.Danger : Discord.ButtonStyle.Primary),
+    new Discord.ButtonBuilder().setCustomId(`mod_scan_view:${target.id}`).setLabel('⬅️ Back to Scan').setStyle(Discord.ButtonStyle.Secondary),
+  ];
+  return safeUpdate(i, { content: null, embeds: [embed], components: [new Discord.ActionRowBuilder().addComponents(...buttons)] });
+}
 async function toggleMemberWatch(i, targetId) {
   const allowed = await ensureScanCapability(i, 'scan_watch', '❌ You do not have permission to change investigation watch state.');
   if (!allowed) return true;
@@ -536,9 +562,8 @@ async function toggleMemberWatch(i, targetId) {
   if (!target) return safeReply(i, { content: '❌ Could not find that member in this server.', flags: 64 });
   const state = getInvestigationState(i.guild.id, target.id);
   const enabled = !state.watched;
-  recordModerationSystemEvent({ interaction: i, event: 'moderation.member_scan.watch_updated', action: 'member_watch', targetId: target.id, before: { enabled: state.watched }, after: { enabled, reason: enabled ? 'Manual staff investigation watch.' : 'Removed from manual investigation watch.' } });
-  if (canScanCapability(i, 'scan_run')) return runMemberScan(i, target.id, { record: false });
-  return safeReply(i, { content: `✅ Investigation watch ${enabled ? 'enabled' : 'removed'} for ${target.user}.`, flags: 64 });
+  recordModerationSystemEvent({ interaction: i, event: 'moderation.member_scan.watch_updated', action: 'member_watch', targetId: target.id, before: { enabled: state.watched }, after: { enabled, reason: enabled ? 'Manual management investigation watch.' : 'Removed from manual management investigation watch.' } });
+  return showInvestigationWatch(i, target.id);
 }
 async function submitInvestigationNote(i) {
   const id = String(i.customId || '');
@@ -561,10 +586,12 @@ async function handleMemberScanSelect(i) {
     return runMemberScan(i, targetId);
   }
   if (String(i.customId || '').startsWith('mod_scan_history_compare_select:')) {
-    const primaryId = String(i.customId).split(':')[1];
+    const parts = String(i.customId).split(':');
+    const primaryId = parts[1];
+    const origin = parts[2] || 'scan';
     const secondaryId = i.values?.[0];
     if (!secondaryId) return safeReply(i, { content: '❌ No comparison member selected.', flags: 64 });
-    return runMemberComparison(i, primaryId, secondaryId);
+    return runMemberComparison(i, primaryId, secondaryId, origin);
   }
   return false;
 }
@@ -578,14 +605,15 @@ async function handleMemberScanButton(i) {
   }
   if (id.startsWith('mod_member_scan:')) return runMemberScan(i, id.split(':')[1], { record: true });
   if (id.startsWith('mod_scan_view:')) return runMemberScan(i, id.split(':')[1], { record: false });
-  if (id.startsWith('mod_scan_history:')) return showMemberScanHistory(i, id.split(':')[1]);
-  if (id.startsWith('mod_scan_delete_confirm:')) { const parts = id.split(':'); return deleteScanSnapshot(i, parts[1], parts[2]); }
-  if (id.startsWith('mod_scan_clear_history_confirm:')) return clearScanHistory(i, id.split(':')[1]);
-  if (id.startsWith('mod_scan_clear_history:')) return showClearScanHistoryConfirmation(i, id.split(':')[1]);
+  if (id.startsWith('mod_scan_history:')) { const parts = id.split(':'); return showMemberScanHistory(i, parts[1], parts[2] || 'scan'); }
+  if (id.startsWith('mod_scan_delete_confirm:')) { const parts = id.split(':'); return deleteScanSnapshot(i, parts[1], parts[2], parts[3] || 'scan'); }
+  if (id.startsWith('mod_scan_clear_history_confirm:')) { const parts = id.split(':'); return clearScanHistory(i, parts[1], parts[2] || 'scan'); }
+  if (id.startsWith('mod_scan_clear_history:')) { const parts = id.split(':'); return showClearScanHistoryConfirmation(i, parts[1], parts[2] || 'scan'); }
   if (id.startsWith('mod_scan_links:')) return showPersistentLinkEvidence(i, id.split(':')[1]);
   const intelligenceHandled = await memberIntelligence.handleInteraction(i, { ensureCapability: ensureScanCapability, canCapability: canScanCapability });
   if (intelligenceHandled) return true;
-  if (id.startsWith('mod_scan_watch:')) return toggleMemberWatch(i, id.split(':')[1]);
+  if (id.startsWith('mod_scan_watch_toggle:')) return toggleMemberWatch(i, id.split(':')[1]);
+  if (id.startsWith('mod_scan_watch:')) return showInvestigationWatch(i, id.split(':')[1]);
   if (id.startsWith('mod_scan_note:')) {
     const targetId = id.split(':')[1];
     const allowed = await ensureScanCapability(i, 'scan_notes', '❌ You do not have permission to add investigation notes.', 'add_case_note');
@@ -594,11 +622,13 @@ async function handleMemberScanButton(i) {
     return true;
   }
   if (id.startsWith('mod_scan_history_compare:')) {
-    const primaryId = id.split(':')[1];
+    const parts = id.split(':');
+    const primaryId = parts[1];
+    const origin = parts[2] || 'scan';
     const allowed = await ensureScanCapability(i, 'scan_compare', '❌ You do not have permission to compare member intelligence.');
     if (!allowed) return true;
-    const select = new Discord.UserSelectMenuBuilder().setCustomId(`mod_scan_history_compare_select:${primaryId}`).setPlaceholder('🧬 Select another member to compare').setMinValues(1).setMaxValues(1);
-    const back = new Discord.ButtonBuilder().setCustomId(`mod_scan_history:${primaryId}`).setLabel('⬅️ Back to Scan History').setStyle(Discord.ButtonStyle.Secondary);
+    const select = new Discord.UserSelectMenuBuilder().setCustomId(`mod_scan_history_compare_select:${primaryId}:${origin}`).setPlaceholder('🧬 Select another member to compare').setMinValues(1).setMaxValues(1);
+    const back = new Discord.ButtonBuilder().setCustomId(`mod_scan_history:${primaryId}:${origin}`).setLabel('⬅️ Back to Scan History').setStyle(Discord.ButtonStyle.Secondary);
     return safeUpdate(i, {
       content: `🧬 **Compare Accounts** — select another server member to compare against <@${primaryId}>.`,
       embeds: [],

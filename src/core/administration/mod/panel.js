@@ -209,7 +209,7 @@ function buildIntelligenceRows(targetId, member, guild) {
   if (!targetId) return [];
   const id = targetId; const primary = [];
   if (canUseModAction(member, guild, 'scan_run')) primary.push(createPrimaryButton(`mod_member_scan:${id}`, 'Full Member Scan', '🔎'));
-  if (canUseModAction(member, guild, 'scan_history')) primary.push(createSecondaryButton(`mod_scan_history:${id}`, 'Scan History', '🕘'));
+  if (canUseModAction(member, guild, 'scan_history')) primary.push(createSecondaryButton(`mod_scan_history:${id}:landing`, 'Scan History', '🕘'));
   return buttonRow(primary) ? [buttonRow(primary)] : [];
 }
 function validateDashboardComponents(components, view) {

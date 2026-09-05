@@ -196,7 +196,7 @@ function resolveActionFromInteraction(action, interaction) {
   if (id.startsWith('mod_scan_history:')) return 'scan_history';
   if (id.startsWith('mod_scan_history_compare:') || id.startsWith('mod_scan_history_compare_select:')) return 'scan_compare';
   if (id.startsWith('mod_scan_note:') || id.startsWith('mod_scan_note_submit:')) return 'scan_notes';
-  if (id.startsWith('mod_scan_watch:')) return 'scan_watch';
+  if (id.startsWith('mod_scan_watch:') || id.startsWith('mod_scan_watch_toggle:')) return 'scan_watch';
   if (id.startsWith('mod_scan_links:')) return 'scan_links';
   return action;
 }
