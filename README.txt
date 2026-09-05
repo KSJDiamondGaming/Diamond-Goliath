@@ -27,6 +27,7 @@ Animated uploads are preserved when already Discord-ready and optimised without 
 If an animation still cannot fit Discord's size limit, management can explicitly retry it as a static first-frame fallback; Goliath never flattens animation silently
 Universal shortcode, embed and component resolution keeps static/animated handling central across Goliath modules
 Animated emoji and GIF management filters, metadata, canonical CDN URLs and animation-aware duplicate detection
+Emoji.gg catalogue browsing uses SSRF-safe pinned DNS resolution with Node all-mode lookup compatibility
 
 
 
