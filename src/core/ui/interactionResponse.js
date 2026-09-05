@@ -28,7 +28,8 @@ async function safeUpdate(interaction, payload = {}) {
     if (
       interaction.isButton?.() ||
       interaction.isStringSelectMenu?.() ||
-      interaction.isUserSelectMenu?.()
+      interaction.isUserSelectMenu?.() ||
+      (interaction.isModalSubmit?.() && interaction.message && typeof interaction.update === 'function')
     ) {
       return await interaction.update(payload);
     }
