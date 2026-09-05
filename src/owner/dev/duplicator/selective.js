@@ -559,20 +559,30 @@ async function prepareDeleteScan(interaction, session) {
   const guild = interaction.client.guilds.cache.get(session.destinationGuildId);
   if (!guild) throw new Error('Bulk Delete is DEV-local only. Select a destination connected to the DEV bot.');
   await guild.channels.fetch().catch(() => null);
-  const categories = [...guild.channels.cache.values()].filter((c) => c.type === ChannelType.GuildCategory).sort((a, b) => a.position - b.position);
+
+  const all = [...guild.channels.cache.values()];
+  const byPosition = (a, b) => (a.rawPosition ?? a.position ?? 0) - (b.rawPosition ?? b.position ?? 0);
   const output = [];
-  const seen = new Set();
-  for (const category of categories) {
+
+  // Mirror Discord: uncategorised channels first, in their live sidebar order.
+  for (const channel of all.filter((c) => c.type !== ChannelType.GuildCategory && !c.parentId).sort(byPosition)) {
+    output.push({ id: channel.id, name: channel.name, type: channel.type, parentId: null, itemKind: 'channel' });
+  }
+
+  // Then each category followed immediately by its children, all using live Discord positions.
+  for (const category of all.filter((c) => c.type === ChannelType.GuildCategory).sort(byPosition)) {
     output.push({ id: category.id, name: category.name, type: category.type, parentId: null, itemKind: 'category' });
-    seen.add(category.id);
-    for (const child of [...guild.channels.cache.values()].filter((c) => c.parentId === category.id).sort((a, b) => a.position - b.position)) {
+    for (const child of all.filter((c) => c.parentId === category.id).sort(byPosition)) {
       output.push({ id: child.id, name: child.name, type: child.type, parentId: category.id, itemKind: 'channel' });
-      seen.add(child.id);
     }
   }
-  for (const channel of [...guild.channels.cache.values()].filter((c) => !seen.has(c.id) && c.type !== ChannelType.GuildCategory).sort((a, b) => a.position - b.position)) {
+
+  // Keep any orphan/nonstandard channel visible instead of silently dropping it.
+  const included = new Set(output.map((item) => item.id));
+  for (const channel of all.filter((c) => c.type !== ChannelType.GuildCategory && !included.has(c.id)).sort(byPosition)) {
     output.push({ id: channel.id, name: channel.name, type: channel.type, parentId: channel.parentId || null, itemKind: 'channel' });
   }
+
   session.deleteItems = output;
   session.deleteSelected = new Set();
   session.deletePage = 0;
