@@ -19,6 +19,7 @@ const {
 const guildManager = require('../../core/guild/guildManager');
 const verificationManager = require('./verificationManager');
 const verificationStore = require('./verificationStore');
+const emojiPayload = require('../utilityStudio/emojis/emojiPayload');
 
 const NAV_PAGES = ['overview', 'workflow', 'roles', 'requirements', 'messages', 'panel'];
 const PAGES = [
@@ -1325,11 +1326,16 @@ async function handleVerificationAdminInteraction(interaction) {
 
     if (customId === 'admin:verification:preview') {
       const preview = { panelId: 'preview', ...panelTemplate(interaction.guild.id) };
-      await interaction.reply({
-        embeds: [verificationManager.buildVerificationEmbed(preview, interaction.guild)],
-        components: verificationManager.buildVerificationRows(preview, interaction.guild),
-        flags: 64,
-      });
+      const previewPayload = await emojiPayload.resolveMessagePayload(
+        interaction.guild.client,
+        interaction.guild.id,
+        {
+          embeds: [verificationManager.buildVerificationEmbed(preview, interaction.guild)],
+          components: verificationManager.buildVerificationRows(preview, interaction.guild),
+        },
+        'verification',
+      );
+      await interaction.reply({ ...previewPayload, flags: 64 });
       return true;
     }
 

@@ -4,7 +4,7 @@ const express = require('express');
 const { PermissionFlagsBits } = require('discord.js');
 const guildManager = require('../../../../core/guild/guildManager');
 const security = require('../../../../core/security/protection/core');
-const emojis = require('../../../../modules/utilityStudio/emojis/emojis');
+const emojiPayload = require('../../../../modules/utilityStudio/emojis/emojiPayload');
 const roleSelector = require('../../../../modules/roleStudio/roleSelector/roleSelector');
 const healthService = require('../../../../modules/roleStudio/roleSelector/roleSelectorHealth');
 const panel = require('../../../../modules/roleStudio/roleSelector/roleSelectorPanel');
@@ -28,36 +28,7 @@ function success(res, payload = {}) { return res.json({ success: true, ...payloa
 function failure(res, error, status = 400) { return res.status(status).json({ success: false, error: error.message || 'Role Selector request failed.' }); }
 
 async function resolveDashboardMemberPayload(g, payload = {}) {
-  const allowed = await emojis.allowedGuildEmojis(g.client, g.id);
-  const components = (payload.components || []).map((entry) => {
-    const data = typeof entry?.toJSON === 'function' ? entry.toJSON() : entry;
-    if (!data || typeof data !== 'object' || !Array.isArray(data.components)) return entry;
-    return {
-      ...data,
-      components: data.components.map((component) => {
-        if (!component || component.type !== 3 || !Array.isArray(component.options)) return component;
-        return {
-          ...component,
-          options: component.options.map((option) => {
-            const rawName = String(option?.emoji?.name || '');
-            const shortcode = rawName.match(/^:([A-Za-z0-9_]{2,32}):$/);
-            if (!shortcode) return option;
-            const emoji = allowed.get(shortcode[1].toLowerCase());
-            if (emoji) return { ...option, emoji: emojis.componentPayload(emoji) };
-            const next = { ...option };
-            delete next.emoji;
-            return next;
-          }),
-        };
-      }),
-    };
-  });
-  return {
-    ...payload,
-    content: payload.content == null ? payload.content : await emojis.resolveText(g.client, g.id, payload.content),
-    embeds: await emojis.resolveEmbeds(g.client, g.id, payload.embeds || []),
-    components,
-  };
+  return emojiPayload.resolveMessagePayload(g.client, g.id, payload, 'roleSelector');
 }
 
 async function requireRoleSelectorGuildAccess(req, res, next) {

@@ -16,7 +16,7 @@ const {
 const guildManager = require('../../../core/guild/guildManager');
 const security = require('../../../core/security/protection/core');
 const { buildRolePicker, parseRolePickerId } = require('../../../core/ui/panelNavigation');
-const emojis = require('../../utilityStudio/emojis/emojis');
+const emojiPayload = require('../../utilityStudio/emojis/emojiPayload');
 const roleSelector = require('./roleSelector');
 const healthService = require('./roleSelectorHealth');
 const { withDeploymentLock } = require('./roleSelectorLocks');
@@ -64,61 +64,8 @@ function rootNav() {
 function groups(guildId) { return roleSelector.listGroups(guildId); }
 function customGroups(guildId) { return groups(guildId).filter((g) => !g.builtIn); }
 
-function safeSelectEmoji(value, allowed) {
-  if (!value) return undefined;
-  if (typeof value === 'object' && value.id && /^\d{15,25}$/.test(String(value.id))) {
-    return { id: String(value.id), name: String(value.name || 'emoji').slice(0, 32), animated: Boolean(value.animated) };
-  }
-
-  const raw = String(typeof value === 'object' ? value.name || '' : value).trim();
-  if (!raw) return undefined;
-
-  const named = raw.match(/^:([A-Za-z0-9_]{2,32}):$/);
-  if (named) {
-    const found = allowed?.get(named[1].toLowerCase());
-    return found ? emojis.componentPayload(found) : undefined;
-  }
-
-  const mention = raw.match(/^<(a?):([A-Za-z0-9_]{2,32}):(\d{15,25})>$/);
-  if (mention) return { id: mention[3], name: mention[2], animated: mention[1] === 'a' };
-
-  const isFlag = /^[\u{1F1E6}-\u{1F1FF}]{2}$/u.test(raw);
-  const isKeycap = /^[0-9#*]\uFE0F?\u20E3$/u.test(raw);
-  const isUnicodeEmoji = /\p{Extended_Pictographic}/u.test(raw) && !/[\p{L}\p{N}\s]/u.test(raw);
-  return isFlag || isKeycap || isUnicodeEmoji ? { name: raw } : undefined;
-}
-
-async function resolveComponents(guild, components = []) {
-  const allowed = await emojis.allowedGuildEmojis(guild.client, guild.id);
-  return components.map((entry) => {
-    const data = typeof entry?.toJSON === 'function' ? entry.toJSON() : entry;
-    if (!data?.components) return entry;
-    return {
-      ...data,
-      components: data.components.map((component) => {
-        if (component.type !== 3 || !Array.isArray(component.options)) return component;
-        return {
-          ...component,
-          options: component.options.map((option) => {
-            const next = { ...option };
-            const resolved = safeSelectEmoji(option?.emoji, allowed);
-            if (resolved) next.emoji = resolved;
-            else delete next.emoji;
-            return next;
-          }),
-        };
-      }),
-    };
-  });
-}
-
 async function resolvePayload(guild, payload) {
-  return {
-    ...payload,
-    content: payload.content == null ? payload.content : await emojis.resolveText(guild.client, guild.id, payload.content),
-    embeds: await emojis.resolveEmbeds(guild.client, guild.id, payload.embeds || []),
-    components: await resolveComponents(guild, payload.components || []),
-  };
+  return emojiPayload.resolveMessagePayload(guild.client, guild.id, payload, 'roleSelector');
 }
 
 function groupMenu(guildId, selected = null, menuId = 'admin:roleSelector:groupSelect', multi = false, selectedIds = []) {
