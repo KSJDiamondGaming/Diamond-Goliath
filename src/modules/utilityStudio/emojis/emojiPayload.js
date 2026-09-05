@@ -3,6 +3,7 @@
 const emojis = require('./emojis');
 
 const SHORTCODE_PATTERN = /^:([A-Za-z0-9_-]{2,32}):$/;
+const NAME_PATTERN = /^[A-Za-z0-9_-]{2,32}$/;
 const MENTION_PATTERN = /^<(a?):([A-Za-z0-9_]{2,32}):(\d{15,25})>$/;
 const ID_PATTERN = /^\d{15,25}$/;
 
@@ -24,7 +25,15 @@ function componentReference(value) {
   if (value.id && ID_PATTERN.test(String(value.id))) return String(value.id);
   const name = String(value.name || '').trim();
   const shortcode = name.match(SHORTCODE_PATTERN);
-  return shortcode ? shortcode[1] : null;
+  if (shortcode) return shortcode[1];
+
+  // discord.js normalises a string passed to ButtonBuilder#setEmoji before this
+  // resolver sees the component. A configured `:name:` can therefore arrive as
+  // a partial emoji object containing only { name: 'name' }. Treat an ASCII
+  // Discord emoji name without an id as a Goliath reference. Unicode emoji do
+  // not match NAME_PATTERN and continue through unchanged.
+  if (!value.id && NAME_PATTERN.test(name)) return name;
+  return null;
 }
 
 async function resolveComponentEmoji(client, guildId, value, context) {
