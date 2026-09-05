@@ -22,6 +22,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Repair patch generator
+        run: node scripts/repair-emoji-gif-mirror-generator-once.js
       - name: Apply mirrored GIF panel patch
         run: node scripts/patch-emoji-gif-mirror-once.js
       - name: Validate changed source
@@ -32,6 +34,7 @@ jobs:
         run: |
           git rm .github/workflows/patch-emoji-gif-mirror-once.yml
           git rm scripts/patch-emoji-gif-mirror-once.js
+          git rm scripts/repair-emoji-gif-mirror-generator-once.js
       - name: Run doctor
         run: npm run doctor
       - name: Build dashboard
@@ -46,4 +49,4 @@ jobs:
           git rebase origin/dev
           git push origin HEAD:dev
 
-# trigger
+# retry after generator syntax repair
