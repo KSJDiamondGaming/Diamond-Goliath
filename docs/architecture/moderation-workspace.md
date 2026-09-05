@@ -16,6 +16,14 @@ When a member is selected, the main Moderation panel carries the member context 
 
 Legacy `member` and `overview` moderation routes normalize to the canonical `actions` workspace for compatibility. There is no separate Member navigation button.
 
+## Member appeals
+
+`/mod` is management-only and does not expose a member-facing appeal option. Members who are still in the guild submit and review appeals through `/user` → Account → Appeals.
+
+The User Panel appeal view is scoped to the signed-in Discord user and only exposes that user's moderation cases and appeal state. Appeal submission reuses the moderation case eligibility rules and feeds the same management Appeal Queue used by the Moderation Hub.
+
+Banned or otherwise external users are not routed through `/mod`. External appeal entry points are handled separately through Goliath DM and web flows while linking back to the same Discord user ID, moderation case and management Appeal Queue.
+
 ## Member Intelligence network
 
 Member Intelligence is evidence-led and only uses information Goliath can legitimately observe or has explicitly verified. It must never claim Discord-wide server history, private messages, IP/device identifiers, Discord internal enforcement history, or ownership of suspected alternate accounts.
