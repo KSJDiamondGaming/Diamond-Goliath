@@ -302,17 +302,14 @@ function serverToolsPayload(interaction, explicitGuildId = null) {
     ].filter(Boolean).join('\n'))
     .setFooter({ text: 'Owner only • Server tooling retains owner and safety checks' });
 
-  const duplicatorTools = new ActionRowBuilder().addComponents(
+  const primaryTools = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId(contextualOwnerId('server-copy', guildId)).setLabel('Copy Structure').setEmoji('📋').setStyle(ButtonStyle.Primary).setDisabled(!guildContextAvailable),
-    new ButtonBuilder().setCustomId(contextualOwnerId('server-analyse', guildId)).setLabel('Analyse Servers').setEmoji('🔎').setStyle(ButtonStyle.Secondary).setDisabled(!guildContextAvailable)
+    new ButtonBuilder().setCustomId(contextualOwnerId('server-analyse', guildId)).setLabel('Analyse Servers').setEmoji('🔎').setStyle(ButtonStyle.Secondary).setDisabled(!guildContextAvailable),
+    new ButtonBuilder().setCustomId(contextualOwnerId('server-export', guildId)).setLabel('Export Template').setEmoji('📤').setStyle(ButtonStyle.Secondary).setDisabled(!guildContextAvailable)
   );
 
-  const templateTools = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(contextualOwnerId('server-export', guildId)).setLabel('Export Template').setEmoji('📤').setStyle(ButtonStyle.Secondary).setDisabled(!guildContextAvailable),
-    new ButtonBuilder().setCustomId(contextualOwnerId('server-build', guildId)).setLabel('Build Template').setEmoji('🏗️').setStyle(ButtonStyle.Secondary).setDisabled(!guildContextAvailable)
-  );
-
-  const plannedTools = new ActionRowBuilder().addComponents(
+  const secondaryTools = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(contextualOwnerId('server-build', guildId)).setLabel('Build Template').setEmoji('🏗️').setStyle(ButtonStyle.Secondary).setDisabled(!guildContextAvailable),
     new ButtonBuilder().setCustomId(contextualOwnerId('permissions-studio', guildId)).setLabel('Permissions Studio • Coming Next').setEmoji('🛡️').setStyle(ButtonStyle.Secondary).setDisabled(true)
   );
 
@@ -320,7 +317,7 @@ function serverToolsPayload(interaction, explicitGuildId = null) {
     new ButtonBuilder().setCustomId(contextualOwnerId('home', guildId)).setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary)
   );
 
-  return { embeds: [embed], components: [duplicatorTools, templateTools, plannedTools, navigation] };
+  return { embeds: [embed], components: [primaryTools, secondaryTools, navigation] };
 }
 
 function serverContextRequiredPayload() {
