@@ -1,0 +1,202 @@
+from pathlib import Path
+
+p = Path('src/core/administration/mod/intelligence.js')
+s = p.read_text()
+
+schema_anchor = "    CREATE TABLE IF NOT EXISTS member_intelligence_links (\n      id INTEGER PRIMARY KEY AUTOINCREMENT,\n      user_id TEXT NOT NULL,\n      linked_user_id TEXT NOT NULL,\n      provider TEXT NOT NULL,\n      verification_ref TEXT,\n      verified_by TEXT,\n      verified_at TEXT NOT NULL,\n      metadata TEXT,\n      UNIQUE(user_id, linked_user_id, provider)\n    );\n"
+schema_add = schema_anchor + "    CREATE TABLE IF NOT EXISTS member_intelligence_reputation (\n      id INTEGER PRIMARY KEY AUTOINCREMENT,\n      user_id TEXT NOT NULL,\n      source_type TEXT NOT NULL,\n      event_type TEXT NOT NULL,\n      source_name TEXT,\n      source_guild_id TEXT,\n      reason TEXT,\n      evidence_ref TEXT,\n      confidence TEXT NOT NULL DEFAULT 'reported',\n      actor_id TEXT,\n      created_at TEXT NOT NULL,\n      reversed_at TEXT,\n      metadata TEXT\n    );\n"
+if 'member_intelligence_reputation' not in s:
+    if schema_anchor not in s: raise SystemExit('schema anchor missing')
+    s = s.replace(schema_anchor, schema_add, 1)
+    s = s.replace("    CREATE INDEX IF NOT EXISTS idx_member_intel_links_user ON member_intelligence_links(user_id, verified_at DESC);", "    CREATE INDEX IF NOT EXISTS idx_member_intel_links_user ON member_intelligence_links(user_id, verified_at DESC);\n    CREATE INDEX IF NOT EXISTS idx_member_intel_reputation_user ON member_intelligence_reputation(user_id, created_at DESC);\n    CREATE INDEX IF NOT EXISTS idx_member_intel_reputation_source ON member_intelligence_reputation(source_type, event_type, created_at DESC);", 1)
+
+link_anchor = "function addConfirmedLink({ userId, linkedUserId, provider, verificationRef = null, verifiedBy = null, metadata = {} }) {\n  if (!userId || !linkedUserId || !provider || String(userId) === String(linkedUserId)) throw new Error('Invalid confirmed-link record.');\n  db.prepare(`INSERT INTO member_intelligence_links (user_id,linked_user_id,provider,verification_ref,verified_by,verified_at,metadata) VALUES (?,?,?,?,?,?,?)\n    ON CONFLICT(user_id,linked_user_id,provider) DO UPDATE SET verification_ref=excluded.verification_ref,verified_by=excluded.verified_by,verified_at=excluded.verified_at,metadata=excluded.metadata`)\n    .run(String(userId), String(linkedUserId), String(provider).slice(0, 80), verificationRef ? String(verificationRef).slice(0, 200) : null, verifiedBy ? String(verifiedBy) : null, now(), stringify(metadata));\n  return getConfirmedLinks(userId);\n}\n"
+rep_helpers = link_anchor + r'''
+const REPUTATION_SOURCE_TYPES = Object.freeze({
+  verified_external: { label: 'Verified External', confidence: 'verified' },
+  submitted: { label: 'Evidence Submitted', confidence: 'submitted' },
+  unverified: { label: 'Reported / Unverified', confidence: 'reported' },
+});
+const REPUTATION_EVENT_TYPES = new Set(['ban', 'blacklist', 'kick', 'timeout', 'warning', 'report', 'other']);
+function getReputationRecords(userId, limit = 100) {
+  return db.prepare('SELECT * FROM member_intelligence_reputation WHERE user_id = ? ORDER BY id DESC LIMIT ?').all(String(userId), clamp(limit, 1, 250)).map((row) => ({
+    id: Number(row.id), userId: row.user_id, sourceType: row.source_type, eventType: row.event_type,
+    sourceName: row.source_name || null, sourceGuildId: row.source_guild_id || null, reason: row.reason || null,
+    evidenceRef: row.evidence_ref || null, confidence: row.confidence || 'reported', actorId: row.actor_id || null,
+    createdAt: row.created_at, reversedAt: row.reversed_at || null, metadata: json(row.metadata, {}),
+  }));
+}
+function summarizeReputation(records = []) {
+  const active = records.filter((record) => !record.reversedAt);
+  const count = (sourceType) => active.filter((record) => record.sourceType === sourceType).length;
+  return {
+    total: active.length,
+    verifiedExternal: count('verified_external'), submitted: count('submitted'), unverified: count('unverified'),
+    verifiedExternalBans: active.filter((record) => record.sourceType === 'verified_external' && record.eventType === 'ban').length,
+    verifiedExternalBlacklists: active.filter((record) => record.sourceType === 'verified_external' && record.eventType === 'blacklist').length,
+  };
+}
+function addReputationRecord({ userId, sourceType, eventType, sourceName = null, sourceGuildId = null, reason, evidenceRef = null, actorId = null, metadata = {} }) {
+  const normalizedSource = REPUTATION_SOURCE_TYPES[sourceType] ? sourceType : 'unverified';
+  const normalizedEvent = REPUTATION_EVENT_TYPES.has(String(eventType || '').toLowerCase()) ? String(eventType).toLowerCase() : 'other';
+  const normalizedEvidence = String(evidenceRef || '').trim().slice(0, 500) || null;
+  if (normalizedSource === 'verified_external' && !normalizedEvidence) throw new Error('Verified external intelligence requires a traceable evidence/reference value.');
+  const normalizedReason = String(reason || '').trim().slice(0, 1500);
+  if (!normalizedReason) throw new Error('A reason or evidence summary is required.');
+  const cfg = REPUTATION_SOURCE_TYPES[normalizedSource];
+  const result = db.prepare('INSERT INTO member_intelligence_reputation (user_id,source_type,event_type,source_name,source_guild_id,reason,evidence_ref,confidence,actor_id,created_at,reversed_at,metadata) VALUES (?,?,?,?,?,?,?,?,?,?,NULL,?)')
+    .run(String(userId), normalizedSource, normalizedEvent, String(sourceName || '').trim().slice(0, 120) || null, sourceGuildId ? String(sourceGuildId) : null, normalizedReason, normalizedEvidence, cfg.confidence, actorId ? String(actorId) : null, now(), stringify(metadata));
+  return getReputationRecords(userId, 250).find((record) => record.id === Number(result.lastInsertRowid)) || null;
+}
+'''
+if 'function getReputationRecords(' not in s:
+    if link_anchor not in s: raise SystemExit('link helper anchor missing')
+    s = s.replace(link_anchor, rep_helpers, 1)
+
+old_risk = "function calculateRisk({ localSummary = {}, network = {}, watch = {}, behavior = {} }) {"
+if old_risk in s:
+    s = s.replace(old_risk, "function calculateRisk({ localSummary = {}, network = {}, watch = {}, behavior = {}, reputation = {} }) {", 1)
+    risk_anchor = "  add(Math.min(20, Number(network.banCount || 0) * 10), `${network.banCount || 0} ban(s) in other Goliath guilds`);\n"
+    if risk_anchor not in s: raise SystemExit('risk anchor missing')
+    s = s.replace(risk_anchor, risk_anchor + "  add(Math.min(20, Number(reputation.verifiedExternalBans || 0) * 8), `${reputation.verifiedExternalBans || 0} verified external ban record(s)`);\n  add(Math.min(20, Number(reputation.verifiedExternalBlacklists || 0) * 10), `${reputation.verifiedExternalBlacklists || 0} verified external blacklist record(s)`);\n", 1)
+
+s = s.replace("  const confirmedLinks = getConfirmedLinks(userId);\n  let auditReport = null;", "  const confirmedLinks = getConfirmedLinks(userId);\n  const reputationRecords = getReputationRecords(userId);\n  const reputation = summarizeReputation(reputationRecords);\n  let auditReport = null;", 1)
+s = s.replace("  const risk = calculateRisk({ localSummary, network, watch, behavior });\n  return { userId, guildId, watch, guildHistory, identity, behavior, network, confirmedLinks, auditReport, risk };", "  const risk = calculateRisk({ localSummary, network, watch, behavior, reputation });\n  return { userId, guildId, watch, guildHistory, identity, behavior, network, confirmedLinks, reputationRecords, reputation, auditReport, risk };", 1)
+
+old_summary = r'''function contextSummary(context) {
+  const history = context.guildHistory || [];
+  const current = history.filter((item) => item.present).length;
+  const former = history.filter((item) => item.present === false).length;
+  const network = context.network || {};
+  return [
+    `Guilds observed: **${history.length}** • Current: **${current}** • Former/last-seen: **${former}**`,
+    `Cross-guild cases: **${network.caseCount || 0}** • Bans: **${network.banCount || 0}** • Timeouts: **${network.timeoutCount || 0}**`,
+    `Watchlist: ${watchLine(context.watch)}`,
+  ].join('\n');
+}'''
+new_summary = r'''function contextSummary(context) {
+  const history = context.guildHistory || [];
+  const current = history.filter((item) => item.present).length;
+  const former = history.filter((item) => item.present === false).length;
+  const network = context.network || {};
+  const reputation = context.reputation || {};
+  return [
+    `Observed Guilds: **${history.length}** • Current: **${current}** • Former: **${former}**`,
+    `Goliath Cases: **${network.caseCount || 0}** • Bans: **${network.banCount || 0}** • Timeouts: **${network.timeoutCount || 0}**`,
+    `External Verified: **${reputation.verifiedExternal || 0}** • Submitted: **${reputation.submitted || 0}** • Reports: **${reputation.unverified || 0}**`,
+    `Goliath Watchlist: ${watchLine(context.watch)}`,
+  ].join('\n');
+}'''
+if old_summary not in s: raise SystemExit('context summary anchor missing')
+s = s.replace(old_summary, new_summary, 1)
+s = s.replace("setOrReplaceField(report.embed, '🌐 Goliath Network', contextSummary(context));", "setOrReplaceField(report.embed, '🌐 Network Reputation', contextSummary(context));", 1)
+s = s.replace(".setLabel('Guild History').setEmoji('🌐')", ".setLabel('Network Reputation').setEmoji('🌐')", 1)
+
+start = s.find('function guildHistoryEmbed(target, context, client) {')
+end = s.find('\nfunction riskEmbed(target, context) {', start)
+if start < 0 or end < 0: raise SystemExit('guild embed block missing')
+new_embed = r'''function guildHistoryEmbed(target, context, client) {
+  const guildRows = (context.guildHistory || []).slice(0, 12).map((item) => {
+    const guild = client?.guilds?.cache?.get?.(item.guildId);
+    const name = guild?.name || context.auditReport?.guilds?.find?.((entry) => String(entry.guildId) === String(item.guildId))?.guildName || `Guild ${item.guildId}`;
+    const status = item.present ? '🟢 Current' : '⚪ Former';
+    const mod = context.network?.rows?.find?.((entry) => String(entry.guildId) === String(item.guildId));
+    return `**${name}** • ${status}\nFirst ${discordTime(item.firstSeenAt)} • Last ${discordTime(item.lastSeenAt)}${mod ? `\nCases **${mod.cases}** • Bans **${mod.bans}** • Timeouts **${mod.timeouts}**` : ''}`;
+  });
+  const externalRows = (context.reputationRecords || []).filter((record) => !record.reversedAt).slice(0, 10).map((record) => {
+    const cfg = REPUTATION_SOURCE_TYPES[record.sourceType] || REPUTATION_SOURCE_TYPES.unverified;
+    const source = record.sourceName || (record.sourceGuildId ? `Guild ${record.sourceGuildId}` : 'External source');
+    const evidence = record.evidenceRef ? ` • Ref: ${record.evidenceRef}` : '';
+    return `**${cfg.label} • ${String(record.eventType || 'other').toUpperCase()}**\n${source} • ${discordTime(record.createdAt)}${evidence}\n${String(record.reason || 'No summary').slice(0, 300)}`;
+  });
+  const rep = context.reputation || {};
+  const sections = [
+    `**Summary**\nObserved guilds **${context.guildHistory?.length || 0}** • Cross-guild cases **${context.network?.caseCount || 0}** • Network bans **${context.network?.banCount || 0}**\nExternal verified **${rep.verifiedExternal || 0}** • Submitted **${rep.submitted || 0}** • Unverified reports **${rep.unverified || 0}**`,
+    `**Goliath-Observed Guild History**\n${guildRows.length ? guildRows.join('\n\n') : 'No stored Goliath guild-presence history yet.'}`,
+    `**External / Submitted Intelligence**\n${externalRows.length ? externalRows.join('\n\n') : 'No external or submitted reputation records are stored.'}`,
+  ];
+  return new Discord.EmbedBuilder().setColor(0x5865F2).setTitle(`🌐 Network Reputation • ${target.user.tag}`).setDescription(sections.join('\n\n').slice(0, 4000)).setFooter({ text: 'Verified, submitted and unverified information are kept separate. No external report automatically blacklists a member.' }).setTimestamp();
+}
+function reputationRows(targetId, canManage = false) {
+  const components = [];
+  if (canManage) components.push(new Discord.ButtonBuilder().setCustomId(`mod_intel_reputation_add:${targetId}`).setLabel('Add External Record').setEmoji('➕').setStyle(Discord.ButtonStyle.Secondary));
+  components.push(new Discord.ButtonBuilder().setCustomId(`mod_member_scan:${targetId}`).setLabel('⬅️ Back to Scan').setStyle(Discord.ButtonStyle.Secondary));
+  return new Discord.ActionRowBuilder().addComponents(...components);
+}
+function reputationModal(targetId) {
+  return new Discord.ModalBuilder().setCustomId(`mod_intel_reputation_submit:${targetId}`).setTitle('Add Network Reputation Record').addComponents(
+    new Discord.ActionRowBuilder().addComponents(new Discord.TextInputBuilder().setCustomId('source_type').setLabel('Source class').setStyle(Discord.TextInputStyle.Short).setRequired(true).setPlaceholder('verified_external | submitted | unverified')),
+    new Discord.ActionRowBuilder().addComponents(new Discord.TextInputBuilder().setCustomId('event_type').setLabel('Event').setStyle(Discord.TextInputStyle.Short).setRequired(true).setPlaceholder('ban | blacklist | kick | timeout | warning | report')),
+    new Discord.ActionRowBuilder().addComponents(new Discord.TextInputBuilder().setCustomId('source_name').setLabel('Server / source name').setStyle(Discord.TextInputStyle.Short).setRequired(true).setMaxLength(120)),
+    new Discord.ActionRowBuilder().addComponents(new Discord.TextInputBuilder().setCustomId('reason').setLabel('Reason / evidence summary').setStyle(Discord.TextInputStyle.Paragraph).setRequired(true).setMaxLength(1500)),
+    new Discord.ActionRowBuilder().addComponents(new Discord.TextInputBuilder().setCustomId('evidence_ref').setLabel('Evidence / reference').setStyle(Discord.TextInputStyle.Short).setRequired(false).setMaxLength(500).setPlaceholder('Required for verified_external')),
+  );
+}'''
+s = s[:start] + new_embed + s[end:]
+
+guild_action = r'''  if (action === 'mod_intel_guilds') {
+    if (!(await need('scan_network', '❌ You do not have permission to view cross-guild intelligence.'))) return true;
+    const context = await buildContext(interaction.client, target, {});
+    await safeReply(interaction, { embeds: [guildHistoryEmbed(target, context, interaction.client)], components: [backRow(targetId)], flags: 64 }); return true;
+  }'''
+guild_replacement = r'''  if (action === 'mod_intel_reputation_add') {
+    if (!(await need('scan_links', '❌ You do not have permission to add external intelligence records.'))) return true;
+    await interaction.showModal(reputationModal(targetId)); return true;
+  }
+  if (action === 'mod_intel_reputation_submit' && interaction.isModalSubmit?.()) {
+    if (!(await need('scan_links', '❌ You do not have permission to add external intelligence records.'))) return true;
+    try {
+      const record = addReputationRecord({
+        userId: targetId,
+        sourceType: String(interaction.fields.getTextInputValue('source_type') || '').trim().toLowerCase(),
+        eventType: String(interaction.fields.getTextInputValue('event_type') || '').trim().toLowerCase(),
+        sourceName: String(interaction.fields.getTextInputValue('source_name') || '').trim(),
+        reason: String(interaction.fields.getTextInputValue('reason') || '').trim(),
+        evidenceRef: String(interaction.fields.getTextInputValue('evidence_ref') || '').trim() || null,
+        sourceGuildId: interaction.guild.id,
+        actorId: interaction.user.id,
+        metadata: { enteredFromGuildId: interaction.guild.id },
+      });
+      try {
+        const { recordModerationSystemEvent } = require('./permissions');
+        recordModerationSystemEvent({ interaction, event: 'moderation.intelligence.reputation.added', action: 'intelligence_reputation', targetId, reason: record?.reason || null, after: record });
+      } catch {}
+      if (record?.sourceType === 'verified_external' && ['ban', 'blacklist'].includes(record.eventType)) {
+        await sentinel.report(interaction.client, { module: 'moderation-intelligence', component: 'network-reputation', severity: 'warning', title: `Verified external ${record.eventType} record added`, summary: `User ${targetId} • ${record.sourceName || 'External source'} • ${record.reason || ''}`.slice(0, 1000), metadata: { guildId: interaction.guild.id, actorId: interaction.user.id, targetId, recordId: record.id, sourceType: record.sourceType, eventType: record.eventType } }).catch(() => null);
+      }
+      const context = await buildContext(interaction.client, target, {});
+      await safeReply(interaction, { embeds: [guildHistoryEmbed(target, context, interaction.client)], components: [reputationRows(targetId, true)], flags: 64 });
+    } catch (error) {
+      await safeReply(interaction, { content: `❌ ${String(error?.message || error).slice(0, 1500)}`, flags: 64 });
+    }
+    return true;
+  }
+  if (action === 'mod_intel_guilds') {
+    if (!(await need('scan_network', '❌ You do not have permission to view cross-guild intelligence.'))) return true;
+    const canManage = typeof canCapability === 'function' ? Boolean(canCapability(interaction, 'scan_links')) : false;
+    const context = await buildContext(interaction.client, target, {});
+    await safeReply(interaction, { embeds: [guildHistoryEmbed(target, context, interaction.client)], components: [reputationRows(targetId, canManage)], flags: 64 }); return true;
+  }'''
+if guild_action not in s: raise SystemExit('guild interaction anchor missing')
+s = s.replace(guild_action, guild_replacement, 1)
+
+exports_anchor = "  getConfirmedLinks,\n  addConfirmedLink,\n"
+if exports_anchor in s and '  getReputationRecords,\n' not in s:
+    s = s.replace(exports_anchor, exports_anchor + "  getReputationRecords,\n  addReputationRecord,\n  summarizeReputation,\n", 1)
+
+p.write_text(s)
+
+doc = Path('docs/architecture/moderation-workspace.md')
+d = doc.read_text()
+addition = '''
+
+## Network Reputation
+
+Member Intelligence keeps Goliath-observed guild history separate from external reputation information. The Network Reputation view combines current/former Goliath guild observations and cross-guild moderation cases with manually supplied external records classified as `Verified External`, `Evidence Submitted`, or `Reported / Unverified`.
+
+A `Verified External` record requires a traceable evidence/reference value. Submitted and unverified reports remain visible for investigation but do not contribute to the automated risk score. Verified external ban/blacklist records may contribute bounded risk points, but no external record automatically changes the Goliath Watchlist state; Watchlisted, Restricted and Blacklisted remain explicit audited management decisions. Sensitive verified external ban/blacklist additions are reported to Sentinel.
+
+Goliath never claims Discord-wide guild or ban history. A missing external record means `No Data`, not that the member has a clean global history.
+'''
+if '## Network Reputation' not in d:
+    doc.write_text(d.rstrip() + addition + '\n')
