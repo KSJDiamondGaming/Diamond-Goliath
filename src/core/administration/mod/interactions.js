@@ -597,6 +597,17 @@ async function handleMemberScanSelect(i) {
 }
 async function handleMemberScanButton(i) {
   const id = String(i.customId || '');
+  if (id.startsWith('mod_dashboard:') || id.startsWith('mod_refresh:')) {
+    const [, targetId = 'none', requested = 'actions'] = id.split(':');
+    if (requested === 'intelligence') {
+      if (targetId && targetId !== 'none') return runMemberScan(i, targetId, { record: false });
+      const allowed = await ensureScanCapability(i, 'scan_run', '❌ You do not have permission to run a member intelligence scan.');
+      if (!allowed) return true;
+      const select = new Discord.UserSelectMenuBuilder().setCustomId('mod_scan_user_select').setPlaceholder('👤 Select a member to investigate').setMinValues(1).setMaxValues(1);
+      const back = new Discord.ButtonBuilder().setCustomId('mod_dashboard:none:actions').setLabel('⬅️ Back').setStyle(Discord.ButtonStyle.Secondary);
+      return safeUpdate(i, { content: '🧠 **Member Intelligence** — select a server member to open the unified intelligence workspace.', embeds: [], components: [new Discord.ActionRowBuilder().addComponents(select), new Discord.ActionRowBuilder().addComponents(back)] });
+    }
+  }
   if (id === 'mod_select_user' || id === 'mod_member_scan') {
     const allowed = await ensureScanCapability(i, 'scan_run', '❌ You do not have permission to run a member intelligence scan.');
     if (!allowed) return true;

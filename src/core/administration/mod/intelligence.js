@@ -537,7 +537,7 @@ async function decorateScan(interaction, target, report) {
     : 'No verified records';
 
   report.embed
-    .setTitle(`🔎 Member Intelligence • ${target.user.tag}`)
+    .setTitle(`🧠 Member Intelligence • ${target.user.tag}`)
     .setDescription([
       `**Target:** ${target.user} (\`${target.id}\`)`,
       'Evidence-led member overview for authorized management. Start with status and risk, then open a drill-down when more detail is needed.',
@@ -577,7 +577,15 @@ async function decorateScan(interaction, target, report) {
     `Behaviour **${String(behavior.trend || 'stable').toUpperCase()}** • 30d **${behavior.windows?.d30?.total || 0}** case(s)`,
   ].join('\n'));
 
-  const components = [];
+  const components = [
+    new Discord.ActionRowBuilder().addComponents(
+      new Discord.UserSelectMenuBuilder()
+        .setCustomId('mod_scan_user_select')
+        .setPlaceholder('👤 Select another member to investigate')
+        .setMinValues(1)
+        .setMaxValues(1)
+    ),
+  ];
   const primary = [
     new Discord.ButtonBuilder().setCustomId(`mod_member_scan:${target.id}`).setLabel('Rescan').setEmoji('🔄').setStyle(Discord.ButtonStyle.Primary),
   ];
@@ -599,7 +607,7 @@ async function decorateScan(interaction, target, report) {
   const stateControls = [];
   if (report.access?.watch) stateControls.push(new Discord.ButtonBuilder()
     .setCustomId(`mod_scan_watch:${target.id}`)
-    .setLabel(report.investigation?.watched ? 'Remove Investigation Watch' : 'Investigation Watch')
+    .setLabel(report.investigation?.watched ? 'Investigation Watch: ON' : 'Investigation Watch: OFF')
     .setEmoji('👁️')
     .setStyle(report.investigation?.watched ? Discord.ButtonStyle.Danger : Discord.ButtonStyle.Secondary));
   stateControls.push(new Discord.ButtonBuilder()
@@ -609,7 +617,7 @@ async function decorateScan(interaction, target, report) {
     .setStyle(watchState === 'blacklisted' ? Discord.ButtonStyle.Danger : Discord.ButtonStyle.Secondary));
   components.push(new Discord.ActionRowBuilder().addComponents(...stateControls));
 
-  const nav = [new Discord.ButtonBuilder().setCustomId(`mod_dashboard:${target.id}:intelligence`).setLabel('⬅️ Back').setStyle(Discord.ButtonStyle.Secondary)];
+  const nav = [new Discord.ButtonBuilder().setCustomId(`mod_dashboard:${target.id}:actions`).setLabel('⬅️ Back').setStyle(Discord.ButtonStyle.Secondary)];
   if (report.access?.cases) nav.push(new Discord.ButtonBuilder().setCustomId(`mod_export_cases:${target.id}`).setLabel('📤 Export').setStyle(Discord.ButtonStyle.Secondary));
   components.push(new Discord.ActionRowBuilder().addComponents(...nav));
   report.components = components;

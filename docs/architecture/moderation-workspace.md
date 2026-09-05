@@ -36,6 +36,8 @@ The intelligence scan exposes drill-down views for Network Reputation, Watchlist
 
 The Member Intelligence landing workspace intentionally exposes only Full Member Scan and Scan History. Evidence, notes, investigation state, risk, network, identity, behaviour and Watchlist controls live inside the full scan so there is one canonical place for detailed investigation actions.
 
+Member Intelligence is a single unified workspace: selecting Intelligence for an active member opens the live intelligence scan directly rather than a separate landing panel. The member selector remains at the top of that same message, followed by the scan summary, drill-down/action controls, and the final Back/Export navigation row. Opening the workspace does not create a scan-history snapshot; changing member or explicitly choosing Rescan performs the scan flow, while Rescan remains the explicit snapshot-producing action.
+
 Member Intelligence component navigation reuses the current ephemeral interaction message wherever Discord permits. Scan History, comparison, evidence, Network Reputation, Watchlist, Risk Details, Identity History, Behaviour and Back-to-Scan transitions edit the existing panel instead of creating a chain of new ephemeral messages. Returning from a drill-down does not create a new stored scan snapshot unless the moderator explicitly runs Rescan.
 
 Scan History preserves where it was opened from. When opened from the Intelligence landing workspace, Back returns to Member Intelligence. When opened from the full scan, Back returns to the current scan. Comparison, delete confirmation and clear-history confirmation preserve the same origin so nested Back/Cancel controls always return one logical level up.
