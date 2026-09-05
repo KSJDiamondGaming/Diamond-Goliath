@@ -537,7 +537,7 @@ async function toggleMemberWatch(i, targetId) {
   const state = getInvestigationState(i.guild.id, target.id);
   const enabled = !state.watched;
   recordModerationSystemEvent({ interaction: i, event: 'moderation.member_scan.watch_updated', action: 'member_watch', targetId: target.id, before: { enabled: state.watched }, after: { enabled, reason: enabled ? 'Manual staff investigation watch.' : 'Removed from manual investigation watch.' } });
-  if (canScanCapability(i, 'scan_run')) return runMemberScan(i, target.id);
+  if (canScanCapability(i, 'scan_run')) return runMemberScan(i, target.id, { record: false });
   return safeReply(i, { content: `✅ Investigation watch ${enabled ? 'enabled' : 'removed'} for ${target.user}.`, flags: 64 });
 }
 async function submitInvestigationNote(i) {
@@ -551,7 +551,7 @@ async function submitInvestigationNote(i) {
   const target = await fetchTarget(i.guild, targetId);
   if (!target) return safeReply(i, { content: '❌ Could not find that member in this server.', flags: 64 });
   recordModerationSystemEvent({ interaction: i, event: 'moderation.member_scan.note_added', action: 'member_scan_note', targetId: target.id, after: { note } });
-  if (canScanCapability(i, 'scan_run')) return runMemberScan(i, target.id);
+  if (canScanCapability(i, 'scan_run')) return runMemberScan(i, target.id, { record: false });
   return safeReply(i, { content: `✅ Investigation note added for ${target.user}.`, flags: 64 });
 }
 async function handleMemberScanSelect(i) {

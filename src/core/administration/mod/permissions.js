@@ -194,7 +194,7 @@ function resolveActionFromInteraction(action, interaction) {
   const id = String(interaction?.customId || '');
   if (id === 'mod_select_user' || id === 'mod_member_scan' || id.startsWith('mod_member_scan:') || id === 'mod_scan_user_select') return 'scan_run';
   if (id.startsWith('mod_scan_history:')) return 'scan_history';
-  if (id.startsWith('mod_scan_compare:') || id.startsWith('mod_scan_compare_select:')) return 'scan_compare';
+  if (id.startsWith('mod_scan_history_compare:') || id.startsWith('mod_scan_history_compare_select:')) return 'scan_compare';
   if (id.startsWith('mod_scan_note:') || id.startsWith('mod_scan_note_submit:')) return 'scan_notes';
   if (id.startsWith('mod_scan_watch:')) return 'scan_watch';
   if (id.startsWith('mod_scan_links:')) return 'scan_links';
