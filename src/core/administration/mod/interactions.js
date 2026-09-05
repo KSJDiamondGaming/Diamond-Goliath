@@ -597,6 +597,10 @@ async function handleMemberScanSelect(i) {
 }
 async function handleMemberScanButton(i) {
   const id = String(i.customId || '');
+  if (id.startsWith('mod_dashboard:')) {
+    const [, targetId = 'none', requested = 'actions'] = id.split(':');
+    if (requested === 'intelligence' && targetId !== 'none') return runMemberScan(i, targetId, { record: false });
+  }
   if (id.startsWith('mod_dashboard:') || id.startsWith('mod_refresh:')) {
     const [, targetId = 'none', requested = 'actions'] = id.split(':');
     if (requested === 'intelligence') {
@@ -760,7 +764,7 @@ async function routeButtonsAndSelects(i) {
   }
   if (i.isStringSelectMenu?.()) return routeHandlers(i, [handleMemberScanStringSelect, handleCaseSearchSelect]);
   if (!i.isButton?.()) return false;
-  return routeHandlers(i, [handleExportInteraction, handleConfirmButton, value => handleCaseAction(value, { fetchTarget, createConfirmation }), handleDashboardNavigation, handleCancelButton, handleMemberScanButton, handleBulkButton, handleOpenActionButton, handleCaseToolButton]);
+  return routeHandlers(i, [handleExportInteraction, handleConfirmButton, value => handleCaseAction(value, { fetchTarget, createConfirmation }), handleMemberScanButton, handleDashboardNavigation, handleCancelButton, handleBulkButton, handleOpenActionButton, handleCaseToolButton]);
 }
 async function routeModModal(i) {
   if (!i?.customId?.startsWith('mod_')) return false;
