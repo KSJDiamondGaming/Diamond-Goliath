@@ -60,9 +60,10 @@ function inspectSafety(metadata, sourceBytes, options = {}) {
 }
 
 function mediaTypeLabel(result) {
-  if (!result?.animated) return 'Static';
-  const format = String(result.originalFormat || result.format || '').toLowerCase();
+  const format = String(result?.originalFormat || result?.format || '').toLowerCase();
   const label = format === 'png' ? 'APNG' : format === 'webp' ? 'WebP' : format === 'avif' ? 'AVIF' : format === 'gif' ? 'GIF' : '';
+  if (result?.staticFallback) return label ? `Static fallback from Animated ${label}` : 'Static fallback from animation';
+  if (!result?.animated) return 'Static';
   return label ? `Animated ${label}` : 'Animated';
 }
 
@@ -156,6 +157,29 @@ async function reduceAnimationFrameRate(sharp, source, stride) {
   };
 }
 
+async function prepareStaticFallback(sharp, source, metadata, safety, options = {}) {
+  const firstFrame = await sharp(source, { page: 0, pages: 1, limitInputPixels: MAX_DECODED_PIXELS }).png().toBuffer();
+  const prepared = await emojiProcessor.prepareEmojiBuffer(firstFrame, options);
+  return {
+    ...prepared,
+    animated: false,
+    animationPreserved: false,
+    staticFallback: true,
+    originalAnimated: true,
+    originalFormat: metadata?.format || null,
+    originalBytes: source.length,
+    bytes: prepared.buffer?.length || prepared.bytes || firstFrame.length,
+    originalWidth: safety.width || Number(metadata?.width) || null,
+    originalHeight: safety.height || frameHeight(metadata) || null,
+    width: prepared.size || safety.width || null,
+    height: prepared.size || safety.height || null,
+    pages: 1,
+    sourcePages: safety.pages,
+    durationMs: safety.durationMs,
+    warning: 'Animation was intentionally flattened to its first frame by management choice.',
+  };
+}
+
 async function prepareAnimatedEmoji(source, metadata, options = {}) {
   const sharp = optionalSharp();
   if (!sharp) {
@@ -180,6 +204,10 @@ async function prepareAnimatedEmoji(source, metadata, options = {}) {
 
   const maxBytes = Math.max(0, Number(options.maxBytes) || DEFAULT_MAX_BYTES);
   const safety = inspectSafety(metadata, source.length, options);
+
+  if (options.forceStaticFallback === true) {
+    return prepareStaticFallback(sharp, source, metadata, safety, options);
+  }
 
   // Preserve already-compliant animations byte-for-byte. This avoids needless
   // quality loss and keeps GIF/WebP timing and transparency untouched.
