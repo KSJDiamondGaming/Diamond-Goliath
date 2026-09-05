@@ -255,8 +255,8 @@ function scanPayload(session) {
     components: [
       new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(componentId(session, 'items')).setPlaceholder('Choose categories/channels on this page').setMinValues(0).setMaxValues(options.length).addOptions(options)),
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(componentId(session, 'prev')).setLabel('Previous').setStyle(ButtonStyle.Secondary).setDisabled(page.safePage === 0),
-        new ButtonBuilder().setCustomId(componentId(session, 'next')).setLabel('Next').setStyle(ButtonStyle.Secondary).setDisabled(page.safePage >= page.pageCount - 1),
+        new ButtonBuilder().setCustomId(componentId(session, 'prev')).setLabel('Previous').setEmoji('⬅️').setStyle(ButtonStyle.Secondary).setDisabled(page.safePage === 0),
+        new ButtonBuilder().setCustomId(componentId(session, 'next')).setLabel('Next').setEmoji('➡️').setStyle(ButtonStyle.Secondary).setDisabled(page.safePage >= page.pageCount - 1),
         new ButtonBuilder().setCustomId(componentId(session, 'select-page')).setLabel('Select Page').setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId(componentId(session, 'clear-page')).setLabel('Clear Page').setStyle(ButtonStyle.Secondary),
       ),
@@ -606,10 +606,10 @@ function deletePayload(session) {
         new ButtonBuilder().setCustomId(componentId(session, 'delete-prev')).setLabel('Previous').setStyle(ButtonStyle.Secondary).setDisabled(page.safePage === 0),
         new ButtonBuilder().setCustomId(componentId(session, 'delete-next')).setLabel('Next').setStyle(ButtonStyle.Secondary).setDisabled(page.safePage >= page.pageCount - 1),
         new ButtonBuilder().setCustomId(componentId(session, 'delete-select-page')).setLabel('Select Page').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId(componentId(session, 'delete-clear-page')).setLabel('Clear Page').setStyle(ButtonStyle.Secondary),
-      ),
+        ),
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(componentId(session, 'delete-review')).setLabel('Review Delete').setEmoji('🗑️').setStyle(ButtonStyle.Danger).setDisabled(session.deleteSelected.size === 0),
+        new ButtonBuilder().setCustomId(componentId(session, 'delete-clear-page')).setLabel('Clear Page').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId(componentId(session, 'delete-review')).setLabel('Review Selected').setEmoji('🗑️').setStyle(ButtonStyle.Danger).setDisabled(session.deleteSelected.size === 0),
         new ButtonBuilder().setCustomId(componentId(session, 'home')).setLabel('Cancel').setStyle(ButtonStyle.Secondary),
       ),
     ],
