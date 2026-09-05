@@ -59,11 +59,18 @@ function inspectSafety(metadata, sourceBytes, options = {}) {
   return { pages, width, height, durationMs, decodedPixels };
 }
 
+function mediaTypeLabel(result) {
+  if (!result?.animated) return 'Static';
+  const format = String(result.originalFormat || result.format || '').toLowerCase();
+  const label = format === 'png' ? 'APNG' : format === 'webp' ? 'WebP' : format === 'avif' ? 'AVIF' : format === 'gif' ? 'GIF' : '';
+  return label ? `Animated ${label}` : 'Animated';
+}
+
 function processingSummary(result) {
   if (!result) return '';
   const originalBytes = Number(result.originalBytes) || Number(result.bytes) || 0;
   const finalBytes = Number(result.bytes) || 0;
-  const type = result.animated ? 'Animated' : 'Static';
+  const type = mediaTypeLabel(result);
   const compression = originalBytes && finalBytes && originalBytes !== finalBytes
     ? ` • ${Math.ceil(originalBytes / 1024)} KB → ${Math.ceil(finalBytes / 1024)} KB`
     : (finalBytes ? ` • ${Math.ceil(finalBytes / 1024)} KB` : '');
@@ -326,5 +333,6 @@ module.exports = {
   MAX_DECODED_PIXELS,
   ANIMATED_OUTPUT_SIZE,
   prepareEmojiAsset,
+  mediaTypeLabel,
   processingSummary,
 };

@@ -222,6 +222,26 @@ async function overview(client, guildId) {
   };
 }
 
+function preparedMediaResult(prepared) {
+  return {
+    processed: prepared?.processed === true,
+    animated: prepared?.animated === true,
+    animationPreserved: prepared?.animationPreserved === true,
+    originalFormat: prepared?.originalFormat || null,
+    format: prepared?.format || null,
+    originalBytes: Number(prepared?.originalBytes) || null,
+    bytes: Number(prepared?.bytes) || prepared?.buffer?.length || null,
+    originalWidth: Number(prepared?.originalWidth) || null,
+    originalHeight: Number(prepared?.originalHeight) || null,
+    width: Number(prepared?.width) || null,
+    height: Number(prepared?.height) || null,
+    pages: Number(prepared?.pages) || 1,
+    durationMs: Number(prepared?.durationMs) || 0,
+    frameRateReduced: prepared?.frameRateReduced === true,
+    frameReductionStride: Number(prepared?.frameReductionStride) || null,
+  };
+}
+
 async function createStudioEmoji(client, attachment, requestedName) {
   if (!attachment) throw new Error('An emoji image is required.');
   const manager = requireEmojiManager(client);
@@ -247,7 +267,7 @@ async function importFromUrl(client, imageUrl, requestedName = null) {
     } catch (_) { /* URL validation is handled by the downloader */ }
   }
   const result = await createStudioEmoji(client, prepared.buffer, fallback);
-  return { ...result, processed: prepared.processed === true, animated: prepared.animated === true };
+  return { ...result, ...preparedMediaResult(prepared) };
 }
 
 async function importFromEmojiGG(client, emojiGgId, requestedName = null) {
@@ -258,7 +278,7 @@ async function importFromEmojiGG(client, emojiGgId, requestedName = null) {
   const prepared = await emojiApi.prepareDownloadedAsset(url);
   const rawName = requestedName || source.title || source.slug || `emoji_${source.id}`;
   const result = await createStudioEmoji(client, prepared.buffer, rawName);
-  return { ...result, sourceId: String(source.id), processed: prepared.processed === true, animated: prepared.animated === true };
+  return { ...result, sourceId: String(source.id), ...preparedMediaResult(prepared) };
 }
 
 async function removeFromBank(client, emojiId) {
