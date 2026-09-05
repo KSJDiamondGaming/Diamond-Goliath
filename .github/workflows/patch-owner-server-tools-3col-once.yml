@@ -27,43 +27,11 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
+          import base64
           path = Path('src/owner/command.js')
           text = path.read_text()
-          old = """  const duplicatorTools = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(contextualOwnerId('server-copy', guildId)).setLabel('Copy Structure').setEmoji('📋').setStyle(ButtonStyle.Primary).setDisabled(!guildContextAvailable),
-    new ButtonBuilder().setCustomId(contextualOwnerId('server-analyse', guildId)).setLabel('Analyse Servers').setEmoji('🔎').setStyle(ButtonStyle.Secondary).setDisabled(!guildContextAvailable)
-  );
-
-  const templateTools = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(contextualOwnerId('server-export', guildId)).setLabel('Export Template').setEmoji('📤').setStyle(ButtonStyle.Secondary).setDisabled(!guildContextAvailable),
-    new ButtonBuilder().setCustomId(contextualOwnerId('server-build', guildId)).setLabel('Build Template').setEmoji('🏗️').setStyle(ButtonStyle.Secondary).setDisabled(!guildContextAvailable)
-  );
-
-  const plannedTools = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(contextualOwnerId('permissions-studio', guildId)).setLabel('Permissions Studio • Coming Next').setEmoji('🛡️').setStyle(ButtonStyle.Secondary).setDisabled(true)
-  );
-
-  const navigation = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(contextualOwnerId('home', guildId)).setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary)
-  );
-
-  return { embeds: [embed], components: [duplicatorTools, templateTools, plannedTools, navigation] };"""
-          new = """  const primaryTools = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(contextualOwnerId('server-copy', guildId)).setLabel('Copy Structure').setEmoji('📋').setStyle(ButtonStyle.Primary).setDisabled(!guildContextAvailable),
-    new ButtonBuilder().setCustomId(contextualOwnerId('server-analyse', guildId)).setLabel('Analyse Servers').setEmoji('🔎').setStyle(ButtonStyle.Secondary).setDisabled(!guildContextAvailable),
-    new ButtonBuilder().setCustomId(contextualOwnerId('server-export', guildId)).setLabel('Export Template').setEmoji('📤').setStyle(ButtonStyle.Secondary).setDisabled(!guildContextAvailable)
-  );
-
-  const secondaryTools = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(contextualOwnerId('server-build', guildId)).setLabel('Build Template').setEmoji('🏗️').setStyle(ButtonStyle.Secondary).setDisabled(!guildContextAvailable),
-    new ButtonBuilder().setCustomId(contextualOwnerId('permissions-studio', guildId)).setLabel('Permissions Studio • Coming Next').setEmoji('🛡️').setStyle(ButtonStyle.Secondary).setDisabled(true)
-  );
-
-  const navigation = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(contextualOwnerId('home', guildId)).setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary)
-  );
-
-  return { embeds: [embed], components: [primaryTools, secondaryTools, navigation] };"""
+          old = base64.b64decode('ICBjb25zdCBkdXBsaWNhdG9yVG9vbHMgPSBuZXcgQWN0aW9uUm93QnVpbGRlcigpLmFkZENvbXBvbmVudHMoCiAgICBuZXcgQnV0dG9uQnVpbGRlcigpLnNldEN1c3RvbUlkKGNvbnRleHR1YWxPd25lcklkKCdzZXJ2ZXItY29weScsIGd1aWxkSWQpKS5zZXRMYWJlbCgnQ29weSBTdHJ1Y3R1cmUnKS5zZXRFbW9qaSgn8J+TiycpLnNldFN0eWxlKEJ1dHRvblN0eWxlLlByaW1hcnkpLnNldERpc2FibGVkKCFndWlsZENvbnRleHRBdmFpbGFibGUpLAogICAgbmV3IEJ1dHRvbkJ1aWxkZXIoKS5zZXRDdXN0b21JZChjb250ZXh0dWFsT3duZXJJZCgnc2VydmVyLWFuYWx5c2UnLCBndWlsZElkKSkuc2V0TGFiZWwoJ0FuYWx5c2UgU2VydmVycycpLnNldEVtb2ppKCfwn5SOJykuc2V0U3R5bGUoQnV0dG9uU3R5bGUuU2Vjb25kYXJ5KS5zZXREaXNhYmxlZCghZ3VpbGRDb250ZXh0QXZhaWxhYmxlKQogICk7CgogIGNvbnN0IHRlbXBsYXRlVG9vbHMgPSBuZXcgQWN0aW9uUm93QnVpbGRlcigpLmFkZENvbXBvbmVudHMoCiAgICBuZXcgQnV0dG9uQnVpbGRlcigpLnNldEN1c3RvbUlkKGNvbnRleHR1YWxPd25lcklkKCdzZXJ2ZXItZXhwb3J0JywgZ3VpbGRJZCkpLnNldExhYmVsKCdFeHBvcnQgVGVtcGxhdGUnKS5zZXRFbW9qaSgn8J+TpCcpLnNldFN0eWxlKEJ1dHRvblN0eWxlLlNlY29uZGFyeSkuc2V0RGlzYWJsZWQoIWd1aWxkQ29udGV4dEF2YWlsYWJsZSksCiAgICBuZXcgQnV0dG9uQnVpbGRlcigpLnNldEN1c3RvbUlkKGNvbnRleHR1YWxPd25lcklkKCdzZXJ2ZXItYnVpbGQnLCBndWlsZElkKSkuc2V0TGFiZWwoJ0J1aWxkIFRlbXBsYXRlJykuc2V0RW1vamkoJ/Cfj5fvuI8nKS5zZXRTdHlsZShCdXR0b25TdHlsZS5TZWNvbmRhcnkpLnNldERpc2FibGVkKCFndWlsZENvbnRleHRBdmFpbGFibGUpCiAgKTsKCiAgY29uc3QgcGxhbm5lZFRvb2xzID0gbmV3IEFjdGlvblJvd0J1aWxkZXIoKS5hZGRDb21wb25lbnRzKAogICAgbmV3IEJ1dHRvbkJ1aWxkZXIoKS5zZXRDdXN0b21JZChjb250ZXh0dWFsT3duZXJJZCgncGVybWlzc2lvbnMtc3R1ZGlvJywgZ3VpbGRJZCkpLnNldExhYmVsKCdQZXJtaXNzaW9ucyBTdHVkaW8g4oCiIENvbWluZyBOZXh0Jykuc2V0RW1vamkoJ/Cfm6HvuI8nKS5zZXRTdHlsZShCdXR0b25TdHlsZS5TZWNvbmRhcnkpLnNldERpc2FibGVkKHRydWUpCiAgKTsKCiAgY29uc3QgbmF2aWdhdGlvbiA9IG5ldyBBY3Rpb25Sb3dCdWlsZGVyKCkuYWRkQ29tcG9uZW50cygKICAgIG5ldyBCdXR0b25CdWlsZGVyKCkuc2V0Q3VzdG9tSWQoY29udGV4dHVhbE93bmVySWQoJ2hvbWUnLCBndWlsZElkKSkuc2V0TGFiZWwoJ+Kshe+4jyBCYWNrJykuc2V0U3R5bGUoQnV0dG9uU3R5bGUuU2Vjb25kYXJ5KQogICk7CgogIHJldHVybiB7IGVtYmVkczogW2VtYmVkXSwgY29tcG9uZW50czogW2R1cGxpY2F0b3JUb29scywgdGVtcGxhdGVUb29scywgcGxhbm5lZFRvb2xzLCBuYXZpZ2F0aW9uXSB9Ow==').decode()
+          new = base64.b64decode('ICBjb25zdCBwcmltYXJ5VG9vbHMgPSBuZXcgQWN0aW9uUm93QnVpbGRlcigpLmFkZENvbXBvbmVudHMoCiAgICBuZXcgQnV0dG9uQnVpbGRlcigpLnNldEN1c3RvbUlkKGNvbnRleHR1YWxPd25lcklkKCdzZXJ2ZXItY29weScsIGd1aWxkSWQpKS5zZXRMYWJlbCgnQ29weSBTdHJ1Y3R1cmUnKS5zZXRFbW9qaSgn8J+TiycpLnNldFN0eWxlKEJ1dHRvblN0eWxlLlByaW1hcnkpLnNldERpc2FibGVkKCFndWlsZENvbnRleHRBdmFpbGFibGUpLAogICAgbmV3IEJ1dHRvbkJ1aWxkZXIoKS5zZXRDdXN0b21JZChjb250ZXh0dWFsT3duZXJJZCgnc2VydmVyLWFuYWx5c2UnLCBndWlsZElkKSkuc2V0TGFiZWwoJ0FuYWx5c2UgU2VydmVycycpLnNldEVtb2ppKCfwn5SOJykuc2V0U3R5bGUoQnV0dG9uU3R5bGUuU2Vjb25kYXJ5KS5zZXREaXNhYmxlZCghZ3VpbGRDb250ZXh0QXZhaWxhYmxlKSwKICAgIG5ldyBCdXR0b25CdWlsZGVyKCkuc2V0Q3VzdG9tSWQoY29udGV4dHVhbE93bmVySWQoJ3NlcnZlci1leHBvcnQnLCBndWlsZElkKSkuc2V0TGFiZWwoJ0V4cG9ydCBUZW1wbGF0ZScpLnNldEVtb2ppKCfwn5OkJykuc2V0U3R5bGUoQnV0dG9uU3R5bGUuU2Vjb25kYXJ5KS5zZXREaXNhYmxlZCghZ3VpbGRDb250ZXh0QXZhaWxhYmxlKQogICk7CgogIGNvbnN0IHNlY29uZGFyeVRvb2xzID0gbmV3IEFjdGlvblJvd0J1aWxkZXIoKS5hZGRDb21wb25lbnRzKAogICAgbmV3IEJ1dHRvbkJ1aWxkZXIoKS5zZXRDdXN0b21JZChjb250ZXh0dWFsT3duZXJJZCgnc2VydmVyLWJ1aWxkJywgZ3VpbGRJZCkpLnNldExhYmVsKCdCdWlsZCBUZW1wbGF0ZScpLnNldEVtb2ppKCfwn4+X77iPJykuc2V0U3R5bGUoQnV0dG9uU3R5bGUuU2Vjb25kYXJ5KS5zZXREaXNhYmxlZCghZ3VpbGRDb250ZXh0QXZhaWxhYmxlKSwKICAgIG5ldyBCdXR0b25CdWlsZGVyKCkuc2V0Q3VzdG9tSWQoY29udGV4dHVhbE93bmVySWQoJ3Blcm1pc3Npb25zLXN0dWRpbycsIGd1aWxkSWQpKS5zZXRMYWJlbCgnUGVybWlzc2lvbnMgU3R1ZGlvIOKAoiBDb21pbmcgTmV4dCcpLnNldEVtb2ppKCfwn5uh77iPJykuc2V0U3R5bGUoQnV0dG9uU3R5bGUuU2Vjb25kYXJ5KS5zZXREaXNhYmxlZCh0cnVlKQogICk7CgogIGNvbnN0IG5hdmlnYXRpb24gPSBuZXcgQWN0aW9uUm93QnVpbGRlcigpLmFkZENvbXBvbmVudHMoCiAgICBuZXcgQnV0dG9uQnVpbGRlcigpLnNldEN1c3RvbUlkKGNvbnRleHR1YWxPd25lcklkKCdob21lJywgZ3VpbGRJZCkpLnNldExhYmVsKCfirIXvuI8gQmFjaycpLnNldFN0eWxlKEJ1dHRvblN0eWxlLlNlY29uZGFyeSkKICApOwoKICByZXR1cm4geyBlbWJlZHM6IFtlbWJlZF0sIGNvbXBvbmVudHM6IFtwcmltYXJ5VG9vbHMsIHNlY29uZGFyeVRvb2xzLCBuYXZpZ2F0aW9uXSB9Ow==').decode()
           if old not in text:
               raise SystemExit('Expected Server Tools button block not found')
           path.write_text(text.replace(old, new, 1))
