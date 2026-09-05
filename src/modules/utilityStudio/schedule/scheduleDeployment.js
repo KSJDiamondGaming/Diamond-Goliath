@@ -13,6 +13,7 @@ const {
   PermissionFlagsBits,
 } = require('discord.js');
 const guildManager = require('../../../core/guild/guildManager');
+const emojiPayload = require('../emojis/emojiPayload');
 const schedule = require('./schedule');
 
 const STATUS_COLOURS = Object.freeze({ scheduled: 0x5865F2, completed: 0x57F287, cancelled: 0xED4245 });
@@ -102,6 +103,11 @@ function buildEventPayload(event) {
   return { embeds: [embed], components: controls.slice(0, 5) };
 }
 
+async function resolveSchedulePayload(guild, payload) {
+  if (!guild?.client || !guild?.id) return payload;
+  return emojiPayload.resolveMessagePayload(guild.client, guild.id, payload, 'schedule');
+}
+
 async function resolveChannel(guild, event, overrideChannelId = null) {
   const channelId = overrideChannelId || event.channelId;
   if (!channelId) throw new Error('An announcement channel is required.');
@@ -158,7 +164,8 @@ async function deploy(guild, eventId, channelId = null, meta = {}) {
   if (!event) throw new Error('Schedule event not found.');
   const channel = await resolveChannel(guild, event, channelId);
   const mentions = event.mentionRoleIds.map((id) => `<@&${id}>`).join(' ');
-  const message = await channel.send({ content: mentions || undefined, allowedMentions: { roles: event.mentionRoleIds }, ...buildEventPayload(event) });
+  const payload = await resolveSchedulePayload(guild, { content: mentions || undefined, allowedMentions: { roles: event.mentionRoleIds }, ...buildEventPayload(event) });
+  const message = await channel.send(payload);
   event = schedule.saveEvent(guild.id, { ...event, channelId: channel.id, messageId: message.id, lastError: null }, { ...meta, action: 'schedule_deploy' });
   await ensureEventThread(guild, event, message);
   await syncDiscordEvent(guild, schedule.getEvent(guild.id, event.eventId) || event).catch((error) => {
@@ -181,7 +188,7 @@ async function updateDeployment(guild, eventId) {
     await syncDiscordEvent(guild, event).catch(() => null);
     return { updated: false, reason: 'message_missing' };
   }
-  await message.edit(buildEventPayload(event));
+  await message.edit(await resolveSchedulePayload(guild, buildEventPayload(event)));
   await syncDiscordEvent(guild, event).catch(() => null);
   return { updated: true, channelId: channel.id, messageId: message.id };
 }
@@ -303,7 +310,7 @@ async function handleMemberInteraction(interaction) {
   await syncAttendeeRole(member, event, result.previousStatus, action === 'remove' ? null : result.status);
   if (action !== 'remove' && schedule.isAttendeeStatus(event, result.status)) await addToThread(interaction.guild, event, member);
   if (result.promotedUserId) await syncPromotedMember(interaction.guild, event, result.promotedUserId);
-  await interaction.update(buildEventPayload(event));
+  await interaction.update(await resolveSchedulePayload(interaction.guild, buildEventPayload(event)));
   const overlaps = schedule.getSection(interaction.guildId).settings.warnOverlaps && action !== 'remove' && schedule.isAttendeeStatus(event, result.status)
     ? schedule.findOverlaps(interaction.guildId, interaction.user.id, eventId)
     : [];
