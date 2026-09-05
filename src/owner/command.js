@@ -287,27 +287,40 @@ function serverToolsPayload(interaction, explicitGuildId = null) {
     .setDescription([
       'Developer-only server tools. Access is restricted to configured Goliath owner IDs.',
       '',
-      '**Copy** — copy selected server structure/settings.',
-      '**Analyse** — compare a source and destination server.',
-      '**Export** — save a server as a reusable Duplicator template.',
-      '**Build** — build from a saved/default template.',
+      '**Server Duplicator**',
+      '📋 **Copy Structure** — selectively copy server structure, roles and permissions.',
+      '🔎 **Analyse Servers** — compare a source and destination before copying.',
+      '',
+      '**Templates**',
+      '📤 **Export Template** — save a server as a reusable Duplicator template.',
+      '🏗️ **Build Template** — build from a saved/default template.',
+      '',
+      '**Permissions Studio**',
+      '🛡️ Bulk category, channel and role permission management — coming next.',
       '',
       guildContextAvailable ? null : '⚠️ **Server context required.** Open `/owner` from a server channel to use these tools.',
     ].filter(Boolean).join('\n'))
-    .setFooter({ text: 'Owner only • Duplicator retains its own owner and safety checks' });
+    .setFooter({ text: 'Owner only • Server tooling retains owner and safety checks' });
 
-  const tools = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(contextualOwnerId('server-copy', guildId)).setLabel('Copy').setEmoji('📋').setStyle(ButtonStyle.Secondary).setDisabled(!guildContextAvailable),
-    new ButtonBuilder().setCustomId(contextualOwnerId('server-analyse', guildId)).setLabel('Analyse').setEmoji('🔎').setStyle(ButtonStyle.Secondary).setDisabled(!guildContextAvailable),
-    new ButtonBuilder().setCustomId(contextualOwnerId('server-export', guildId)).setLabel('Export').setEmoji('📤').setStyle(ButtonStyle.Secondary).setDisabled(!guildContextAvailable),
-    new ButtonBuilder().setCustomId(contextualOwnerId('server-build', guildId)).setLabel('Build').setEmoji('🏗️').setStyle(ButtonStyle.Secondary).setDisabled(!guildContextAvailable)
+  const duplicatorTools = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(contextualOwnerId('server-copy', guildId)).setLabel('Copy Structure').setEmoji('📋').setStyle(ButtonStyle.Primary).setDisabled(!guildContextAvailable),
+    new ButtonBuilder().setCustomId(contextualOwnerId('server-analyse', guildId)).setLabel('Analyse Servers').setEmoji('🔎').setStyle(ButtonStyle.Secondary).setDisabled(!guildContextAvailable)
+  );
+
+  const templateTools = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(contextualOwnerId('server-export', guildId)).setLabel('Export Template').setEmoji('📤').setStyle(ButtonStyle.Secondary).setDisabled(!guildContextAvailable),
+    new ButtonBuilder().setCustomId(contextualOwnerId('server-build', guildId)).setLabel('Build Template').setEmoji('🏗️').setStyle(ButtonStyle.Secondary).setDisabled(!guildContextAvailable)
+  );
+
+  const plannedTools = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(contextualOwnerId('permissions-studio', guildId)).setLabel('Permissions Studio • Coming Next').setEmoji('🛡️').setStyle(ButtonStyle.Secondary).setDisabled(true)
   );
 
   const navigation = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId(contextualOwnerId('home', guildId)).setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary)
   );
 
-  return { embeds: [embed], components: [tools, navigation] };
+  return { embeds: [embed], components: [duplicatorTools, templateTools, plannedTools, navigation] };
 }
 
 function serverContextRequiredPayload() {
