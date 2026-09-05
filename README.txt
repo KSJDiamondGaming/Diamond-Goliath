@@ -21,6 +21,7 @@ Real-Time Sync
 Emoji & GIF Studio
 Static and animated Discord application emojis
 Static emojis are added through Add Emoji; all animated media is added through the dedicated Add GIF flow
+Add GIF mirrors Add Emoji with Browse GIFs, Upload GIF and Add GIF Link options while keeping animated-only validation
 GIF, animated WebP, APNG and AVIF intake where supported by the media decoder
 Animated uploads are preserved when already Discord-ready and optimised without silently flattening animation when oversized
 If an animation still cannot fit Discord's size limit, management can explicitly retry it as a static first-frame fallback; Goliath never flattens animation silently
