@@ -334,6 +334,8 @@ async function prepareEmojiAsset(input, options = {}) {
 
   if (!metadata?.format || !metadata?.width || !metadata?.height) throw new Error('Emoji file is not a supported image.');
   const animated = Number(metadata.pages || 1) > 1;
+  if (animated && options.rejectAnimated === true) throw new Error('Animated media must be added through Add GIF.');
+  if (!animated && options.requireAnimated === true) throw new Error('That file is static. Use Add Emoji instead.');
   if (animated) return prepareAnimatedEmoji(source, metadata, { ...options, maxSourceBytes });
 
   const prepared = await emojiProcessor.prepareEmojiBuffer(source, options);

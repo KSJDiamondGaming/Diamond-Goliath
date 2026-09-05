@@ -256,6 +256,8 @@ async function prepareSourceBuffer(source, options = {}) {
     maxBytes: MAX_BYTES,
     maxSourceBytes: options.maxSourceBytes || MAX_SOURCE_BYTES,
     forceStaticFallback: options.forceStaticFallback === true,
+    rejectAnimated: options.rejectAnimated === true,
+    requireAnimated: options.requireAnimated === true,
   });
   if (prepared.buffer.length > MAX_BYTES) throw new Error(`Processed emoji is too large (${prepared.buffer.length} bytes; Discord limit ${MAX_BYTES}).`);
   return prepared;

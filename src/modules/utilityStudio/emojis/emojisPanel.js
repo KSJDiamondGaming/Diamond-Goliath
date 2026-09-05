@@ -43,17 +43,16 @@ async function buildDiscordPanel(interaction, notice = '') {
 }
 
 function addPanel(interaction) {
-  return { embeds: [new EmbedBuilder().setColor(PANEL_COLOR).setTitle('➕ Add Emoji or GIF').setDescription([
-    'Choose how you want to add a static emoji or animated GIF to this server.', '',
-    '**Browse** — search the online emoji and GIF collection.',
-    '**Upload Emoji** — add a static image from your device.\n**Upload GIF** — add an animated GIF/WebP/APNG/AVIF and let Goliath optimise it.',
-    '**Add from Link** — paste a direct image, GIF or animated media link.',
-  ].join('\n')).setFooter({ text: `Requested by ${memberName(interaction)}` })], components: [
-    row(button('admin:module:emojis:search-open', '🔎 Browse', ButtonStyle.Primary), button('admin:module:emojis:bulk-open', '🖼️ Upload Emoji', ButtonStyle.Primary), button('admin:module:emojis:gif-upload-open', '🎞️ Upload GIF', ButtonStyle.Success), button('admin:module:emojis:import-url-open', '🔗 Add Link', ButtonStyle.Secondary)),
+  return { embeds: [new EmbedBuilder().setColor(PANEL_COLOR).setTitle('➕ Add Emoji').setDescription([
+    'Add static emojis to this server. Animated media is handled separately through the **Add GIF** button on the main panel.', '',
+    '**Browse Emojis** — search the online emoji collection.',
+    '**Upload Emoji** — add a static image from your device.',
+    '**Add Image Link** — paste a direct static image link.',
+  ].join('\n')).setFooter({ text: 'Requested by ' + memberName(interaction) })], components: [
+    row(button('admin:module:emojis:search-open', '🔎 Browse Emojis', ButtonStyle.Primary), button('admin:module:emojis:bulk-open', '🖼️ Upload Emoji', ButtonStyle.Primary), button('admin:module:emojis:import-url-open', '🔗 Add Image Link', ButtonStyle.Secondary)),
     row(button('admin:module:emojis:panel', '⬅️ Back', ButtonStyle.Secondary), button('admin:module:emojis:settings', '⚙️ Settings', ButtonStyle.Secondary)),
   ] };
 }
-
 function settingsPanel(overview, interaction, notice = '') {
   const top = (overview.usage || []).filter((entry) => entry.count > 0).slice(0, 5);
   const health = overview.health || {};
@@ -126,14 +125,14 @@ function deleteConfirmPanel(emoji, interaction) {
   return { embeds: [embed], components: [row(button(`admin:module:emojis:delete-confirm:${emoji.id}`, '🗑️ Delete Permanently', ButtonStyle.Danger), button(`admin:module:emojis:delete-cancel:${emoji.id}`, 'Cancel', ButtonStyle.Secondary)), row(button('admin:module:emojis:guild', '⬅️ Back', ButtonStyle.Secondary))] };
 }
 
-function searchModal() { return new ModalBuilder().setCustomId('admin:module:emojis:search-submit').setTitle('Search Emojis & GIFs').addComponents(row(new TextInputBuilder().setCustomId('query').setLabel('What emoji or GIF are you looking for?').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(80))); }
-function urlImportModal() { return new ModalBuilder().setCustomId('admin:module:emojis:import-url-submit').setTitle('Add Emoji or GIF from Link').addComponents(row(new TextInputBuilder().setCustomId('imageUrl').setLabel('Image / GIF / animation link').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(1000)), row(new TextInputBuilder().setCustomId('name').setLabel('Emoji / GIF name (optional)').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(32))); }
+function searchModal() { return new ModalBuilder().setCustomId('admin:module:emojis:search-submit').setTitle('Search Emojis').addComponents(row(new TextInputBuilder().setCustomId('query').setLabel('What emoji are you looking for?').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(80))); }
+function urlImportModal() { return new ModalBuilder().setCustomId('admin:module:emojis:import-url-submit').setTitle('Add Emoji from Image Link').addComponents(row(new TextInputBuilder().setCustomId('imageUrl').setLabel('Static image link').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(1000)), row(new TextInputBuilder().setCustomId('name').setLabel('Emoji name (optional)').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(32))); }
 function bulkUploadModal() { const upload = new FileUploadBuilder().setCustomId('files').setMinValues(1).setMaxValues(10).setRequired(true); return new ModalBuilder().setCustomId('admin:module:emojis:bulk-submit').setTitle('Upload Emoji Images').addComponents(new LabelBuilder().setLabel('Choose static emoji files').setDescription('Upload up to 10 static images. For animated media, use the dedicated Add GIF button.').setFileUploadComponent(upload)); }
-function gifUploadModal() { const upload = new FileUploadBuilder().setCustomId('files').setMinValues(1).setMaxValues(10).setRequired(true); return new ModalBuilder().setCustomId('admin:module:emojis:bulk-submit').setTitle('Upload GIF / Animation').addComponents(new LabelBuilder().setLabel('Choose animated files').setDescription('GIF, animated WebP, APNG or AVIF. Goliath will optimise while preserving animation where possible.').setFileUploadComponent(upload)); }
+function gifUploadModal() { const upload = new FileUploadBuilder().setCustomId('files').setMinValues(1).setMaxValues(10).setRequired(true); return new ModalBuilder().setCustomId('admin:module:emojis:gif-bulk-submit').setTitle('Upload GIF / Animation').addComponents(new LabelBuilder().setLabel('Choose animated files').setDescription('GIF, animated WebP, APNG or AVIF. Goliath will optimise while preserving animation where possible.').setFileUploadComponent(upload)); }
 function staticFallbackUploadModal() { const upload = new FileUploadBuilder().setCustomId('files').setMinValues(1).setMaxValues(10).setRequired(true); return new ModalBuilder().setCustomId('admin:module:emojis:static-fallback-submit').setTitle('Static Fallback Upload').addComponents(new LabelBuilder().setLabel('Choose failed animated files').setDescription('Explicit fallback: Goliath will keep the first frame and remove animation.').setFileUploadComponent(upload)); }
 function cleanSearchName(entry) { return String(entry?.title || entry?.slug || 'Emoji').replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim(); }
 function cleanSearchCategory(entry) { const category = String(entry?.category || '').trim(); return category && !/^\d+$/.test(category) ? category : 'Online emoji'; }
-function searchResultsPanel(results, query) { const clean = Array.isArray(results) ? results.slice(0, 25) : []; const components = []; if (clean.length) components.push(row(new StringSelectMenuBuilder().setCustomId('admin:module:emojis:import').setPlaceholder('Choose an emoji to preview').addOptions(clean.map((entry) => ({ label: cleanSearchName(entry).slice(0, 100), value: String(entry.id), description: cleanSearchCategory(entry).slice(0, 100) }))))); components.push(row(button('admin:module:emojis:search-open', '🔎 Search Again', ButtonStyle.Primary))); components.push(row(button('admin:module:emojis:add', '⬅️ Back', ButtonStyle.Secondary))); return { embeds: [new EmbedBuilder().setColor(PANEL_COLOR).setTitle('🔎 Search Results').setDescription(clean.length ? `Found **${clean.length}** result(s) for **${String(query).slice(0, 80)}**. Choose one to preview it before adding.` : 'No matching emojis were found. Try a different search.')], components }; }
+function searchResultsPanel(results, query) { const clean = Array.isArray(results) ? results.slice(0, 25) : []; const components = []; if (clean.length) components.push(row(new StringSelectMenuBuilder().setCustomId('admin:module:emojis:import').setPlaceholder('Choose an emoji to preview').addOptions(clean.map((entry) => ({ label: cleanSearchName(entry).slice(0, 100), value: String(entry.id), description: cleanSearchCategory(entry).slice(0, 100) }))))); components.push(row(button('admin:module:emojis:search-open', '🔎 Search Again', ButtonStyle.Primary))); components.push(row(button('admin:module:emojis:add', '⬅️ Back', ButtonStyle.Secondary))); return { embeds: [new EmbedBuilder().setColor(PANEL_COLOR).setTitle('🔎 Emoji Search Results').setDescription(clean.length ? `Found **${clean.length}** result(s) for **${String(query).slice(0, 80)}**. Choose one to preview it before adding.` : 'No matching emojis were found. Try a different search.')], components }; }
 function searchPreviewPanel(entry) { const name = cleanSearchName(entry); const embed = new EmbedBuilder().setColor(PANEL_COLOR).setTitle(`👁️ ${name}`).setDescription(`**Name:** ${name}\n\nCheck the image or animation below, then choose whether to add it to this server.`); const imageUrl = emojiApi.assetUrl(entry); if (imageUrl) embed.setImage(imageUrl); return { embeds: [embed], components: [row(button(`admin:module:emojis:import-confirm:${entry.id}`, '✅ Add This Emoji', ButtonStyle.Success), button('admin:module:emojis:search-open', '🔎 Search Again', ButtonStyle.Secondary)), row(button('admin:module:emojis:add', '⬅️ Back', ButtonStyle.Secondary))] }; }
 function addedEmojiPanel(result, interaction) { const emoji = result?.emoji; const name = String(emoji?.name || 'emoji'); const mention = emoji?.mention || (emoji?.id ? `<${result?.animated ? 'a' : ''}:${name}:${emoji.id}>` : `:${name}:`); const details = [`**Type:** ${result?.animated || emoji?.animated ? `🎞️ ${emojiMedia.mediaTypeLabel({ ...result, animated: true })}` : '🖼️ Static'}`, result?.processed ? '**Processing:** Optimised automatically ✅' : '**Processing:** Preserved as uploaded ✅', ...(result?.animated && result?.pages ? [`**Frames:** ${result.pages}${result.frameRateReduced ? ' • frame rate reduced' : ''}`] : [])]; return { content: null, embeds: [new EmbedBuilder().setColor(0x57F287).setTitle('✅ Emoji Added').setDescription(`${mention}  **:${name}:**\n\n${result?.created ? 'Added' : 'Already available and added'} to this server successfully.\n${details.join('\n')}`).setFooter({ text: `Requested by ${memberName(interaction)}` }).setTimestamp()], components: [row(button('admin:module:emojis:search-open', '🔎 Add Another', ButtonStyle.Primary), button('admin:module:emojis:guild', '⭐ Manage Library', ButtonStyle.Secondary)), row(button('admin:module:emojis:add', '⬅️ Back', ButtonStyle.Secondary))] }; }
 async function sendPanel(interaction, data) { if (interaction.deferred || interaction.replied) return interaction.editReply(data); if (interaction.isModalSubmit?.()) return interaction.reply({ ...data, flags: MessageFlags.Ephemeral }); return interaction.update(data); }
@@ -159,16 +158,41 @@ async function handleDiscordInteraction(interaction) {
   if (id.startsWith('admin:module:emojis:delete-confirm:') && interaction.isButton?.()) { const emojiId = id.slice('admin:module:emojis:delete-confirm:'.length); const overview = await discordOverview(interaction); const emoji = (overview.catalog || []).find((entry) => !entry.core && String(entry.id) === emojiId); if (!emoji) throw new Error('That emoji is no longer available.'); const wasAdded = new Set(overview.effectiveFavourites || []).has(String(emojiId)); if (wasAdded) emojiStore.setFavourite(guildId, emojiId, false, { actorId: interaction.user?.id, action: 'emoji_delete_prepare' }); try { await emojis.removeFromBank(interaction.client, emojiId); } catch (error) { if (wasAdded) emojiStore.setFavourite(guildId, emojiId, true, { actorId: interaction.user?.id, action: 'emoji_delete_rollback' }); throw error; } await sendPanel(interaction, managePanel(await discordOverview(interaction), interaction, '', `🗑️ Deleted :${emoji.name}: permanently from the available emoji collection.`)); return true; }
   if (id === 'admin:module:emojis:search-submit' && interaction.isModalSubmit?.()) { if (!emojiStore.getSection(guildId).enabled) throw new Error('Turn on Emoji Studio first.'); const query = interaction.fields.getTextInputValue('query'); await sendPanel(interaction, searchResultsPanel(await emojiApi.search(query, 25), query)); return true; }
   if (id === 'admin:module:emojis:import' && interaction.isStringSelectMenu?.()) { const entry = await emojiApi.findById(interaction.values?.[0]); if (!entry) throw new Error('That emoji could not be found anymore. Try searching again.'); await sendPanel(interaction, searchPreviewPanel(entry)); return true; }
-  if (id.startsWith('admin:module:emojis:import-confirm:') && interaction.isButton?.()) { const emojiGgId = id.slice('admin:module:emojis:import-confirm:'.length); if (!/^\d+$/.test(emojiGgId)) throw new Error('That emoji could not be identified. Search for it again.'); await interaction.deferUpdate(); const result = await emojis.importFromEmojiGG(interaction.client, emojiGgId); emojiStore.setFavourite(guildId, result.emoji.id, true, { actorId: interaction.user?.id, action: 'emoji_discord_import' }); await interaction.editReply(addedEmojiPanel(result, interaction)); return true; }
-  if (id === 'admin:module:emojis:import-url-submit' && interaction.isModalSubmit?.()) { await interaction.deferReply({ flags: MessageFlags.Ephemeral }); const result = await emojis.importFromUrl(interaction.client, interaction.fields.getTextInputValue('imageUrl'), interaction.fields.getTextInputValue('name') || null); emojiStore.setFavourite(guildId, result.emoji.id, true, { actorId: interaction.user?.id, action: 'emoji_url_import' }); await interaction.editReply(addedEmojiPanel(result, interaction)); return true; }
-  if (id === 'admin:module:emojis:bulk-submit' && interaction.isModalSubmit?.()) {
+  if (id.startsWith('admin:module:emojis:import-confirm:') && interaction.isButton?.()) {
+    const emojiGgId = id.slice('admin:module:emojis:import-confirm:'.length);
+    if (!/^\d+$/.test(emojiGgId)) throw new Error('That emoji could not be identified. Search for it again.');
+    await interaction.deferUpdate();
+    const entry = await emojiApi.findById(emojiGgId);
+    if (!entry) throw new Error('That emoji could not be found anymore. Try searching again.');
+    const prepared = await emojiApi.prepareDownloadedAsset(emojiApi.assetUrl(entry), { rejectAnimated: true });
+    const created = await emojis.createStudioEmoji(interaction.client, prepared.buffer, cleanSearchName(entry));
+    const result = { ...created, ...prepared, emoji: created.emoji };
+    emojiStore.setFavourite(guildId, result.emoji.id, true, { actorId: interaction.user?.id, action: 'emoji_discord_import' });
+    await interaction.editReply(addedEmojiPanel(result, interaction));
+    return true;
+  }
+  if (id === 'admin:module:emojis:import-url-submit' && interaction.isModalSubmit?.()) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const imageUrl = interaction.fields.getTextInputValue('imageUrl');
+    const requestedName = interaction.fields.getTextInputValue('name') || null;
+    const prepared = await emojiApi.prepareDownloadedAsset(imageUrl, { rejectAnimated: true });
+    let name = requestedName || 'emoji';
+    if (!requestedName) { try { name = decodeURIComponent(new URL(imageUrl).pathname.split('/').pop() || 'emoji').replace(/\.[a-z0-9]+$/i, '') || 'emoji'; } catch {} }
+    const created = await emojis.createStudioEmoji(interaction.client, prepared.buffer, name);
+    const result = { ...created, ...prepared, emoji: created.emoji };
+    emojiStore.setFavourite(guildId, result.emoji.id, true, { actorId: interaction.user?.id, action: 'emoji_url_import' });
+    await interaction.editReply(addedEmojiPanel(result, interaction));
+    return true;
+  }
+  if ((id === 'admin:module:emojis:bulk-submit' || id === 'admin:module:emojis:gif-bulk-submit') && interaction.isModalSubmit?.()) {
     const uploads = interaction.fields.getUploadedFiles('files', true);
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const gifOnly = id === 'admin:module:emojis:gif-bulk-submit';
     const lines = [];
     let animated = 0; let optimised = 0; let failed = 0; let fallbackEligible = 0;
     for (const attachment of uploads.values()) {
       try {
-        const prepared = await emojiApi.prepareAttachmentAsset(attachment);
+        const prepared = await emojiApi.prepareAttachmentAsset(attachment, gifOnly ? { requireAnimated: true } : { rejectAnimated: true });
         const name = String(attachment.name || 'emoji').replace(/\.[a-z0-9]+$/i, '');
         const result = await emojis.createStudioEmoji(interaction.client, prepared.buffer, name);
         emojiStore.setFavourite(guildId, result.emoji.id, true, { actorId: interaction.user?.id, action: 'emoji_bulk_import' });
@@ -178,7 +202,7 @@ async function handleDiscordInteraction(interaction) {
       } catch (error) {
         failed += 1;
         const message = String(error?.message || error);
-        if (message.includes('without flattening the animation')) fallbackEligible += 1;
+        if (gifOnly && message.includes('without flattening the animation')) fallbackEligible += 1;
         lines.push(`❌ **${attachment.name}** — ${message.slice(0, 160)}${message.includes('without flattening the animation') ? ' • static fallback available below' : ''}`);
       }
     }
@@ -187,7 +211,7 @@ async function handleDiscordInteraction(interaction) {
     if (fallbackEligible) components.push(row(button('admin:module:emojis:static-fallback-open', '🖼️ Use Static Fallback', ButtonStyle.Secondary)));
     components.push(row(button('admin:module:emojis:guild', '⭐ Manage Library', ButtonStyle.Primary)));
     components.push(row(button('admin:module:emojis:add', '⬅️ Back', ButtonStyle.Secondary)));
-    await interaction.editReply({ embeds: [new EmbedBuilder().setColor(failed ? 0xFEE75C : 0x57F287).setTitle('📤 Emoji & GIF Upload Complete').setDescription(`${summary}\n\n${lines.join('\n')}`.slice(0, 4000))], components });
+    await interaction.editReply({ embeds: [new EmbedBuilder().setColor(failed ? 0xFEE75C : 0x57F287).setTitle(gifOnly ? '🎞️ GIF Upload Complete' : '🖼️ Emoji Upload Complete').setDescription(`${summary}\n\n${lines.join('\n')}`.slice(0, 4000))], components });
     return true;
   }
   if (id === 'admin:module:emojis:static-fallback-submit' && interaction.isModalSubmit?.()) {
