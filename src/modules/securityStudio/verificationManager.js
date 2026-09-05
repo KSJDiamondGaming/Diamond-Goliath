@@ -13,6 +13,7 @@ const {
 const verificationStore = require('./verificationStore');
 const guildManager = require('../../core/guild/guildManager');
 const testDevOverride = require('../../owner/dev/DevOverrideManager');
+const emojiPayload = require('../utilityStudio/emojis/emojiPayload');
 
 const CUSTOM_ID_PREFIX = 'verify';
 const SCREENING_FEATURE = 'MEMBER_VERIFICATION_GATE_ENABLED';
@@ -293,6 +294,11 @@ function buildVerificationRows(panel = {}, guild = null, member = null, values =
   return [new ActionRowBuilder().addComponents(button)];
 }
 
+async function resolveVerificationPayload(guild, payload) {
+  if (!guild?.client || !guild?.id) return payload;
+  return emojiPayload.resolveMessagePayload(guild.client, guild.id, payload, 'verification');
+}
+
 function getEffectiveVerificationSection(guildId) {
   const section = verificationStore.getVerificationSection(guildId);
   const settings = verificationStore.normalizeSettings(section.settings || {});
@@ -373,7 +379,11 @@ async function sendVerificationLog(guild, section, content) {
   if (!channelId || !content) return false;
   const channel = guild.channels.cache.get(channelId) || await guild.channels.fetch(channelId).catch(() => null);
   if (!channel?.send) return false;
-  await channel.send({ content, allowedMentions: { users: [], roles: [], parse: [] } }).catch(() => null);
+  const payload = await resolveVerificationPayload(guild, {
+    content,
+    allowedMentions: { users: [], roles: [], parse: [] },
+  });
+  await channel.send(payload).catch(() => null);
   return true;
 }
 
@@ -544,7 +554,7 @@ async function reconcileAlreadyVerifiedMember(member, settings, verifiedRoles, p
   if (settings.usePendingRoles && settings.removePendingRoles) {
     for (const role of pendingRoles) {
       if (!member.roles.cache.has(role.id)) continue;
-      const status = resolveRoleActionStatus(guild, member, role, 'remove');
+      const status = resolveRoleActionStatus(guild, role, 'remove');
       if (!status.ok) {
         issues.push(status.message);
         continue;
@@ -817,10 +827,10 @@ async function restoreMissingVerificationPanel(guild, panelId, meta = {}) {
     enabled: true,
     retiredAt: null,
   };
-  const payload = {
+  const payload = await resolveVerificationPayload(guild, {
     embeds: [buildVerificationEmbed(candidate, guild)],
     components: buildVerificationRows(candidate, guild),
-  };
+  });
 
   let message = null;
   try {
@@ -872,10 +882,10 @@ async function deployVerificationPanel(channel, input = {}, meta = {}) {
   };
 
   const existingMessage = existingPanel ? await fetchPanelMessage(guild, existingPanel) : null;
-  const payload = {
+  const payload = await resolveVerificationPayload(guild, {
     embeds: [buildVerificationEmbed(candidate, guild)],
     components: buildVerificationRows(candidate, guild),
-  };
+  });
 
   if (existingMessage?.editable) {
     const rollbackPayload = snapshotMessagePayload(existingMessage);
@@ -1038,10 +1048,11 @@ async function handleVerificationInteraction(interaction) {
   const parsed = parseVerifyCustomId(interaction?.customId);
   if (!parsed || !interaction?.guildId) return false;
   const result = await verifyMember(interaction);
-  await interaction.reply({
+  const payload = await resolveVerificationPayload(interaction.guild, {
     content: result.ok ? `\u2705 ${result.message}` : `\u274C ${result.message}`,
     flags: 64,
-  }).catch(() => null);
+  });
+  await interaction.reply(payload).catch(() => null);
   return true;
 }
 
