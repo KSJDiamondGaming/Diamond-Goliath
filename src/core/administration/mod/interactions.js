@@ -1,7 +1,7 @@
 'use strict';
 
 const Discord = require('discord.js');
-const { safeReply } = require('../../../core/ui/interactionResponse');
+const { safeReply, safeUpdate } = require('../../../core/ui/interactionResponse');
 const { db, getCaseById, getCasesForUser, updateCaseStatus, recordCaseAudit } = require('./storage');
 const {
   fetchTarget,
@@ -343,7 +343,7 @@ function buildScanHistoryPayload(i, target) {
     .setFooter({ text: 'History is built only from Goliath scan audit snapshots.' })
     .setTimestamp();
   const buttons = [];
-  if (canScanCapability(i, 'scan_run')) buttons.push(new Discord.ButtonBuilder().setCustomId(`mod_member_scan:${target.id}`).setLabel('Back to Scan').setEmoji('🔎').setStyle(Discord.ButtonStyle.Primary));
+  if (canScanCapability(i, 'scan_run')) buttons.push(new Discord.ButtonBuilder().setCustomId(`mod_scan_view:${target.id}`).setLabel('Back to Scan').setEmoji('🔎').setStyle(Discord.ButtonStyle.Primary));
   if (canScanCapability(i, 'scan_compare')) buttons.push(new Discord.ButtonBuilder().setCustomId(`mod_scan_compare:${target.id}`).setLabel('Compare Account').setEmoji('🧬').setStyle(Discord.ButtonStyle.Secondary));
   return { embed, components: buttons.length ? [new Discord.ActionRowBuilder().addComponents(...buttons)] : [] };
 }
@@ -381,14 +381,14 @@ function buildComparisonPayload(i, primary, secondary) {
   if (canScanCapability(i, 'scan_compare')) buttons.push(new Discord.ButtonBuilder().setCustomId(`mod_scan_compare:${primary.id}`).setLabel('Compare Another').setEmoji('🧬').setStyle(Discord.ButtonStyle.Primary));
   return { correlation, embed, components: buttons.length ? [new Discord.ActionRowBuilder().addComponents(...buttons)] : [] };
 }
-async function runMemberScan(i, targetId) {
+async function runMemberScan(i, targetId, { record = true } = {}) {
   const allowed = await ensureScanCapability(i, 'scan_run', '❌ You do not have permission to run a member intelligence scan.');
   if (!allowed) return true;
   const target = await fetchTarget(i.guild, targetId);
   if (!target) return safeReply(i, { content: '❌ Could not find that member in this server.', flags: 64 });
   const report = buildMemberScanPayload(i, target);
   await memberIntelligence.decorateScan(i, target, report);
-  recordModerationSystemEvent({
+  if (record) recordModerationSystemEvent({
     interaction: i,
     event: 'moderation.member_scan.completed',
     action: 'member_scan',
@@ -414,7 +414,7 @@ async function runMemberScan(i, targetId) {
     },
     metadata: { dataSources: ['discord_api', 'guild_cache', 'moderation_cases', 'warnings', 'case_metadata', 'appeals', 'evidence', ...(report.access.history ? ['scan_history'] : []), ...(report.access.network ? ['cross_guild_same_id_cases'] : []), ...(report.access.links ? ['persistent_scan_correlation'] : []), ...((report.access.notes || report.access.watch) ? ['investigation_state'] : []), ...(report.access.suspects ? ['heuristic_guild_correlation'] : [])] },
   });
-  return safeReply(i, { embeds: [report.embed], components: report.components, flags: 64 });
+  return safeUpdate(i, { content: null, embeds: [report.embed], components: report.components });
 }
 async function showMemberScanHistory(i, targetId) {
   const allowed = await ensureScanCapability(i, 'scan_history', '❌ You do not have permission to view member scan history.');
@@ -423,7 +423,7 @@ async function showMemberScanHistory(i, targetId) {
   if (!target) return safeReply(i, { content: '❌ Could not find that member in this server.', flags: 64 });
   const payload = buildScanHistoryPayload(i, target);
   recordModerationSystemEvent({ interaction: i, event: 'moderation.member_scan.history_viewed', action: 'member_scan_history', targetId: target.id });
-  return safeReply(i, { embeds: [payload.embed], components: payload.components, flags: 64 });
+  return safeUpdate(i, { content: null, embeds: [payload.embed], components: payload.components });
 }
 async function runMemberComparison(i, primaryId, secondaryId) {
   const allowed = await ensureScanCapability(i, 'scan_compare', '❌ You do not have permission to compare member intelligence.');
@@ -433,7 +433,7 @@ async function runMemberComparison(i, primaryId, secondaryId) {
   if (!primary || !secondary) return safeReply(i, { content: '❌ One of those members could not be found in this server.', flags: 64 });
   const payload = buildComparisonPayload(i, primary, secondary);
   recordModerationSystemEvent({ interaction: i, event: 'moderation.member_scan.compared', action: 'member_compare', targetId: primary.id, after: { comparedUserId: secondary.id, score: payload.correlation.score, signals: payload.correlation.signals } });
-  return safeReply(i, { embeds: [payload.embed], components: payload.components, flags: 64 });
+  return safeUpdate(i, { content: null, embeds: [payload.embed], components: payload.components });
 }
 async function showPersistentLinkEvidence(i, targetId) {
   const allowed = await ensureScanCapability(i, 'scan_links', '❌ You do not have permission to view persistent link evidence.');
@@ -453,8 +453,8 @@ async function showPersistentLinkEvidence(i, targetId) {
     .setFooter({ text: 'Persistent correlation uses only previously recorded Goliath scan signals.' })
     .setTimestamp();
   recordModerationSystemEvent({ interaction: i, event: 'moderation.member_scan.link_evidence_viewed', action: 'member_scan_links', targetId: target.id, after: { matchCount: evidence.length } });
-  const components = canScanCapability(i, 'scan_run') ? [new Discord.ActionRowBuilder().addComponents(new Discord.ButtonBuilder().setCustomId(`mod_member_scan:${target.id}`).setLabel('Back to Scan').setEmoji('🔎').setStyle(Discord.ButtonStyle.Primary))] : [];
-  return safeReply(i, { embeds: [embed], components, flags: 64 });
+  const components = canScanCapability(i, 'scan_run') ? [new Discord.ActionRowBuilder().addComponents(new Discord.ButtonBuilder().setCustomId(`mod_scan_view:${target.id}`).setLabel('Back to Scan').setEmoji('🔎').setStyle(Discord.ButtonStyle.Primary))] : [];
+  return safeUpdate(i, { content: null, embeds: [embed], components });
 }
 async function toggleMemberWatch(i, targetId) {
   const allowed = await ensureScanCapability(i, 'scan_watch', '❌ You do not have permission to change investigation watch state.');
@@ -501,9 +501,10 @@ async function handleMemberScanButton(i) {
     const allowed = await ensureScanCapability(i, 'scan_run', '❌ You do not have permission to run a member intelligence scan.');
     if (!allowed) return true;
     const select = new Discord.UserSelectMenuBuilder().setCustomId('mod_scan_user_select').setPlaceholder('🔎 Select a member to scan').setMinValues(1).setMaxValues(1);
-    return safeReply(i, { content: '🔎 **Goliath Member Scan** — select a server member to run a permission-filtered intelligence report.', components: [new Discord.ActionRowBuilder().addComponents(select)], flags: 64 });
+    return safeUpdate(i, { content: '🔎 **Goliath Member Scan** — select a server member to run a permission-filtered intelligence report.', embeds: [], components: [new Discord.ActionRowBuilder().addComponents(select)] });
   }
-  if (id.startsWith('mod_member_scan:')) return runMemberScan(i, id.split(':')[1]);
+  if (id.startsWith('mod_member_scan:')) return runMemberScan(i, id.split(':')[1], { record: true });
+  if (id.startsWith('mod_scan_view:')) return runMemberScan(i, id.split(':')[1], { record: false });
   if (id.startsWith('mod_scan_history:')) return showMemberScanHistory(i, id.split(':')[1]);
   if (id.startsWith('mod_scan_links:')) return showPersistentLinkEvidence(i, id.split(':')[1]);
   const intelligenceHandled = await memberIntelligence.handleInteraction(i, { ensureCapability: ensureScanCapability, canCapability: canScanCapability });
@@ -521,7 +522,7 @@ async function handleMemberScanButton(i) {
     const allowed = await ensureScanCapability(i, 'scan_compare', '❌ You do not have permission to compare member intelligence.');
     if (!allowed) return true;
     const select = new Discord.UserSelectMenuBuilder().setCustomId(`mod_scan_compare_select:${primaryId}`).setPlaceholder('🧬 Select another member to compare').setMinValues(1).setMaxValues(1);
-    return safeReply(i, { content: `🧬 **Compare Accounts** — select another server member to compare against <@${primaryId}>.`, components: [new Discord.ActionRowBuilder().addComponents(select)], flags: 64 });
+    return safeUpdate(i, { content: `🧬 **Compare Accounts** — select another server member to compare against <@${primaryId}>.`, embeds: [], components: [new Discord.ActionRowBuilder().addComponents(select)] });
   }
   return false;
 }

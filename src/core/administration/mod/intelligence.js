@@ -2,7 +2,7 @@
 
 const Discord = require('discord.js');
 const { db } = require('./storage');
-const { safeReply } = require('../../../core/ui/interactionResponse');
+const { safeReply, safeUpdate } = require('../../../core/ui/interactionResponse');
 const sentinel = require('../../../owner/sentinel');
 
 const WATCH_STATES = Object.freeze({
@@ -538,7 +538,7 @@ async function decorateScan(interaction, target, report) {
 
 function backRow(targetId) {
   return new Discord.ActionRowBuilder().addComponents(
-    new Discord.ButtonBuilder().setCustomId(`mod_member_scan:${targetId}`).setLabel('⬅️ Back to Scan').setStyle(Discord.ButtonStyle.Secondary)
+    new Discord.ButtonBuilder().setCustomId(`mod_scan_view:${targetId}`).setLabel('⬅️ Back to Scan').setStyle(Discord.ButtonStyle.Secondary)
   );
 }
 async function resolveTarget(interaction, targetId) {
@@ -574,7 +574,7 @@ function guildHistoryEmbed(target, context, client) {
 function reputationRows(targetId, canManage = false) {
   const components = [];
   if (canManage) components.push(new Discord.ButtonBuilder().setCustomId(`mod_intel_reputation_add:${targetId}`).setLabel('Add External Record').setEmoji('➕').setStyle(Discord.ButtonStyle.Secondary));
-  components.push(new Discord.ButtonBuilder().setCustomId(`mod_member_scan:${targetId}`).setLabel('⬅️ Back to Scan').setStyle(Discord.ButtonStyle.Secondary));
+  components.push(new Discord.ButtonBuilder().setCustomId(`mod_scan_view:${targetId}`).setLabel('⬅️ Back to Scan').setStyle(Discord.ButtonStyle.Secondary));
   return new Discord.ActionRowBuilder().addComponents(...components);
 }
 function reputationModal(targetId) {
@@ -679,7 +679,7 @@ async function handleInteraction(interaction, { ensureCapability, canCapability 
     const change = setWatchlist({ userId: targetId, state, category, reason, sourceGuildId: interaction.guild.id, actorId: interaction.user.id, reviewAt });
     await reportWatchChange(interaction, targetId, change);
     const context = await buildContext(interaction.client, target, {});
-    await safeReply(interaction, { embeds: [watchlistEmbed(target, context)], components: watchlistRows(targetId, true), flags: 64 });
+    await safeUpdate(interaction, { content: null, embeds: [watchlistEmbed(target, context)], components: watchlistRows(targetId, true) });
     return true;
   }
 
@@ -687,7 +687,7 @@ async function handleInteraction(interaction, { ensureCapability, canCapability 
     if (!(await need('scan_network', '❌ You do not have permission to view Goliath intelligence.'))) return true;
     const canManage = typeof canCapability === 'function' ? Boolean(canCapability(interaction, 'scan_watch')) : false;
     const context = await buildContext(interaction.client, target, {});
-    await safeReply(interaction, { embeds: [watchlistEmbed(target, context)], components: watchlistRows(targetId, canManage), flags: 64 }); return true;
+    await safeUpdate(interaction, { content: null, embeds: [watchlistEmbed(target, context)], components: watchlistRows(targetId, canManage) }); return true;
   }
   if (action === 'mod_intel_reputation_add') {
     if (!(await need('scan_links', '❌ You do not have permission to add external intelligence records.'))) return true;
@@ -715,7 +715,7 @@ async function handleInteraction(interaction, { ensureCapability, canCapability 
         await sentinel.report(interaction.client, { module: 'moderation-intelligence', component: 'network-reputation', severity: 'warning', title: `Verified external ${record.eventType} record added`, summary: `User ${targetId} • ${record.sourceName || 'External source'} • ${record.reason || ''}`.slice(0, 1000), metadata: { guildId: interaction.guild.id, actorId: interaction.user.id, targetId, recordId: record.id, sourceType: record.sourceType, eventType: record.eventType } }).catch(() => null);
       }
       const context = await buildContext(interaction.client, target, {});
-      await safeReply(interaction, { embeds: [guildHistoryEmbed(target, context, interaction.client)], components: [reputationRows(targetId, true)], flags: 64 });
+      await safeUpdate(interaction, { content: null, embeds: [guildHistoryEmbed(target, context, interaction.client)], components: [reputationRows(targetId, true)] });
     } catch (error) {
       await safeReply(interaction, { content: `❌ ${String(error?.message || error).slice(0, 1500)}`, flags: 64 });
     }
@@ -725,22 +725,22 @@ async function handleInteraction(interaction, { ensureCapability, canCapability 
     if (!(await need('scan_network', '❌ You do not have permission to view cross-guild intelligence.'))) return true;
     const canManage = typeof canCapability === 'function' ? Boolean(canCapability(interaction, 'scan_links')) : false;
     const context = await buildContext(interaction.client, target, {});
-    await safeReply(interaction, { embeds: [guildHistoryEmbed(target, context, interaction.client)], components: [reputationRows(targetId, canManage)], flags: 64 }); return true;
+    await safeUpdate(interaction, { content: null, embeds: [guildHistoryEmbed(target, context, interaction.client)], components: [reputationRows(targetId, canManage)] }); return true;
   }
   if (action === 'mod_intel_risk') {
     if (!(await need('scan_network', '❌ You do not have permission to view intelligence risk details.'))) return true;
     const context = await buildContext(interaction.client, target, {});
-    await safeReply(interaction, { embeds: [riskEmbed(target, context)], components: [backRow(targetId)], flags: 64 }); return true;
+    await safeUpdate(interaction, { content: null, embeds: [riskEmbed(target, context)], components: [backRow(targetId)] }); return true;
   }
   if (action === 'mod_intel_identity') {
     if (!(await need('scan_history', '❌ You do not have permission to view identity history.'))) return true;
     const context = await buildContext(interaction.client, target, {});
-    await safeReply(interaction, { embeds: [identityEmbed(target, context)], components: [backRow(targetId)], flags: 64 }); return true;
+    await safeUpdate(interaction, { content: null, embeds: [identityEmbed(target, context)], components: [backRow(targetId)] }); return true;
   }
   if (action === 'mod_intel_behavior') {
     if (!(await need('scan_network', '❌ You do not have permission to view moderation behaviour intelligence.'))) return true;
     const context = await buildContext(interaction.client, target, {});
-    await safeReply(interaction, { embeds: [behaviorEmbed(target, context)], components: [backRow(targetId)], flags: 64 }); return true;
+    await safeUpdate(interaction, { content: null, embeds: [behaviorEmbed(target, context)], components: [backRow(targetId)] }); return true;
   }
   return false;
 }
