@@ -1,5 +1,6 @@
 'use strict';
 
+const emojiPayload = require('../emojis/emojiPayload');
 const schedule = require('./schedule');
 
 const REMINDER_TICK_MS = schedule.REMINDER_TICK_MS;
@@ -13,10 +14,11 @@ async function sendReminder(guild, event, minutes) {
   if (!channel?.send) throw new Error('Schedule reminder channel is unavailable.');
   const mentions = event.mentionRoleIds.map((id) => `<@&${id}>`).join(' ');
   const unix = Math.floor(new Date(event.startAt).getTime() / 1000);
-  await channel.send({
+  const payload = await emojiPayload.resolveMessagePayload(guild.client, guild.id, {
     content: `${mentions ? `${mentions} ` : ''}**${event.title}** starts <t:${unix}:R> (<t:${unix}:F>).`,
     allowedMentions: { roles: event.mentionRoleIds },
-  });
+  }, 'schedule');
+  await channel.send(payload);
 }
 
 async function processGuild(guild, meta = {}) {
