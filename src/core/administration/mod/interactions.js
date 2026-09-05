@@ -215,7 +215,6 @@ function buildInvestigationNoteModal(targetId) {
 function buildMemberScanPayload(i, target) {
   const access = {
     history: canScanCapability(i, 'scan_history'),
-    compare: canScanCapability(i, 'scan_compare'),
     suspects: canScanCapability(i, 'scan_suspects'),
     network: canScanCapability(i, 'scan_network'),
     notes: canScanCapability(i, 'scan_notes'),
@@ -308,7 +307,6 @@ function buildMemberScanPayload(i, target) {
     new Discord.ButtonBuilder().setCustomId(`mod_member_scan:${target.id}`).setLabel('Rescan').setEmoji('🔄').setStyle(Discord.ButtonStyle.Primary),
   ];
   if (access.history) primaryButtons.push(new Discord.ButtonBuilder().setCustomId(`mod_scan_history:${target.id}`).setLabel('Scan History').setEmoji('🕘').setStyle(Discord.ButtonStyle.Secondary));
-  if (access.compare) primaryButtons.push(new Discord.ButtonBuilder().setCustomId(`mod_scan_compare:${target.id}`).setLabel('Compare Member').setEmoji('⚖️').setStyle(Discord.ButtonStyle.Secondary));
   const components = [new Discord.ActionRowBuilder().addComponents(...primaryButtons)];
   const intelligenceButtons = [];
   if (access.links) intelligenceButtons.push(new Discord.ButtonBuilder().setCustomId(`mod_scan_links:${target.id}`).setLabel(`Link Evidence (${persistentLinks.length})`.slice(0, 80)).setEmoji('🔗').setStyle(Discord.ButtonStyle.Secondary));
@@ -363,7 +361,7 @@ function buildScanHistoryPayload(i, target) {
   }
   const buttons = [];
   if (canScanCapability(i, 'scan_run')) buttons.push(new Discord.ButtonBuilder().setCustomId(`mod_scan_view:${target.id}`).setLabel('Back to Scan').setEmoji('🔎').setStyle(Discord.ButtonStyle.Primary));
-  if (canScanCapability(i, 'scan_compare')) buttons.push(new Discord.ButtonBuilder().setCustomId(`mod_scan_compare:${target.id}`).setLabel('Compare Account').setEmoji('🧬').setStyle(Discord.ButtonStyle.Secondary));
+  if (canScanCapability(i, 'scan_compare')) buttons.push(new Discord.ButtonBuilder().setCustomId(`mod_scan_history_compare:${target.id}`).setLabel('Compare Account').setEmoji('🧬').setStyle(Discord.ButtonStyle.Secondary));
   if (canManageHistory) buttons.push(new Discord.ButtonBuilder().setCustomId(`mod_scan_clear_history:${target.id}`).setLabel('Clear History').setEmoji('🧹').setStyle(Discord.ButtonStyle.Danger));
   if (buttons.length) components.push(new Discord.ActionRowBuilder().addComponents(...buttons));
   return { embed, components };
@@ -394,13 +392,10 @@ function buildComparisonPayload(i, primary, secondary) {
     )
     .setFooter({ text: 'Evidence-based comparison • no private Discord data is exposed to bots' })
     .setTimestamp();
-  const buttons = [];
-  if (canScanCapability(i, 'scan_run')) {
-    buttons.push(new Discord.ButtonBuilder().setCustomId(`mod_member_scan:${primary.id}`).setLabel(`Scan ${primary.user.username}`.slice(0, 80)).setStyle(Discord.ButtonStyle.Secondary));
-    buttons.push(new Discord.ButtonBuilder().setCustomId(`mod_member_scan:${secondary.id}`).setLabel(`Scan ${secondary.user.username}`.slice(0, 80)).setStyle(Discord.ButtonStyle.Secondary));
-  }
-  if (canScanCapability(i, 'scan_compare')) buttons.push(new Discord.ButtonBuilder().setCustomId(`mod_scan_compare:${primary.id}`).setLabel('Compare Another').setEmoji('🧬').setStyle(Discord.ButtonStyle.Primary));
-  return { correlation, embed, components: buttons.length ? [new Discord.ActionRowBuilder().addComponents(...buttons)] : [] };
+  const buttons = [
+    new Discord.ButtonBuilder().setCustomId(`mod_scan_history:${primary.id}`).setLabel('⬅️ Back to Scan History').setStyle(Discord.ButtonStyle.Secondary),
+  ];
+  return { correlation, embed, components: [new Discord.ActionRowBuilder().addComponents(...buttons)] };
 }
 async function runMemberScan(i, targetId, { record = true } = {}) {
   const allowed = await ensureScanCapability(i, 'scan_run', '❌ You do not have permission to run a member intelligence scan.');
@@ -565,7 +560,7 @@ async function handleMemberScanSelect(i) {
     if (!targetId) return safeReply(i, { content: '❌ No member selected.', flags: 64 });
     return runMemberScan(i, targetId);
   }
-  if (String(i.customId || '').startsWith('mod_scan_compare_select:')) {
+  if (String(i.customId || '').startsWith('mod_scan_history_compare_select:')) {
     const primaryId = String(i.customId).split(':')[1];
     const secondaryId = i.values?.[0];
     if (!secondaryId) return safeReply(i, { content: '❌ No comparison member selected.', flags: 64 });
@@ -598,12 +593,17 @@ async function handleMemberScanButton(i) {
     await i.showModal(buildInvestigationNoteModal(targetId));
     return true;
   }
-  if (id.startsWith('mod_scan_compare:')) {
+  if (id.startsWith('mod_scan_history_compare:')) {
     const primaryId = id.split(':')[1];
     const allowed = await ensureScanCapability(i, 'scan_compare', '❌ You do not have permission to compare member intelligence.');
     if (!allowed) return true;
-    const select = new Discord.UserSelectMenuBuilder().setCustomId(`mod_scan_compare_select:${primaryId}`).setPlaceholder('🧬 Select another member to compare').setMinValues(1).setMaxValues(1);
-    return safeUpdate(i, { content: `🧬 **Compare Accounts** — select another server member to compare against <@${primaryId}>.`, embeds: [], components: [new Discord.ActionRowBuilder().addComponents(select)] });
+    const select = new Discord.UserSelectMenuBuilder().setCustomId(`mod_scan_history_compare_select:${primaryId}`).setPlaceholder('🧬 Select another member to compare').setMinValues(1).setMaxValues(1);
+    const back = new Discord.ButtonBuilder().setCustomId(`mod_scan_history:${primaryId}`).setLabel('⬅️ Back to Scan History').setStyle(Discord.ButtonStyle.Secondary);
+    return safeUpdate(i, {
+      content: `🧬 **Compare Accounts** — select another server member to compare against <@${primaryId}>.`,
+      embeds: [],
+      components: [new Discord.ActionRowBuilder().addComponents(select), new Discord.ActionRowBuilder().addComponents(back)],
+    });
   }
   return false;
 }
