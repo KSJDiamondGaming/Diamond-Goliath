@@ -505,15 +505,25 @@ async function decorateScan(interaction, target, report) {
   report.intelligenceContext = context;
   report.risk = context.risk;
   removeField(report.embed, '⚖️ Moderation & Risk');
-  setOrReplaceField(report.embed, '⚖️ Moderation & Risk', [
-    `Cases: **${report.cases?.length || 0}** • Active: **${localSummary.activeCases}** • Warnings: **${localSummary.warningCount}**`,
-    `Timeouts: **${localSummary.timeouts}** • Bans: **${localSummary.bans}**`,
-    `Risk: **${context.risk.score}/100 • ${context.risk.label}**`,
-    ...(context.risk.reasons.slice(0, 4).map((item) => `+${item.points} • ${item.reason}`)),
+  removeField(report.embed, '🌐 Network Reputation');
+  removeField(report.embed, '📊 Behaviour Pattern');
+  removeField(report.embed, '🔗 Verified Identity Links');
+  setOrReplaceField(report.embed, '⚖️ Moderation Overview', [
+    `Cases **${report.cases?.length || 0}** • Active **${localSummary.activeCases}** • Warnings **${localSummary.warningCount}** • Timeouts **${localSummary.timeouts}** • Bans **${localSummary.bans}**`,
+    `Risk **${context.risk.score}/100 • ${context.risk.label}** • Watchlist ${watchLine(context.watch)}`,
   ].join('\n'));
-  setOrReplaceField(report.embed, '🌐 Network Reputation', contextSummary(context));
-  setOrReplaceField(report.embed, '📊 Behaviour Pattern', behaviorSummary(context.behavior));
-  setOrReplaceField(report.embed, '🔗 Verified Identity Links', context.confirmedLinks.length ? context.confirmedLinks.slice(0, 5).map((link) => `• <@${String(link.userId) === String(target.id) ? link.linkedUserId : link.userId}> • ${link.provider} • verified ${discordTime(link.verifiedAt)}`).join('\n') : 'No verified identity links are stored for this member.');
+  const history = context.guildHistory || [];
+  const currentGuilds = history.filter((item) => item.present).length;
+  const formerGuilds = history.filter((item) => item.present === false).length;
+  const reputation = context.reputation || {};
+  const behavior = context.behavior || {};
+  setOrReplaceField(report.embed, '🧠 Intelligence Summary', [
+    `Network: **${history.length}** observed guild(s) • **${currentGuilds}** current • **${formerGuilds}** former`,
+    `Cross-guild: **${context.network?.caseCount || 0}** cases • **${context.network?.banCount || 0}** bans • **${context.network?.timeoutCount || 0}** timeouts`,
+    `External: **${reputation.verifiedExternal || 0}** verified • **${reputation.submitted || 0}** submitted • **${reputation.unverified || 0}** unverified`,
+    `Behaviour: **${String(behavior.trend || 'stable').toUpperCase()}** • 30d **${behavior.windows?.d30?.total || 0}** case(s) • Verified links **${context.confirmedLinks.length}**`,
+    'Open the drill-down controls below for evidence and history.',
+  ].join('\n'));
   const intelligenceRow = new Discord.ActionRowBuilder().addComponents(
     new Discord.ButtonBuilder().setCustomId(`mod_intel_guilds:${target.id}`).setLabel('Network Reputation').setEmoji('🌐').setStyle(Discord.ButtonStyle.Secondary),
     new Discord.ButtonBuilder().setCustomId(`mod_intel_watchlist:${target.id}`).setLabel('Watchlist').setEmoji('🛡️').setStyle(context.watch.state === 'blacklisted' ? Discord.ButtonStyle.Danger : Discord.ButtonStyle.Secondary),

@@ -238,7 +238,7 @@ function buildMemberScanPayload(i, target) {
   const suspectText = suspects.length
     ? suspects.map(({ member, score, signals }) => `${score >= 70 ? '🔴 **STRONG MATCH**' : '🟠 **POSSIBLE MATCH**'} — ${member.user} • **${score}%**\n${signals.map((signal) => `• ${signal}`).join('\n')}`).join('\n\n')
     : '⚪ **NO LINK FOUND** — No evidence-based suspected account match in the current guild cache.';
-  const recent = cases.slice(0, 5).map((entry) => `#${entry.caseId} • ${entry.action} • ${entry.status || 'active'} • ${entry.reason || 'No reason'}`).join('\n') || 'No recorded moderation cases.';
+  const recent = cases.slice(0, 3).map((entry) => `#${entry.caseId} • ${entry.action} • ${entry.status || 'active'} • ${(entry.reason || 'No reason').slice(0, 120)}`).join('\n') || 'No recorded moderation cases.';
   const scanId = `scan_${Date.now().toString(36)}_${target.id.slice(-6)}`;
   const identityLines = [
     'Username: ' + String(target.user.username) + ' • Global: ' + String(target.user.globalName || 'None'),
@@ -253,7 +253,7 @@ function buildMemberScanPayload(i, target) {
     'Joined: ' + scanTimestamp(target.joinedTimestamp),
     'Boosting: ' + (target.premiumSinceTimestamp ? scanTimestamp(target.premiumSinceTimestamp) : 'No') + ' • Screening: ' + (target.pending ? 'Pending' : 'Complete'),
     'Timeout: ' + (target.communicationDisabledUntilTimestamp ? scanTimestamp(target.communicationDisabledUntilTimestamp) : 'None'),
-    'Roles (' + roles.length + '): ' + ((roles.slice(0, 10).map((role) => String(role)).join(', ') || 'None').slice(0, 500)),
+    'Roles (' + roles.length + '): ' + ((roles.slice(0, 5).map((role) => String(role)).join(', ') || 'None').slice(0, 320)) + (roles.length > 5 ? ` • +${roles.length - 5} more` : ''),
     'Elevated permissions: ' + (keyPermissions.length ? keyPermissions.join(', ') : 'None'),
     'Account flags: ' + (flags.length ? flags.join(', ') : 'None'),
   ];
@@ -298,7 +298,7 @@ function buildMemberScanPayload(i, target) {
       `**Scan ID:** \`${scanId}\``,
       `**Target:** ${target.user} (\`${target.id}\`)`,
       '',
-      'Permission-filtered intelligence for authorized management. Correlation signals are investigation aids, not proof of identity or ownership.',
+      'Evidence-led overview for authorized management. Use the drill-down controls for full history, reputation and risk evidence.',
     ].join('\n'))
     .addFields(fields)
     .setFooter({ text: `Scanned by ${i.user?.tag || i.user?.username || i.user?.id || 'Unknown'} • evidence-based intelligence` })
