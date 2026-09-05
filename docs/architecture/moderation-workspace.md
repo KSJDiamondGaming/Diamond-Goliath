@@ -36,6 +36,8 @@ The intelligence scan exposes drill-down views for Network Reputation, Watchlist
 
 Member Intelligence component navigation reuses the current ephemeral interaction message wherever Discord permits. Scan History, comparison, evidence, Network Reputation, Watchlist, Risk Details, Identity History, Behaviour and Back-to-Scan transitions edit the existing panel instead of creating a chain of new ephemeral messages. Returning from a drill-down does not create a new stored scan snapshot unless the moderator explicitly runs Rescan.
 
+Scan History supports deleting an individual stored scan snapshot or clearing all stored scan snapshots for the selected member, with an explicit confirmation before deletion. These operations remove only `moderation.member_scan.completed` snapshot records. Cases, warnings, evidence, investigation notes, watchlist records and non-scan moderation audit history are retained. Snapshot deletion and history clearing are themselves recorded as moderation system audit events.
+
 ## Network Reputation
 
 Member Intelligence keeps Goliath-observed guild history separate from external reputation information. The Network Reputation view combines current/former Goliath guild observations and cross-guild moderation cases with manually supplied external records classified as `Verified External`, `Evidence Submitted`, or `Reported / Unverified`.
