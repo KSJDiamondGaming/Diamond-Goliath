@@ -34,11 +34,17 @@ Goliath Watchlist states are `Clear`, `Watchlisted`, `Restricted`, and `Blacklis
 
 The intelligence scan exposes drill-down views for Network Reputation, Watchlist, Risk Details, Identity History, and Behaviour. Network Reputation contains the Goliath-observed guild history plus classified external/submitted intelligence. Risk scoring is explainable and lists the verified factors that contributed points. Behaviour summaries compare 7/30/90-day activity and recent escalation patterns while retaining the main scan as the compact overview.
 
+The Member Intelligence landing workspace intentionally exposes only Full Member Scan and Scan History. Evidence, notes, investigation state, risk, network, identity, behaviour and Watchlist controls live inside the full scan so there is one canonical place for detailed investigation actions.
+
 Member Intelligence component navigation reuses the current ephemeral interaction message wherever Discord permits. Scan History, comparison, evidence, Network Reputation, Watchlist, Risk Details, Identity History, Behaviour and Back-to-Scan transitions edit the existing panel instead of creating a chain of new ephemeral messages. Returning from a drill-down does not create a new stored scan snapshot unless the moderator explicitly runs Rescan.
+
+Scan History preserves where it was opened from. When opened from the Intelligence landing workspace, Back returns to Member Intelligence. When opened from the full scan, Back returns to the current scan. Comparison, delete confirmation and clear-history confirmation preserve the same origin so nested Back/Cancel controls always return one logical level up.
 
 Scan History supports deleting an individual stored scan snapshot or clearing all stored scan snapshots for the selected member, with an explicit confirmation before deletion. These operations remove only `moderation.member_scan.completed` snapshot records. Cases, warnings, evidence, investigation notes, watchlist records and non-scan moderation audit history are retained. Snapshot deletion and history clearing are themselves recorded as moderation system audit events.
 
 Account comparison is entered only from Scan History. The main Intelligence scan does not expose a separate Compare Member button. The comparison selector and comparison result both provide a Back to Scan History control and reuse the same ephemeral panel.
+
+Investigation Watch is distinct from the persistent Goliath Watchlist. Opening Investigation Watch first shows a dedicated status view; it does not immediately change state. Enable/Remove is performed from that status view, audited separately, and returns to the same watch view. Returning to the scan after an investigation-state or note change refreshes the display without recording another scan snapshot.
 
 ## Network Reputation
 
