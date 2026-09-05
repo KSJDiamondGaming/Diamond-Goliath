@@ -2,7 +2,7 @@
 
 const guildManager = require('../../../core/guild/guildManager');
 const { getModuleSection, updateModuleSection } = require('../../../core/guild/moduleSectionManager');
-const emojis = require('../../utilityStudio/emojis/emojis');
+const emojiPayload = require('../../utilityStudio/emojis/emojiPayload');
 const queue = require('./scheduledWelcomeQueue');
 const messages = require('./scheduledWelcomeMessage');
 
@@ -167,8 +167,8 @@ async function runScheduledWelcome(guild, options = {}) {
 
   for (const batch of batches) {
     try {
-      const payload = messages.buildBatchPayload(guild, batch, config);
-      payload.content = await emojis.resolveText(guild.client, guild.id, payload.content);
+      const built = messages.buildBatchPayload(guild, batch, config);
+      const payload = await emojiPayload.resolveMessagePayload(guild.client, guild.id, built, 'welcome');
       await channel.send(payload);
       messagesSent += 1;
       welcomed += batch.length;
