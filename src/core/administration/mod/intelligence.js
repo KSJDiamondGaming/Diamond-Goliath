@@ -104,11 +104,28 @@ function ensureSchema() {
       metadata TEXT,
       UNIQUE(user_id, linked_user_id, provider)
     );
+    CREATE TABLE IF NOT EXISTS member_intelligence_reputation (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL,
+      source_type TEXT NOT NULL,
+      event_type TEXT NOT NULL,
+      source_name TEXT,
+      source_guild_id TEXT,
+      reason TEXT,
+      evidence_ref TEXT,
+      confidence TEXT NOT NULL DEFAULT 'reported',
+      actor_id TEXT,
+      created_at TEXT NOT NULL,
+      reversed_at TEXT,
+      metadata TEXT
+    );
     CREATE INDEX IF NOT EXISTS idx_member_intel_events_user_created ON member_intelligence_events(user_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_member_intel_events_guild_user ON member_intelligence_events(guild_id, user_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_member_intel_profiles_user ON member_intelligence_profiles(user_id, last_seen_at DESC);
     CREATE INDEX IF NOT EXISTS idx_member_intel_watch_state ON member_intelligence_watchlist(state, updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_member_intel_links_user ON member_intelligence_links(user_id, verified_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_member_intel_reputation_user ON member_intelligence_reputation(user_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_member_intel_reputation_source ON member_intelligence_reputation(source_type, event_type, created_at DESC);
   `);
 }
 ensureSchema();
@@ -290,6 +307,43 @@ function addConfirmedLink({ userId, linkedUserId, provider, verificationRef = nu
   return getConfirmedLinks(userId);
 }
 
+const REPUTATION_SOURCE_TYPES = Object.freeze({
+  verified_external: { label: 'Verified External', confidence: 'verified' },
+  submitted: { label: 'Evidence Submitted', confidence: 'submitted' },
+  unverified: { label: 'Reported / Unverified', confidence: 'reported' },
+});
+const REPUTATION_EVENT_TYPES = new Set(['ban', 'blacklist', 'kick', 'timeout', 'warning', 'report', 'other']);
+function getReputationRecords(userId, limit = 100) {
+  return db.prepare('SELECT * FROM member_intelligence_reputation WHERE user_id = ? ORDER BY id DESC LIMIT ?').all(String(userId), clamp(limit, 1, 250)).map((row) => ({
+    id: Number(row.id), userId: row.user_id, sourceType: row.source_type, eventType: row.event_type,
+    sourceName: row.source_name || null, sourceGuildId: row.source_guild_id || null, reason: row.reason || null,
+    evidenceRef: row.evidence_ref || null, confidence: row.confidence || 'reported', actorId: row.actor_id || null,
+    createdAt: row.created_at, reversedAt: row.reversed_at || null, metadata: json(row.metadata, {}),
+  }));
+}
+function summarizeReputation(records = []) {
+  const active = records.filter((record) => !record.reversedAt);
+  const count = (sourceType) => active.filter((record) => record.sourceType === sourceType).length;
+  return {
+    total: active.length,
+    verifiedExternal: count('verified_external'), submitted: count('submitted'), unverified: count('unverified'),
+    verifiedExternalBans: active.filter((record) => record.sourceType === 'verified_external' && record.eventType === 'ban').length,
+    verifiedExternalBlacklists: active.filter((record) => record.sourceType === 'verified_external' && record.eventType === 'blacklist').length,
+  };
+}
+function addReputationRecord({ userId, sourceType, eventType, sourceName = null, sourceGuildId = null, reason, evidenceRef = null, actorId = null, metadata = {} }) {
+  const normalizedSource = REPUTATION_SOURCE_TYPES[sourceType] ? sourceType : 'unverified';
+  const normalizedEvent = REPUTATION_EVENT_TYPES.has(String(eventType || '').toLowerCase()) ? String(eventType).toLowerCase() : 'other';
+  const normalizedEvidence = String(evidenceRef || '').trim().slice(0, 500) || null;
+  if (normalizedSource === 'verified_external' && !normalizedEvidence) throw new Error('Verified external intelligence requires a traceable evidence/reference value.');
+  const normalizedReason = String(reason || '').trim().slice(0, 1500);
+  if (!normalizedReason) throw new Error('A reason or evidence summary is required.');
+  const cfg = REPUTATION_SOURCE_TYPES[normalizedSource];
+  const result = db.prepare('INSERT INTO member_intelligence_reputation (user_id,source_type,event_type,source_name,source_guild_id,reason,evidence_ref,confidence,actor_id,created_at,reversed_at,metadata) VALUES (?,?,?,?,?,?,?,?,?,?,NULL,?)')
+    .run(String(userId), normalizedSource, normalizedEvent, String(sourceName || '').trim().slice(0, 120) || null, sourceGuildId ? String(sourceGuildId) : null, normalizedReason, normalizedEvidence, cfg.confidence, actorId ? String(actorId) : null, now(), stringify(metadata));
+  return getReputationRecords(userId, 250).find((record) => record.id === Number(result.lastInsertRowid)) || null;
+}
+
 function getAllCases(userId) {
   return db.prepare('SELECT * FROM cases WHERE user_id = ? ORDER BY created_at DESC').all(String(userId)).map((row) => ({
     guildId: row.guild_id, caseId: Number(row.case_id), moderatorId: row.moderator_id, action: row.action, reason: row.reason || null,
@@ -349,7 +403,7 @@ function getNetworkModeration(userId, currentGuildId) {
     timeoutCount: outside.reduce((n, row) => n + row.timeouts, 0), warningCount: outside.reduce((n, row) => n + row.warnings, 0), rows: outside,
   };
 }
-function calculateRisk({ localSummary = {}, network = {}, watch = {}, behavior = {} }) {
+function calculateRisk({ localSummary = {}, network = {}, watch = {}, behavior = {}, reputation = {} }) {
   const reasons = [];
   let score = 0;
   const add = (points, reason) => { if (points > 0) { score += points; reasons.push({ points, reason }); } };
@@ -359,6 +413,8 @@ function calculateRisk({ localSummary = {}, network = {}, watch = {}, behavior =
   add(Math.min(20, Number(localSummary.bans || 0) * 10), `${localSummary.bans || 0} local ban case(s)`);
   add(Math.min(18, Number(network.caseCount || 0) * 3), `${network.caseCount || 0} case(s) in other Goliath guilds`);
   add(Math.min(20, Number(network.banCount || 0) * 10), `${network.banCount || 0} ban(s) in other Goliath guilds`);
+  add(Math.min(20, Number(reputation.verifiedExternalBans || 0) * 8), `${reputation.verifiedExternalBans || 0} verified external ban record(s)`);
+  add(Math.min(20, Number(reputation.verifiedExternalBlacklists || 0) * 10), `${reputation.verifiedExternalBlacklists || 0} verified external blacklist record(s)`);
   const watchCfg = WATCH_STATES[watch.state] || WATCH_STATES.clear;
   add(watchCfg.risk, `${watchCfg.label} by Goliath intelligence`);
   if (behavior?.trend === 'increasing' && Number(behavior?.windows?.d30?.total || 0) >= 2) add(6, 'moderation activity is increasing over the last 30 days');
@@ -377,6 +433,8 @@ async function buildContext(client, target, localSummary = {}) {
   const behavior = getBehavior(userId);
   const network = getNetworkModeration(userId, guildId);
   const confirmedLinks = getConfirmedLinks(userId);
+  const reputationRecords = getReputationRecords(userId);
+  const reputation = summarizeReputation(reputationRecords);
   let auditReport = null;
   try {
     const auditUserIntelligence = require('../../../owner/auditIntelligence/userIntelligence');
@@ -390,8 +448,8 @@ async function buildContext(client, target, localSummary = {}) {
       guildHistory.push({ guildId: String(guild.guildId), userId, username: null, globalName: null, displayName: null, avatarHash: null, roles: [], permissions: [], present: guild.currentMember === true, firstSeenAt: guild.firstObservedAt || null, lastSeenAt: guild.lastObservedAt || null, lastJoinedAt: null, lastLeftAt: null, joinCount: Number(guild.joinCount || 0), leaveCount: Number(guild.leaveCount || 0), timeoutUntil: null, boostingSince: null, screeningPending: false, source: 'audit_intelligence' });
     }
   }
-  const risk = calculateRisk({ localSummary, network, watch, behavior });
-  return { userId, guildId, watch, guildHistory, identity, behavior, network, confirmedLinks, auditReport, risk };
+  const risk = calculateRisk({ localSummary, network, watch, behavior, reputation });
+  return { userId, guildId, watch, guildHistory, identity, behavior, network, confirmedLinks, reputationRecords, reputation, auditReport, risk };
 }
 
 function setOrReplaceField(embed, name, value, inline = false) {
@@ -415,10 +473,12 @@ function contextSummary(context) {
   const current = history.filter((item) => item.present).length;
   const former = history.filter((item) => item.present === false).length;
   const network = context.network || {};
+  const reputation = context.reputation || {};
   return [
-    `Guilds observed: **${history.length}** • Current: **${current}** • Former/last-seen: **${former}**`,
-    `Cross-guild cases: **${network.caseCount || 0}** • Bans: **${network.banCount || 0}** • Timeouts: **${network.timeoutCount || 0}**`,
-    `Watchlist: ${watchLine(context.watch)}`,
+    `Observed Guilds: **${history.length}** • Current: **${current}** • Former: **${former}**`,
+    `Goliath Cases: **${network.caseCount || 0}** • Bans: **${network.banCount || 0}** • Timeouts: **${network.timeoutCount || 0}**`,
+    `External Verified: **${reputation.verifiedExternal || 0}** • Submitted: **${reputation.submitted || 0}** • Reports: **${reputation.unverified || 0}**`,
+    `Goliath Watchlist: ${watchLine(context.watch)}`,
   ].join('\n');
 }
 function behaviorSummary(behavior) {
@@ -451,11 +511,11 @@ async function decorateScan(interaction, target, report) {
     `Risk: **${context.risk.score}/100 • ${context.risk.label}**`,
     ...(context.risk.reasons.slice(0, 4).map((item) => `+${item.points} • ${item.reason}`)),
   ].join('\n'));
-  setOrReplaceField(report.embed, '🌐 Goliath Network', contextSummary(context));
+  setOrReplaceField(report.embed, '🌐 Network Reputation', contextSummary(context));
   setOrReplaceField(report.embed, '📊 Behaviour Pattern', behaviorSummary(context.behavior));
   setOrReplaceField(report.embed, '🔗 Verified Identity Links', context.confirmedLinks.length ? context.confirmedLinks.slice(0, 5).map((link) => `• <@${String(link.userId) === String(target.id) ? link.linkedUserId : link.userId}> • ${link.provider} • verified ${discordTime(link.verifiedAt)}`).join('\n') : 'No verified identity links are stored for this member.');
   const intelligenceRow = new Discord.ActionRowBuilder().addComponents(
-    new Discord.ButtonBuilder().setCustomId(`mod_intel_guilds:${target.id}`).setLabel('Guild History').setEmoji('🌐').setStyle(Discord.ButtonStyle.Secondary),
+    new Discord.ButtonBuilder().setCustomId(`mod_intel_guilds:${target.id}`).setLabel('Network Reputation').setEmoji('🌐').setStyle(Discord.ButtonStyle.Secondary),
     new Discord.ButtonBuilder().setCustomId(`mod_intel_watchlist:${target.id}`).setLabel('Watchlist').setEmoji('🛡️').setStyle(context.watch.state === 'blacklisted' ? Discord.ButtonStyle.Danger : Discord.ButtonStyle.Secondary),
     new Discord.ButtonBuilder().setCustomId(`mod_intel_risk:${target.id}`).setLabel('Risk Details').setEmoji('📈').setStyle(Discord.ButtonStyle.Secondary),
     new Discord.ButtonBuilder().setCustomId(`mod_intel_identity:${target.id}`).setLabel('Identity History').setEmoji('🪪').setStyle(Discord.ButtonStyle.Secondary),
@@ -480,14 +540,41 @@ async function contextFor(interaction, targetId) {
   return { target, context: await buildContext(interaction.client, target, {}) };
 }
 function guildHistoryEmbed(target, context, client) {
-  const rows = (context.guildHistory || []).slice(0, 15).map((item) => {
+  const guildRows = (context.guildHistory || []).slice(0, 12).map((item) => {
     const guild = client?.guilds?.cache?.get?.(item.guildId);
     const name = guild?.name || context.auditReport?.guilds?.find?.((entry) => String(entry.guildId) === String(item.guildId))?.guildName || `Guild ${item.guildId}`;
-    const status = item.present ? '🟢 Current' : '⚪ Former/last seen';
+    const status = item.present ? '🟢 Current' : '⚪ Former';
     const mod = context.network?.rows?.find?.((entry) => String(entry.guildId) === String(item.guildId));
-    return `**${name}** • ${status}\nFirst: ${discordTime(item.firstSeenAt)} • Last: ${discordTime(item.lastSeenAt)} • Joins: ${item.joinCount || 0} • Leaves: ${item.leaveCount || 0}${mod ? `\nCases: ${mod.cases} • Bans: ${mod.bans} • Timeouts: ${mod.timeouts}` : ''}`;
+    return `**${name}** • ${status}\nFirst ${discordTime(item.firstSeenAt)} • Last ${discordTime(item.lastSeenAt)}${mod ? `\nCases **${mod.cases}** • Bans **${mod.bans}** • Timeouts **${mod.timeouts}**` : ''}`;
   });
-  return new Discord.EmbedBuilder().setColor(0x5865F2).setTitle(`🌐 Goliath Guild History • ${target.user.tag}`).setDescription(rows.length ? rows.join('\n\n').slice(0, 4000) : 'Goliath has no stored guild-presence history for this member yet.').setFooter({ text: 'Only guilds legitimately observed by Goliath are shown.' }).setTimestamp();
+  const externalRows = (context.reputationRecords || []).filter((record) => !record.reversedAt).slice(0, 10).map((record) => {
+    const cfg = REPUTATION_SOURCE_TYPES[record.sourceType] || REPUTATION_SOURCE_TYPES.unverified;
+    const source = record.sourceName || (record.sourceGuildId ? `Guild ${record.sourceGuildId}` : 'External source');
+    const evidence = record.evidenceRef ? ` • Ref: ${record.evidenceRef}` : '';
+    return `**${cfg.label} • ${String(record.eventType || 'other').toUpperCase()}**\n${source} • ${discordTime(record.createdAt)}${evidence}\n${String(record.reason || 'No summary').slice(0, 300)}`;
+  });
+  const rep = context.reputation || {};
+  const sections = [
+    `**Summary**\nObserved guilds **${context.guildHistory?.length || 0}** • Cross-guild cases **${context.network?.caseCount || 0}** • Network bans **${context.network?.banCount || 0}**\nExternal verified **${rep.verifiedExternal || 0}** • Submitted **${rep.submitted || 0}** • Unverified reports **${rep.unverified || 0}**`,
+    `**Goliath-Observed Guild History**\n${guildRows.length ? guildRows.join('\n\n') : 'No stored Goliath guild-presence history yet.'}`,
+    `**External / Submitted Intelligence**\n${externalRows.length ? externalRows.join('\n\n') : 'No external or submitted reputation records are stored.'}`,
+  ];
+  return new Discord.EmbedBuilder().setColor(0x5865F2).setTitle(`🌐 Network Reputation • ${target.user.tag}`).setDescription(sections.join('\n\n').slice(0, 4000)).setFooter({ text: 'Verified, submitted and unverified information are kept separate. No external report automatically blacklists a member.' }).setTimestamp();
+}
+function reputationRows(targetId, canManage = false) {
+  const components = [];
+  if (canManage) components.push(new Discord.ButtonBuilder().setCustomId(`mod_intel_reputation_add:${targetId}`).setLabel('Add External Record').setEmoji('➕').setStyle(Discord.ButtonStyle.Secondary));
+  components.push(new Discord.ButtonBuilder().setCustomId(`mod_member_scan:${targetId}`).setLabel('⬅️ Back to Scan').setStyle(Discord.ButtonStyle.Secondary));
+  return new Discord.ActionRowBuilder().addComponents(...components);
+}
+function reputationModal(targetId) {
+  return new Discord.ModalBuilder().setCustomId(`mod_intel_reputation_submit:${targetId}`).setTitle('Add Network Reputation Record').addComponents(
+    new Discord.ActionRowBuilder().addComponents(new Discord.TextInputBuilder().setCustomId('source_type').setLabel('Source class').setStyle(Discord.TextInputStyle.Short).setRequired(true).setPlaceholder('verified_external | submitted | unverified')),
+    new Discord.ActionRowBuilder().addComponents(new Discord.TextInputBuilder().setCustomId('event_type').setLabel('Event').setStyle(Discord.TextInputStyle.Short).setRequired(true).setPlaceholder('ban | blacklist | kick | timeout | warning | report')),
+    new Discord.ActionRowBuilder().addComponents(new Discord.TextInputBuilder().setCustomId('source_name').setLabel('Server / source name').setStyle(Discord.TextInputStyle.Short).setRequired(true).setMaxLength(120)),
+    new Discord.ActionRowBuilder().addComponents(new Discord.TextInputBuilder().setCustomId('reason').setLabel('Reason / evidence summary').setStyle(Discord.TextInputStyle.Paragraph).setRequired(true).setMaxLength(1500)),
+    new Discord.ActionRowBuilder().addComponents(new Discord.TextInputBuilder().setCustomId('evidence_ref').setLabel('Evidence / reference').setStyle(Discord.TextInputStyle.Short).setRequired(false).setMaxLength(500).setPlaceholder('Required for verified_external')),
+  );
 }
 function riskEmbed(target, context) {
   return new Discord.EmbedBuilder().setColor(context.risk.score >= 70 ? 0xED4245 : context.risk.score >= 40 ? 0xF0A202 : 0x5865F2).setTitle(`📈 Risk Breakdown • ${target.user.tag}`).setDescription(`**${context.risk.score}/100 • ${context.risk.label}**\n\n${context.risk.reasons.length ? context.risk.reasons.map((item) => `**+${item.points}** • ${item.reason}`).join('\n') : 'No verified moderation-risk factors currently contribute to this score.'}\n\nHeuristic suspected-account correlation does **not** add risk unless it becomes verified evidence.`).setTimestamp();
@@ -592,10 +679,43 @@ async function handleInteraction(interaction, { ensureCapability, canCapability 
     const context = await buildContext(interaction.client, target, {});
     await safeReply(interaction, { embeds: [watchlistEmbed(target, context)], components: watchlistRows(targetId, canManage), flags: 64 }); return true;
   }
+  if (action === 'mod_intel_reputation_add') {
+    if (!(await need('scan_links', '❌ You do not have permission to add external intelligence records.'))) return true;
+    await interaction.showModal(reputationModal(targetId)); return true;
+  }
+  if (action === 'mod_intel_reputation_submit' && interaction.isModalSubmit?.()) {
+    if (!(await need('scan_links', '❌ You do not have permission to add external intelligence records.'))) return true;
+    try {
+      const record = addReputationRecord({
+        userId: targetId,
+        sourceType: String(interaction.fields.getTextInputValue('source_type') || '').trim().toLowerCase(),
+        eventType: String(interaction.fields.getTextInputValue('event_type') || '').trim().toLowerCase(),
+        sourceName: String(interaction.fields.getTextInputValue('source_name') || '').trim(),
+        reason: String(interaction.fields.getTextInputValue('reason') || '').trim(),
+        evidenceRef: String(interaction.fields.getTextInputValue('evidence_ref') || '').trim() || null,
+        sourceGuildId: interaction.guild.id,
+        actorId: interaction.user.id,
+        metadata: { enteredFromGuildId: interaction.guild.id },
+      });
+      try {
+        const { recordModerationSystemEvent } = require('./permissions');
+        recordModerationSystemEvent({ interaction, event: 'moderation.intelligence.reputation.added', action: 'intelligence_reputation', targetId, reason: record?.reason || null, after: record });
+      } catch {}
+      if (record?.sourceType === 'verified_external' && ['ban', 'blacklist'].includes(record.eventType)) {
+        await sentinel.report(interaction.client, { module: 'moderation-intelligence', component: 'network-reputation', severity: 'warning', title: `Verified external ${record.eventType} record added`, summary: `User ${targetId} • ${record.sourceName || 'External source'} • ${record.reason || ''}`.slice(0, 1000), metadata: { guildId: interaction.guild.id, actorId: interaction.user.id, targetId, recordId: record.id, sourceType: record.sourceType, eventType: record.eventType } }).catch(() => null);
+      }
+      const context = await buildContext(interaction.client, target, {});
+      await safeReply(interaction, { embeds: [guildHistoryEmbed(target, context, interaction.client)], components: [reputationRows(targetId, true)], flags: 64 });
+    } catch (error) {
+      await safeReply(interaction, { content: `❌ ${String(error?.message || error).slice(0, 1500)}`, flags: 64 });
+    }
+    return true;
+  }
   if (action === 'mod_intel_guilds') {
     if (!(await need('scan_network', '❌ You do not have permission to view cross-guild intelligence.'))) return true;
+    const canManage = typeof canCapability === 'function' ? Boolean(canCapability(interaction, 'scan_links')) : false;
     const context = await buildContext(interaction.client, target, {});
-    await safeReply(interaction, { embeds: [guildHistoryEmbed(target, context, interaction.client)], components: [backRow(targetId)], flags: 64 }); return true;
+    await safeReply(interaction, { embeds: [guildHistoryEmbed(target, context, interaction.client)], components: [reputationRows(targetId, canManage)], flags: 64 }); return true;
   }
   if (action === 'mod_intel_risk') {
     if (!(await need('scan_network', '❌ You do not have permission to view intelligence risk details.'))) return true;
@@ -629,6 +749,9 @@ module.exports = {
   getWatchAudit,
   getConfirmedLinks,
   addConfirmedLink,
+  getReputationRecords,
+  addReputationRecord,
+  summarizeReputation,
   getBehavior,
   getNetworkModeration,
   calculateRisk,
