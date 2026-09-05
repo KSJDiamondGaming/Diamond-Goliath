@@ -198,6 +198,25 @@ async function search(query, limit = 25) {
 
 function assetUrl(entry) { return entry ? (entry.image || entry.url || entry.src || null) : null; }
 
+function catalogueEntryLooksAnimated(entry) {
+  const explicit = entry?.animated ?? entry?.isAnimated ?? entry?.is_animated;
+  if (explicit === true || explicit === 1 || String(explicit || '').toLowerCase() === 'true') return true;
+  const format = String(entry?.format || entry?.type || entry?.extension || '').toLowerCase();
+  if (format === 'gif' || format === 'apng' || format.includes('animated')) return true;
+  const url = String(assetUrl(entry) || '');
+  return /\.(?:gif|apng)(?:$|[?#])/i.test(url) || /(?:^|[?&])animated=(?:1|true)(?:&|$)/i.test(url);
+}
+
+async function searchAnimated(query, limit = 25) {
+  const needle = String(query || '').trim().toLowerCase();
+  if (!needle) return [];
+  const catalogue = await fetchCatalogue();
+  return catalogue
+    .filter((entry) => catalogueEntryLooksAnimated(entry))
+    .filter((entry) => [entry.title, entry.slug, entry.category, entry.id].filter(Boolean).join(' ').toLowerCase().includes(needle))
+    .slice(0, Math.max(1, Math.min(Number(limit) || 25, 25)));
+}
+
 async function boundedResponseBuffer(response, maxBytes) {
   const contentLength = Number(response.headers.get('content-length')) || 0;
   if (contentLength > maxBytes) throw new Error(`Emoji source is too large (${contentLength} bytes; max ${maxBytes}).`);
@@ -348,6 +367,8 @@ module.exports = {
   fetchCatalogue,
   findById,
   search,
+  searchAnimated,
+  catalogueEntryLooksAnimated,
   assetUrl,
   downloadAsset,
   prepareSourceBuffer,
