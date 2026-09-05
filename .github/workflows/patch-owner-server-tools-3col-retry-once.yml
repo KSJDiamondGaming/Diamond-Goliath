@@ -1,0 +1,59 @@
+name: Patch Owner Server Tools 3-Col Retry Once
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - '.github/workflows/patch-owner-server-tools-3col-retry-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: dev
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Reorganise Server Tools rows
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import base64
+          path = Path('src/owner/command.js')
+          text = path.read_text()
+          old = base64.b64decode('ICBjb25zdCBkdXBsaWNhdG9yVG9vbHMgPSBuZXcgQWN0aW9uUm93QnVpbGRlcigpLmFkZENvbXBvbmVudHMoCiAgICBuZXcgQnV0dG9uQnVpbGRlcigpLnNldEN1c3RvbUlkKGNvbnRleHR1YWxPd25lcklkKCdzZXJ2ZXItY29weScsIGd1aWxkSWQpKS5zZXRMYWJlbCgnQ29weSBTdHJ1Y3R1cmUnKS5zZXRFbW9qaSgn8J+TiycpLnNldFN0eWxlKEJ1dHRvblN0eWxlLlByaW1hcnkpLnNldERpc2FibGVkKCFndWlsZENvbnRleHRBdmFpbGFibGUpLAogICAgbmV3IEJ1dHRvbkJ1aWxkZXIoKS5zZXRDdXN0b21JZChjb250ZXh0dWFsT3duZXJJZCgnc2VydmVyLWFuYWx5c2UnLCBndWlsZElkKSkuc2V0TGFiZWwoJ0FuYWx5c2UgU2VydmVycycpLnNldEVtb2ppKCfwn5SOJykuc2V0U3R5bGUoQnV0dG9uU3R5bGUuU2Vjb25kYXJ5KS5zZXREaXNhYmxlZCghZ3VpbGRDb250ZXh0QXZhaWxhYmxlKQogICk7CgogIGNvbnN0IHRlbXBsYXRlVG9vbHMgPSBuZXcgQWN0aW9uUm93QnVpbGRlcigpLmFkZENvbXBvbmVudHMoCiAgICBuZXcgQnV0dG9uQnVpbGRlcigpLnNldEN1c3RvbUlkKGNvbnRleHR1YWxPd25lcklkKCdzZXJ2ZXItZXhwb3J0JywgZ3VpbGRJZCkpLnNldExhYmVsKCdFeHBvcnQgVGVtcGxhdGUnKS5zZXRFbW9qaSgn8J+TpCcpLnNldFN0eWxlKEJ1dHRvblN0eWxlLlNlY29uZGFyeSkuc2V0RGlzYWJsZWQoIWd1aWxkQ29udGV4dEF2YWlsYWJsZSksCiAgICBuZXcgQnV0dG9uQnVpbGRlcigpLnNldEN1c3RvbUlkKGNvbnRleHR1YWxPd25lcklkKCdzZXJ2ZXItYnVpbGQnLCBndWlsZElkKSkuc2V0TGFiZWwoJ0J1aWxkIFRlbXBsYXRlJykuc2V0RW1vamkoJ/Cfj5fvuI8nKS5zZXRTdHlsZShCdXR0b25TdHlsZS5TZWNvbmRhcnkpLnNldERpc2FibGVkKCFndWlsZENvbnRleHRBdmFpbGFibGUpCiAgKTsKCiAgY29uc3QgcGxhbm5lZFRvb2xzID0gbmV3IEFjdGlvblJvd0J1aWxkZXIoKS5hZGRDb21wb25lbnRzKAogICAgbmV3IEJ1dHRvbkJ1aWxkZXIoKS5zZXRDdXN0b21JZChjb250ZXh0dWFsT3duZXJJZCgncGVybWlzc2lvbnMtc3R1ZGlvJywgZ3VpbGRJZCkpLnNldExhYmVsKCdQZXJtaXNzaW9ucyBTdHVkaW8g4oCiIENvbWluZyBOZXh0Jykuc2V0RW1vamkoJ/Cfm6HvuI8nKS5zZXRTdHlsZShCdXR0b25TdHlsZS5TZWNvbmRhcnkpLnNldERpc2FibGVkKHRydWUpCiAgKTsKCiAgY29uc3QgbmF2aWdhdGlvbiA9IG5ldyBBY3Rpb25Sb3dCdWlsZGVyKCkuYWRkQ29tcG9uZW50cygKICAgIG5ldyBCdXR0b25CdWlsZGVyKCkuc2V0Q3VzdG9tSWQoY29udGV4dHVhbE93bmVySWQoJ2hvbWUnLCBndWlsZElkKSkuc2V0TGFiZWwoJ+Kshe+4jyBCYWNrJykuc2V0U3R5bGUoQnV0dG9uU3R5bGUuU2Vjb25kYXJ5KQogICk7CgogIHJldHVybiB7IGVtYmVkczogW2VtYmVkXSwgY29tcG9uZW50czogW2R1cGxpY2F0b3JUb29scywgdGVtcGxhdGVUb29scywgcGxhbm5lZFRvb2xzLCBuYXZpZ2F0aW9uXSB9Ow==').decode()
+          new = base64.b64decode('ICBjb25zdCBwcmltYXJ5VG9vbHMgPSBuZXcgQWN0aW9uUm93QnVpbGRlcigpLmFkZENvbXBvbmVudHMoCiAgICBuZXcgQnV0dG9uQnVpbGRlcigpLnNldEN1c3RvbUlkKGNvbnRleHR1YWxPd25lcklkKCdzZXJ2ZXItY29weScsIGd1aWxkSWQpKS5zZXRMYWJlbCgnQ29weSBTdHJ1Y3R1cmUnKS5zZXRFbW9qaSgn8J+TiycpLnNldFN0eWxlKEJ1dHRvblN0eWxlLlByaW1hcnkpLnNldERpc2FibGVkKCFndWlsZENvbnRleHRBdmFpbGFibGUpLAogICAgbmV3IEJ1dHRvbkJ1aWxkZXIoKS5zZXRDdXN0b21JZChjb250ZXh0dWFsT3duZXJJZCgnc2VydmVyLWFuYWx5c2UnLCBndWlsZElkKSkuc2V0TGFiZWwoJ0FuYWx5c2UgU2VydmVycycpLnNldEVtb2ppKCfwn5SOJykuc2V0U3R5bGUoQnV0dG9uU3R5bGUuU2Vjb25kYXJ5KS5zZXREaXNhYmxlZCghZ3VpbGRDb250ZXh0QXZhaWxhYmxlKSwKICAgIG5ldyBCdXR0b25CdWlsZGVyKCkuc2V0Q3VzdG9tSWQoY29udGV4dHVhbE93bmVySWQoJ3NlcnZlci1leHBvcnQnLCBndWlsZElkKSkuc2V0TGFiZWwoJ0V4cG9ydCBUZW1wbGF0ZScpLnNldEVtb2ppKCfwn5OkJykuc2V0U3R5bGUoQnV0dG9uU3R5bGUuU2Vjb25kYXJ5KS5zZXREaXNhYmxlZCghZ3VpbGRDb250ZXh0QXZhaWxhYmxlKQogICk7CgogIGNvbnN0IHNlY29uZGFyeVRvb2xzID0gbmV3IEFjdGlvblJvd0J1aWxkZXIoKS5hZGRDb21wb25lbnRzKAogICAgbmV3IEJ1dHRvbkJ1aWxkZXIoKS5zZXRDdXN0b21JZChjb250ZXh0dWFsT3duZXJJZCgnc2VydmVyLWJ1aWxkJywgZ3VpbGRJZCkpLnNldExhYmVsKCdCdWlsZCBUZW1wbGF0ZScpLnNldEVtb2ppKCfwn4+X77iPJykuc2V0U3R5bGUoQnV0dG9uU3R5bGUuU2Vjb25kYXJ5KS5zZXREaXNhYmxlZCghZ3VpbGRDb250ZXh0QXZhaWxhYmxlKSwKICAgIG5ldyBCdXR0b25CdWlsZGVyKCkuc2V0Q3VzdG9tSWQoY29udGV4dHVhbE93bmVySWQoJ3Blcm1pc3Npb25zLXN0dWRpbycsIGd1aWxkSWQpKS5zZXRMYWJlbCgnUGVybWlzc2lvbnMgU3R1ZGlvIOKAoiBDb21pbmcgTmV4dCcpLnNldEVtb2ppKCfwn5uh77iPJykuc2V0U3R5bGUoQnV0dG9uU3R5bGUuU2Vjb25kYXJ5KS5zZXREaXNhYmxlZCh0cnVlKQogICk7CgogIGNvbnN0IG5hdmlnYXRpb24gPSBuZXcgQWN0aW9uUm93QnVpbGRlcigpLmFkZENvbXBvbmVudHMoCiAgICBuZXcgQnV0dG9uQnVpbGRlcigpLnNldEN1c3RvbUlkKGNvbnRleHR1YWxPd25lcklkKCdob21lJywgZ3VpbGRJZCkpLnNldExhYmVsKCfirIXvuI8gQmFjaycpLnNldFN0eWxlKEJ1dHRvblN0eWxlLlNlY29uZGFyeSkKICApOwoKICByZXR1cm4geyBlbWJlZHM6IFtlbWJlZF0sIGNvbXBvbmVudHM6IFtwcmltYXJ5VG9vbHMsIHNlY29uZGFyeVRvb2xzLCBuYXZpZ2F0aW9uXSB9Ow==').decode()
+          if old in text:
+              path.write_text(text.replace(old, new, 1))
+          elif new not in text:
+              raise SystemExit('Expected Server Tools button block not found')
+          PY
+      - name: Validate
+        run: |
+          node --check src/owner/command.js
+          npm run doctor
+          npx vite build src/dashboard --outDir ../../dist --emptyOutDir --logLevel warn
+      - name: Commit and push safely
+        shell: bash
+        run: |
+          rm -f .github/workflows/patch-owner-server-tools-3col-once.yml .github/workflows/patch-owner-server-tools-3col-retry-once.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/owner/command.js .github/workflows/patch-owner-server-tools-3col-once.yml .github/workflows/patch-owner-server-tools-3col-retry-once.yml
+          git commit -m "ui(owner): use three-column server tools rows"
+          for attempt in 1 2 3 4; do
+            git fetch origin dev
+            git rebase origin/dev && git push origin HEAD:dev && exit 0
+            git rebase --abort || true
+            sleep 2
+          done
+          exit 1
