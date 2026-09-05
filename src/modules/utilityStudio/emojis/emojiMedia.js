@@ -69,7 +69,84 @@ function processingSummary(result) {
     : (finalBytes ? ` • ${Math.ceil(finalBytes / 1024)} KB` : '');
   const dimensions = result.width && result.height ? ` • ${result.width}×${result.height}` : '';
   const frames = result.animated && result.pages ? ` • ${result.pages} frames` : '';
-  return `${type}${dimensions}${frames}${compression}`;
+  const frameRate = result.frameRateReduced ? ' • reduced frame rate' : '';
+  return `${type}${dimensions}${frames}${frameRate}${compression}`;
+}
+
+function frameDelays(metadata, pages) {
+  const source = Array.isArray(metadata?.delay) ? metadata.delay : [];
+  return Array.from({ length: pages }, (_, index) => {
+    const fallback = source.length ? source[Math.min(index, source.length - 1)] : 100;
+    const delay = Number(fallback);
+    return Number.isFinite(delay) && delay > 0 ? Math.round(delay) : 100;
+  });
+}
+
+async function reduceAnimationFrameRate(sharp, source, stride) {
+  const metadata = await sharp(source, {
+    animated: true,
+    limitInputPixels: MAX_DECODED_PIXELS,
+  }).metadata();
+  const pages = Math.max(1, Number(metadata?.pages) || 1);
+  if (pages <= 1 || stride <= 1) return null;
+
+  const raw = await sharp(source, {
+    animated: true,
+    limitInputPixels: MAX_DECODED_PIXELS,
+  })
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  const width = Number(raw.info?.width) || Number(metadata?.width) || 0;
+  const totalHeight = Number(raw.info?.height) || 0;
+  const pageHeight = Number(raw.info?.pageHeight) || frameHeight(metadata) || Math.round(totalHeight / pages);
+  const channels = Number(raw.info?.channels) || 4;
+  if (!width || !pageHeight || !channels) return null;
+
+  const bytesPerFrame = width * pageHeight * channels;
+  if (!bytesPerFrame || raw.data.length < bytesPerFrame * pages) return null;
+
+  const delays = frameDelays(metadata, pages);
+  const frames = [];
+  const reducedDelays = [];
+  for (let start = 0; start < pages; start += stride) {
+    frames.push(raw.data.subarray(start * bytesPerFrame, (start + 1) * bytesPerFrame));
+    let delay = 0;
+    for (let index = start; index < Math.min(pages, start + stride); index += 1) delay += delays[index];
+    reducedDelays.push(Math.max(1, delay));
+  }
+  if (frames.length >= pages || !frames.length) return null;
+
+  const stacked = Buffer.concat(frames);
+  const gifOptions = {
+    reuse: false,
+    colours: 16,
+    effort: 8,
+    dither: 0,
+    interFrameMaxError: 24,
+    interPaletteMaxError: 40,
+    loop: Number.isFinite(Number(metadata?.loop)) ? Number(metadata.loop) : 0,
+    delay: reducedDelays,
+  };
+  const output = await sharp(stacked, {
+    raw: {
+      width,
+      height: pageHeight * frames.length,
+      channels,
+      pageHeight,
+    },
+  })
+    .gif(gifOptions)
+    .toBuffer({ resolveWithObject: true });
+
+  return {
+    data: output.data,
+    info: output.info,
+    pagesBefore: pages,
+    pagesAfter: Number(output.info?.pages) || frames.length,
+    stride,
+  };
 }
 
 async function prepareAnimatedEmoji(source, metadata, options = {}) {
@@ -169,9 +246,35 @@ async function prepareAnimatedEmoji(source, metadata, options = {}) {
       pages: Number(output.info?.pages) || safety.pages,
       durationMs: safety.durationMs,
       colours: attempt.colours,
+      frameRateReduced: false,
     };
     if (!best || result.bytes < best.bytes) best = result;
     if (!maxBytes || result.bytes <= maxBytes) return result;
+  }
+
+  // Frame-rate reduction is deliberately the final fallback. By this point the
+  // animation has already been reduced through palette, quality and dimensions.
+  // We drop evenly-spaced frames and add their delays to retained frames so the
+  // animation duration and loop behaviour remain intact.
+  if (best?.buffer && Number(best.pages || 0) > 1) {
+    for (const stride of [2, 3, 4]) {
+      const reduced = await reduceAnimationFrameRate(sharp, best.buffer, stride);
+      if (!reduced?.data?.length) continue;
+      const result = {
+        ...best,
+        buffer: reduced.data,
+        bytes: reduced.data.length,
+        width: Number(reduced.info?.width) || best.width,
+        height: Number(reduced.info?.pageHeight) || best.height,
+        pages: reduced.pagesAfter,
+        durationMs: safety.durationMs,
+        frameRateReduced: true,
+        frameReductionStride: stride,
+        pagesBeforeFrameReduction: reduced.pagesBefore,
+      };
+      if (!best || result.bytes < best.bytes) best = result;
+      if (!maxBytes || result.bytes <= maxBytes) return result;
+    }
   }
 
   throw new Error(`Animated emoji could not be reduced below Discord's ${maxBytes} byte limit without flattening the animation (best ${best?.bytes || source.length} bytes).`);
