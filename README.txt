@@ -18,6 +18,13 @@ Live configuration
 Clean UI system
 Real-Time Sync
 
+Emoji Studio
+Static and animated Discord application emojis
+GIF, animated WebP, APNG and AVIF intake where supported by the media decoder
+Animated uploads are preserved when already Discord-ready and optimised without silently flattening animation when oversized
+Universal shortcode, embed and component resolution keeps static/animated handling central across Goliath modules
+Animated emoji management filters, metadata, canonical CDN URLs and animation-aware duplicate detection
+
 
 
 
