@@ -58,4 +58,24 @@ function update(controlGuildId, id, patch, guildOrMeta = {}) {
   return nextEntry;
 }
 
-module.exports = { add, list, get, update, makeId };
+function remove(controlGuildId, id, guildOrMeta = {}) {
+  const { transferHistory } = readConfig(controlGuildId);
+  const next = transferHistory.filter((item) => item?.id !== id);
+  if (next.length === transferHistory.length) return false;
+  saveHistory(controlGuildId, next, guildOrMeta);
+  return true;
+}
+
+function clearWhere(controlGuildId, predicate, guildOrMeta = {}) {
+  const { transferHistory } = readConfig(controlGuildId);
+  const removed = [];
+  const kept = [];
+  for (const item of transferHistory) {
+    if (predicate(item)) removed.push(item);
+    else kept.push(item);
+  }
+  if (removed.length) saveHistory(controlGuildId, kept, guildOrMeta);
+  return removed;
+}
+
+module.exports = { add, list, get, update, remove, clearWhere, makeId };

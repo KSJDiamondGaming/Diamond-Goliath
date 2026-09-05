@@ -544,6 +544,14 @@ async function executeSnapshotOnGuild(guild, session, snap, title, actorId = 'br
   await executeStage('Permissions', log, () => applyPermissions(guild, snap, maps, log));
   await executeStage('Emojis', log, () => applyEmojis(guild, snap, maps, log, session.conflictMode));
   await executeStage('Verify destination', log, () => verifyCopyResult(guild, snap, maps, log));
+  log.transferObjects = {
+  createdRoleIds: [...maps.createdRoles],
+  createdCategoryIds: [...maps.createdCategories],
+  createdChannelIds: [...maps.createdChannels],
+  createdEmojiIds: [...maps.createdEmojis],
+  roleMap: Object.fromEntries(maps.roles),
+  channelMap: Object.fromEntries(maps.channels),
+};
   if (log.errors.length) log.status = log.copied.categories + log.copied.channels + log.copied.roles > 0 ? 'completed-with-warnings' : 'failed';
   else if (log.deferredPermissions.length) log.status = 'partial-permissions';
   else log.status = 'success';
@@ -570,6 +578,93 @@ async function executeSnapshot(interaction, session, snap, title) {
   return log;
 }
 
+async function inspectUndoObjects(guild, payload = {}) {
+  await fetchGuildState(guild);
+  await guild.members.fetch().catch(() => null);
+  const channelIds = [...new Set([...(payload.createdChannelIds || []), ...(payload.createdCategoryIds || [])].map(String))];
+  const roleIds = [...new Set((payload.createdRoleIds || []).map(String))];
+  const channelSet = new Set(channelIds);
+  const channels = [];
+  for (const id of channelIds) {
+    const channel = guild.channels.cache.get(id) || null;
+    channels.push(channel
+      ? { id, name: channel.name, type: channel.type, state: channel.deletable === false ? 'unsafe' : 'present', reason: channel.deletable === false ? 'Channel is not deletable.' : null }
+      : { id, name: null, type: null, state: 'missing', reason: 'Already missing.' });
+  }
+  const roles = [];
+  for (const id of roleIds) {
+    const role = guild.roles.cache.get(id) || null;
+    if (!role) { roles.push({ id, name: null, state: 'missing', reason: 'Already missing.' }); continue; }
+    let reason = null;
+    if (role.managed || !role.editable) reason = 'Role is managed or not editable.';
+    else if (role.members?.size) reason = `Role is assigned to ${role.members.size} member(s).`;
+    else {
+      const externalUse = [...guild.channels.cache.values()].find((channel) => !channelSet.has(channel.id) && channel.permissionOverwrites?.cache?.has?.(id));
+      if (externalUse) reason = `Role is used by #${externalUse.name} outside this transfer.`;
+    }
+    roles.push({ id, name: role.name, state: reason ? 'unsafe' : 'present', reason });
+  }
+  const all = [...channels, ...roles];
+  return {
+    guild: { id: guild.id, name: guild.name }, channels, roles,
+    counts: {
+      total: all.length,
+      present: all.filter((item) => item.state === 'present').length,
+      missing: all.filter((item) => item.state === 'missing').length,
+      unsafe: all.filter((item) => item.state === 'unsafe').length,
+    },
+  };
+}
+
+async function applyUndoObjects(guild, payload = {}, actorId = 'bridge') {
+  const before = await inspectUndoObjects(guild, payload);
+  const channelIds = new Set(before.channels.filter((item) => item.state === 'present').map((item) => item.id));
+  const channels = [...guild.channels.cache.values()].filter((channel) => channelIds.has(channel.id));
+  const ordered = [
+    ...channels.filter((channel) => channel.type !== ChannelType.GuildCategory).sort((a, b) => b.position - a.position),
+    ...channels.filter((channel) => channel.type === ChannelType.GuildCategory).sort((a, b) => b.position - a.position),
+  ];
+  const deletedChannels = [], failedChannels = [];
+  for (const channel of ordered) {
+    try {
+      const id = channel.id, name = channel.name;
+      await channel.delete(`Goliath Duplicator undo by ${actorId}`);
+      const stillThere = await guild.channels.fetch(id).catch(() => null);
+      if (stillThere) throw new Error('Post-delete verification found the channel still present.');
+      deletedChannels.push({ id, name, type: channel.type });
+    } catch (error) { failedChannels.push({ id: channel.id, name: channel.name, error: error.message || String(error) }); }
+  }
+  await fetchGuildState(guild);
+  await guild.members.fetch().catch(() => null);
+  const roleIds = new Set((payload.createdRoleIds || []).map(String));
+  const deletedRoles = [], failedRoles = [], skippedRoles = [];
+  for (const id of roleIds) {
+    const role = guild.roles.cache.get(id) || null;
+    if (!role) { skippedRoles.push({ id, state: 'missing', reason: 'Already missing.' }); continue; }
+    let reason = null;
+    if (role.managed || !role.editable) reason = 'Role is managed or not editable.';
+    else if (role.members?.size) reason = `Role is assigned to ${role.members.size} member(s).`;
+    else {
+      const externalUse = [...guild.channels.cache.values()].find((channel) => channel.permissionOverwrites?.cache?.has?.(id));
+      if (externalUse) reason = `Role is still used by #${externalUse.name}.`;
+    }
+    if (reason) { skippedRoles.push({ id, name: role.name, state: 'unsafe', reason }); continue; }
+    try {
+      const name = role.name;
+      await role.delete(`Goliath Duplicator undo by ${actorId}`);
+      const stillThere = await guild.roles.fetch(id).catch(() => null);
+      if (stillThere) throw new Error('Post-delete verification found the role still present.');
+      deletedRoles.push({ id, name });
+    } catch (error) { failedRoles.push({ id, name: role.name, error: error.message || String(error) }); }
+  }
+  const failed = [...failedChannels, ...failedRoles];
+  const removed = deletedChannels.length + deletedRoles.length;
+  const requested = before.counts.total;
+  const remainingUnsafe = skippedRoles.filter((item) => item.state === 'unsafe').length + before.channels.filter((item) => item.state === 'unsafe').length;
+  const outcome = failed.length ? (removed ? 'partial' : 'failed') : remainingUnsafe ? (removed ? 'partial' : 'failed') : removed ? 'undone' : 'no-changes';
+  return { before, requested, removed, outcome, deletedChannels, deletedRoles, failedChannels, failedRoles, skippedRoles };
+}
+
 async function readBridgeBody(req) { const chunks = []; for await (const chunk of req) chunks.push(chunk); return chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {}; }
 function bridgeAuthorized(req) { const configured = bridgeSecret(); return !configured || req.headers['x-goliath-duplicator-secret'] === configured; }
 function bridgeJson(res, status, value) { const body = Buffer.from(JSON.stringify(value)); res.writeHead(status, { 'content-type': 'application/json', 'content-length': String(body.length) }); res.end(body); }
@@ -582,6 +677,8 @@ function initializeBridge(client) {
       if (!bridgeAuthorized(req)) return bridgeJson(res, 403, { error: 'Forbidden' });
       if (req.method === 'GET' && req.url === '/guilds') return bridgeJson(res, 200, { environment: mode(), guilds: localGuildDirectory(bridgeClient) });
       if (req.method === 'POST' && req.url === '/snapshot') { const body = await readBridgeBody(req); const result = await fetchGuildById(bridgeClient, body.guildId); if (!result.guild) return bridgeJson(res, 404, { error: 'Guild unavailable' }); await fetchGuildState(result.guild); return bridgeJson(res, 200, { snapshot: snapshot(result.guild, body.selectedOptions || [...ACTIVE_OPTIONS]) }); }
+      if (req.method === 'POST' && req.url === '/undo-inspect') { const body = await readBridgeBody(req); const result = await fetchGuildById(bridgeClient, body.guildId); if (!result.guild) return bridgeJson(res, 404, { error: 'Guild unavailable' }); return bridgeJson(res, 200, await inspectUndoObjects(result.guild, body.objects || {})); }
+      if (req.method === 'POST' && req.url === '/undo-apply') { const body = await readBridgeBody(req); const result = await fetchGuildById(bridgeClient, body.guildId); if (!result.guild) return bridgeJson(res, 404, { error: 'Guild unavailable' }); return bridgeJson(res, 200, await applyUndoObjects(result.guild, body.objects || {}, body.actorId || 'bridge')); }
       if (req.method === 'POST' && req.url === '/apply') { const body = await readBridgeBody(req); const result = await fetchGuildById(bridgeClient, body.guildId); if (!result.guild) return bridgeJson(res, 404, { error: 'Guild unavailable' }); const bridgeSession = { dryRun: true, conflictMode: 'skip', ...(body.session || {}), destinationGuildId: body.guildId }; const log = await executeSnapshotOnGuild(result.guild, bridgeSession, body.snapshot, body.title || 'Copy', body.actorId || 'bridge'); return bridgeJson(res, 200, { guild: { id: result.guild.id, name: result.guild.name }, log }); }
       return bridgeJson(res, 404, { error: 'Not found' });
     } catch (error) { console.error('[Duplicator Bridge]', error); return bridgeJson(res, 500, { error: error.message || String(error) }); }

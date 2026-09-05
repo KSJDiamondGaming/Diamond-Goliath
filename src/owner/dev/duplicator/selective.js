@@ -368,6 +368,17 @@ function destinationMappings(sourceSnapshot, destinationSnapshot, selected) {
   });
   return { roleMappings, channelMappings };
 }
+function copyOutcome(response, mappings) {
+  const status = String(response?.log?.status || 'unknown');
+  const created = response?.log?.transferObjects || {};
+  const changed = (created.createdChannelIds || []).length + (created.createdCategoryIds || []).length + (created.createdRoleIds || []).length;
+  const unresolved = [...mappings.roleMappings, ...mappings.channelMappings].filter((item) => item.status !== 'mapped').length;
+  if (status === 'success' && !unresolved) return 'success';
+  if (status === 'failed' || (!changed && (response?.log?.errors || []).length)) return 'failed';
+  if (!changed && status !== 'success') return 'no-changes';
+  return 'partial';
+}
+
 async function recordTransfer(interaction, session, response) {
   const environment = destinationEnvironment(interaction, session, session.destinationGuildId);
   const destinationSnapshot = (await bridgeRequest(environment, 'POST', '/snapshot', {
@@ -376,14 +387,26 @@ async function recordTransfer(interaction, session, response) {
   })).snapshot;
   const filtered = filteredSnapshot(session.snapshot, session.selected);
   const mappings = destinationMappings(session.snapshot, destinationSnapshot, session.selected);
+  const transferObjects = response.log?.transferObjects || {};
+  const createdRoles = new Set((transferObjects.createdRoleIds || []).map(String));
+  const createdStructure = new Set([...(transferObjects.createdCategoryIds || []), ...(transferObjects.createdChannelIds || [])].map(String));
+  for (const item of mappings.roleMappings) item.createdByTransfer = Boolean(item.destinationId && createdRoles.has(String(item.destinationId)));
+  for (const item of mappings.channelMappings) item.createdByTransfer = Boolean(item.destinationId && createdStructure.has(String(item.destinationId)));
+  const outcome = copyOutcome(response, mappings);
   const manifest = history.add(session.controlGuildId, {
     type: 'selective-copy', sourceGuildId: session.sourceGuildId,
     sourceGuildName: session.snapshot?.sourceGuild?.name || null,
     destinationGuildId: session.destinationGuildId,
     destinationGuildName: destinationSnapshot?.sourceGuild?.name || response.guild?.name || null,
-    environment, status: response.log?.status || 'unknown', rollbackBackupId: response.log?.rollbackBackupId || null,
+    environment, status: response.log?.status || 'unknown', outcome,
+    rollbackBackupId: response.log?.rollbackBackupId || null,
     selectedSourceChannelIds: [...normalizeSelection(session.snapshot, session.selected)], stats: filtered.stats,
     roles: mappings.roleMappings, channels: mappings.channelMappings,
+    transferObjects: {
+      createdRoleIds: [...createdRoles],
+      createdCategoryIds: [...new Set((transferObjects.createdCategoryIds || []).map(String))],
+      createdChannelIds: [...new Set((transferObjects.createdChannelIds || []).map(String))],
+    },
     warnings: response.log?.errors || [], notes: response.log?.notes || [],
   }, interaction.guild);
   session.lastManifestId = manifest.id;
@@ -409,37 +432,126 @@ function resultPayload(session, response, manifest) {
     )],
   };
 }
-function historyPayload(session) {
+function inferOutcome(item) {
+  if (item?.outcome) return item.outcome;
+  if (item?.status === 'undone') return 'undone';
+  if (item?.type === 'bulk-delete') {
+    if ((item.deletedCount || 0) === 0 && !(item.failed || []).length) return 'no-changes';
+    if ((item.failed || []).length) return (item.deletedCount || 0) ? 'partial' : 'failed';
+    return (item.deletedCount || 0) ? 'success' : 'no-changes';
+  }
+  const status = String(item?.status || '').toLowerCase();
+  if (status === 'success') return 'success';
+  if (status === 'failed') return 'failed';
+  if (status.includes('warning') || status.includes('partial')) return 'partial';
+  return 'recorded';
+}
+function outcomeMeta(outcome) {
+  return ({
+    success: ['🟢', 'SUCCESS'], partial: ['🟠', 'PARTIAL'], failed: ['🔴', 'FAILED'],
+    'no-changes': ['⚪', 'NO CHANGES'], undone: ['↩️', 'UNDONE'], recorded: ['⚪', 'RECORDED'],
+  })[outcome] || ['⚪', String(outcome || 'RECORDED').toUpperCase()];
+}
+function historyPayload(session, notice = null) {
   const entries = history.list(session.controlGuildId, 25);
   const lines = entries.slice(0, 10).map((item) => {
     const stats = item.stats || {};
-    return `**${item.id}** • ${item.type || 'transfer'} • ${item.sourceGuildName || item.sourceGuildId || 'n/a'} → ${item.destinationGuildName || item.destinationGuildId || 'n/a'} • ${stats.channels ?? item.deletedCount ?? 0} channels`;
+    const outcome = inferOutcome(item); const [icon, label] = outcomeMeta(outcome);
+    const operation = item.type === 'bulk-delete' ? 'DELETE' : 'COPY';
+    const count = item.type === 'bulk-delete' ? `${item.deletedCount || 0}/${item.requestedCount ?? item.deletedCount ?? 0} removed` : `${stats.channels ?? 0} channels`;
+    return `${icon} **${item.id}** • **${operation} ${label}** • ${item.sourceGuildName || item.sourceGuildId || 'n/a'} → ${item.destinationGuildName || item.destinationGuildId || 'n/a'} • ${count}`;
   });
   const components = [];
-  if (entries.length) components.push(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(componentId(session, 'history-pick')).setPlaceholder('Open transfer manifest').addOptions(entries.map((item) => ({
-    label: `${item.id} • ${item.destinationGuildName || item.destinationGuildId || 'destination'}`.slice(0, 100),
-    description: `${item.type || 'transfer'} • ${item.status || 'recorded'} • ${item.createdAt || ''}`.slice(0, 100),
-    value: item.id,
-  })))));
+  if (entries.length) components.push(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(componentId(session, 'history-pick')).setPlaceholder('Open transfer/history record').addOptions(entries.map((item) => {
+    const [, label] = outcomeMeta(inferOutcome(item));
+    return { label: `${item.id} • ${label}`.slice(0, 100), description: `${item.type || 'transfer'} • ${item.destinationGuildName || item.destinationGuildId || 'destination'}`.slice(0, 100), value: item.id };
+  }))));
+  components.push(new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(componentId(session, 'history-clear-junk')).setLabel('Clear Failed / No Changes').setStyle(ButtonStyle.Secondary).setDisabled(!entries.some((item) => ['failed', 'no-changes'].includes(inferOutcome(item)))),
+    new ButtonBuilder().setCustomId(componentId(session, 'history-clear-undone')).setLabel('Clear Undone').setStyle(ButtonStyle.Secondary).setDisabled(!entries.some((item) => inferOutcome(item) === 'undone')),
+    new ButtonBuilder().setCustomId(componentId(session, 'history-clear-all-view')).setLabel('Clear All History').setStyle(ButtonStyle.Danger).setDisabled(!entries.length),
+  ));
   components.push(new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(componentId(session, 'home')).setLabel('Back').setStyle(ButtonStyle.Secondary)));
-  return { embeds: [embed('📜 Duplicator Transfer History', lines.join('\n') || 'No transfer manifests have been recorded yet.')], components };
+  return { embeds: [embed('📜 Duplicator Transfer History', [notice ? `**${notice}**` : null, notice ? '' : null, ...(lines.length ? lines : ['No transfer manifests have been recorded yet.'])].filter(Boolean).join('\n'))], components };
+}
+function createdUndoObjects(manifest) {
+  if (manifest?.transferObjects) return {
+    createdRoleIds: manifest.transferObjects.createdRoleIds || [],
+    createdCategoryIds: manifest.transferObjects.createdCategoryIds || [],
+    createdChannelIds: manifest.transferObjects.createdChannelIds || [],
+  };
+  return {
+    createdRoleIds: (manifest.roles || []).filter((item) => item.createdByTransfer === true).map((item) => item.destinationId).filter(Boolean),
+    createdCategoryIds: [],
+    createdChannelIds: (manifest.channels || []).filter((item) => item.createdByTransfer === true).map((item) => item.destinationId).filter(Boolean),
+  };
+}
+function canUndoManifest(manifest) {
+  const objects = createdUndoObjects(manifest);
+  return manifest?.type === 'selective-copy' && inferOutcome(manifest) !== 'undone' && (objects.createdRoleIds.length + objects.createdCategoryIds.length + objects.createdChannelIds.length > 0);
 }
 function manifestPayload(session, manifest) {
-  const roleLines = (manifest.roles || []).slice(0, 12).map((item) => `• ${item.sourceName} \`${item.sourceId}\` → ${item.destinationId ? `\`${item.destinationId}\`` : `**${item.status}**`}`);
-  const channelLines = (manifest.channels || []).slice(0, 16).map((item) => `• ${item.sourceName} \`${item.sourceId}\` → ${item.destinationId ? `\`${item.destinationId}\`` : `**${item.status}**`}`);
+  const roleLines = (manifest.roles || []).slice(0, 12).map((item) => `• ${item.createdByTransfer ? '🆕 ' : ''}${item.sourceName} \`${item.sourceId}\` → ${item.destinationId ? `\`${item.destinationId}\`` : `**${item.status}**`}`);
+  const channelLines = (manifest.channels || []).slice(0, 16).map((item) => `• ${item.createdByTransfer ? '🆕 ' : ''}${item.sourceName} \`${item.sourceId}\` → ${item.destinationId ? `\`${item.destinationId}\`` : `**${item.status}**`}`);
+  const outcome = inferOutcome(manifest); const [icon, label] = outcomeMeta(outcome);
+  const legacy = manifest.type === 'selective-copy' && !manifest.transferObjects && !(manifest.channels || []).some((item) => item.createdByTransfer === true);
   return {
     embeds: [embed(`📜 Transfer ${manifest.id}`, [
-      `**Type:** ${manifest.type || 'transfer'}`, `**Created:** ${manifest.createdAt || 'unknown'}`,
+      `**Outcome:** ${icon} ${label}`, `**Type:** ${manifest.type || 'transfer'}`, `**Created:** ${manifest.createdAt || 'unknown'}`,
       `**Source:** ${manifest.sourceGuildName || manifest.sourceGuildId || 'n/a'} (${manifest.sourceGuildId || 'n/a'})`,
       `**Destination:** ${manifest.destinationGuildName || manifest.destinationGuildId || 'n/a'} (${manifest.destinationGuildId || 'n/a'})`,
-      `**Status:** ${manifest.status || 'recorded'}`, manifest.rollbackBackupId ? `**Rollback Backup:** \`${manifest.rollbackBackupId}\`` : null,
+      `**Engine status:** ${manifest.status || 'recorded'}`, manifest.rollbackBackupId ? `**Rollback Backup:** \`${manifest.rollbackBackupId}\`` : null,
+      manifest.undo?.removed != null ? `**Undo:** removed ${manifest.undo.removed}/${manifest.undo.requested} objects` : null,
+      legacy ? '⚠️ **Legacy record:** exact created-object ownership was not stored, so automatic Undo is disabled. Deleting this history record is still safe.' : null,
       '', '**Role mappings**', ...(roleLines.length ? roleLines : ['• None']), '', '**Category / channel mappings**', ...(channelLines.length ? channelLines : ['• None']),
       (manifest.channels || []).length > 16 ? `…and ${(manifest.channels || []).length - 16} more structure mappings.` : null,
       '', `Stored permission overwrites: **${(manifest.channels || []).reduce((sum, item) => sum + (item.permissionOverwrites || []).length, 0)}**`,
     ].filter(Boolean).join('\n'))],
     components: [new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(componentId(session, 'history')).setLabel('Back to History').setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId(componentId(session, 'delete-manifest-view')).setLabel('Delete Transfer Channels').setEmoji('🗑️').setStyle(ButtonStyle.Danger).setDisabled(manifest.type !== 'selective-copy' || !(manifest.channels || []).some((item) => item.destinationId)),
+      new ButtonBuilder().setCustomId(componentId(session, `undo-view:${manifest.id}`)).setLabel(legacy ? 'Undo Unavailable (Legacy)' : 'Undo Transfer').setEmoji('↩️').setStyle(ButtonStyle.Danger).setDisabled(!canUndoManifest(manifest)),
+      new ButtonBuilder().setCustomId(componentId(session, `history-delete-view:${manifest.id}`)).setLabel('Delete History Record').setEmoji('🗑️').setStyle(ButtonStyle.Secondary),
+    )],
+  };
+}
+function deleteHistoryConfirmPayload(session, manifest) {
+  return {
+    embeds: [embed('🗑️ Delete History Record?', [
+      `**Record:** \`${manifest.id}\``, `**Outcome:** ${outcomeMeta(inferOutcome(manifest)).join(' ')}`, '',
+      'This removes only the saved Duplicator history record.', '**No Discord channels, categories or roles will be changed.**',
+    ].join('\n'), 0xed4245)],
+    components: [new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(componentId(session, `history-delete-now:${manifest.id}`)).setLabel('Delete Record Only').setStyle(ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId(componentId(session, 'history')).setLabel('Cancel').setStyle(ButtonStyle.Secondary),
+    )],
+  };
+}
+function clearAllHistoryConfirmPayload(session) {
+  return {
+    embeds: [embed('🗑️ Clear All Duplicator History?', 'This removes all saved Duplicator history records for this control server.\n\n**It does not delete or change anything in Discord.**', 0xed4245)],
+    components: [new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(componentId(session, 'history-clear-all-now')).setLabel('Clear History Only').setStyle(ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId(componentId(session, 'history')).setLabel('Cancel').setStyle(ButtonStyle.Secondary),
+    )],
+  };
+}
+async function inspectManifestUndo(interaction, session, manifest) {
+  const environment = destinationEnvironment(interaction, session, manifest.destinationGuildId);
+  return bridgeRequest(environment, 'POST', '/undo-inspect', { guildId: manifest.destinationGuildId, objects: createdUndoObjects(manifest) });
+}
+function undoPreviewPayload(session, manifest, inspection) {
+  const unsafe = [...(inspection.channels || []), ...(inspection.roles || [])].filter((item) => item.state === 'unsafe');
+  const missing = inspection.counts?.missing || 0;
+  return {
+    embeds: [embed('↩️ Review Transfer Undo', [
+      `**Transfer:** \`${manifest.id}\``, `**Destination:** ${manifest.destinationGuildName || manifest.destinationGuildId}`,
+      '', `Created objects recorded: **${inspection.counts?.total || 0}**`, `Still present and safe to remove: **${inspection.counts?.present || 0}**`, `Already missing: **${missing}**`, `Unsafe / preserved: **${inspection.counts?.unsafe || 0}**`,
+      '', 'Undo removes only exact destination IDs recorded as **created by this transfer**. Reused/pre-existing objects are never removed.',
+      ...(unsafe.slice(0, 6).map((item) => `⚠️ ${item.name || item.id}: ${item.reason}`)),
+    ].join('\n'), unsafe.length ? 0xf59e0b : 0xed4245)],
+    components: [new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(componentId(session, `undo-now:${manifest.id}`)).setLabel('Confirm Undo').setEmoji('↩️').setStyle(ButtonStyle.Danger).setDisabled(!(inspection.counts?.present > 0)),
+      new ButtonBuilder().setCustomId(componentId(session, 'history')).setLabel('Cancel').setStyle(ButtonStyle.Secondary),
     )],
   };
 }
@@ -512,23 +624,29 @@ async function deleteIds(interaction, session, ids, sourceManifestId = null) {
   const guild = interaction.client.guilds.cache.get(session.destinationGuildId);
   if (!guild) throw new Error('Bulk Delete is DEV-local only for safety.');
   await guild.channels.fetch().catch(() => null);
-  const selected = new Set(ids);
+  const requestedIds = [...new Set((ids || []).map(String))];
+  const selected = new Set(requestedIds);
   const channels = [...guild.channels.cache.values()].filter((channel) => selected.has(channel.id));
+  const foundIds = new Set(channels.map((channel) => channel.id));
+  const missing = requestedIds.filter((id) => !foundIds.has(id)).map((id) => ({ id, reason: 'Already missing or no longer resolvable.' }));
   const nonCategories = channels.filter((c) => c.type !== ChannelType.GuildCategory).sort((a, b) => b.position - a.position);
   const categories = channels.filter((c) => c.type === ChannelType.GuildCategory).sort((a, b) => b.position - a.position);
-  const deleted = [];
-  const failed = [];
+  const deleted = [], failed = [];
   for (const channel of [...nonCategories, ...categories]) {
     try {
+      const id = channel.id, name = channel.name, type = channel.type;
       await channel.delete(`Goliath Duplicator bulk delete by ${interaction.user.id}`);
-      deleted.push({ id: channel.id, name: channel.name, type: channel.type });
-    } catch (error) { failed.push({ id: channel.id, name: channel.name, error: error.message }); }
+      const stillThere = await guild.channels.fetch(id).catch(() => null);
+      if (stillThere) throw new Error('Post-delete verification found the channel still present.');
+      deleted.push({ id, name, type });
+    } catch (error) { failed.push({ id: channel.id, name: channel.name, error: error.message || String(error) }); }
   }
+  const outcome = failed.length ? (deleted.length ? 'partial' : 'failed') : deleted.length ? (missing.length ? 'partial' : 'success') : 'no-changes';
   const manifest = history.add(session.controlGuildId, {
     type: 'bulk-delete', destinationGuildId: guild.id, destinationGuildName: guild.name,
-    status: failed.length ? 'completed-with-warnings' : 'success', deletedCount: deleted.length, deleted, failed, sourceManifestId,
+    status: outcome === 'success' ? 'success' : outcome === 'partial' ? 'completed-with-warnings' : outcome,
+    outcome, requestedCount: requestedIds.length, deletedCount: deleted.length, deleted, missing, failed, sourceManifestId,
   }, interaction.guild);
-  if (sourceManifestId) history.update(session.controlGuildId, sourceManifestId, { deletedByManifestId: manifest.id }, interaction.guild);
   return manifest;
 }
 async function startCopy(interaction) {
@@ -634,6 +752,66 @@ async function handleInteraction(interaction) {
       if (!manifest) throw new Error('Transfer manifest not found.');
       await interaction.update(manifestPayload(session, manifest)); return true;
     }
+    if (action === 'history-clear-junk') {
+      const removed = history.clearWhere(session.controlGuildId, (item) => ['failed', 'no-changes'].includes(inferOutcome(item)), interaction.guild);
+      await interaction.update(historyPayload(session, `Removed ${removed.length} failed/no-change record(s). Discord was not changed.`)); return true;
+    }
+    if (action === 'history-clear-undone') {
+      const removed = history.clearWhere(session.controlGuildId, (item) => inferOutcome(item) === 'undone', interaction.guild);
+      await interaction.update(historyPayload(session, `Removed ${removed.length} undone record(s). Discord was not changed.`)); return true;
+    }
+    if (action === 'history-clear-all-view') { await interaction.update(clearAllHistoryConfirmPayload(session)); return true; }
+    if (action === 'history-clear-all-now') {
+      const removed = history.clearWhere(session.controlGuildId, () => true, interaction.guild);
+      await interaction.update(historyPayload(session, `Cleared ${removed.length} history record(s). Discord was not changed.`)); return true;
+    }
+    if (action.startsWith('history-delete-view:')) {
+      const manifest = history.get(session.controlGuildId, action.split(':')[1]);
+      if (!manifest) throw new Error('History record not found.');
+      await interaction.update(deleteHistoryConfirmPayload(session, manifest)); return true;
+    }
+    if (action.startsWith('history-delete-now:')) {
+      const id = action.split(':')[1];
+      const removed = history.remove(session.controlGuildId, id, interaction.guild);
+      await interaction.update(historyPayload(session, removed ? `Deleted history record ${id}. Discord was not changed.` : `Record ${id} was already missing.`)); return true;
+    }
+    if (action.startsWith('undo-view:')) {
+      const manifest = history.get(session.controlGuildId, action.split(':')[1]);
+      if (!manifest) throw new Error('Transfer manifest not found.');
+      if (!canUndoManifest(manifest)) throw new Error('This transfer cannot be safely auto-undone. Legacy transfers did not store exact created-object ownership.');
+      session.destinationGuildId = manifest.destinationGuildId;
+      await interaction.deferUpdate();
+      const inspection = await inspectManifestUndo(interaction, session, manifest);
+      await interaction.editReply(undoPreviewPayload(session, manifest, inspection)); return true;
+    }
+    if (action.startsWith('undo-now:')) {
+      const id = action.split(':')[1];
+      const manifest = history.get(session.controlGuildId, id);
+      if (!manifest) throw new Error('Transfer manifest not found.');
+      if (!canUndoManifest(manifest)) throw new Error('This transfer cannot be safely auto-undone.');
+      session.destinationGuildId = manifest.destinationGuildId;
+      const environment = destinationEnvironment(interaction, session, manifest.destinationGuildId);
+      await interaction.deferUpdate();
+      const undo = await bridgeRequest(environment, 'POST', '/undo-apply', { guildId: manifest.destinationGuildId, objects: createdUndoObjects(manifest), actorId: interaction.user.id });
+      const outcome = undo.outcome === 'undone' ? 'undone' : undo.outcome;
+      const status = outcome === 'undone' ? 'undone' : `undo-${outcome}`;
+      const updated = history.update(session.controlGuildId, id, { outcome, status, undoneAt: new Date().toISOString(), undo }, interaction.guild);
+      const color = outcome === 'undone' ? 0x22c55e : outcome === 'partial' ? 0xf59e0b : 0xed4245;
+      await interaction.editReply({
+        embeds: [embed(outcome === 'undone' ? '↩️ Transfer Undone' : '⚠️ Transfer Undo Incomplete', [
+`**Transfer:** \`${id}\``, `**Outcome:** ${outcomeMeta(outcome).join(' ')}`, `Removed: **${undo.removed}/${undo.requested}** recorded created objects`,
+`Already missing before undo: **${undo.before?.counts?.missing || 0}**`, `Unsafe/preserved: **${undo.before?.counts?.unsafe || 0}**`,
+`Deletion failures: **${(undo.failedChannels || []).length + (undo.failedRoles || []).length}**`, '',
+'The original transfer record was updated in place; no extra delete-transfer record was created.',
+        ].join('\n'), color)],
+        components: [new ActionRowBuilder().addComponents(
+new ButtonBuilder().setCustomId(componentId(session, 'history')).setLabel('Back to History').setStyle(ButtonStyle.Secondary),
+new ButtonBuilder().setCustomId(componentId(session, 'manifest-last')).setLabel('View Updated Record').setStyle(ButtonStyle.Secondary),
+        )],
+      });
+      session.lastManifestId = updated?.id || id;
+      return true;
+    }
     if (action === 'delete-scan') {
       await interaction.deferUpdate(); await prepareDeleteScan(interaction, session);
       await interaction.editReply(deletePayload(session)); return true;
@@ -677,28 +855,8 @@ async function handleInteraction(interaction) {
       await interaction.deferUpdate();
       const manifest = await deleteIds(interaction, session, [...session.deleteSelected]);
       await interaction.editReply({
-        embeds: [embed('✅ Bulk Delete Complete', `Deleted **${manifest.deletedCount}** objects.\nTransfer record: \`${manifest.id}\`\n${manifest.failed?.length ? `Failed: **${manifest.failed.length}**` : 'No deletion failures.'}`, manifest.failed?.length ? 0xf59e0b : 0x22c55e)],
+        embeds: [embed(manifest.outcome === 'success' ? '✅ Bulk Delete Verified' : '⚠️ Bulk Delete Completed', `Outcome: **${outcomeMeta(manifest.outcome).join(' ')}**\nDeleted **${manifest.deletedCount}/${manifest.requestedCount}** requested objects.\nAlready missing: **${manifest.missing?.length || 0}**\nFailed: **${manifest.failed?.length || 0}**\nHistory record: \`${manifest.id}\``, manifest.outcome === 'success' ? 0x22c55e : manifest.outcome === 'failed' ? 0xed4245 : 0xf59e0b)],
         components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(componentId(session, 'home')).setLabel('Back to Duplicator').setStyle(ButtonStyle.Secondary))],
-      }); return true;
-    }
-    if (action === 'delete-manifest-view') {
-      const manifest = history.get(session.controlGuildId, session.lastManifestId);
-      if (!manifest) throw new Error('Transfer manifest not found.');
-      const ids = (manifest.channels || []).map((item) => item.destinationId).filter(Boolean);
-      if (!ids.length) throw new Error('This transfer has no mapped destination channels to delete.');
-      await interaction.update(deleteConfirmPayload(session, ids, manifest.id)); return true;
-    }
-    if (action.startsWith('delete-manifest-now:')) {
-      const manifestId = action.split(':')[1];
-      const manifest = history.get(session.controlGuildId, manifestId);
-      if (!manifest) throw new Error('Transfer manifest not found.');
-      session.destinationGuildId = manifest.destinationGuildId;
-      const ids = (manifest.channels || []).map((item) => item.destinationId).filter(Boolean);
-      await interaction.deferUpdate();
-      const deletion = await deleteIds(interaction, session, ids, manifest.id);
-      await interaction.editReply({
-        embeds: [embed('✅ Transfer Channels Deleted', `Deleted **${deletion.deletedCount}** objects recorded by transfer \`${manifest.id}\`.\nDeletion manifest: \`${deletion.id}\``, deletion.failed?.length ? 0xf59e0b : 0x22c55e)],
-        components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(componentId(session, 'history')).setLabel('Back to History').setStyle(ButtonStyle.Secondary))],
       }); return true;
     }
     return false;
