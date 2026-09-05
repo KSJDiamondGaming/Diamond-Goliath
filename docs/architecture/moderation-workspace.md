@@ -38,6 +38,8 @@ Member Intelligence component navigation reuses the current ephemeral interactio
 
 Scan History supports deleting an individual stored scan snapshot or clearing all stored scan snapshots for the selected member, with an explicit confirmation before deletion. These operations remove only `moderation.member_scan.completed` snapshot records. Cases, warnings, evidence, investigation notes, watchlist records and non-scan moderation audit history are retained. Snapshot deletion and history clearing are themselves recorded as moderation system audit events.
 
+Account comparison is entered only from Scan History. The main Intelligence scan does not expose a separate Compare Member button. The comparison selector and comparison result both provide a Back to Scan History control and reuse the same ephemeral panel.
+
 ## Network Reputation
 
 Member Intelligence keeps Goliath-observed guild history separate from external reputation information. The Network Reputation view combines current/former Goliath guild observations and cross-guild moderation cases with manually supplied external records classified as `Verified External`, `Evidence Submitted`, or `Reported / Unverified`.
