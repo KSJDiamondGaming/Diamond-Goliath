@@ -32,7 +32,7 @@ The intelligence layer persists member observations across Goliath-managed guild
 
 Goliath Watchlist states are `Clear`, `Watchlisted`, `Restricted`, and `Blacklisted`. Every non-clear decision requires a reason and may carry a category/review date. Changes are audited, and sensitive watchlist transitions are reported to Sentinel. Suspected-account heuristics remain investigation signals and never automatically create blacklist state or increase risk without verified evidence.
 
-The intelligence scan exposes drill-down views for Guild History, Watchlist, Risk Details, Identity History, and Behaviour. Risk scoring is explainable and lists the verified factors that contributed points. Behaviour summaries compare 7/30/90-day activity and recent escalation patterns while retaining the main scan as the compact overview.
+The intelligence scan exposes drill-down views for Network Reputation, Watchlist, Risk Details, Identity History, and Behaviour. Network Reputation contains the Goliath-observed guild history plus classified external/submitted intelligence. Risk scoring is explainable and lists the verified factors that contributed points. Behaviour summaries compare 7/30/90-day activity and recent escalation patterns while retaining the main scan as the compact overview.
 
 ## Network Reputation
 
@@ -41,4 +41,3 @@ Member Intelligence keeps Goliath-observed guild history separate from external 
 A `Verified External` record requires a traceable evidence/reference value. Submitted and unverified reports remain visible for investigation but do not contribute to the automated risk score. Verified external ban/blacklist records may contribute bounded risk points, but no external record automatically changes the Goliath Watchlist state; Watchlisted, Restricted and Blacklisted remain explicit audited management decisions. Sensitive verified external ban/blacklist additions are reported to Sentinel.
 
 Goliath never claims Discord-wide guild or ban history. A missing external record means `No Data`, not that the member has a clean global history.
-
