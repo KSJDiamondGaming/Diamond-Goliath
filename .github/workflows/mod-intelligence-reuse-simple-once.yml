@@ -1,0 +1,76 @@
+name: Apply Intelligence Reuse Simple Once
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - '.github/workflows/mod-intelligence-reuse-simple-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: dev
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Patch message reuse
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          p = Path('src/core/administration/mod/interactions.js')
+          s = p.read_text()
+          s = s.replace("const { safeReply } = require('../../../core/ui/interactionResponse');", "const { safeReply, safeUpdate } = require('../../../core/ui/interactionResponse');", 1)
+          s = s.replace("async function runMemberScan(i, targetId) {", "async function runMemberScan(i, targetId, { record = true } = {}) {", 1)
+          s = s.replace("  recordModerationSystemEvent({\n    interaction: i,\n    event: 'moderation.member_scan.completed',", "  if (record) recordModerationSystemEvent({\n    interaction: i,\n    event: 'moderation.member_scan.completed',", 1)
+          s = s.replace("  return safeReply(i, { embeds: [report.embed], components: report.components, flags: 64 });", "  return safeUpdate(i, { content: null, embeds: [report.embed], components: report.components });", 1)
+          s = s.replace("  return safeReply(i, { embeds: [payload.embed], components: payload.components, flags: 64 });", "  return safeUpdate(i, { content: null, embeds: [payload.embed], components: payload.components });", 2)
+          s = s.replace("  return safeReply(i, { embeds: [embed], components, flags: 64 });", "  return safeUpdate(i, { content: null, embeds: [embed], components });", 1)
+          s = s.replace("    return safeReply(i, { content: '🔎 **Goliath Member Scan** — select a server member to run a permission-filtered intelligence report.', components: [new Discord.ActionRowBuilder().addComponents(select)], flags: 64 });", "    return safeUpdate(i, { content: '🔎 **Goliath Member Scan** — select a server member to run a permission-filtered intelligence report.', embeds: [], components: [new Discord.ActionRowBuilder().addComponents(select)] });", 1)
+          s = s.replace("  if (id.startsWith('mod_member_scan:')) return runMemberScan(i, id.split(':')[1]);", "  if (id.startsWith('mod_member_scan:')) return runMemberScan(i, id.split(':')[1], { record: true });\n  if (id.startsWith('mod_scan_view:')) return runMemberScan(i, id.split(':')[1], { record: false });", 1)
+          s = s.replace("    return safeReply(i, { content: `🧬 **Compare Accounts** — select another server member to compare against <@${primaryId}>.`, components: [new Discord.ActionRowBuilder().addComponents(select)], flags: 64 });", "    return safeUpdate(i, { content: `🧬 **Compare Accounts** — select another server member to compare against <@${primaryId}>.`, embeds: [], components: [new Discord.ActionRowBuilder().addComponents(select)] });", 1)
+          s = s.replace("new Discord.ButtonBuilder().setCustomId(`mod_member_scan:${target.id}`).setLabel('Back to Scan')", "new Discord.ButtonBuilder().setCustomId(`mod_scan_view:${target.id}`).setLabel('Back to Scan')")
+          p.write_text(s)
+
+          p = Path('src/core/administration/mod/intelligence.js')
+          s = p.read_text()
+          s = s.replace("const { safeReply } = require('../../../core/ui/interactionResponse');", "const { safeReply, safeUpdate } = require('../../../core/ui/interactionResponse');", 1)
+          s = s.replace("new Discord.ButtonBuilder().setCustomId(`mod_member_scan:${targetId}`).setLabel('⬅️ Back to Scan')", "new Discord.ButtonBuilder().setCustomId(`mod_scan_view:${targetId}`).setLabel('⬅️ Back to Scan')")
+          s = s.replace("await safeReply(interaction, { embeds: [watchlistEmbed(target, context)], components: watchlistRows(targetId, canManage), flags: 64 }); return true;", "await safeUpdate(interaction, { content: null, embeds: [watchlistEmbed(target, context)], components: watchlistRows(targetId, canManage) }); return true;", 1)
+          s = s.replace("await safeReply(interaction, { embeds: [guildHistoryEmbed(target, context, interaction.client)], components: [reputationRows(targetId, canManage)], flags: 64 }); return true;", "await safeUpdate(interaction, { content: null, embeds: [guildHistoryEmbed(target, context, interaction.client)], components: [reputationRows(targetId, canManage)] }); return true;", 1)
+          s = s.replace("await safeReply(interaction, { embeds: [riskEmbed(target, context)], components: [backRow(targetId)], flags: 64 }); return true;", "await safeUpdate(interaction, { content: null, embeds: [riskEmbed(target, context)], components: [backRow(targetId)] }); return true;", 1)
+          s = s.replace("await safeReply(interaction, { embeds: [identityEmbed(target, context)], components: [backRow(targetId)], flags: 64 }); return true;", "await safeUpdate(interaction, { content: null, embeds: [identityEmbed(target, context)], components: [backRow(targetId)] }); return true;", 1)
+          s = s.replace("await safeReply(interaction, { embeds: [behaviorEmbed(target, context)], components: [backRow(targetId)], flags: 64 }); return true;", "await safeUpdate(interaction, { content: null, embeds: [behaviorEmbed(target, context)], components: [backRow(targetId)] }); return true;", 1)
+          s = s.replace("await safeReply(interaction, { embeds: [watchlistEmbed(target, context)], components: watchlistRows(targetId, true), flags: 64 });", "await safeUpdate(interaction, { content: null, embeds: [watchlistEmbed(target, context)], components: watchlistRows(targetId, true) });")
+          s = s.replace("await safeReply(interaction, { embeds: [guildHistoryEmbed(target, context, interaction.client)], components: [reputationRows(targetId, true)], flags: 64 });", "await safeUpdate(interaction, { content: null, embeds: [guildHistoryEmbed(target, context, interaction.client)], components: [reputationRows(targetId, true)] });")
+          p.write_text(s)
+          PY
+      - name: Validate changed source
+        run: |
+          node --check src/core/administration/mod/interactions.js
+          node --check src/core/administration/mod/intelligence.js
+          node --check src/core/ui/interactionResponse.js
+      - name: Remove temporary workflow
+        run: rm -f .github/workflows/mod-intelligence-reuse-simple-once.yml
+      - name: Run doctor
+        run: npm run doctor
+      - name: Build dashboard
+        run: npx vite build src/dashboard --outDir ../../dist --emptyOutDir --logLevel warn
+      - name: Commit clean source
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/core/administration/mod/interactions.js src/core/administration/mod/intelligence.js src/core/ui/interactionResponse.js .github/workflows/mod-intelligence-reuse-simple-once.yml
+          git diff --cached --quiet && exit 0
+          git commit -m 'fix(mod): reuse member intelligence messages'
+          git push origin HEAD:dev
