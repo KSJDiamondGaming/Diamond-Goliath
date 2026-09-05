@@ -1,0 +1,180 @@
+name: Apply Scan History Cleanup Once
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - '.github/workflows/mod-scan-history-cleanup-once.yml'
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: dev
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Patch scan history management and panel reuse
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          p = Path('src/core/administration/mod/interactions.js')
+          s = p.read_text()
+          s = s.replace("const { safeReply } = require('../../../core/ui/interactionResponse');", "const { safeReply, safeUpdate } = require('../../../core/ui/interactionResponse');", 1)
+
+          old = """  const buttons = [];
+  if (canScanCapability(i, 'scan_run')) buttons.push(new Discord.ButtonBuilder().setCustomId(`mod_member_scan:${target.id}`).setLabel('Back to Scan').setEmoji('🔎').setStyle(Discord.ButtonStyle.Primary));
+  if (canScanCapability(i, 'scan_compare')) buttons.push(new Discord.ButtonBuilder().setCustomId(`mod_scan_compare:${target.id}`).setLabel('Compare Account').setEmoji('🧬').setStyle(Discord.ButtonStyle.Secondary));
+  return { embed, components: buttons.length ? [new Discord.ActionRowBuilder().addComponents(...buttons)] : [] };
+}"""
+          new = """  const components = [];
+  if (rows.length) {
+    const select = new Discord.StringSelectMenuBuilder()
+      .setCustomId(`mod_scan_delete_select:${target.id}`)
+      .setPlaceholder('🗑️ Select a scan to delete')
+      .setMinValues(1)
+      .setMaxValues(1)
+      .addOptions(rows.slice(0, 25).map((row, index) => {
+        const after = parseJson(row.after_value, {});
+        const ts = new Date(row.created_at || 0).getTime();
+        const when = Number.isFinite(ts) && ts > 0 ? new Date(ts).toISOString().replace('T', ' ').slice(0, 16) + ' UTC' : 'Unknown time';
+        return new Discord.StringSelectMenuOptionBuilder()
+          .setLabel(`${index + 1}. ${after.scanId || row.audit_id}`.slice(0, 100))
+          .setDescription(when.slice(0, 100))
+          .setValue(String(row.audit_id));
+      }));
+    components.push(new Discord.ActionRowBuilder().addComponents(select));
+  }
+  const buttons = [];
+  if (canScanCapability(i, 'scan_run')) buttons.push(new Discord.ButtonBuilder().setCustomId(`mod_member_scan:${target.id}`).setLabel('Back to Scan').setEmoji('🔎').setStyle(Discord.ButtonStyle.Primary));
+  if (canScanCapability(i, 'scan_compare')) buttons.push(new Discord.ButtonBuilder().setCustomId(`mod_scan_compare:${target.id}`).setLabel('Compare Account').setEmoji('🧬').setStyle(Discord.ButtonStyle.Secondary));
+  if (rows.length) buttons.push(new Discord.ButtonBuilder().setCustomId(`mod_scan_clear_request:${target.id}`).setLabel('Clear History').setEmoji('🧹').setStyle(Discord.ButtonStyle.Danger));
+  if (buttons.length) components.push(new Discord.ActionRowBuilder().addComponents(...buttons));
+  return { embed, components };
+}"""
+          if old not in s: raise SystemExit('history component anchor missing')
+          s = s.replace(old, new, 1)
+
+          anchor = """async function runMemberComparison(i, primaryId, secondaryId) {"""
+          insert = r'''async function deleteSelectedScan(i, targetId, auditId) {
+  const allowed = await ensureScanCapability(i, 'scan_history', '❌ You do not have permission to manage member scan history.');
+  if (!allowed) return true;
+  const row = db.prepare("SELECT audit_id, metadata FROM case_audit WHERE audit_id = ? AND guild_id = ? AND event = 'moderation.member_scan.completed' LIMIT 1").get(Number(auditId), String(i.guild.id));
+  if (!row || String(parseJson(row.metadata, {}).targetId || '') !== String(targetId)) return safeUpdate(i, { content: '❌ That scan snapshot no longer exists.', embeds: [], components: [] });
+  db.prepare("DELETE FROM case_audit WHERE audit_id = ? AND guild_id = ? AND event = 'moderation.member_scan.completed'").run(Number(auditId), String(i.guild.id));
+  recordModerationSystemEvent({ interaction: i, event: 'moderation.member_scan.history_deleted', action: 'member_scan_history_delete', targetId, metadata: { deletedAuditId: Number(auditId) } });
+  return showMemberScanHistory(i, targetId);
+}
+async function clearMemberScanHistory(i, targetId) {
+  const allowed = await ensureScanCapability(i, 'scan_history', '❌ You do not have permission to manage member scan history.');
+  if (!allowed) return true;
+  const rows = scanAuditRows(i.guild.id, targetId, 100);
+  const remove = db.prepare("DELETE FROM case_audit WHERE audit_id = ? AND guild_id = ? AND event = 'moderation.member_scan.completed'");
+  const tx = db.transaction((items) => { for (const row of items) remove.run(Number(row.audit_id), String(i.guild.id)); });
+  tx(rows);
+  recordModerationSystemEvent({ interaction: i, event: 'moderation.member_scan.history_cleared', action: 'member_scan_history_clear', targetId, metadata: { deletedScans: rows.length } });
+  return showMemberScanHistory(i, targetId);
+}
+async function handleScanHistorySelect(i) {
+  const id = String(i.customId || '');
+  if (!id.startsWith('mod_scan_delete_select:')) return false;
+  const targetId = id.split(':')[1];
+  const auditId = String(i.values?.[0] || '');
+  if (!auditId) return true;
+  const row = scanAuditRows(i.guild.id, targetId, 100).find((entry) => String(entry.audit_id) === auditId);
+  if (!row) return safeUpdate(i, { content: '❌ That scan snapshot no longer exists.', embeds: [], components: [] });
+  const after = parseJson(row.after_value, {});
+  const embed = new Discord.EmbedBuilder().setColor(0xED4245).setTitle('🗑️ Delete Scan Snapshot?').setDescription(`Delete scan \`${after.scanId || row.audit_id}\` for <@${targetId}>?\n\nThis removes only this stored scan snapshot. Cases, warnings, notes, watchlist records, evidence and moderation audit history are not removed.`);
+  const buttons = new Discord.ActionRowBuilder().addComponents(
+    new Discord.ButtonBuilder().setCustomId(`mod_scan_delete_confirm:${targetId}:${auditId}`).setLabel('Delete Scan').setStyle(Discord.ButtonStyle.Danger),
+    new Discord.ButtonBuilder().setCustomId(`mod_scan_history:${targetId}`).setLabel('Cancel').setStyle(Discord.ButtonStyle.Secondary),
+  );
+  return safeUpdate(i, { embeds: [embed], components: [buttons] });
+}
+'''
+          if anchor not in s: raise SystemExit('comparison anchor missing')
+          s = s.replace(anchor, insert + anchor, 1)
+
+          s = s.replace("return safeReply(i, { embeds: [report.embed], components: report.components, flags: 64 });", "return i.message ? safeUpdate(i, { content: null, embeds: [report.embed], components: report.components }) : safeReply(i, { embeds: [report.embed], components: report.components, flags: 64 });", 1)
+          s = s.replace("return safeReply(i, { embeds: [payload.embed], components: payload.components, flags: 64 });", "return i.message ? safeUpdate(i, { content: null, embeds: [payload.embed], components: payload.components }) : safeReply(i, { embeds: [payload.embed], components: payload.components, flags: 64 });", 1)
+          s = s.replace("return safeReply(i, { embeds: [payload.embed], components: payload.components, flags: 64 });", "return i.message ? safeUpdate(i, { content: null, embeds: [payload.embed], components: payload.components }) : safeReply(i, { embeds: [payload.embed], components: payload.components, flags: 64 });", 1)
+          s = s.replace("return safeReply(i, { embeds: [embed], components, flags: 64 });", "return i.message ? safeUpdate(i, { content: null, embeds: [embed], components }) : safeReply(i, { embeds: [embed], components, flags: 64 });", 1)
+
+          old_select = """  if (i.isStringSelectMenu?.()) return routeHandlers(i, [handleCaseSearchSelect]);"""
+          new_select = """  if (i.isStringSelectMenu?.()) {
+    const scanHistory = await handleScanHistorySelect(i);
+    if (scanHistory) return scanHistory;
+    return routeHandlers(i, [handleCaseSearchSelect]);
+  }"""
+          if old_select not in s: raise SystemExit('string select anchor missing')
+          s = s.replace(old_select, new_select, 1)
+
+          button_anchor = """  if (id.startsWith('mod_scan_history:')) return showMemberScanHistory(i, id.split(':')[1]);"""
+          button_new = """  if (id.startsWith('mod_scan_history:')) return showMemberScanHistory(i, id.split(':')[1]);
+  if (id.startsWith('mod_scan_delete_confirm:')) { const parts = id.split(':'); return deleteSelectedScan(i, parts[1], parts[2]); }
+  if (id.startsWith('mod_scan_clear_request:')) {
+    const targetId = id.split(':')[1];
+    const count = scanAuditRows(i.guild.id, targetId, 100).length;
+    const embed = new Discord.EmbedBuilder().setColor(0xED4245).setTitle('🧹 Clear Scan History?').setDescription(`Delete **${count}** stored scan snapshot(s) for <@${targetId}>?\n\nThis does not delete moderation cases, warnings, notes, watchlist records, evidence, or non-scan audit history.`);
+    const row = new Discord.ActionRowBuilder().addComponents(
+      new Discord.ButtonBuilder().setCustomId(`mod_scan_clear_confirm:${targetId}`).setLabel('Clear Scan History').setStyle(Discord.ButtonStyle.Danger),
+      new Discord.ButtonBuilder().setCustomId(`mod_scan_history:${targetId}`).setLabel('Cancel').setStyle(Discord.ButtonStyle.Secondary),
+    );
+    return safeUpdate(i, { embeds: [embed], components: [row] });
+  }
+  if (id.startsWith('mod_scan_clear_confirm:')) return clearMemberScanHistory(i, id.split(':')[1]);"""
+          if button_anchor not in s: raise SystemExit('history button anchor missing')
+          s = s.replace(button_anchor, button_new, 1)
+          p.write_text(s)
+
+          p = Path('src/core/administration/mod/intelligence.js')
+          s = p.read_text()
+          s = s.replace("const { safeReply } = require('../../../core/ui/interactionResponse');", "const { safeReply, safeUpdate } = require('../../../core/ui/interactionResponse');", 1)
+          # Component drill-downs should edit the existing ephemeral panel. Modal submissions remain replies/edits appropriate to modal context.
+          replacements = [
+            ("await safeReply(interaction, { embeds: [watchlistEmbed(target, context)], components: watchlistRows(targetId, canManage), flags: 64 }); return true;", "await safeUpdate(interaction, { content: null, embeds: [watchlistEmbed(target, context)], components: watchlistRows(targetId, canManage) }); return true;"),
+            ("await safeReply(interaction, { embeds: [guildHistoryEmbed(target, context, interaction.client)], components: [reputationRows(targetId, canManage)], flags: 64 }); return true;", "await safeUpdate(interaction, { content: null, embeds: [guildHistoryEmbed(target, context, interaction.client)], components: [reputationRows(targetId, canManage)] }); return true;"),
+            ("await safeReply(interaction, { embeds: [riskEmbed(target, context)], components: [backRow(targetId)], flags: 64 }); return true;", "await safeUpdate(interaction, { content: null, embeds: [riskEmbed(target, context)], components: [backRow(targetId)] }); return true;"),
+            ("await safeReply(interaction, { embeds: [identityEmbed(target, context)], components: [backRow(targetId)], flags: 64 }); return true;", "await safeUpdate(interaction, { content: null, embeds: [identityEmbed(target, context)], components: [backRow(targetId)] }); return true;"),
+            ("await safeReply(interaction, { embeds: [behaviorEmbed(target, context)], components: [backRow(targetId)], flags: 64 }); return true;", "await safeUpdate(interaction, { content: null, embeds: [behaviorEmbed(target, context)], components: [backRow(targetId)] }); return true;"),
+          ]
+          for old, new in replacements:
+            if old not in s: raise SystemExit('intelligence reply anchor missing: ' + old[:50])
+            s = s.replace(old, new, 1)
+          p.write_text(s)
+          PY
+      - name: Validate changed source
+        run: |
+          node --check src/core/administration/mod/interactions.js
+          node --check src/core/administration/mod/intelligence.js
+      - name: Remove temporary workflow before Doctor
+        run: rm -f .github/workflows/mod-scan-history-cleanup-once.yml
+      - name: Validate project
+        run: |
+          npm run doctor
+          npx vite build src/dashboard --outDir ../../dist --emptyOutDir --logLevel warn
+      - name: Commit clean source
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --quiet && exit 0
+          git commit -m 'fix(mod): manage scan history in place'
+          git push origin HEAD:dev
+      - name: Trigger normal dev deploy
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run deploy-dev.yml --ref dev -f environment=dev
