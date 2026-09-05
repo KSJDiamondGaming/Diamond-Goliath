@@ -1,0 +1,50 @@
+name: Merge Member Intelligence Workspace Once
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - 'scripts/merge-mod-intelligence-once.js'
+      - '.github/workflows/merge-mod-intelligence-once.yml'
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: dev
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Apply source patch
+        run: node scripts/merge-mod-intelligence-once.js
+      - name: Remove temporary patch files
+        run: |
+          rm -f scripts/merge-mod-intelligence-once.js
+          rm -f .github/workflows/merge-mod-intelligence-once.yml
+      - name: Validate source
+        run: |
+          node -c src/core/administration/mod/panel.js
+          node -c src/core/administration/mod/interactions.js
+          node -c src/core/administration/mod/intelligence.js
+          npm run doctor
+          npm run build --if-present
+      - name: Commit and push
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/core/administration/mod/panel.js src/core/administration/mod/interactions.js src/core/administration/mod/intelligence.js docs/architecture/moderation-workspace.md scripts/merge-mod-intelligence-once.js .github/workflows/merge-mod-intelligence-once.yml || true
+          git commit -m 'refactor(mod): merge member intelligence workspace'
+          git push origin HEAD:dev
+      - name: Deploy current dev
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run deploy-dev.yml --ref dev
