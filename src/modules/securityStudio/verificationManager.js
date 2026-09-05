@@ -13,6 +13,7 @@ const {
 const verificationStore = require('./verificationStore');
 const guildManager = require('../../core/guild/guildManager');
 const testDevOverride = require('../../owner/dev/DevOverrideManager');
+const emojiPayload = require('../utilityStudio/emojis/emojiPayload');
 
 const CUSTOM_ID_PREFIX = 'verify';
 const SCREENING_FEATURE = 'MEMBER_VERIFICATION_GATE_ENABLED';
@@ -291,6 +292,11 @@ function buildVerificationRows(panel = {}, guild = null, member = null, values =
   const emoji = renderTemplate(panel.buttonEmoji || '', member, guild, values).trim();
   if (emoji) button.setEmoji(emoji);
   return [new ActionRowBuilder().addComponents(button)];
+}
+
+async function resolveVerificationPanelPayload(guild, payload) {
+  if (!guild?.client || !guild?.id) return payload;
+  return emojiPayload.resolveMessagePayload(guild.client, guild.id, payload, 'verification');
 }
 
 function getEffectiveVerificationSection(guildId) {
@@ -817,10 +823,10 @@ async function restoreMissingVerificationPanel(guild, panelId, meta = {}) {
     enabled: true,
     retiredAt: null,
   };
-  const payload = {
+  const payload = await resolveVerificationPanelPayload(guild, {
     embeds: [buildVerificationEmbed(candidate, guild)],
     components: buildVerificationRows(candidate, guild),
-  };
+  });
 
   let message = null;
   try {
@@ -872,10 +878,10 @@ async function deployVerificationPanel(channel, input = {}, meta = {}) {
   };
 
   const existingMessage = existingPanel ? await fetchPanelMessage(guild, existingPanel) : null;
-  const payload = {
+  const payload = await resolveVerificationPanelPayload(guild, {
     embeds: [buildVerificationEmbed(candidate, guild)],
     components: buildVerificationRows(candidate, guild),
-  };
+  });
 
   if (existingMessage?.editable) {
     const rollbackPayload = snapshotMessagePayload(existingMessage);
