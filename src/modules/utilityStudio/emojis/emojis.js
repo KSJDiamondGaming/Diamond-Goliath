@@ -71,7 +71,7 @@ function serialise(emoji) {
     alias: core ? coreAlias(emoji.name) : String(emoji.name),
     core,
     animated: Boolean(emoji.animated),
-    url: emoji.imageURL?.({ extension: 'webp', size: 128 }) || emoji.url || null,
+    url: emoji?.id ? `https://cdn.discordapp.com/emojis/${emoji.id}.webp?size=128${emoji.animated ? '&animated=true' : ''}` : (emoji.url || null),
     mention: emoji.toString(),
     component: componentPayload(emoji),
   };
