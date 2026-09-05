@@ -1,0 +1,46 @@
+name: Apply Member Intelligence Routing Cleanup
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - 'scripts/mod-intelligence-routing-once.js'
+      - '.github/workflows/mod-intelligence-routing-once.yml'
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: dev
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Apply source patch
+        run: node scripts/mod-intelligence-routing-once.js
+      - name: Remove temporary patch files
+        run: |
+          rm scripts/mod-intelligence-routing-once.js
+          rm .github/workflows/mod-intelligence-routing-once.yml
+      - name: Validate source
+        run: |
+          node --check src/core/administration/mod/panel.js
+          node --check src/core/administration/mod/interactions.js
+          node --check src/core/administration/mod/permissions.js
+          npm run doctor
+          npx vite build src/dashboard --outDir ../../dist --emptyOutDir --logLevel warn
+      - name: Commit and push
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/core/administration/mod/panel.js src/core/administration/mod/interactions.js src/core/administration/mod/permissions.js scripts/mod-intelligence-routing-once.js .github/workflows/mod-intelligence-routing-once.yml
+          git commit -m 'fix(mod): align intelligence landing routes' || exit 0
+          git push origin HEAD:dev
