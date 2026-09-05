@@ -1,0 +1,47 @@
+name: Patch Emoji GIF Mirror Once
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - '.github/workflows/patch-emoji-gif-mirror-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: dev
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Apply mirrored GIF panel patch
+        run: node scripts/patch-emoji-gif-mirror-once.js
+      - name: Validate changed source
+        run: |
+          node --check src/modules/utilityStudio/emojis/emojisApi.js
+          node --check src/modules/utilityStudio/emojis/emojisPanel.js
+      - name: Remove temporary patch files
+        run: |
+          git rm .github/workflows/patch-emoji-gif-mirror-once.yml
+          git rm scripts/patch-emoji-gif-mirror-once.js
+      - name: Run doctor
+        run: npm run doctor
+      - name: Build dashboard
+        run: npx vite build src/dashboard --outDir ../../dist --emptyOutDir --logLevel warn
+      - name: Commit and push clean source
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/modules/utilityStudio/emojis/emojisApi.js src/modules/utilityStudio/emojis/emojisPanel.js
+          git commit -m 'feat(emojis): mirror Add GIF experience'
+          git fetch origin dev
+          git rebase origin/dev
+          git push origin HEAD:dev
