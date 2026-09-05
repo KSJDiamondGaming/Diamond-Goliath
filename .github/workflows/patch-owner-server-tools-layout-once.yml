@@ -80,7 +80,7 @@ jobs:
           }
 
           function serverContextRequiredPayload'''
-          new_text, count = pattern.subn(replacement, text)
+          new_text, count = pattern.subn(lambda _m: replacement, text)
           if count != 1:
               raise SystemExit(f'Expected one serverToolsPayload block, replaced {count}')
           path.write_text(new_text)
