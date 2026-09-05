@@ -45,3 +45,5 @@ jobs:
           git fetch origin dev
           git rebase origin/dev
           git push origin HEAD:dev
+
+# trigger
