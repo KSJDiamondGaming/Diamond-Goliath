@@ -221,6 +221,10 @@ function buildCaseFile(interaction, modCase) {
 
   const canManage = canManageCourt(interaction);
   const judgeAuthority = isJudge(interaction);
+  const executionAction = String(court.decision?.action || '');
+  const canExecuteAction = !executionAction || executionAction === 'no_action'
+    ? false
+    : canUseModAction(interaction.member, interaction.guild, executionAction, interaction);
   const isAssignedJudge = judgeAuthority && court.reviewingAdminId === interaction.user.id;
   const canDecide = isAssignedJudge && ['review', 'decided'].includes(court.stage);
   const isClosed = court.stage === 'closed';
@@ -247,7 +251,7 @@ function buildCaseFile(interaction, modCase) {
       button(`mod_court_approve_ban:${modCase.caseId}`, 'Approve Ban', '🛡️', ButtonStyle.Danger, !judgeAuthority || court.decision?.action !== 'ban' || court.sanctionReview?.status === 'approved' || court.decision?.decidedBy === interaction.user.id),
     ),
     row(
-      button(`mod_court_execute:${modCase.caseId}`, court.sanctionExecution?.status === 'executed' ? 'Sanction Executed' : court.sanctionExecution?.status === 'reversed' ? 'Sanction Reversed' : court.sanctionExecution?.status === 'reversal_failed' ? 'Appeal Reversal Failed' : court.sanctionExecution?.status === 'executing' && !executionIsStale(court.sanctionExecution) ? 'Sanction Executing' : court.sanctionExecution?.status === 'failed' || executionIsStale(court.sanctionExecution) ? 'Retry Sanction' : 'Execute Sanction', '⚡', ButtonStyle.Danger, !judgeAuthority || isClosed || court.stage !== 'published' || !court.decision || court.decision.action === 'no_action' || ['executed', 'reversed', 'reversal_failed'].includes(court.sanctionExecution?.status) || (court.sanctionExecution?.status === 'executing' && !executionIsStale(court.sanctionExecution)) || (court.decision?.action === 'ban' && court.sanctionReview?.status !== 'approved')),
+      button(`mod_court_execute:${modCase.caseId}`, court.sanctionExecution?.status === 'executed' ? 'Sanction Executed' : court.sanctionExecution?.status === 'reversed' ? 'Sanction Reversed' : court.sanctionExecution?.status === 'reversal_failed' ? 'Appeal Reversal Failed' : court.sanctionExecution?.status === 'executing' && !executionIsStale(court.sanctionExecution) ? 'Sanction Executing' : court.sanctionExecution?.status === 'failed' || executionIsStale(court.sanctionExecution) ? 'Retry Sanction' : !canExecuteAction && executionAction ? 'No Sanction Authority' : 'Execute Sanction', '⚡', ButtonStyle.Danger, !judgeAuthority || !canExecuteAction || isClosed || court.stage !== 'published' || !court.decision || court.decision.action === 'no_action' || ['executed', 'reversed', 'reversal_failed'].includes(court.sanctionExecution?.status) || (court.sanctionExecution?.status === 'executing' && !executionIsStale(court.sanctionExecution)) || (court.decision?.action === 'ban' && court.sanctionReview?.status !== 'approved')),
       button(`mod_court_record_history:${modCase.caseId}`, 'Record History', '📚'),
       button(`mod_case_appeal_history:${modCase.caseId}:0`, `Appeals${appeals.length ? ` (${appeals.length})` : ''}`, '⚖️', ButtonStyle.Secondary, !appeals.length),
       button('mod_case_appeal_queue:0', 'Appeal Queue', '📥'),
@@ -260,18 +264,21 @@ function buildCaseFile(interaction, modCase) {
 
 function buildEvidencePage(interaction, modCase) {
   const court = parseCourt(modCase);
+  const canManage = canManageCourt(interaction) && court.stage !== 'closed';
+  const judgeAuthority = isJudge(interaction);
   const lines = court.evidence.length ? court.evidence.slice(-12).reverse().map((item) => {
     const verification = item.status === 'verified' ? `\nVerified by <@${item.verifiedBy}> ${discordTime(item.verifiedAt)}` : item.status === 'rejected' ? `\nRejected by <@${item.verifiedBy}> ${discordTime(item.verifiedAt)}` : '';
     return `${EVIDENCE_STATUS[item.status] || EVIDENCE_STATUS.draft} **${item.id} • ${cleanExcerpt(item.title, 90)}**\nSource: ${cleanExcerpt(item.source || 'Internal submission', 120)}\n${cleanExcerpt(item.details, 240)}${verification}`;
   }) : ['No evidence has been added to this case.'];
   const embed = new EmbedBuilder().setColor(0x5865F2).setTitle(`🔎 Evidence • Case #${modCase.caseId}`).setDescription(lines.join('\n\n').slice(0, 4000)).setFooter({ text: 'Draft evidence stays internal until an authorised admin verifies it' }).setTimestamp();
-  return { embeds: [embed], components: [row(button(`mod_court_evidence:${modCase.caseId}`, 'Add Evidence', '➕', ButtonStyle.Primary), button(`mod_court_verify:${modCase.caseId}`, 'Verify Evidence', '✅', ButtonStyle.Secondary, !court.evidence.length)), caseFileBackRow(modCase.caseId)] };
+  return { embeds: [embed], components: [row(button(`mod_court_evidence:${modCase.caseId}`, 'Add Evidence', '➕', ButtonStyle.Primary, !canManage), button(`mod_court_verify:${modCase.caseId}`, 'Verify Evidence', '✅', ButtonStyle.Secondary, !judgeAuthority || !court.evidence.length || court.stage === 'closed')), caseFileBackRow(modCase.caseId)] };
 }
-function buildNotesPage(modCase) {
+function buildNotesPage(interaction, modCase) {
   const court = parseCourt(modCase);
+  const canManage = canManageCourt(interaction) && court.stage !== 'closed';
   const lines = court.notes.length ? court.notes.slice(-15).reverse().map((item) => `**${item.id || 'Note'}** • <@${item.authorId}> • ${discordTime(item.createdAt)}\n${cleanExcerpt(item.text, 300)}`) : ['No private staff notes have been added.'];
   const embed = new EmbedBuilder().setColor(0x5865F2).setTitle(`📝 Case Notes • #${modCase.caseId}`).setDescription(lines.join('\n\n').slice(0, 4000)).setFooter({ text: 'Private staff paperwork • never published automatically' }).setTimestamp();
-  return { embeds: [embed], components: [row(button(`mod_court_note:${modCase.caseId}`, 'Add Case Note', '➕', ButtonStyle.Primary)), caseFileBackRow(modCase.caseId)] };
+  return { embeds: [embed], components: [row(button(`mod_court_note:${modCase.caseId}`, 'Add Case Note', '➕', ButtonStyle.Primary, !canManage)), caseFileBackRow(modCase.caseId)] };
 }
 function buildTimelinePage(interaction, modCase) {
   const rows = auditRows(interaction.guildId, modCase.caseId, 20);
@@ -509,7 +516,7 @@ async function handleCourtInteraction(interaction) {
   const court = parseCourt(modCase);
   if (key === 'mod_court_file') { await updateCaseMessage(interaction, modCase); return true; }
   if (key === 'mod_court_evidence_view') { await interaction.update(buildEvidencePage(interaction, modCase)); return true; }
-  if (key === 'mod_court_notes_view') { await interaction.update(buildNotesPage(modCase)); return true; }
+  if (key === 'mod_court_notes_view') { await interaction.update(buildNotesPage(interaction, modCase)); return true; }
   if (key === 'mod_court_timeline') { await interaction.update(buildTimelinePage(interaction, modCase)); return true; }
   if (key === 'mod_court_recommend') { if (!canManageCourt(interaction) || court.stage === 'closed') { await interaction.reply({ content: '❌ This case cannot be edited with your current authority or stage.', flags: 64 }); return true; } await interaction.showModal(recommendationModal(caseId, court)); return true; }
   if (key === 'mod_court_review_brief') { await interaction.update(buildReviewBriefPage(interaction, modCase)); return true; }
