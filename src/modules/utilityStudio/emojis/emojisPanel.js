@@ -7,12 +7,14 @@ const {
 const guildManager = require('../../../core/guild/guildManager');
 const emojiApi = require('./emojisApi');
 const emojiMedia = require('./emojiMedia');
+const giphyApi = require('./giphyApi');
 const emojis = require('./emojis');
 const emojiStore = require('./emojisStore');
 
 const PANEL_COLOR = 0x5865F2;
 const row = (...items) => new ActionRowBuilder().addComponents(...items);
 const button = (id, label, style = ButtonStyle.Primary) => new ButtonBuilder().setCustomId(id).setLabel(label).setStyle(style);
+const linkButton = (label, url) => new ButtonBuilder().setLabel(label).setStyle(ButtonStyle.Link).setURL(url);
 
 const manageFilters = new Map();
 function manageFilterKey(interaction) { return `${interaction.guild?.id || interaction.guildId || 'unknown'}:${interaction.user?.id || 'unknown'}`; }
@@ -57,7 +59,7 @@ function addPanel(interaction) {
 function gifPanel(interaction) {
   return { embeds: [new EmbedBuilder().setColor(PANEL_COLOR).setTitle('🎞️ Add GIF').setDescription([
     'Add animated GIFs and other supported animated media to this server. Static images are handled separately through the **Add Emoji** button on the main panel.', '',
-    '**Browse GIFs** — search the online animated collection.',
+    '**Browse GIFs** — search GIPHY for animated GIF discovery.',
     '**Upload GIF** — add an animated file from your device.',
     '**Add GIF Link** — paste a direct animated media link.',
   ].join('\n')).setFooter({ text: 'Requested by ' + memberName(interaction) })], components: [
@@ -146,25 +148,69 @@ function bulkUploadModal() { const upload = new FileUploadBuilder().setCustomId(
 function gifUploadModal() { const upload = new FileUploadBuilder().setCustomId('files').setMinValues(1).setMaxValues(10).setRequired(true); return new ModalBuilder().setCustomId('admin:module:emojis:gif-bulk-submit').setTitle('Upload GIF / Animation').addComponents(new LabelBuilder().setLabel('Choose animated files').setDescription('GIF, animated WebP, APNG or AVIF. Goliath will optimise while preserving animation where possible.').setFileUploadComponent(upload)); }
 function staticFallbackUploadModal() { const upload = new FileUploadBuilder().setCustomId('files').setMinValues(1).setMaxValues(10).setRequired(true); return new ModalBuilder().setCustomId('admin:module:emojis:static-fallback-submit').setTitle('Static Fallback Upload').addComponents(new LabelBuilder().setLabel('Choose failed animated files').setDescription('Explicit fallback: Goliath will keep the first frame and remove animation.').setFileUploadComponent(upload)); }
 function cleanSearchName(entry) { return String(entry?.title || entry?.slug || 'Emoji').replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim(); }
-function cleanSearchCategory(entry) { const category = String(entry?.category || '').trim(); return category && !/^\d+$/.test(category) ? category : 'Online emoji'; }
+function cleanSearchCategory(entry) { const provider = String(entry?.provider || '').trim(); if (provider) return provider; const category = String(entry?.category || '').trim(); return category && !/^\d+$/.test(category) ? category : 'Online emoji'; }
 function searchResultsPanel(results, query, mode = 'emoji') {
   const gifMode = mode === 'gif';
   const clean = Array.isArray(results) ? results.slice(0, 25) : [];
   const components = [];
-  if (clean.length) components.push(row(new StringSelectMenuBuilder().setCustomId(gifMode ? 'admin:module:emojis:gif-import' : 'admin:module:emojis:import').setPlaceholder(gifMode ? 'Choose a GIF to preview' : 'Choose an emoji to preview').addOptions(clean.map((entry) => ({ label: cleanSearchName(entry).slice(0, 100), value: String(entry.id), description: cleanSearchCategory(entry).slice(0, 100) })))));
+  if (clean.length) {
+    const menu = new StringSelectMenuBuilder()
+      .setCustomId(gifMode ? 'admin:module:emojis:gif-import' : 'admin:module:emojis:import')
+      .setPlaceholder(gifMode ? 'Choose a GIF to preview' : 'Choose an emoji to preview')
+      .addOptions(clean.map((entry) => ({ label: cleanSearchName(entry).slice(0, 100), value: String(entry.id), description: cleanSearchCategory(entry).slice(0, 100) })));
+    components.push(row(menu));
+  }
   components.push(row(button(gifMode ? 'admin:module:emojis:gif-search-open' : 'admin:module:emojis:search-open', '🔎 Search Again', gifMode ? ButtonStyle.Success : ButtonStyle.Primary)));
   components.push(row(button(gifMode ? 'admin:module:emojis:gif-upload-open' : 'admin:module:emojis:add', '⬅️ Back', ButtonStyle.Secondary)));
-  return { embeds: [new EmbedBuilder().setColor(PANEL_COLOR).setTitle(gifMode ? '🔎 GIF Search Results' : '🔎 Emoji Search Results').setDescription(clean.length ? `Found **${clean.length}** ${gifMode ? 'animated ' : ''}result(s) for **${String(query).slice(0, 80)}**. Choose one to preview it before adding.` : `No matching ${gifMode ? 'animated GIFs' : 'emojis'} were found. Try a different search.`)], components };
+  const description = clean.length
+    ? `Found **${clean.length}** ${gifMode ? 'GIPHY ' : ''}result(s) for **${String(query).slice(0, 80)}**. Choose one to preview it before continuing.${gifMode ? '\n\n**Powered by GIPHY** • discovery only; Goliath does not automatically download or re-host these results.' : ''}`
+    : `No matching ${gifMode ? 'GIPHY GIFs' : 'emojis'} were found. Try a different search.`;
+  return { embeds: [new EmbedBuilder().setColor(PANEL_COLOR).setTitle(gifMode ? '🔎 Browse GIFs — GIPHY' : '🔎 Emoji Search Results').setDescription(description)], components };
 }
 function searchPreviewPanel(entry, mode = 'emoji') {
   const gifMode = mode === 'gif';
   const name = cleanSearchName(entry);
-  const embed = new EmbedBuilder().setColor(PANEL_COLOR).setTitle(`👁️ ${name}`).setDescription(`**Name:** ${name}\n**Type:** ${gifMode ? '🎞️ Animated GIF' : '🖼️ Static Emoji'}\n\nCheck the preview below, then choose whether to add it to this server.`);
-  const imageUrl = emojiApi.assetUrl(entry);
+  const description = gifMode
+    ? `**Name:** ${name}\n**Type:** 🎞️ Animated GIF\n**Provider:** Powered by GIPHY\n\nPreview this GIF, then choose **Use This GIF** for the safe import options.`
+    : `**Name:** ${name}\n**Type:** 🖼️ Static Emoji\n\nCheck the preview below, then choose whether to add it to this server.`;
+  const embed = new EmbedBuilder().setColor(PANEL_COLOR).setTitle(`👁️ ${name}`).setDescription(description);
+  const imageUrl = gifMode ? entry?.previewUrl : emojiApi.assetUrl(entry);
   if (imageUrl) embed.setImage(imageUrl);
+  if (gifMode) {
+    return { embeds: [embed], components: [
+      row(button(`admin:module:emojis:gif-import-confirm:${entry.id}`, '✅ Use This GIF', ButtonStyle.Success), button('admin:module:emojis:gif-search-open', '🔎 Search Again', ButtonStyle.Secondary)),
+      row(linkButton('↗️ Open on GIPHY', entry.pageUrl), button('admin:module:emojis:gif-upload-open', '⬅️ Back', ButtonStyle.Secondary)),
+    ] };
+  }
   return { embeds: [embed], components: [
-    row(button(`${gifMode ? 'admin:module:emojis:gif-import-confirm:' : 'admin:module:emojis:import-confirm:'}${entry.id}`, gifMode ? '✅ Add This GIF' : '✅ Add This Emoji', ButtonStyle.Success), button(gifMode ? 'admin:module:emojis:gif-search-open' : 'admin:module:emojis:search-open', '🔎 Search Again', ButtonStyle.Secondary)),
-    row(button(gifMode ? 'admin:module:emojis:gif-upload-open' : 'admin:module:emojis:add', '⬅️ Back', ButtonStyle.Secondary)),
+    row(button(`admin:module:emojis:import-confirm:${entry.id}`, '✅ Add This Emoji', ButtonStyle.Success), button('admin:module:emojis:search-open', '🔎 Search Again', ButtonStyle.Secondary)),
+    row(button('admin:module:emojis:add', '⬅️ Back', ButtonStyle.Secondary)),
+  ] };
+}
+
+function giphyUnavailablePanel(query, interaction) {
+  const searchUrl = giphyApi.searchPageUrl(query);
+  return { embeds: [new EmbedBuilder().setColor(0xFEE75C).setTitle('🔎 Browse GIFs — GIPHY').setDescription([
+    '**Powered by GIPHY**', '',
+    'GIPHY browsing is ready in Goliath, but this environment does not have a **GIPHY_API_KEY** configured yet.',
+    'You can still open this search on GIPHY, upload a permitted GIF file, or add a permitted direct animated-media link.',
+  ].join('\n')).setFooter({ text: `Requested by ${memberName(interaction)}` })], components: [
+    row(linkButton('↗️ Search on GIPHY', searchUrl), button('admin:module:emojis:gif-upload-file-open', '🎞️ Upload GIF', ButtonStyle.Success), button('admin:module:emojis:gif-import-url-open', '🔗 Add GIF Link', ButtonStyle.Secondary)),
+    row(button('admin:module:emojis:gif-upload-open', '⬅️ Back', ButtonStyle.Secondary)),
+  ] };
+}
+
+function giphyUsePanel(entry, interaction) {
+  const name = cleanSearchName(entry);
+  const embed = new EmbedBuilder().setColor(PANEL_COLOR).setTitle(`🎞️ Use ${name}`).setDescription([
+    '**Powered by GIPHY**', '',
+    'GIPHY is used here for **discovery and preview only**. Goliath will not automatically download, cache, optimise or re-host this GIPHY result.', '',
+    'Open it on GIPHY, then use **Upload GIF** if you have a permitted copy of the media, or **Add GIF Link** with a permitted direct animated-media source.',
+  ].join('\n')).setFooter({ text: `Requested by ${memberName(interaction)}` });
+  if (entry?.previewUrl) embed.setImage(entry.previewUrl);
+  return { embeds: [embed], components: [
+    row(linkButton('↗️ Open on GIPHY', entry.pageUrl), button('admin:module:emojis:gif-upload-file-open', '🎞️ Upload GIF', ButtonStyle.Success), button('admin:module:emojis:gif-import-url-open', '🔗 Add GIF Link', ButtonStyle.Secondary)),
+    row(button('admin:module:emojis:gif-search-open', '🔎 Search Again', ButtonStyle.Secondary), button('admin:module:emojis:gif-upload-open', '⬅️ Back', ButtonStyle.Secondary)),
   ] };
 }
 function addedEmojiPanel(result, interaction, mode = 'emoji') {
@@ -203,9 +249,9 @@ async function handleDiscordInteraction(interaction) {
   if (id.startsWith('admin:module:emojis:delete-cancel:') && interaction.isButton?.()) { const emojiId = id.slice('admin:module:emojis:delete-cancel:'.length); await sendPanel(interaction, managePanel(await discordOverview(interaction), interaction, `extra:${emojiId}`)); return true; }
   if (id.startsWith('admin:module:emojis:delete-confirm:') && interaction.isButton?.()) { const emojiId = id.slice('admin:module:emojis:delete-confirm:'.length); const overview = await discordOverview(interaction); const emoji = (overview.catalog || []).find((entry) => !entry.core && String(entry.id) === emojiId); if (!emoji) throw new Error('That emoji is no longer available.'); const wasAdded = new Set(overview.effectiveFavourites || []).has(String(emojiId)); if (wasAdded) emojiStore.setFavourite(guildId, emojiId, false, { actorId: interaction.user?.id, action: 'emoji_delete_prepare' }); try { await emojis.removeFromBank(interaction.client, emojiId); } catch (error) { if (wasAdded) emojiStore.setFavourite(guildId, emojiId, true, { actorId: interaction.user?.id, action: 'emoji_delete_rollback' }); throw error; } await sendPanel(interaction, managePanel(await discordOverview(interaction), interaction, '', `🗑️ Deleted :${emoji.name}: permanently from the available emoji collection.`)); return true; }
   if (id === 'admin:module:emojis:search-submit' && interaction.isModalSubmit?.()) { if (!emojiStore.getSection(guildId).enabled) throw new Error('Turn on Emoji Studio first.'); const query = interaction.fields.getTextInputValue('query'); await sendPanel(interaction, searchResultsPanel(await emojiApi.search(query, 25), query)); return true; }
-  if (id === 'admin:module:emojis:gif-search-submit' && interaction.isModalSubmit?.()) { if (!emojiStore.getSection(guildId).enabled) throw new Error('Turn on Emoji & GIF Studio first.'); const query = interaction.fields.getTextInputValue('query'); await sendPanel(interaction, searchResultsPanel(await emojiApi.searchAnimated(query, 25), query, 'gif')); return true; }
+  if (id === 'admin:module:emojis:gif-search-submit' && interaction.isModalSubmit?.()) { if (!emojiStore.getSection(guildId).enabled) throw new Error('Turn on Emoji & GIF Studio first.'); const query = interaction.fields.getTextInputValue('query'); const result = await giphyApi.search(query, 25); if (!result.configured) { await sendPanel(interaction, giphyUnavailablePanel(query, interaction)); return true; } await sendPanel(interaction, searchResultsPanel(result.items, query, 'gif')); return true; }
   if (id === 'admin:module:emojis:import' && interaction.isStringSelectMenu?.()) { const entry = await emojiApi.findById(interaction.values?.[0]); if (!entry) throw new Error('That emoji could not be found anymore. Try searching again.'); await sendPanel(interaction, searchPreviewPanel(entry)); return true; }
-  if (id === 'admin:module:emojis:gif-import' && interaction.isStringSelectMenu?.()) { const entry = await emojiApi.findById(interaction.values?.[0]); if (!entry || !emojiApi.catalogueEntryLooksAnimated(entry)) throw new Error('That animated GIF could not be found anymore. Try searching again.'); await sendPanel(interaction, searchPreviewPanel(entry, 'gif')); return true; }
+  if (id === 'admin:module:emojis:gif-import' && interaction.isStringSelectMenu?.()) { const entry = await giphyApi.findById(interaction.values?.[0]); if (!entry) throw new Error('That GIPHY result could not be found anymore. Try searching again.'); await sendPanel(interaction, searchPreviewPanel(entry, 'gif')); return true; }
   if (id.startsWith('admin:module:emojis:import-confirm:') && interaction.isButton?.()) {
     const emojiGgId = id.slice('admin:module:emojis:import-confirm:'.length);
     if (!/^\d+$/.test(emojiGgId)) throw new Error('That emoji could not be identified. Search for it again.');
@@ -220,16 +266,11 @@ async function handleDiscordInteraction(interaction) {
     return true;
   }
   if (id.startsWith('admin:module:emojis:gif-import-confirm:') && interaction.isButton?.()) {
-    const emojiGgId = id.slice('admin:module:emojis:gif-import-confirm:'.length);
-    if (!/^\d+$/.test(emojiGgId)) throw new Error('That GIF could not be identified. Search for it again.');
-    await interaction.deferUpdate();
-    const entry = await emojiApi.findById(emojiGgId);
-    if (!entry || !emojiApi.catalogueEntryLooksAnimated(entry)) throw new Error('That animated GIF could not be found anymore. Try searching again.');
-    const prepared = await emojiApi.prepareDownloadedAsset(emojiApi.assetUrl(entry), { requireAnimated: true });
-    const created = await emojis.createStudioEmoji(interaction.client, prepared.buffer, cleanSearchName(entry));
-    const result = { ...created, ...prepared, emoji: created.emoji };
-    emojiStore.setFavourite(guildId, result.emoji.id, true, { actorId: interaction.user?.id, action: 'emoji_gif_catalogue_import' });
-    await interaction.editReply(addedEmojiPanel(result, interaction, 'gif'));
+    const giphyId = id.slice('admin:module:emojis:gif-import-confirm:'.length);
+    if (!/^[A-Za-z0-9_-]+$/.test(giphyId)) throw new Error('That GIPHY result could not be identified. Search for it again.');
+    const entry = await giphyApi.findById(giphyId);
+    if (!entry) throw new Error('That GIPHY result could not be found anymore. Try searching again.');
+    await sendPanel(interaction, giphyUsePanel(entry, interaction));
     return true;
   }
   if (id === 'admin:module:emojis:import-url-submit' && interaction.isModalSubmit?.()) {
@@ -249,6 +290,7 @@ async function handleDiscordInteraction(interaction) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const imageUrl = interaction.fields.getTextInputValue('imageUrl');
     const requestedName = interaction.fields.getTextInputValue('name') || null;
+    if (giphyApi.isGiphyUrl(imageUrl)) { await interaction.editReply({ embeds: [new EmbedBuilder().setColor(0xFEE75C).setTitle('🎞️ GIPHY Link Is Discovery-Only').setDescription('Goliath does not automatically download or re-host GIPHY media. Open the GIF on GIPHY, then upload a permitted copy or use a permitted direct animated-media source.')], components: [row(button('admin:module:emojis:gif-upload-file-open', '🎞️ Upload GIF', ButtonStyle.Success)), row(button('admin:module:emojis:gif-upload-open', '⬅️ Back', ButtonStyle.Secondary))] }); return true; }
     const prepared = await emojiApi.prepareDownloadedAsset(imageUrl, { requireAnimated: true });
     let name = requestedName || 'gif';
     if (!requestedName) { try { name = decodeURIComponent(new URL(imageUrl).pathname.split('/').pop() || 'gif').replace(/\.[a-z0-9]+$/i, '') || 'gif'; } catch {} }
