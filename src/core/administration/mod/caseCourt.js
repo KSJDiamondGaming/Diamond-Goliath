@@ -182,7 +182,7 @@ function buildCaseFile(interaction, modCase) {
       : '\n**Ban Approval:** ⏳ Second-admin approval required before publication.'
     : '';
   const executionLine = court.sanctionExecution
-    ? `\n**Execution:** ${court.sanctionExecution.status === 'executed' ? '✅ Executed' : '❌ Failed'} by <@${court.sanctionExecution.executedBy}> • ${discordTime(court.sanctionExecution.executedAt)}${court.sanctionExecution.linkedCaseId ? ` • Moderation Case #${court.sanctionExecution.linkedCaseId}` : ''}${court.sanctionExecution.error ? `\n${cleanExcerpt(court.sanctionExecution.error, 180)}` : ''}`
+    ? `\n**Execution:** ${court.sanctionExecution.status === 'executed' ? '✅ Executed' : court.sanctionExecution.status === 'reversed' ? '↩️ Reversed' : '❌ Failed'} by <@${court.sanctionExecution.executedBy}> • ${discordTime(court.sanctionExecution.executedAt)}${court.sanctionExecution.linkedCaseId ? ` • Moderation Case #${court.sanctionExecution.linkedCaseId}` : ''}${court.sanctionExecution.status === 'reversed' ? `\nReversed by <@${court.sanctionExecution.reversedBy}> • ${discordTime(court.sanctionExecution.reversedAt)}` : ''}${court.sanctionExecution.error ? `\n${cleanExcerpt(court.sanctionExecution.error, 180)}` : ''}`
     : court.decision?.action && court.decision.action !== 'no_action' ? '\n**Execution:** ⏳ Not executed' : '';
   const decision = court.decision
     ? `**Finding:** ${court.decision.finding}\n**Decision:** ${court.decision.action}\n**Reason:** ${court.decision.reason}\n**Judge:** <@${court.decision.decidedBy}> • ${discordTime(court.decision.decidedAt)}${sanctionGate}${executionLine}`
@@ -233,7 +233,7 @@ function buildCaseFile(interaction, modCase) {
       button(`mod_court_approve_ban:${modCase.caseId}`, 'Approve Ban', '🛡️', ButtonStyle.Danger, !canManage || court.decision?.action !== 'ban' || court.sanctionReview?.status === 'approved' || court.decision?.decidedBy === interaction.user.id),
     ),
     row(
-      button(`mod_court_execute:${modCase.caseId}`, court.sanctionExecution?.status === 'executed' ? 'Sanction Executed' : court.sanctionExecution?.status === 'failed' ? 'Retry Sanction' : 'Execute Sanction', '⚡', ButtonStyle.Danger, !canManage || isClosed || court.stage !== 'published' || !court.decision || court.decision.action === 'no_action' || court.sanctionExecution?.status === 'executed' || (court.decision?.action === 'ban' && court.sanctionReview?.status !== 'approved')),
+      button(`mod_court_execute:${modCase.caseId}`, court.sanctionExecution?.status === 'executed' ? 'Sanction Executed' : court.sanctionExecution?.status === 'reversed' ? 'Sanction Reversed' : court.sanctionExecution?.status === 'failed' ? 'Retry Sanction' : 'Execute Sanction', '⚡', ButtonStyle.Danger, !canManage || isClosed || court.stage !== 'published' || !court.decision || court.decision.action === 'no_action' || ['executed', 'reversed'].includes(court.sanctionExecution?.status) || (court.decision?.action === 'ban' && court.sanctionReview?.status !== 'approved')),
       button(isClosed ? `mod_court_reopen:${modCase.caseId}` : `mod_court_close:${modCase.caseId}`, isClosed ? 'Reopen' : 'Close Case', isClosed ? '🔓' : '🔒', ButtonStyle.Secondary, !canManage),
     ),
     staffBackRow(modCase.userId),
