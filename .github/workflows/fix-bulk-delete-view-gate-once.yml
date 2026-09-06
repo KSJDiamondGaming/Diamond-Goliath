@@ -1,0 +1,68 @@
+name: Fix Bulk Delete View Gate Once
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - '.github/workflows/fix-bulk-delete-view-gate-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: dev
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Apply focused fix
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('src/owner/dev/duplicator/selective.js')
+          s = p.read_text()
+          old1 = "if (state.administrator || (state.viewChannel && state.manageChannels)) return { ok: true, channel: current, repaired: false, state };"
+          new1 = "if (state.administrator || state.manageChannels) return { ok: true, channel: current, repaired: false, state };"
+          old2 = "if (state.administrator || (state.viewChannel && state.manageChannels)) return { ok: true, channel: current, repaired: true, state };"
+          new2 = "if (state.administrator || state.manageChannels) return { ok: true, channel: current, repaired: true, state };"
+          old3 = "return { ok: state.administrator || (state.viewChannel && state.manageChannels), channel: current, repaired: true, state };"
+          new3 = "return { ok: state.administrator || state.manageChannels, channel: current, repaired: true, state };"
+          old4 = "error: 'Preflight blocked: Missing Access. Goliath needs View Channel + Manage Channels on this target, or Administrator at server level.',"
+          new4 = "error: `Preflight blocked: Goliath lacks Manage Channels on this target${access.state?.viewChannel ? '' : ' (View Channel is also denied)'}. Administrator also satisfies this requirement.`,"
+          old5 = "requiredAction: 'Grant Goliath Administrator temporarily, or restore View Channel + Manage Channels on every blocked channel/category, then retry. No selected channel was deleted because preflight failed.',"
+          new5 = "requiredAction: 'Grant Goliath Administrator temporarily, or restore Manage Channels on every blocked channel/category, then retry. View Channel is not required for channel deletion when Manage Channels is effective. No selected channel was deleted because preflight failed.',"
+          replacements = [(old1,new1),(old2,new2),(old3,new3),(old4,new4),(old5,new5)]
+          for old,new in replacements:
+              if old not in s:
+                  raise SystemExit(f'missing expected fragment: {old}')
+              s = s.replace(old,new,1)
+          p.write_text(s)
+          PY
+      - name: Validate
+        run: |
+          node --check src/owner/dev/duplicator/selective.js
+          node --check src/owner/dev/duplicator/index.js
+          npm run contracts
+      - name: Remove one-off workflow
+        run: git rm -f .github/workflows/fix-bulk-delete-view-gate-once.yml
+      - name: Doctor
+        run: npm run doctor
+      - name: Build
+        run: npm run build
+      - name: Commit directly to dev
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'fix(duplicator): do not require view channel for bulk delete'
+          git pull --rebase origin dev
+          git push origin HEAD:dev
