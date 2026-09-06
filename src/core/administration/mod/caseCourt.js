@@ -240,7 +240,7 @@ function buildCaseFile(interaction, modCase) {
       button(`mod_court_submit_review:${modCase.caseId}`, court.stage === 'review' ? 'Awaiting Review' : 'Submit for Review', '👨‍⚖️', ButtonStyle.Primary, !canManage || court.stage !== 'investigation'),
     ),
     row(
-      button(`mod_court_verify:${modCase.caseId}`, 'Verify Evidence', '✅', ButtonStyle.Secondary, !court.evidence.length),
+      button(`mod_court_verify:${modCase.caseId}`, 'Verify Evidence', '✅', ButtonStyle.Secondary, !judgeAuthority || !court.evidence.length),
       button(`mod_court_preview:${modCase.caseId}`, 'Member Preview', '👁️', ButtonStyle.Secondary, !court.decision),
       button(`mod_court_decide:${modCase.caseId}`, 'Decision', '⚖️', judgeAuthority ? ButtonStyle.Danger : ButtonStyle.Secondary, !canDecide),
       button(`mod_court_publish:${modCase.caseId}`, court.publication ? 'Update Published Record' : 'Publish Record', '📜', ButtonStyle.Success, !canPublishCourt(interaction) || !court.decision || isClosed || (court.decision?.action === 'ban' && court.sanctionReview?.status !== 'approved')),
@@ -700,6 +700,12 @@ async function handleCourtModal(interaction) {
     if (field(interaction, 'confirmation').toUpperCase() !== 'EXECUTE') { await interaction.reply({ content: '❌ Execution cancelled. Type EXECUTE exactly to confirm.', flags: 64 }); return true; }
     const parameter = field(interaction, 'parameter');
     const note = field(interaction, 'note');
+    const strikeWeight = action === 'warn' ? Number(parameter) : null;
+    const durationMs = action === 'timeout' ? parseCourtTimeout(parameter) : null;
+    const deleteDays = action === 'ban' ? Number(parameter) : null;
+    if (action === 'warn' && (!Number.isInteger(strikeWeight) || strikeWeight < 1 || strikeWeight > 5)) { await interaction.reply({ content: '❌ Warning strike weight must be a whole number from 1 to 5.', flags: 64 }); return true; }
+    if (action === 'timeout' && !durationMs) { await interaction.reply({ content: '❌ Invalid timeout duration. Use values such as 10m, 1h or 1d; maximum 28 days.', flags: 64 }); return true; }
+    if (action === 'ban' && (!Number.isInteger(deleteDays) || deleteDays < 0 || deleteDays > 7)) { await interaction.reply({ content: '❌ Ban delete-message days must be a whole number from 0 to 7.', flags: 64 }); return true; }
     const lockKey = courtExecutionLockKey(interaction.guildId, caseId);
     if (COURT_EXECUTION_LOCKS.has(lockKey)) { await interaction.reply({ content: '❌ This sanction is already being executed. Duplicate execution is blocked.', flags: 64 }); return true; }
     if (court.sanctionExecution?.status === 'executing' && !executionIsStale(court.sanctionExecution)) { await interaction.reply({ content: '❌ This sanction is already being executed by another judge.', flags: 64 }); return true; }
@@ -721,8 +727,6 @@ async function handleCourtModal(interaction) {
       let resultSummary = null;
       const reason = `Court Case #${caseId}: ${court.decision.reason || court.decision.finding || 'Court decision'}`.slice(0, 500);
       if (action === 'warn') {
-        const strikeWeight = Number(parameter);
-        if (!Number.isInteger(strikeWeight) || strikeWeight < 1 || strikeWeight > 5) { await interaction.reply({ content: '❌ Warning strike weight must be a whole number from 1 to 5.', flags: 64 }); return true; }
         const created = createWarningCaseAtomic({ guildId: interaction.guildId, userId: target.id, moderatorId: interaction.user.id, reason, strikeWeight, metadata: { sourceCourtCaseId: caseId, courtOrdered: true }, actorId: interaction.user.id });
         linkedCaseId = created?.modCase?.caseId || null;
         resultSummary = `Warning recorded with strike weight ${strikeWeight}.`;
@@ -735,16 +739,10 @@ async function handleCourtModal(interaction) {
       } else {
         const metadata = { sourceCourtCaseId: caseId, courtOrdered: true };
         if (action === 'timeout') {
-          const durationMs = parseCourtTimeout(parameter);
-          if (!durationMs) { await interaction.reply({ content: '❌ Invalid timeout duration. Use values such as 10m, 1h or 1d; maximum 28 days.', flags: 64 }); return true; }
           metadata.durationRaw = parameter;
           metadata.durationMs = durationMs;
         }
-        if (action === 'ban') {
-          const deleteDays = Number(parameter);
-          if (!Number.isInteger(deleteDays) || deleteDays < 0 || deleteDays > 7) { await interaction.reply({ content: '❌ Ban delete-message days must be a whole number from 0 to 7.', flags: 64 }); return true; }
-          metadata.deleteDays = deleteDays;
-        }
+        if (action === 'ban') metadata.deleteDays = deleteDays;
         const result = await executeEnginePunishment(interaction, target, action, reason, metadata, { logAction: `Court ${action}` });
         linkedCaseId = result?.modCase?.caseId || null;
         resultSummary = `${action} applied successfully.`;
@@ -765,7 +763,7 @@ async function handleCourtModal(interaction) {
     }
   }
   if (key === 'mod_court_publish_submit') {
-    if (!isJudge(interaction)) { await interaction.reply({ content: '❌ Admin authority is required to publish a record.', flags: 64 }); return true; }
+    if (!canPublishCourt(interaction)) { await interaction.reply({ content: '❌ Court publishing authority is required to publish a record.', flags: 64 }); return true; }
     if (!court.decision) { await interaction.reply({ content: '❌ Record a decision before publishing the member record.', flags: 64 }); return true; }
     if (court.decision.action === 'ban' && court.sanctionReview?.status !== 'approved') { await interaction.reply({ content: '❌ Ban decisions require approval from a second admin before the member record can be published.', flags: 64 }); return true; }
     const summary = field(interaction, 'summary');
