@@ -324,10 +324,28 @@ function buildReviewBriefPage(interaction, modCase) {
   return { embeds: [embed], components };
 }
 
+function uniqueHistoryItems(items, keyFn) {
+  const seen = new Set();
+  const result = [];
+  for (const item of items.filter(Boolean)) {
+    const key = String(keyFn(item) || '');
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(item);
+  }
+  return result;
+}
+
 function buildRecordHistoryPage(modCase) {
   const court = parseCourt(modCase);
-  const decisions = [...court.decisionHistory, ...(court.decision ? [court.decision] : [])].filter(Boolean);
-  const publications = [...court.publicationHistory, ...(court.publication ? [court.publication] : [])].filter(Boolean);
+  const decisions = uniqueHistoryItems(
+    [...court.decisionHistory, ...(court.decision ? [court.decision] : [])],
+    (item) => `${item.decidedAt || ''}:${item.action || ''}:${item.finding || ''}`,
+  );
+  const publications = uniqueHistoryItems(
+    [...court.publicationHistory, ...(court.publication ? [court.publication] : [])],
+    (item) => `${item.revision || ''}:${item.publishedAt || ''}:${item.summary || ''}`,
+  );
   const appeals = getCourtAppeals(modCase);
   const decisionLines = decisions.length ? decisions.slice(-8).reverse().map((item, index) => `**${index === 0 ? 'Current' : 'Prior'}** • ${item.action || 'no_action'} • ${cleanExcerpt(item.finding || 'No finding', 100)}\n<@${item.decidedBy || '0'}> • ${discordTime(item.decidedAt)}`) : ['No decision history recorded.'];
   const publicationLines = publications.length ? publications.slice(-8).reverse().map((item) => `**Revision ${item.revision || 1}** • ${discordTime(item.publishedAt)} • <@${item.publishedBy || '0'}>\n${cleanExcerpt(item.summary || '', 180)}`) : ['No publication history recorded.'];
