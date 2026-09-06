@@ -333,20 +333,14 @@ if (PermissionOverwriteManager?.prototype?.set && !PermissionOverwriteManager.pr
 
       return channel.permissionOverwrites;
     } finally {
-      // A temporary Goliath *member* overwrite must never be the final copied permission.
-      // Always remove it for channels, including failure paths. Categories keep it briefly
-      // so restrictive parents cannot block their child channel pass, then it is removed.
+      // Keep a destination-only Goliath control-plane member overwrite on copied structure.
+      // Source bot/operator ACLs are excluded from snapshots; this operational ACL prevents
+      // exact source permissions from locking Goliath out of verification, undo and cleanup.
       if (botId && botOverwrite && !sourceHadBotMemberOverwrite) {
-        if (channel.type === ChannelType.GuildCategory) {
-          setTimeout(() => {
-            channel.permissionOverwrites.delete(botId, 'Goliath duplicator: remove temporary category access').catch((error) => {
-              console.warn(`[Duplicator] Temporary category access cleanup failed for ${channel.name}: ${error.message}`);
-            });
-          }, 8000).unref?.();
-        } else {
-          await channel.permissionOverwrites.delete(botId, 'Goliath duplicator: remove temporary transfer access').catch((error) => {
-            console.warn(`[Duplicator] Temporary access cleanup failed for ${channel.name}: ${error.message}`);
-          });
+        try {
+          await upsertExplicit(botOverwrite, 'Goliath duplicator: retain destination control-plane access');
+        } catch (error) {
+          console.warn(`[Duplicator] Could not retain control-plane access for ${channel.name}: ${error.message}`);
         }
       }
     }
@@ -402,7 +396,7 @@ function bulkDeleteFailureDetails(interaction) {
         ...lines,
         failures.length > 6 ? `…and ${failures.length - 6} more.` : null,
         '',
-        permissionFailures ? '**Fix:** Give Goliath Administrator, or allow Manage Channels + Manage Roles on the blocked channels/categories, then retry. New Duplicator snapshots now exclude source-bot ACLs so future copies cannot copy Goliath-specific lockouts across environments.' : null,
+        permissionFailures ? (latest.blockedPreflight ? '**Fix:** Bulk Delete was stopped before deleting anything. Temporarily grant Goliath Administrator, or restore View Channel + Manage Channels on every blocked target, then retry. New copies retain a destination-only Goliath control-plane overwrite so this lockout cannot recur.' : '**Fix:** Give Goliath Administrator, or restore View Channel + Manage Channels on the blocked targets, then retry.') : null,
         `History record: \`${latest.id}\``,
       ].filter(Boolean).join('\n'))
       .setTimestamp()],
