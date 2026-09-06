@@ -5,6 +5,7 @@ on:
     branches: [dev]
     paths:
       - '.github/workflows/patch-duplicator-directory-ui-once.yml'
+      - 'scripts/patch-duplicator-directory-ui-once.js'
 
 permissions:
   contents: write
@@ -22,6 +23,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Validate patch runner
+        run: node --check scripts/patch-duplicator-directory-ui-once.js
       - name: Apply Duplicator directory UI repair
         run: node scripts/patch-duplicator-directory-ui-once.js
       - name: Validate changed source
