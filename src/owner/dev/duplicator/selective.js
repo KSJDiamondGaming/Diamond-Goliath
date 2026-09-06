@@ -270,6 +270,7 @@ function scanPayload(session) {
 }
 function reviewPayload(session, dryRun = null) {
   const snap = filteredSnapshot(session.snapshot, session.selected);
+  const blocked = Boolean(dryRun && String(dryRun.status || '').includes('blocked'));
   const roleNames = [...snap.roles.map((role) => `• ${role.name}`), ...(snap.managedRoles || []).map((role) => `• 🔗 ${role.name} (managed → remap only)`)].slice(0, 15).join('\n') || '• None';
   const dry = dryRun ? [
     '', '**Dry Run**', `Status: \`${dryRun.status || 'dry-run'}\``,
@@ -286,7 +287,7 @@ function reviewPayload(session, dryRun = null) {
     ].join('\n'), dryRun?.errors?.length ? 0xf59e0b : 0x5865f2)],
     components: [new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(componentId(session, 'dryrun')).setLabel('Run Dry-Run').setEmoji('🧪').setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId(componentId(session, 'confirm-view')).setLabel('Continue').setEmoji('➡️').setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId(componentId(session, 'confirm-view')).setLabel('Continue').setEmoji('➡️').setStyle(ButtonStyle.Success).setDisabled(blocked),
       new ButtonBuilder().setCustomId(componentId(session, 'scan-back')).setLabel('Back to Selection').setStyle(ButtonStyle.Secondary),
     )],
   };
@@ -318,63 +319,66 @@ async function applyFiltered(interaction, session, dryRun) {
     actorId: interaction.user.id,
   });
 }
-function destinationMappings(sourceSnapshot, destinationSnapshot, selected) {
+function destinationMappings(sourceSnapshot, destinationSnapshot, selected, transferObjects = {}) {
   const filtered = filteredSnapshot(sourceSnapshot, selected);
+  const roleMap = transferObjects.roleMap || {};
+  const channelMap = transferObjects.channelMap || {};
+  const allDestinationRoles = [...(destinationSnapshot.roles || []), ...(destinationSnapshot.managedRoles || [])];
+  const roleById = new Map(allDestinationRoles.map((role) => [String(role.id), role]));
+  const channelById = new Map((destinationSnapshot.channels || []).map((channel) => [String(channel.id), channel]));
+
   const standardRoleMappings = filtered.roles.map((role) => {
+    const directId = roleMap[role.id] ? String(roleMap[role.id]) : null;
+    const direct = directId ? roleById.get(directId) : null;
+    if (direct) return { sourceId: role.id, sourceName: role.name, sourcePermissions: role.permissions, destinationId: direct.id, destinationName: direct.name, status: 'mapped' };
     const candidates = (destinationSnapshot.roles || []).filter((dest) => dest.name === role.name);
-    return {
-      sourceId: role.id, sourceName: role.name, sourcePermissions: role.permissions,
-      destinationId: candidates.length === 1 ? candidates[0].id : null,
-      destinationName: candidates.length === 1 ? candidates[0].name : null,
-      status: candidates.length === 1 ? 'mapped' : candidates.length > 1 ? 'ambiguous' : 'missing',
-    };
+    const match = candidates.length === 1 ? candidates[0] : null;
+    return { sourceId: role.id, sourceName: role.name, sourcePermissions: role.permissions, destinationId: match?.id || null, destinationName: match?.name || null, status: match ? 'mapped' : candidates.length > 1 ? 'ambiguous' : 'missing' };
   });
+
   const managedRoleMappings = (filtered.managedRoles || []).map((role) => {
+    const directId = roleMap[role.id] ? String(roleMap[role.id]) : null;
+    const direct = directId ? roleById.get(directId) : null;
+    if (direct) return { sourceId: role.id, sourceName: role.name, sourcePermissions: role.permissions, managed: true, destinationId: direct.id, destinationName: direct.name, status: 'mapped' };
     const managed = destinationSnapshot.managedRoles || [];
     let candidates = [];
-    if (role.tags?.botId && role.tags.botId === filtered.sourceGuild?.botUserId && destinationSnapshot.sourceGuild?.botUserId) {
-      candidates = managed.filter((dest) => dest.tags?.botId === destinationSnapshot.sourceGuild.botUserId);
-    }
+    if (role.tags?.botId && role.tags.botId === filtered.sourceGuild?.botUserId && destinationSnapshot.sourceGuild?.botUserId) candidates = managed.filter((dest) => dest.tags?.botId === destinationSnapshot.sourceGuild.botUserId);
     if (!candidates.length && role.tags?.botId) candidates = managed.filter((dest) => dest.tags?.botId === role.tags.botId);
     if (!candidates.length) candidates = managed.filter((dest) => dest.name === role.name);
     const match = candidates.length === 1 ? candidates[0] : null;
-    return {
-      sourceId: role.id,
-      sourceName: role.name,
-      sourcePermissions: role.permissions,
-      managed: true,
-      destinationId: match?.id || null,
-      destinationName: match?.name || null,
-      status: match ? 'mapped' : candidates.length > 1 ? 'ambiguous-managed' : 'missing-managed',
-    };
+    return { sourceId: role.id, sourceName: role.name, sourcePermissions: role.permissions, managed: true, destinationId: match?.id || null, destinationName: match?.name || null, status: match ? 'mapped' : candidates.length > 1 ? 'ambiguous-managed' : 'missing-managed' };
   });
+
   const roleMappings = [...standardRoleMappings, ...managedRoleMappings];
-  const categoryMap = new Map();
-  for (const source of filtered.channels.filter((c) => c.type === ChannelType.GuildCategory)) {
-    const candidates = (destinationSnapshot.channels || []).filter((dest) => dest.type === ChannelType.GuildCategory && dest.name === source.name);
-    if (candidates.length === 1) categoryMap.set(source.id, candidates[0].id);
-  }
   const channelMappings = filtered.channels.map((source) => {
+    const directId = channelMap[source.id] ? String(channelMap[source.id]) : null;
+    const direct = directId ? channelById.get(directId) : null;
+    if (direct) return {
+      sourceId: source.id, sourceName: source.name, sourceParentId: source.parentId || null,
+      destinationId: direct.id, destinationName: direct.name, destinationParentId: direct.parentId || null,
+      permissionOverwrites: source.permissionOverwrites || [], status: 'mapped',
+    };
     let candidates = (destinationSnapshot.channels || []).filter((dest) => dest.name === source.name);
     if (source.type === ChannelType.GuildCategory) candidates = candidates.filter((dest) => dest.type === ChannelType.GuildCategory);
-    else if (source.parentId && categoryMap.get(source.parentId)) candidates = candidates.filter((dest) => dest.parentId === categoryMap.get(source.parentId));
+    const mappedParentId = source.parentId ? channelMap[source.parentId] : null;
+    if (source.type !== ChannelType.GuildCategory && mappedParentId) candidates = candidates.filter((dest) => String(dest.parentId || '') === String(mappedParentId));
     const match = candidates.length === 1 ? candidates[0] : null;
     return {
       sourceId: source.id, sourceName: source.name, sourceParentId: source.parentId || null,
-      destinationId: match?.id || null, destinationName: match?.name || null,
-      destinationParentId: match?.parentId || null, permissionOverwrites: source.permissionOverwrites || [],
-      status: match ? 'mapped' : candidates.length > 1 ? 'ambiguous' : 'missing',
+      destinationId: match?.id || null, destinationName: match?.name || null, destinationParentId: match?.parentId || null,
+      permissionOverwrites: source.permissionOverwrites || [], status: match ? 'mapped' : candidates.length > 1 ? 'ambiguous' : 'missing',
     };
   });
   return { roleMappings, channelMappings };
 }
 function copyOutcome(response, mappings) {
-  const status = String(response?.log?.status || 'unknown');
+  const status = String(response?.log?.status || 'unknown').toLowerCase();
   const created = response?.log?.transferObjects || {};
   const changed = (created.createdChannelIds || []).length + (created.createdCategoryIds || []).length + (created.createdRoleIds || []).length;
   const unresolved = [...mappings.roleMappings, ...mappings.channelMappings].filter((item) => item.status !== 'mapped').length;
   if (status === 'success' && !unresolved) return 'success';
-  if (status === 'failed' || (!changed && (response?.log?.errors || []).length)) return 'failed';
+  if (status === 'blocked-preflight' || status === 'failed') return 'failed';
+  if (status === 'partial' || status.includes('warning') || unresolved) return changed ? 'partial' : 'failed';
   if (!changed && status !== 'success') return 'no-changes';
   return 'partial';
 }
@@ -386,8 +390,8 @@ async function recordTransfer(interaction, session, response) {
     selectedOptions: ['roles', 'categories', 'channels', 'permissions'],
   })).snapshot;
   const filtered = filteredSnapshot(session.snapshot, session.selected);
-  const mappings = destinationMappings(session.snapshot, destinationSnapshot, session.selected);
   const transferObjects = response.log?.transferObjects || {};
+  const mappings = destinationMappings(session.snapshot, destinationSnapshot, session.selected, transferObjects);
   const createdRoles = new Set((transferObjects.createdRoleIds || []).map(String));
   const createdStructure = new Set([...(transferObjects.createdCategoryIds || []), ...(transferObjects.createdChannelIds || [])].map(String));
   for (const item of mappings.roleMappings) item.createdByTransfer = Boolean(item.destinationId && createdRoles.has(String(item.destinationId)));
@@ -415,17 +419,27 @@ async function recordTransfer(interaction, session, response) {
 function resultPayload(session, response, manifest) {
   const unresolvedRoles = manifest.roles.filter((item) => item.status !== 'mapped').length;
   const unresolvedChannels = manifest.channels.filter((item) => item.status !== 'mapped').length;
-  const status = response.log?.status || 'unknown';
-  const ok = status === 'success' && !unresolvedRoles && !unresolvedChannels;
+  const status = String(response.log?.status || 'unknown');
+  const outcome = manifest.outcome || copyOutcome(response, { roleMappings: manifest.roles, channelMappings: manifest.channels });
+  const ok = outcome === 'success';
+  const failed = outcome === 'failed';
+  const verification = response.log?.verification || {};
+  const title = ok ? '✅ Selective Copy Verified' : failed ? (status === 'blocked-preflight' ? '🛑 Selective Copy Blocked' : '❌ Selective Copy Failed') : '⚠️ Selective Copy Partial';
+  const color = ok ? 0x22c55e : failed ? 0xed4245 : 0xf59e0b;
   return {
-    embeds: [embed(ok ? '✅ Selective Copy Verified' : '⚠️ Selective Copy Completed', [
-      `**Transfer:** \`${manifest.id}\``, `**Destination:** ${manifest.destinationGuildName || manifest.destinationGuildId} (${manifest.destinationGuildId})`,
-      `**Status:** \`${status}\``, '',
-      `Transfer plan: Categories \`${manifest.stats.categories}\` • Channels \`${manifest.stats.channels}\` • Required Roles \`${manifest.stats.roles}\` • Permission Overwrites \`${manifest.stats.permissionOverwrites}\``,
-      `Manifest mapping: Roles \`${manifest.roles.length - unresolvedRoles}/${manifest.roles.length}\` • Structure \`${manifest.channels.length - unresolvedChannels}/${manifest.channels.length}\``,
-      '', 'This transfer is permanently recorded in **Transfer History** with source → destination IDs and source permission data.',
-      ...(manifest.warnings || []).slice(0, 5).map((warning) => `⚠️ ${warning}`),
-    ].join('\n'), ok ? 0x22c55e : 0xf59e0b)],
+    embeds: [embed(title, [
+      '**Transfer:** ' + manifest.id,
+      '**Destination:** ' + (manifest.destinationGuildName || manifest.destinationGuildId) + ' (' + manifest.destinationGuildId + ')',
+      '**Status:** ' + status,
+      '**Outcome:** ' + outcome.toUpperCase(),
+      '',
+      'Transfer plan: Categories ' + manifest.stats.categories + ' • Channels ' + manifest.stats.channels + ' • Required Roles ' + (manifest.stats.roleDependencies ?? manifest.stats.roles) + ' • Permission Overwrites ' + manifest.stats.permissionOverwrites,
+      'Manifest mapping: Roles ' + (manifest.roles.length - unresolvedRoles) + '/' + manifest.roles.length + ' • Structure ' + (manifest.channels.length - unresolvedChannels) + '/' + manifest.channels.length,
+      verification.structureExpected != null ? 'Engine verification: Structure ' + (verification.structureMapped || 0) + '/' + verification.structureExpected + ' • Permissions ' + (verification.permissionOverwritesVerified || 0) + '/' + (verification.permissionOverwritesExpected || 0) + ' • Roles ' + (verification.roleMappingsVerified || 0) + '/' + (verification.roleMappingsExpected || 0) : null,
+      '',
+      failed && status === 'blocked-preflight' ? '**No destination mutation was started because exact-copy preflight failed.**' : 'This transfer is permanently recorded in **Transfer History** with source → destination IDs and source permission data.',
+      ...(manifest.warnings || []).slice(0, 8).map((warning) => '⚠️ ' + warning),
+    ].filter(Boolean).join('\n'), color)],
     components: [new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(componentId(session, 'manifest-last')).setLabel('View Transfer Manifest').setEmoji('📜').setStyle(ButtonStyle.Primary),
       new ButtonBuilder().setCustomId(componentId(session, 'home')).setLabel('New Transfer').setStyle(ButtonStyle.Secondary),

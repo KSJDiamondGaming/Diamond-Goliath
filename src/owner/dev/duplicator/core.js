@@ -237,9 +237,6 @@ function pushError(log, stage, error) { const message = `[${stage}] ${errorLabel
 function hasBotPermission(guild, bit) { return Boolean(guild.members.me?.permissions?.has(bit)); }
 function permissionNamesFromBits(value) { try { return new PermissionsBitField(BigInt(value || 0)).toArray(); } catch { return []; } }
 function permissionGapNames(guild, value) { return permissionNamesFromBits(value).filter((name) => { const bit = PermissionFlagsBits[name]; return bit && !hasBotPermission(guild, bit); }); }
-function botPermissionMask(guild) { return guild.members.me?.permissions?.bitfield || 0n; }
-function permittedBits(guild, raw) { return BigInt(raw || 0) & botPermissionMask(guild); }
-function deferredBits(guild, raw) { return BigInt(raw || 0) & ~botPermissionMask(guild); }
 function namesForBits(bits) { try { return new PermissionsBitField(BigInt(bits || 0)).toArray(); } catch { return []; } }
 function addDeferred(log, entry) {
   log.deferredPermissions ||= [];
@@ -266,271 +263,44 @@ function transferCapabilityGaps(guild, snap) {
   }
   return [...missing].sort();
 }
-function hierarchyWarning(guild) { const highest = guild.members.me?.roles?.highest; return !highest || Number(highest.position || 0) <= 1 ? 'Goliath role is too low. Move it above roles it needs to create/manage.' : null; }
-function runLog(session, snap) {
-  return {
-    status: session.dryRun ? 'dry-run' : 'running', dryRun: Boolean(session.dryRun), conflictMode: session.conflictMode,
-    sourceGuildId: snap.sourceGuild?.id || null, destinationGuildId: session.destinationGuildId || null, rollbackBackupId: null,
-    snapshotStats: snap.stats, copied: { serverSettings: 0, roles: 0, categories: 0, channels: 0, permissionOverwrites: 0, emojis: 0 },
-    deleted: { roles: 0, channels: 0 }, skipped: [], errors: [], notes: [], deferredPermissions: [], verification: null,
-  };
-}
-function dryRunPlan(guild, snap, conflictMode) {
-  const plan = { create: { serverSettings: snap.settings ? 1 : 0, roles: 0, categories: 0, channels: 0, permissionOverwrites: 0, emojis: 0 }, rename: { roles: 0, categories: 0, channels: 0, emojis: 0 }, skip: { roles: 0, categories: 0, channels: 0, emojis: 0 }, delete: { roles: 0, channels: 0 } };
-  for (const role of snap.roles || []) {
-    const found = existingRole(guild, role.name);
-    if (!found) plan.create.roles += 1;
-    else if (conflictMode === 'skip') plan.skip.roles += 1;
-    else if (conflictMode === 'rename') { plan.rename.roles += 1; plan.create.roles += 1; }
-    else { plan.delete.roles += 1; plan.create.roles += 1; }
+function referencedPermissionRoleIds(snap) {
+  const ids = new Set();
+  for (const channel of snap.channels || []) for (const overwrite of channel.permissionOverwrites || []) {
+    if (Number(overwrite.type) === 0 && overwrite.id !== snap.sourceGuild?.id) ids.add(String(overwrite.id));
   }
-  for (const channel of snap.channels || []) {
-    const found = existingChannel(guild, channel);
-    const key = channel.type === ChannelType.GuildCategory ? 'categories' : 'channels';
-    if (!found) plan.create[key] += 1;
-    else if (conflictMode === 'skip') plan.skip[key] += 1;
-    else if (conflictMode === 'rename') { plan.rename[key] += 1; plan.create[key] += 1; }
-    else { plan.delete.channels += 1; plan.create[key] += 1; }
-  }
-  plan.create.permissionOverwrites = (snap.channels || []).reduce((total, channel) => total + (channel.permissionOverwrites?.length || 0), 0);
-  plan.create.emojis = (snap.emojis || []).length;
-  return plan;
+  return ids;
 }
-function applyDryRunPlan(log, plan) {
-  log.copied = { ...log.copied, ...plan.create };
-  log.deleted = { ...log.deleted, ...plan.delete };
-  log.notes.push('Dry run only — no changes were made.');
+function referencedPermissionMemberIds(snap) {
+  const ids = new Set();
+  for (const channel of snap.channels || []) for (const overwrite of channel.permissionOverwrites || []) if (Number(overwrite.type) === 1) ids.add(String(overwrite.id));
+  return ids;
 }
-
-async function clearDestination(guild, log) {
-  for (const channel of [...guild.channels.cache.values()].sort((a, b) => b.position - a.position)) {
-    try { await channel.delete('Goliath duplicator: replace destination'); log.deleted.channels += 1; } catch (error) { pushError(log, `Delete channel ${channel.name}`, error); }
-  }
-  const botHighest = guild.members.me?.roles?.highest?.position ?? 0;
-  const roles = guild.roles.cache.filter((r) => r.id !== guild.id && !r.managed && r.editable && r.position < botHighest).sort((a, b) => b.position - a.position);
-  for (const role of roles.values()) { try { await role.delete('Goliath duplicator: replace roles'); log.deleted.roles += 1; } catch (error) { pushError(log, `Delete role ${role.name}`, error); } }
-}
-async function applySettings(guild, snap, log) {
-  if (!snap.settings) return;
-  if (!hasBotPermission(guild, PermissionFlagsBits.ManageGuild)) { log.notes.push('Server settings skipped: Goliath lacks ManageGuild.'); return; }
-  const s = snap.settings; const payload = {};
-  if (s.name) payload.name = s.name;
-  if (s.description !== undefined) payload.description = s.description || null;
-  if (Number.isFinite(s.verificationLevel)) payload.verificationLevel = s.verificationLevel;
-  if (Number.isFinite(s.explicitContentFilter)) payload.explicitContentFilter = s.explicitContentFilter;
-  if (Number.isFinite(s.defaultMessageNotifications)) payload.defaultMessageNotifications = s.defaultMessageNotifications;
-  if (Number.isFinite(s.afkTimeout)) payload.afkTimeout = s.afkTimeout;
-  if (s.iconURL) payload.icon = await bufferFromUrl(s.iconURL).catch(() => null);
-  if (s.bannerURL) payload.banner = await bufferFromUrl(s.bannerURL).catch(() => null);
-  if (s.splashURL) payload.splash = await bufferFromUrl(s.splashURL).catch(() => null);
-  if (Object.keys(payload).length) { await guild.edit(payload, 'Goliath duplicator: settings'); log.copied.serverSettings = Object.keys(payload).length; }
-}
-async function applyManagedRoleMappings(guild, snap, maps, log) {
+function resolveManagedRoleTarget(guild, snap, sourceRole) {
   const destinationManaged = [...guild.roles.cache.values()].filter((role) => role.managed);
-  for (const sourceRole of snap.managedRoles || []) {
-    let target = null;
-    const sourceBotId = sourceRole.tags?.botId || null;
-    if (sourceBotId && sourceBotId === snap.sourceGuild?.botUserId) target = destinationManaged.find((role) => role.tags?.botId === guild.client.user?.id) || null;
-    if (!target && sourceBotId) target = destinationManaged.find((role) => role.tags?.botId === sourceBotId) || null;
-    if (!target) {
-      const sameName = destinationManaged.filter((role) => role.name.toLowerCase() === String(sourceRole.name || '').toLowerCase());
-      if (sameName.length === 1) target = sameName[0];
-    }
-    if (target) { maps.roles.set(sourceRole.id, target.id); log.notes.push(`Managed role remapped: ${sourceRole.name} -> ${target.name}.`); }
-    else log.notes.push(`Managed role not transferable: ${sourceRole.name}. Matching bot/integration is absent from destination.`);
+  const sourceBotId = sourceRole.tags?.botId || null;
+  let target = null;
+  if (sourceBotId && sourceBotId === snap.sourceGuild?.botUserId) target = destinationManaged.find((role) => role.tags?.botId === guild.client.user?.id) || null;
+  if (!target && sourceBotId) target = destinationManaged.find((role) => role.tags?.botId === sourceBotId) || null;
+  if (!target) {
+    const sameName = destinationManaged.filter((role) => role.name.toLowerCase() === String(sourceRole.name || '').toLowerCase());
+    if (sameName.length === 1) target = sameName[0];
   }
+  return target;
 }
-async function applyRoles(guild, snap, maps, log, conflictMode) {
-  const names = new Set(guild.roles.cache.map((r) => r.name.toLowerCase()));
-  const botHighest = guild.members.me?.roles?.highest?.position ?? 0;
-  if (!hasBotPermission(guild, PermissionFlagsBits.ManageRoles)) {
-    log.errors.push('Cannot create/map normal roles: Goliath lacks ManageRoles.');
-    return;
-  }
-  for (const role of [...(snap.roles || [])].sort((a, b) => a.position - b.position)) {
-    try {
-      const found = existingRole(guild, role.name);
-      if (found && conflictMode === 'skip') { maps.roles.set(role.id, found.id); log.skipped.push(`Role exists/reused: ${role.name}`); continue; }
-      if (found && conflictMode === 'replace') {
-        if (found.editable && found.position < botHighest) { await found.delete('Goliath duplicator: replace role'); log.deleted.roles += 1; }
-        else { maps.roles.set(role.id, found.id); log.skipped.push(`Role reused because hierarchy prevents replacement: ${role.name}`); continue; }
-      }
-      const name = found && conflictMode === 'rename' ? uniqueName(names, role.name, 100) : role.name;
-      const requested = BigInt(role.permissions || 0);
-      const allowed = permittedBits(guild, requested);
-      const deferred = deferredBits(guild, requested);
-      if (deferred) addDeferred(log, { scope: 'role', sourceId: role.id, sourceName: role.name, kind: 'base-permissions', requested: requested.toString(), applied: allowed.toString(), missing: namesForBits(deferred) });
-      const created = await guild.roles.create({ name, color: Number(role.color || 0), hoist: Boolean(role.hoist), mentionable: Boolean(role.mentionable), permissions: allowed, reason: 'Goliath duplicator: least-privilege role copy' });
-      let verified = await guild.roles.fetch(created.id).catch(() => null);
-      if (!verified || verified.guild.id !== guild.id) throw new Error(`Role create verification failed for ${role.name}`);
-      if (verified.permissions.bitfield !== allowed) {
-        await verified.setPermissions(allowed, 'Goliath duplicator: permission verification repair');
-        verified = await guild.roles.fetch(created.id).catch(() => null);
-      }
-      if (!verified || verified.permissions.bitfield !== allowed) throw new Error(`Role permission verification mismatch for ${role.name}`);
-      maps.roles.set(role.id, verified.id);
-      maps.createdRoles.add(verified.id);
-      maps.rolePositions.set(verified.id, Number(role.position || 0));
-      names.add(verified.name.toLowerCase());
-    } catch (error) { pushError(log, `Role ${role.name}`, error); log.skipped.push(`Role failed: ${role.name}`); }
-  }
-  for (const [roleId, position] of maps.rolePositions.entries()) {
-    const role = guild.roles.cache.get(roleId); if (!role) continue;
-    try { await role.setPosition(Math.min(Math.max(1, position), Math.max(1, botHighest - 1)), 'Goliath duplicator: role order'); }
-    catch (error) { log.notes.push(`Role order not fully restored for ${role.name}: ${error.message}`); }
-  }
-}
-function channelPayload(guild, channel, parentId = null, name = null) {
-  const type = duplicatorCreateChannelType(guild, channel.type);
-  const payload = { name: name || channel.name, type, reason: 'Goliath duplicator: channel' };
-  if (parentId) payload.parent = parentId;
-  if ([ChannelType.GuildText, ChannelType.GuildAnnouncement, ChannelType.GuildForum, ChannelType.GuildMedia].includes(type)) { payload.topic = channel.topic || undefined; payload.nsfw = Boolean(channel.nsfw); payload.rateLimitPerUser = channel.rateLimitPerUser || 0; }
-  if ([ChannelType.GuildVoice, ChannelType.GuildStageVoice].includes(type)) { payload.bitrate = channel.bitrate || undefined; payload.userLimit = channel.userLimit || 0; payload.rtcRegion = channel.rtcRegion || undefined; payload.videoQualityMode = channel.videoQualityMode || undefined; }
-  if ([ChannelType.GuildForum, ChannelType.GuildMedia].includes(type)) { payload.defaultAutoArchiveDuration = channel.defaultAutoArchiveDuration || undefined; payload.defaultThreadRateLimitPerUser = channel.defaultThreadRateLimitPerUser || 0; if (channel.availableTags?.length) payload.availableTags = channel.availableTags; }
-  return payload;
-}
-async function applyChannels(guild, snap, maps, log, conflictMode) {
-  if (!hasBotPermission(guild, PermissionFlagsBits.ManageChannels)) { log.errors.push('Cannot create channels/categories: Goliath lacks ManageChannels.'); return; }
-  const names = new Set(guild.channels.cache.map((c) => c.name.toLowerCase()));
-  const categories = (snap.channels || []).filter((c) => c.type === ChannelType.GuildCategory).sort((a, b) => a.position - b.position);
-  const channels = (snap.channels || []).filter((c) => c.type !== ChannelType.GuildCategory).sort((a, b) => a.position - b.position);
-  for (const category of categories) {
-    try {
-      const found = existingChannel(guild, category, null);
-      if (found && conflictMode === 'skip') { maps.channels.set(category.id, found.id); log.skipped.push(`Category exists/reused: ${category.name}`); continue; }
-      if (found && conflictMode === 'replace' && found.deletable) { await found.delete('Goliath duplicator: replace category'); log.deleted.channels += 1; }
-      const name = found && conflictMode === 'rename' ? uniqueName(names, category.name, 100) : category.name;
-      const created = await guild.channels.create(channelPayload(guild, category, null, name));
-      const verified = await guild.channels.fetch(created.id).catch(() => null);
-      if (!verified || verified.guild.id !== guild.id) throw new Error(`Category create verification failed for ${category.name}`);
-      maps.channels.set(category.id, verified.id); maps.createdCategories.add(verified.id); maps.channelPositions.set(verified.id, Number(category.position || 0)); names.add(verified.name.toLowerCase());
-    } catch (error) { pushError(log, `Category ${category.name}`, error); }
-  }
-  for (const channel of channels) {
-    try {
-      const parentId = channel.parentId ? maps.channels.get(channel.parentId) || null : null;
-      const found = existingChannel(guild, channel, parentId);
-      if (found && conflictMode === 'skip') { maps.channels.set(channel.id, found.id); log.skipped.push(`Channel exists/reused: ${channel.name}`); continue; }
-      if (found && conflictMode === 'replace' && found.deletable) { await found.delete('Goliath duplicator: replace channel'); log.deleted.channels += 1; }
-      const name = found && conflictMode === 'rename' ? uniqueName(names, channel.name, 100) : channel.name;
-      const created = await guild.channels.create(channelPayload(guild, channel, parentId, name));
-      const verified = await guild.channels.fetch(created.id).catch(() => null);
-      if (!verified || verified.guild.id !== guild.id) throw new Error(`Channel create verification failed for ${channel.name}`);
-      maps.channels.set(channel.id, verified.id); maps.createdChannels.add(verified.id); maps.channelPositions.set(verified.id, Number(channel.position || 0)); names.add(verified.name.toLowerCase());
-    } catch (error) { pushError(log, `Channel ${channel.name}`, error); }
-  }
-}
-async function buildTransferableOverwrites(guild, snap, sourceChannel, maps, log) {
-  const overwrites = [];
-  const botHighest = guild.members.me?.roles?.highest?.position ?? 0;
-  for (const overwrite of sourceChannel.permissionOverwrites || []) {
-    const type = Number(overwrite.type);
-    let mappedId = null;
-    if (overwrite.id === snap.sourceGuild?.id) mappedId = guild.id;
-    else if (type === 0) mappedId = maps.roles.get(overwrite.id);
-    else if (type === 1) {
-      const member = guild.members.cache.get(overwrite.id) || await guild.members.fetch(overwrite.id).catch(() => null);
-      if (member) mappedId = member.id;
-    }
-    if (!mappedId) { log.notes.push(`Permission target skipped on ${sourceChannel.name}: ${overwrite.id} is not mapped/present.`); continue; }
-    if (type === 0 && mappedId !== guild.id) {
-      const targetRole = guild.roles.cache.get(mappedId) || await guild.roles.fetch(mappedId).catch(() => null);
-      if (!targetRole) { log.notes.push(`Permission role missing on ${sourceChannel.name}: ${mappedId}.`); continue; }
-      if (targetRole.position >= botHighest) { log.notes.push(`Permission overwrite deferred on ${sourceChannel.name}: ${targetRole.name} is at/above Goliath hierarchy.`); continue; }
-    }
-    const requestedAllow = BigInt(overwrite.allow || 0);
-    const requestedDeny = BigInt(overwrite.deny || 0);
-    const appliedAllow = permittedBits(guild, requestedAllow);
-    const appliedDeny = permittedBits(guild, requestedDeny);
-    const missing = [...new Set([...namesForBits(deferredBits(guild, requestedAllow)), ...namesForBits(deferredBits(guild, requestedDeny))])].sort();
-    if (missing.length) addDeferred(log, { scope: 'overwrite', sourceId: sourceChannel.id, sourceName: sourceChannel.name, targetId: overwrite.id, mappedTargetId: mappedId, kind: type === 0 ? 'role-overwrite' : 'member-overwrite', requestedAllow: requestedAllow.toString(), requestedDeny: requestedDeny.toString(), appliedAllow: appliedAllow.toString(), appliedDeny: appliedDeny.toString(), missing });
-    overwrites.push({ id: mappedId, type, allow: appliedAllow, deny: appliedDeny });
-  }
-  return overwrites;
-}
-async function verifyOverwrites(channel, expected, sourceChannelName) {
-  const refreshed = await channel.guild.channels.fetch(channel.id).catch(() => null);
-  if (!refreshed) throw new Error(`Permission verification failed for ${sourceChannelName}`);
-  let verifiedCount = 0;
-  for (const item of expected) {
-    const actual = refreshed.permissionOverwrites.cache.get(item.id);
-    if (!actual) throw new Error(`Permission overwrite missing after copy on ${sourceChannelName}: ${item.id}`);
-    if (actual.allow.bitfield !== BigInt(item.allow) || actual.deny.bitfield !== BigInt(item.deny)) throw new Error(`Permission overwrite mismatch after copy on ${sourceChannelName}: ${item.id}`);
-    verifiedCount += 1;
-  }
-  return verifiedCount;
-}
-async function applyPermissions(guild, snap, maps, log) {
-  if (!hasBotPermission(guild, PermissionFlagsBits.ManageRoles)) { log.errors.push('Channel/category overwrites skipped: Goliath lacks ManageRoles.'); return; }
-  for (const sourceChannel of snap.channels || []) {
-    try {
-      const targetId = maps.channels.get(sourceChannel.id); if (!targetId) continue;
-      const channel = guild.channels.cache.get(targetId) || await guild.channels.fetch(targetId).catch(() => null);
-      if (!channel?.permissionOverwrites?.set) continue;
-      const overwrites = await buildTransferableOverwrites(guild, snap, sourceChannel, maps, log);
-      await channel.permissionOverwrites.set(overwrites, 'Goliath duplicator: least-privilege channel/category permissions');
-      log.copied.permissionOverwrites += await verifyOverwrites(channel, overwrites, sourceChannel.name);
-    } catch (error) { pushError(log, `Permissions ${sourceChannel.name}`, error); }
-  }
-}
-async function applyEmojis(guild, snap, maps, log, conflictMode) {
-  if (!(snap.emojis || []).length) return;
-  if (!hasBotPermission(guild, PermissionFlagsBits.ManageEmojisAndStickers)) { log.notes.push('Emojis skipped: Goliath lacks ManageEmojisAndStickers.'); return; }
-  const names = new Set(guild.emojis.cache.map((e) => e.name.toLowerCase()));
-  for (const emoji of snap.emojis || []) {
-    try {
-      if (!emoji.url || !emoji.name) continue;
-      if (names.has(emoji.name.toLowerCase()) && conflictMode === 'skip') continue;
-      const name = names.has(emoji.name.toLowerCase()) && conflictMode === 'rename' ? uniqueName(names, emoji.name, 32).replace(/[^A-Za-z0-9_]/g, '_').slice(0, 32) : emoji.name;
-      const created = await guild.emojis.create({ attachment: emoji.url, name, reason: 'Goliath duplicator: emoji' });
-      const verified = await guild.emojis.fetch(created.id).catch(() => null); if (!verified) throw new Error(`Emoji create verification failed for ${emoji.name}`);
-      maps.createdEmojis.add(verified.id); names.add(verified.name.toLowerCase());
-    } catch (error) { pushError(log, `Emoji ${emoji.name}`, error); }
-  }
-}
-async function verifyCopyResult(guild, snap, maps, log) {
-  await fetchGuildState(guild);
-  if (String(guild.id) !== String(log.destinationGuildId)) throw new Error(`Destination verification mismatch: expected ${log.destinationGuildId}, got ${guild.id}`);
-  const roleIds = [...maps.createdRoles], categoryIds = [...maps.createdCategories], channelIds = [...maps.createdChannels], emojiIds = [...maps.createdEmojis];
-  const verifiedRoles = roleIds.filter((id) => guild.roles.cache.has(id));
-  const verifiedCategories = categoryIds.filter((id) => guild.channels.cache.has(id));
-  const verifiedChannels = channelIds.filter((id) => guild.channels.cache.has(id));
-  const verifiedEmojis = emojiIds.filter((id) => guild.emojis.cache.has(id));
-  log.copied.roles = verifiedRoles.length; log.copied.categories = verifiedCategories.length; log.copied.channels = verifiedChannels.length; log.copied.emojis = verifiedEmojis.length;
-  log.verification = { destinationGuildId: guild.id, destinationGuildName: guild.name, roles: verifiedRoles.length, categories: verifiedCategories.length, channels: verifiedChannels.length, emojis: verifiedEmojis.length, deferredPermissions: log.deferredPermissions.length };
-  if (verifiedRoles.length !== roleIds.length) log.errors.push(`Post-copy verification: ${roleIds.length - verifiedRoles.length} created role(s) missing.`);
-  if (verifiedCategories.length !== categoryIds.length) log.errors.push(`Post-copy verification: ${categoryIds.length - verifiedCategories.length} created category(s) missing.`);
-  if (verifiedChannels.length !== channelIds.length) log.errors.push(`Post-copy verification: ${channelIds.length - verifiedChannels.length} created channel(s) missing.`);
-}
-function resultEmbed(title, guild, log) {
-  const deferredNames = [...new Set((log.deferredPermissions || []).flatMap((item) => item.missing || []))].sort();
-  return embed(title, [
-    `**Destination:** ${guild.name} (${guild.id || log.destinationGuildId})`,
-    `**Source ID:** \`${log.sourceGuildId || 'unknown'}\``,
-    `**Status:** \`${log.status}\``,
-    `**Conflict:** \`${log.conflictMode}\``,
-    `**Rollback:** \`${log.rollbackBackupId || (log.dryRun ? 'dry-run' : 'none')}\``,
-    '',
-    `Verified: Settings \`${log.copied.serverSettings}\` • Roles \`${log.copied.roles}\` • Categories \`${log.copied.categories}\` • Channels \`${log.copied.channels}\` • Permissions \`${log.copied.permissionOverwrites}\` • Emojis \`${log.copied.emojis}\``,
-    deferredNames.length ? `Deferred permission bits (${deferredNames.length}): ${deferredNames.join(', ')}` : '',
-    log.notes.length ? `Notes:\n${log.notes.slice(0, 8).map((i) => `• ${i}`).join('\n')}` : '',
-    log.errors.length ? `Warnings/Errors:\n${log.errors.slice(0, 8).map((e) => `⚠️ ${e}`).join('\n')}` : '',
-  ].filter(Boolean).join('\n'), log.errors.length || deferredNames.length ? 0xf59e0b : 0x22c55e);
-}
-async function executeStage(name, log, fn) { console.log(`[Duplicator] Stage start: ${name}`); try { await fn(); console.log(`[Duplicator] Stage complete: ${name}`); } catch (error) { pushError(log, name, error); } }
-async function executeSnapshotOnGuild(guild, session, snap, title, actorId = 'bridge') {
-  await fetchGuildState(guild);
-  const log = runLog(session, snap);
-  const operationMissing = missingOperationPermissions(guild, snap);
-  const capabilityGaps = transferCapabilityGaps(guild, snap);
-  if (operationMissing.length) log.errors.push(`Operational permissions missing: ${operationMissing.join(', ')}. Administrator is NOT required; grant only these permissions if you want those operations to run.`);
-  if (capabilityGaps.length) log.notes.push(`Least-privilege mode: unsupported source permission bits will be deferred, not block the copy: ${capabilityGaps.join(', ')}.`);
-  const hierarchy = hierarchyWarning(guild); if (hierarchy) log.notes.push(hierarchy);
+async function exactPermissionPreflight(guild, snap, conflictMode) {
+  const issues = [];
+  const preflightIssues = await exactPermissionPreflight(guild, snap, session.conflictMode);
+  const hierarchy = hierarchyWarning(guild); if (hierarchy) preflightIssues.push(hierarchy);
   for (const [key, item] of Object.entries(snap.future || {})) if (item?.requested && !item.supported) log.notes.push(`${COPY_OPTIONS[key] || key}: ${item.reason}`);
   if (session.dryRun) {
     applyDryRunPlan(log, dryRunPlan(guild, snap, session.conflictMode));
-    for (const name of capabilityGaps) addDeferred(log, { scope: 'preflight', kind: 'capability', missing: [name] });
-    log.status = operationMissing.includes('ManageRoles') || operationMissing.includes('ManageChannels') ? 'dry-run-limited' : capabilityGaps.length ? 'dry-run-partial-permissions' : 'dry-run';
+    if (preflightIssues.length) log.errors.push(...preflightIssues.map((issue) => `[Preflight] ${issue}`));
+    log.status = preflightIssues.length ? 'dry-run-blocked' : 'dry-run';
+    return log;
+  }
+  if (preflightIssues.length) {
+    log.errors.push(...preflightIssues.map((issue) => `[Preflight] ${issue}`));
+    log.status = 'blocked-preflight';
     return log;
   }
   try { const rollback = await createServerBackup(guild, { createdBy: `duplicator:${actorId}`, requestedBy: actorId, reason: `Rollback before ${title}`, type: 'rollback' }); log.rollbackBackupId = rollback.backupId; } catch (error) { pushError(log, 'Rollback backup', error); }
@@ -552,8 +322,7 @@ async function executeSnapshotOnGuild(guild, session, snap, title, actorId = 'br
   roleMap: Object.fromEntries(maps.roles),
   channelMap: Object.fromEntries(maps.channels),
 };
-  if (log.errors.length) log.status = log.copied.categories + log.copied.channels + log.copied.roles > 0 ? 'completed-with-warnings' : 'failed';
-  else if (log.deferredPermissions.length) log.status = 'partial-permissions';
+  if (log.errors.length) log.status = log.copied.categories + log.copied.channels + log.copied.roles + log.copied.permissionOverwrites > 0 ? 'partial' : 'failed';
   else log.status = 'success';
   return log;
 }
