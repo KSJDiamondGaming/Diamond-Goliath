@@ -73,8 +73,8 @@ add_after_once(
 )
 
 add_after_once(
-    "  if (key === 'mod_court_preview') { const payload = buildMemberPreviewPage(modCase); await interaction.update(payload); return true; }\n",
-    "  if (key === 'mod_court_record_history') { const payload = buildRecordHistoryPage(modCase); await interaction.update(payload); return true; }\n"
+    "  if (key === 'mod_court_preview') { await interaction.update(buildMemberPreviewPage(modCase)); return true; }\n",
+    "  if (key === 'mod_court_record_history') { await interaction.update(buildRecordHistoryPage(modCase)); return true; }\n"
 )
 
 p.write_text(s)
