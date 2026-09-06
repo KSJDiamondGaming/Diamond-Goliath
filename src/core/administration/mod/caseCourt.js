@@ -206,7 +206,7 @@ function buildCaseFile(interaction, modCase) {
     .setFooter({ text: 'Internal court file • verified evidence only may be represented in the published member record' })
     .setTimestamp();
 
-  const canManage = canUseModAction(interaction.member, interaction.guild, 'edit_case', interaction);
+  const canManage = canUseModAction(interaction.member, interaction.guild, 'court_manage', interaction);
   const isAssignedJudge = canManage && court.reviewingAdminId === interaction.user.id;
   const canDecide = isAssignedJudge && ['review', 'decided'].includes(court.stage);
   const isClosed = court.stage === 'closed';
@@ -229,12 +229,12 @@ function buildCaseFile(interaction, modCase) {
       button(`mod_court_verify:${modCase.caseId}`, 'Verify Evidence', '✅', ButtonStyle.Secondary, !court.evidence.length),
       button(`mod_court_preview:${modCase.caseId}`, 'Member Preview', '👁️', ButtonStyle.Secondary, !court.decision),
       button(`mod_court_decide:${modCase.caseId}`, 'Decision', '⚖️', canManage ? ButtonStyle.Danger : ButtonStyle.Secondary, !canDecide),
-      button(`mod_court_publish:${modCase.caseId}`, court.publication ? 'Update Published Record' : 'Publish Record', '📜', ButtonStyle.Success, !canManage || !court.decision || isClosed || (court.decision?.action === 'ban' && court.sanctionReview?.status !== 'approved')),
+      button(`mod_court_publish:${modCase.caseId}`, court.publication ? 'Update Published Record' : 'Publish Record', '📜', ButtonStyle.Success, !canPublishCourt(interaction) || !court.decision || isClosed || (court.decision?.action === 'ban' && court.sanctionReview?.status !== 'approved')),
       button(`mod_court_approve_ban:${modCase.caseId}`, 'Approve Ban', '🛡️', ButtonStyle.Danger, !canManage || court.decision?.action !== 'ban' || court.sanctionReview?.status === 'approved' || court.decision?.decidedBy === interaction.user.id),
     ),
     row(
       button(`mod_court_execute:${modCase.caseId}`, court.sanctionExecution?.status === 'executed' ? 'Sanction Executed' : court.sanctionExecution?.status === 'reversed' ? 'Sanction Reversed' : court.sanctionExecution?.status === 'failed' ? 'Retry Sanction' : 'Execute Sanction', '⚡', ButtonStyle.Danger, !canManage || isClosed || court.stage !== 'published' || !court.decision || court.decision.action === 'no_action' || ['executed', 'reversed'].includes(court.sanctionExecution?.status) || (court.decision?.action === 'ban' && court.sanctionReview?.status !== 'approved')),
-      button(isClosed ? `mod_court_reopen:${modCase.caseId}` : `mod_court_close:${modCase.caseId}`, isClosed ? 'Reopen' : 'Close Case', isClosed ? '🔓' : '🔒', ButtonStyle.Secondary, !canManage),
+      button(isClosed ? `mod_court_reopen:${modCase.caseId}` : `mod_court_close:${modCase.caseId}`, isClosed ? 'Reopen' : 'Close Case', isClosed ? '🔓' : '🔒', ButtonStyle.Secondary, !canCloseCourt(interaction)),
     ),
     staffBackRow(modCase.userId),
   ];
@@ -292,7 +292,7 @@ function buildReviewBriefPage(interaction, modCase) {
     )
     .setFooter({ text: 'A judge must claim the review before recording a decision' })
     .setTimestamp();
-  const canManage = canUseModAction(interaction.member, interaction.guild, 'edit_case', interaction);
+  const canManage = canUseModAction(interaction.member, interaction.guild, 'court_manage', interaction);
   const assignedToOther = court.reviewingAdminId && court.reviewingAdminId !== interaction.user.id;
   const controls = [];
   if (court.stage === 'review' && !court.reviewingAdminId) controls.push(button(`mod_court_claim_review:${modCase.caseId}`, 'Claim Review', '✋', ButtonStyle.Primary, !canManage));
@@ -409,7 +409,9 @@ async function openCase(interaction, caseId) {
 }
 function field(interaction, id) { try { return String(interaction.fields.getTextInputValue(id) || '').trim(); } catch { return ''; } }
 function evidenceId(court) { return `E${court.evidence.length + 1}`; }
-function isJudge(interaction) { return canUseModAction(interaction.member, interaction.guild, 'edit_case', interaction); }
+function isJudge(interaction) { return canUseModAction(interaction.member, interaction.guild, 'court_review', interaction); }
+function canPublishCourt(interaction) { return canUseModAction(interaction.member, interaction.guild, 'court_publish', interaction); }
+function canCloseCourt(interaction) { return canUseModAction(interaction.member, interaction.guild, 'court_close', interaction); }
 
 async function handleCourtInteraction(interaction) {
   const id = String(interaction.customId || '');
@@ -477,8 +479,8 @@ async function handleCourtInteraction(interaction) {
     await updateCaseMessage(interaction, updated);
     return true;
   }
-  if (key === 'mod_court_close') { if (!isJudge(interaction)) { await interaction.reply({ content: '❌ Admin authority is required to close a case.', flags: 64 }); return true; } await interaction.showModal(closeCaseModal(caseId)); return true; }
-  if (key === 'mod_court_reopen') {
+  if (key === 'mod_court_close') { if (!canCloseCourt(interaction)) { await interaction.reply({ content: '❌ Court closure authority is required.', flags: 64 }); return true; } if (!isJudge(interaction)) { await interaction.reply({ content: '❌ Admin authority is required to close a case.', flags: 64 }); return true; } await interaction.showModal(closeCaseModal(caseId)); return true; }
+  if (key === 'mod_court_reopen') { if (!canCloseCourt(interaction)) { await interaction.reply({ content: '❌ Court closure authority is required.', flags: 64 }); return true; }
     if (!isJudge(interaction) || court.stage !== 'closed') { await interaction.reply({ content: '❌ This case cannot be reopened.', flags: 64 }); return true; }
     const next = { ...court, stage: court.previousStage || (court.publication ? 'published' : court.decision ? 'decided' : 'investigation'), previousStage: null, closedAt: null, closedBy: null, closeReason: null };
     const updated = saveCourt(interaction.guildId, caseId, next, interaction.user.id, 'case.court.reopened', court);
@@ -490,7 +492,7 @@ async function handleCourtInteraction(interaction) {
   if (key === 'mod_court_severity') { await interaction.showModal(severityModal(caseId, court)); return true; }
   if (key === 'mod_court_verify') { if (!isJudge(interaction)) return interaction.reply({ content: '❌ Admin authority is required to verify evidence.', flags: 64 }).then(() => true); await interaction.showModal(verifyModal(caseId)); return true; }
   if (key === 'mod_court_decide') { if (!isJudge(interaction)) return interaction.reply({ content: '❌ Admin authority is required to act as case judge.', flags: 64 }).then(() => true); await interaction.showModal(decisionModal(caseId, court)); return true; }
-  if (key === 'mod_court_publish') { if (!isJudge(interaction)) return interaction.reply({ content: '❌ Admin authority is required to publish the member record.', flags: 64 }).then(() => true); await interaction.showModal(publishModal(caseId, court)); return true; }
+  if (key === 'mod_court_publish') { if (!canPublishCourt(interaction)) return interaction.reply({ content: '❌ Court publishing authority is required to publish the member record.', flags: 64 }).then(() => true); await interaction.showModal(publishModal(caseId, court)); return true; }
   if (key === 'mod_court_execute') {
     const action = String(court.decision?.action || '');
     if (!isJudge(interaction) || !action || action === 'no_action') { await interaction.reply({ content: '❌ There is no executable court sanction.', flags: 64 }); return true; }
@@ -596,7 +598,7 @@ async function handleCourtModal(interaction) {
     const next = { ...court, evidence };
     return updateCaseMessage(interaction, saveCourt(interaction.guildId, caseId, next, interaction.user.id, `case.court.evidence_${status}`, court)).then(() => true);
   }
-  if (key === 'mod_court_close_submit') {
+  if (key === 'mod_court_close_submit') { if (!canCloseCourt(interaction)) { await interaction.reply({ content: '❌ Court closure authority is required.', flags: 64 }); return true; }
     if (!isJudge(interaction)) { await interaction.reply({ content: '❌ Admin authority is required to close a case.', flags: 64 }); return true; }
     if (court.stage === 'closed') { await interaction.reply({ content: '❌ This case is already closed.', flags: 64 }); return true; }
     const next = { ...court, previousStage: court.stage, stage: 'closed', closedAt: now(), closedBy: interaction.user.id, closeReason: field(interaction, 'reason') };
