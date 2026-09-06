@@ -8,6 +8,7 @@ const {
   ChannelType,
   EmbedBuilder,
   MessageFlags,
+  PermissionFlagsBits,
   StringSelectMenuBuilder,
 } = require('discord.js');
 const history = require('./history');
@@ -644,17 +645,100 @@ function deleteConfirmPayload(session, ids = null, manifestId = null) {
     )],
   };
 }
+function bulkDeleteAccessState(channel, me) {
+  const administrator = Boolean(me?.permissions?.has(PermissionFlagsBits.Administrator));
+  const effective = channel?.permissionsFor?.(me) || me?.permissions;
+  return {
+    administrator,
+    viewChannel: administrator || Boolean(effective?.has(PermissionFlagsBits.ViewChannel)),
+    manageChannels: administrator || Boolean(effective?.has(PermissionFlagsBits.ManageChannels)),
+    manageRoles: administrator || Boolean(effective?.has(PermissionFlagsBits.ManageRoles)) || Boolean(me?.permissions?.has(PermissionFlagsBits.ManageRoles)),
+  };
+}
+
+async function recoverBulkDeleteAccess(guild, channel, me, actorId) {
+  let current = channel;
+  let state = bulkDeleteAccessState(current, me);
+  if (state.administrator || (state.viewChannel && state.manageChannels)) return { ok: true, channel: current, repaired: false, state };
+
+  const reason = `Goliath Duplicator bulk delete access repair by ${actorId}`;
+  const tryRepair = async (target) => {
+    if (!target?.permissionOverwrites?.edit) return false;
+    const targetState = bulkDeleteAccessState(target, me);
+    if (!targetState.administrator && !targetState.manageRoles) return false;
+    try {
+      await target.permissionOverwrites.edit(me.id, {
+        ViewChannel: true,
+        ManageChannels: true,
+        ManageRoles: true,
+      }, { type: 1, reason });
+      return true;
+    } catch {
+      try {
+        await target.permissionOverwrites.edit(me, {
+          ViewChannel: true,
+          ManageChannels: true,
+          ManageRoles: true,
+        }, reason);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+  };
+
+  if (current.parent) await tryRepair(current.parent);
+  current = await guild.channels.fetch(current.id).catch(() => current);
+  state = bulkDeleteAccessState(current, me);
+  if (state.administrator || (state.viewChannel && state.manageChannels)) return { ok: true, channel: current, repaired: true, state };
+
+  await tryRepair(current);
+  current = await guild.channels.fetch(current.id).catch(() => current);
+  state = bulkDeleteAccessState(current, me);
+  return { ok: state.administrator || (state.viewChannel && state.manageChannels), channel: current, repaired: true, state };
+}
+
 async function deleteIds(interaction, session, ids, sourceManifestId = null) {
   const guild = interaction.client.guilds.cache.get(session.destinationGuildId);
   if (!guild) throw new Error('Bulk Delete is DEV-local only for safety.');
   await guild.channels.fetch().catch(() => null);
+  await guild.members.fetchMe().catch(() => null);
+  const me = guild.members.me;
+  if (!me) throw new Error('Could not resolve the Goliath member in the destination server.');
+
   const requestedIds = [...new Set((ids || []).map(String))];
   const selected = new Set(requestedIds);
   const channels = [...guild.channels.cache.values()].filter((channel) => selected.has(channel.id));
   const foundIds = new Set(channels.map((channel) => channel.id));
   const missing = requestedIds.filter((id) => !foundIds.has(id)).map((id) => ({ id, reason: 'Already missing or no longer resolvable.' }));
-  const nonCategories = channels.filter((c) => c.type !== ChannelType.GuildCategory).sort((a, b) => b.position - a.position);
-  const categories = channels.filter((c) => c.type === ChannelType.GuildCategory).sort((a, b) => b.position - a.position);
+
+  const recovered = new Map();
+  const blocked = [];
+  for (const channel of channels) {
+    const access = await recoverBulkDeleteAccess(guild, channel, me, interaction.user.id);
+    recovered.set(channel.id, access.channel || channel);
+    if (!access.ok) {
+      blocked.push({
+        id: channel.id,
+        name: channel.name,
+        error: 'Preflight blocked: Missing Access. Goliath needs View Channel + Manage Channels on this target, or Administrator at server level.',
+      });
+    }
+  }
+
+  if (blocked.length) {
+    return history.add(session.controlGuildId, {
+      type: 'bulk-delete', destinationGuildId: guild.id, destinationGuildName: guild.name,
+      status: 'blocked-preflight', outcome: 'failed', blockedPreflight: true,
+      requestedCount: requestedIds.length, deletedCount: 0, deleted: [], missing, failed: blocked,
+      sourceManifestId,
+      requiredAction: 'Grant Goliath Administrator temporarily, or restore View Channel + Manage Channels on every blocked channel/category, then retry. No selected channel was deleted because preflight failed.',
+    }, interaction.guild);
+  }
+
+  const resolved = channels.map((channel) => recovered.get(channel.id) || channel);
+  const nonCategories = resolved.filter((c) => c.type !== ChannelType.GuildCategory).sort((a, b) => b.position - a.position);
+  const categories = resolved.filter((c) => c.type === ChannelType.GuildCategory).sort((a, b) => b.position - a.position);
   const deleted = [], failed = [];
   for (const channel of [...nonCategories, ...categories]) {
     try {
@@ -663,15 +747,16 @@ async function deleteIds(interaction, session, ids, sourceManifestId = null) {
       const stillThere = await guild.channels.fetch(id).catch(() => null);
       if (stillThere) throw new Error('Post-delete verification found the channel still present.');
       deleted.push({ id, name, type });
-    } catch (error) { failed.push({ id: channel.id, name: channel.name, error: error.message || String(error) }); }
+    } catch (error) {
+      failed.push({ id: channel.id, name: channel.name, error: error.message || String(error) });
+    }
   }
   const outcome = failed.length ? (deleted.length ? 'partial' : 'failed') : deleted.length ? (missing.length ? 'partial' : 'success') : 'no-changes';
-  const manifest = history.add(session.controlGuildId, {
+  return history.add(session.controlGuildId, {
     type: 'bulk-delete', destinationGuildId: guild.id, destinationGuildName: guild.name,
     status: outcome === 'success' ? 'success' : outcome === 'partial' ? 'completed-with-warnings' : outcome,
     outcome, requestedCount: requestedIds.length, deletedCount: deleted.length, deleted, missing, failed, sourceManifestId,
   }, interaction.guild);
-  return manifest;
 }
 async function startCopy(interaction) {
   if (mode() !== 'DEV') return interaction.reply({ content: '❌ Selective Duplicator is DEV-only.', flags: MessageFlags.Ephemeral });
