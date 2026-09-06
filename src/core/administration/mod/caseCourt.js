@@ -103,6 +103,9 @@ function modalInput(id, label, style = TextInputStyle.Paragraph, required = true
   return row(input);
 }
 function caseIsCourt(modCase) { return Boolean(modCase && (modCase.action === COURT_ACTION || modCase.metadata?.court)); }
+function getCourtAppeals(modCase = {}) { return Array.isArray(modCase?.metadata?.appeals) ? modCase.metadata.appeals.filter((appeal) => appeal && typeof appeal === 'object' && appeal.id) : []; }
+function latestCourtAppeal(modCase = {}) { return getCourtAppeals(modCase).slice().sort((a, b) => String(b.submittedAt || '').localeCompare(String(a.submittedAt || '')))[0] || null; }
+function appealStatusText(appeal) { if (!appeal) return 'No appeal submitted.'; return appeal.status === 'approved' ? '✅ Approved' : appeal.status === 'denied' ? '❌ Denied' : '⏳ Pending review'; }
 function getCourtCases(guildId, userId = null) {
   const cases = userId ? getCasesForUser(guildId, userId) : getAllCases(guildId);
   return (cases || []).filter(caseIsCourt);
@@ -190,6 +193,11 @@ function buildCaseFile(interaction, modCase) {
   const publication = court.publication
     ? `Revision **${court.publication.revision || 1}** • Published by <@${court.publication.publishedBy}> ${discordTime(court.publication.publishedAt)}\n${cleanExcerpt(court.publication.summary, 500)}`
     : 'Not published. The member cannot see this internal case file.';
+  const appeals = getCourtAppeals(modCase);
+  const latestAppeal = latestCourtAppeal(modCase);
+  const appealSummary = latestAppeal
+    ? `${appealStatusText(latestAppeal)} • submitted ${discordTime(latestAppeal.submittedAt)}${latestAppeal.reviewedAt ? ` • reviewed ${discordTime(latestAppeal.reviewedAt)}` : ''}\n${cleanExcerpt(latestAppeal.grounds || 'No grounds recorded.', 380)}${latestAppeal.remedy?.detail ? `\n**Remedy:** ${cleanExcerpt(latestAppeal.remedy.detail, 260)}` : ''}`
+    : 'No appeal submitted for this court case.';
 
   const embed = new EmbedBuilder()
     .setColor(court.stage === 'review' ? 0xFEE75C : court.stage === 'published' ? 0x57F287 : 0x5865F2)
@@ -202,6 +210,7 @@ function buildCaseFile(interaction, modCase) {
       { name: '📝 Staff Notes', value: (noteLines.join('\n') || 'No private case notes yet.').slice(0, 1024), inline: false },
       { name: '👨‍⚖️ Decision', value: decision.slice(0, 1024), inline: false },
       { name: '📜 Member Record', value: publication.slice(0, 1024), inline: false },
+      { name: `⚖️ Appeals${appeals.length ? ` (${appeals.length})` : ''}`, value: appealSummary.slice(0, 1024), inline: false },
     )
     .setFooter({ text: 'Internal court file • verified evidence only may be represented in the published member record' })
     .setTimestamp();
@@ -234,6 +243,9 @@ function buildCaseFile(interaction, modCase) {
     ),
     row(
       button(`mod_court_execute:${modCase.caseId}`, court.sanctionExecution?.status === 'executed' ? 'Sanction Executed' : court.sanctionExecution?.status === 'reversed' ? 'Sanction Reversed' : court.sanctionExecution?.status === 'failed' ? 'Retry Sanction' : 'Execute Sanction', '⚡', ButtonStyle.Danger, !canManage || isClosed || court.stage !== 'published' || !court.decision || court.decision.action === 'no_action' || ['executed', 'reversed'].includes(court.sanctionExecution?.status) || (court.decision?.action === 'ban' && court.sanctionReview?.status !== 'approved')),
+      button(`mod_court_record_history:${modCase.caseId}`, 'Record History', '📚'),
+      button(`mod_case_appeal_history:${modCase.caseId}:0`, `Appeals${appeals.length ? ` (${appeals.length})` : ''}`, '⚖️', ButtonStyle.Secondary, !appeals.length),
+      button('mod_case_appeal_queue:0', 'Appeal Queue', '📥'),
       button(isClosed ? `mod_court_reopen:${modCase.caseId}` : `mod_court_close:${modCase.caseId}`, isClosed ? 'Reopen' : 'Close Case', isClosed ? '🔓' : '🔒', ButtonStyle.Secondary, !canCloseCourt(interaction)),
     ),
     staffBackRow(modCase.userId),
@@ -307,6 +319,28 @@ function buildReviewBriefPage(interaction, modCase) {
   return { embeds: [embed], components };
 }
 
+function buildRecordHistoryPage(modCase) {
+  const court = parseCourt(modCase);
+  const decisions = [...court.decisionHistory, ...(court.decision ? [court.decision] : [])].filter(Boolean);
+  const publications = [...court.publicationHistory, ...(court.publication ? [court.publication] : [])].filter(Boolean);
+  const appeals = getCourtAppeals(modCase);
+  const decisionLines = decisions.length ? decisions.slice(-8).reverse().map((item, index) => `**${index === 0 ? 'Current' : 'Prior'}** • ${item.action || 'no_action'} • ${cleanExcerpt(item.finding || 'No finding', 100)}\n<@${item.decidedBy || '0'}> • ${discordTime(item.decidedAt)}`) : ['No decision history recorded.'];
+  const publicationLines = publications.length ? publications.slice(-8).reverse().map((item) => `**Revision ${item.revision || 1}** • ${discordTime(item.publishedAt)} • <@${item.publishedBy || '0'}>\n${cleanExcerpt(item.summary || '', 180)}`) : ['No publication history recorded.'];
+  const appealLines = appeals.length ? appeals.slice(-8).reverse().map((appeal) => `**${appealStatusText(appeal)}** • ${discordTime(appeal.submittedAt)}\n${cleanExcerpt(appeal.grounds || '', 180)}${appeal.reviewNote ? `\nReview: ${cleanExcerpt(appeal.reviewNote, 140)}` : ''}${appeal.remedy?.detail ? `\nRemedy: ${cleanExcerpt(appeal.remedy.detail, 140)}` : ''}`) : ['No appeal history recorded.'];
+  const embed = new EmbedBuilder()
+    .setColor(0x5865F2)
+    .setTitle(`📚 Official Record History • Case #${modCase.caseId}`)
+    .setDescription('Decision, publication and appeal history for this Court Case. Internal evidence and private staff notes are intentionally excluded.')
+    .addFields(
+      { name: '👨‍⚖️ Decision History', value: decisionLines.join('\n\n').slice(0, 1024), inline: false },
+      { name: '📜 Publication Revisions', value: publicationLines.join('\n\n').slice(0, 1024), inline: false },
+      { name: '⚖️ Appeal History', value: appealLines.join('\n\n').slice(0, 1024), inline: false },
+    )
+    .setFooter({ text: 'Court record history • newest entries first' })
+    .setTimestamp();
+  return { embeds: [embed], components: [caseFileBackRow(modCase.caseId)] };
+}
+
 function buildMemberPreviewPage(modCase) {
   const court = parseCourt(modCase);
   const decision = court.decision || {};
@@ -322,6 +356,7 @@ function buildMemberPreviewPage(modCase) {
       { name: 'Finding', value: cleanExcerpt(decision.finding || 'No finding recorded.', 1024), inline: false },
       { name: 'Decision', value: cleanExcerpt(decision.action || 'No action recorded.', 1024), inline: false },
       { name: 'Official Summary', value: cleanExcerpt(summary, 1800), inline: false },
+      { name: 'Appeal Status', value: (() => { const appeal = latestCourtAppeal(modCase); return appeal ? `${appealStatusText(appeal)}${appeal.reviewedAt ? ` • reviewed ${discordTime(appeal.reviewedAt)}` : ''}` : 'No appeal submitted.'; })(), inline: false },
     )
     .setFooter({ text: 'Exact privacy boundary preview • staff-only material is omitted' })
     .setTimestamp();
@@ -455,6 +490,7 @@ async function handleCourtInteraction(interaction) {
   if (key === 'mod_court_recommend') { await interaction.showModal(recommendationModal(caseId, court)); return true; }
   if (key === 'mod_court_review_brief') { await interaction.update(buildReviewBriefPage(interaction, modCase)); return true; }
   if (key === 'mod_court_preview') { await interaction.update(buildMemberPreviewPage(modCase)); return true; }
+  if (key === 'mod_court_record_history') { await interaction.update(buildRecordHistoryPage(modCase)); return true; }
   if (key === 'mod_court_claim_review') {
     if (!isJudge(interaction) || court.stage !== 'review') { await interaction.reply({ content: '❌ This review cannot be claimed.', flags: 64 }); return true; }
     if (court.reviewingAdminId && court.reviewingAdminId !== interaction.user.id) { await interaction.reply({ content: '❌ Another judge has already claimed this review.', flags: 64 }); return true; }
