@@ -1,0 +1,224 @@
+name: Fix Bulk Delete Access Once
+
+on:
+  push:
+    branches: [work/fix-bulk-delete-access-final2]
+    paths:
+      - '.github/workflows/fix-bulk-delete-access-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: work/fix-bulk-delete-access-final2
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Apply repair
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          selective = Path('src/owner/dev/duplicator/selective.js')
+          text = selective.read_text()
+          text = text.replace(
+              "  MessageFlags,\n  StringSelectMenuBuilder,\n} = require('discord.js');",
+              "  MessageFlags,\n  PermissionFlagsBits,\n  StringSelectMenuBuilder,\n} = require('discord.js');",
+              1,
+          )
+
+          start = text.index('async function deleteIds(interaction, session, ids, sourceManifestId = null) {')
+          end = text.index('async function startCopy(interaction) {', start)
+          replacement = r'''function bulkDeleteAccessState(channel, me) {
+  const administrator = Boolean(me?.permissions?.has(PermissionFlagsBits.Administrator));
+  const effective = channel?.permissionsFor?.(me) || me?.permissions;
+  return {
+    administrator,
+    viewChannel: administrator || Boolean(effective?.has(PermissionFlagsBits.ViewChannel)),
+    manageChannels: administrator || Boolean(effective?.has(PermissionFlagsBits.ManageChannels)),
+    manageRoles: administrator || Boolean(effective?.has(PermissionFlagsBits.ManageRoles)) || Boolean(me?.permissions?.has(PermissionFlagsBits.ManageRoles)),
+  };
+}
+
+async function recoverBulkDeleteAccess(guild, channel, me, actorId) {
+  let current = channel;
+  let state = bulkDeleteAccessState(current, me);
+  if (state.administrator || (state.viewChannel && state.manageChannels)) return { ok: true, channel: current, repaired: false, state };
+
+  const reason = `Goliath Duplicator bulk delete access repair by ${actorId}`;
+  const tryRepair = async (target) => {
+    if (!target?.permissionOverwrites?.edit) return false;
+    const targetState = bulkDeleteAccessState(target, me);
+    if (!targetState.administrator && !targetState.manageRoles) return false;
+    try {
+      await target.permissionOverwrites.edit(me.id, {
+        ViewChannel: true,
+        ManageChannels: true,
+        ManageRoles: true,
+      }, { type: 1, reason });
+      return true;
+    } catch {
+      try {
+        await target.permissionOverwrites.edit(me, {
+          ViewChannel: true,
+          ManageChannels: true,
+          ManageRoles: true,
+        }, reason);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+  };
+
+  // Repair the parent first when possible. Synced children inherit this immediately and
+  // it avoids touching every child when an entire category became inaccessible.
+  if (current.parent) await tryRepair(current.parent);
+  current = await guild.channels.fetch(current.id).catch(() => current);
+  state = bulkDeleteAccessState(current, me);
+  if (state.administrator || (state.viewChannel && state.manageChannels)) return { ok: true, channel: current, repaired: true, state };
+
+  await tryRepair(current);
+  current = await guild.channels.fetch(current.id).catch(() => current);
+  state = bulkDeleteAccessState(current, me);
+  return { ok: state.administrator || (state.viewChannel && state.manageChannels), channel: current, repaired: true, state };
+}
+
+async function deleteIds(interaction, session, ids, sourceManifestId = null) {
+  const guild = interaction.client.guilds.cache.get(session.destinationGuildId);
+  if (!guild) throw new Error('Bulk Delete is DEV-local only for safety.');
+  await guild.channels.fetch().catch(() => null);
+  await guild.members.fetchMe().catch(() => null);
+  const me = guild.members.me;
+  if (!me) throw new Error('Could not resolve the Goliath member in the destination server.');
+
+  const requestedIds = [...new Set((ids || []).map(String))];
+  const selected = new Set(requestedIds);
+  const channels = [...guild.channels.cache.values()].filter((channel) => selected.has(channel.id));
+  const foundIds = new Set(channels.map((channel) => channel.id));
+  const missing = requestedIds.filter((id) => !foundIds.has(id)).map((id) => ({ id, reason: 'Already missing or no longer resolvable.' }));
+
+  // Preflight the entire batch before deleting anything. Attempt parent/channel recovery
+  // first, then block the whole batch if Discord still denies access to any target.
+  const recovered = new Map();
+  const blocked = [];
+  for (const channel of channels) {
+    const access = await recoverBulkDeleteAccess(guild, channel, me, interaction.user.id);
+    recovered.set(channel.id, access.channel || channel);
+    if (!access.ok) {
+      blocked.push({
+        id: channel.id,
+        name: channel.name,
+        error: 'Preflight blocked: Missing Access. Goliath needs View Channel + Manage Channels on this target, or Administrator at server level.',
+      });
+    }
+  }
+
+  if (blocked.length) {
+    return history.add(session.controlGuildId, {
+      type: 'bulk-delete', destinationGuildId: guild.id, destinationGuildName: guild.name,
+      status: 'blocked-preflight', outcome: 'failed', blockedPreflight: true,
+      requestedCount: requestedIds.length, deletedCount: 0, deleted: [], missing, failed: blocked,
+      sourceManifestId,
+      requiredAction: 'Grant Goliath Administrator temporarily, or restore View Channel + Manage Channels on every blocked channel/category, then retry. No selected channel was deleted because preflight failed.',
+    }, interaction.guild);
+  }
+
+  const resolved = channels.map((channel) => recovered.get(channel.id) || channel);
+  const nonCategories = resolved.filter((c) => c.type !== ChannelType.GuildCategory).sort((a, b) => b.position - a.position);
+  const categories = resolved.filter((c) => c.type === ChannelType.GuildCategory).sort((a, b) => b.position - a.position);
+  const deleted = [], failed = [];
+  for (const channel of [...nonCategories, ...categories]) {
+    try {
+      const id = channel.id, name = channel.name, type = channel.type;
+      await channel.delete(`Goliath Duplicator bulk delete by ${interaction.user.id}`);
+      const stillThere = await guild.channels.fetch(id).catch(() => null);
+      if (stillThere) throw new Error('Post-delete verification found the channel still present.');
+      deleted.push({ id, name, type });
+    } catch (error) {
+      failed.push({ id: channel.id, name: channel.name, error: error.message || String(error) });
+    }
+  }
+  const outcome = failed.length ? (deleted.length ? 'partial' : 'failed') : deleted.length ? (missing.length ? 'partial' : 'success') : 'no-changes';
+  return history.add(session.controlGuildId, {
+    type: 'bulk-delete', destinationGuildId: guild.id, destinationGuildName: guild.name,
+    status: outcome === 'success' ? 'success' : outcome === 'partial' ? 'completed-with-warnings' : outcome,
+    outcome, requestedCount: requestedIds.length, deletedCount: deleted.length, deleted, missing, failed, sourceManifestId,
+  }, interaction.guild);
+}
+'''
+          text = text[:start] + replacement + text[end:]
+          selective.write_text(text)
+
+          index = Path('src/owner/dev/duplicator/index.js')
+          itext = index.read_text()
+          old = r'''    } finally {
+      // A temporary Goliath *member* overwrite must never be the final copied permission.
+      // Always remove it for channels, including failure paths. Categories keep it briefly
+      // so restrictive parents cannot block their child channel pass, then it is removed.
+      if (botId && botOverwrite && !sourceHadBotMemberOverwrite) {
+        if (channel.type === ChannelType.GuildCategory) {
+          setTimeout(() => {
+            channel.permissionOverwrites.delete(botId, 'Goliath duplicator: remove temporary category access').catch((error) => {
+              console.warn(`[Duplicator] Temporary category access cleanup failed for ${channel.name}: ${error.message}`);
+            });
+          }, 8000).unref?.();
+        } else {
+          await channel.permissionOverwrites.delete(botId, 'Goliath duplicator: remove temporary transfer access').catch((error) => {
+            console.warn(`[Duplicator] Temporary access cleanup failed for ${channel.name}: ${error.message}`);
+          });
+        }
+      }
+    }'''
+          new = r'''    } finally {
+      // Keep a destination-only Goliath control-plane member overwrite on copied structure.
+      // Source bot/operator ACLs are intentionally excluded from snapshots, so this does not
+      // replace source permission data; it prevents an exact @everyone/role reconstruction
+      // from locking the destination bot out of channels it must later verify, undo or delete.
+      if (botId && botOverwrite && !sourceHadBotMemberOverwrite) {
+        try {
+          await upsertExplicit(botOverwrite, 'Goliath duplicator: retain destination control-plane access');
+        } catch (error) {
+          console.warn(`[Duplicator] Could not retain control-plane access for ${channel.name}: ${error.message}`);
+        }
+      }
+    }'''
+          if old not in itext:
+              raise SystemExit('index cleanup block not found')
+          itext = itext.replace(old, new, 1)
+
+          old_fix = "permissionFailures ? '**Fix:** Give Goliath Administrator, or allow Manage Channels + Manage Roles on the blocked channels/categories, then retry. New Duplicator snapshots now exclude source-bot ACLs so future copies cannot copy Goliath-specific lockouts across environments.' : null,"
+          new_fix = "permissionFailures ? (latest.blockedPreflight ? '**Fix:** Bulk Delete was stopped before deleting anything. Temporarily grant Goliath Administrator, or restore View Channel + Manage Channels on every blocked target, then retry. New copies retain a destination-only Goliath control-plane overwrite so this lockout cannot recur.' : '**Fix:** Give Goliath Administrator, or restore View Channel + Manage Channels on the blocked targets, then retry.') : null,"
+          if old_fix in itext:
+              itext = itext.replace(old_fix, new_fix, 1)
+          index.write_text(itext)
+          PY
+      - name: Validate source
+        run: |
+          node --check src/owner/dev/duplicator/selective.js
+          node --check src/owner/dev/duplicator/index.js
+          npm run contracts
+      - name: Remove one-off workflow
+        run: git rm -f .github/workflows/fix-bulk-delete-access-once.yml
+      - name: Run Doctor
+        run: npm run doctor
+      - name: Build dashboard
+        run: npm run build
+      - name: Commit repair
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'fix(duplicator): preflight bulk delete access and retain control ACL'
+          git push origin HEAD:work/fix-bulk-delete-access-final2
