@@ -132,6 +132,7 @@ async function executeEnginePunishment(interaction, target, action, reason, meta
     ...(action === 'timeout' ? { duration: metadata.durationRaw } : {}),
     ...(action === 'ban' ? { deleteDays: metadata.deleteDays } : {}),
     ...(metadata.bulkBatchId ? { bulk: true, bulkBatchId: metadata.bulkBatchId } : {}),
+    ...(metadata.sourceCourtCaseId ? { sourceCourtCaseId: Number(metadata.sourceCourtCaseId), courtOrdered: Boolean(metadata.courtOrdered) } : {}),
     punishmentReport: report,
   };
   const modCase = createModerationCase(interaction, target.id, config.caseAction, reason, caseMetadata);
@@ -360,4 +361,4 @@ async function executePendingAction(discord, interaction, token, returnContext =
   }
 }
 
-module.exports = { buildPunishmentModal, buildBulkModal, createConfirmation, submitPunishmentRequest, submitBulkModal, executePendingAction, runBulkAction, MAX_BULK_TARGETS };
+module.exports = { buildPunishmentModal, buildBulkModal, createConfirmation, submitPunishmentRequest, submitBulkModal, executePendingAction, executeEnginePunishment, runBulkAction, MAX_BULK_TARGETS };
