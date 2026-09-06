@@ -41,6 +41,8 @@ const STAGES = Object.freeze({
   closed: '🔒 Closed',
 });
 const EVIDENCE_STATUS = Object.freeze({ draft: '🟡 Draft', verified: '🟢 Verified', rejected: '🔴 Rejected' });
+const COURT_EXECUTION_LOCKS = new Set();
+const COURT_EXECUTION_STALE_MS = 5 * 60 * 1000;
 
 function now() { return new Date().toISOString(); }
 function parseCourt(modCase = {}) {
@@ -106,6 +108,8 @@ function caseIsCourt(modCase) { return Boolean(modCase && (modCase.action === CO
 function getCourtAppeals(modCase = {}) { return Array.isArray(modCase?.metadata?.appeals) ? modCase.metadata.appeals.filter((appeal) => appeal && typeof appeal === 'object' && appeal.id) : []; }
 function latestCourtAppeal(modCase = {}) { return getCourtAppeals(modCase).slice().sort((a, b) => String(b.submittedAt || '').localeCompare(String(a.submittedAt || '')))[0] || null; }
 function appealStatusText(appeal) { if (!appeal) return 'No appeal submitted.'; return appeal.status === 'approved' ? '✅ Approved' : appeal.status === 'denied' ? '❌ Denied' : '⏳ Pending review'; }
+function courtExecutionLockKey(guildId, caseId) { return `${guildId}:${caseId}`; }
+function executionIsStale(execution) { if (!execution || execution.status !== 'executing') return false; const started = new Date(execution.startedAt || execution.claimedAt || 0).getTime(); return !Number.isFinite(started) || Date.now() - started > COURT_EXECUTION_STALE_MS; }
 function getCourtCases(guildId, userId = null) {
   const cases = userId ? getCasesForUser(guildId, userId) : getAllCases(guildId);
   return (cases || []).filter(caseIsCourt);
@@ -185,7 +189,7 @@ function buildCaseFile(interaction, modCase) {
       : '\n**Ban Approval:** ⏳ Second-admin approval required before publication.'
     : '';
   const executionLine = court.sanctionExecution
-    ? `\n**Execution:** ${court.sanctionExecution.status === 'executed' ? '✅ Executed' : court.sanctionExecution.status === 'reversed' ? '↩️ Reversed' : '❌ Failed'} by <@${court.sanctionExecution.executedBy}> • ${discordTime(court.sanctionExecution.executedAt)}${court.sanctionExecution.linkedCaseId ? ` • Moderation Case #${court.sanctionExecution.linkedCaseId}` : ''}${court.sanctionExecution.status === 'reversed' ? `\nReversed by <@${court.sanctionExecution.reversedBy}> • ${discordTime(court.sanctionExecution.reversedAt)}` : ''}${court.sanctionExecution.error ? `\n${cleanExcerpt(court.sanctionExecution.error, 180)}` : ''}`
+    ? `\n**Execution:** ${court.sanctionExecution.status === 'executed' ? '✅ Executed' : court.sanctionExecution.status === 'reversed' ? '↩️ Reversed' : court.sanctionExecution.status === 'executing' ? (executionIsStale(court.sanctionExecution) ? '⚠️ Execution lock stale' : '⏳ Executing') : '❌ Failed'} by <@${court.sanctionExecution.executedBy || court.sanctionExecution.claimedBy}> • ${discordTime(court.sanctionExecution.executedAt || court.sanctionExecution.startedAt || court.sanctionExecution.claimedAt)}${court.sanctionExecution.linkedCaseId ? ` • Moderation Case #${court.sanctionExecution.linkedCaseId}` : ''}${court.sanctionExecution.status === 'reversed' ? `\nReversed by <@${court.sanctionExecution.reversedBy}> • ${discordTime(court.sanctionExecution.reversedAt)}` : ''}${court.sanctionExecution.error ? `\n${cleanExcerpt(court.sanctionExecution.error, 180)}` : ''}`
     : court.decision?.action && court.decision.action !== 'no_action' ? '\n**Execution:** ⏳ Not executed' : '';
   const decision = court.decision
     ? `**Finding:** ${court.decision.finding}\n**Decision:** ${court.decision.action}\n**Reason:** ${court.decision.reason}\n**Judge:** <@${court.decision.decidedBy}> • ${discordTime(court.decision.decidedAt)}${sanctionGate}${executionLine}`
@@ -243,7 +247,7 @@ function buildCaseFile(interaction, modCase) {
       button(`mod_court_approve_ban:${modCase.caseId}`, 'Approve Ban', '🛡️', ButtonStyle.Danger, !judgeAuthority || court.decision?.action !== 'ban' || court.sanctionReview?.status === 'approved' || court.decision?.decidedBy === interaction.user.id),
     ),
     row(
-      button(`mod_court_execute:${modCase.caseId}`, court.sanctionExecution?.status === 'executed' ? 'Sanction Executed' : court.sanctionExecution?.status === 'reversed' ? 'Sanction Reversed' : court.sanctionExecution?.status === 'failed' ? 'Retry Sanction' : 'Execute Sanction', '⚡', ButtonStyle.Danger, !judgeAuthority || isClosed || court.stage !== 'published' || !court.decision || court.decision.action === 'no_action' || ['executed', 'reversed'].includes(court.sanctionExecution?.status) || (court.decision?.action === 'ban' && court.sanctionReview?.status !== 'approved')),
+      button(`mod_court_execute:${modCase.caseId}`, court.sanctionExecution?.status === 'executed' ? 'Sanction Executed' : court.sanctionExecution?.status === 'reversed' ? 'Sanction Reversed' : court.sanctionExecution?.status === 'executing' && !executionIsStale(court.sanctionExecution) ? 'Sanction Executing' : court.sanctionExecution?.status === 'failed' || executionIsStale(court.sanctionExecution) ? 'Retry Sanction' : 'Execute Sanction', '⚡', ButtonStyle.Danger, !judgeAuthority || isClosed || court.stage !== 'published' || !court.decision || court.decision.action === 'no_action' || ['executed', 'reversed'].includes(court.sanctionExecution?.status) || (court.sanctionExecution?.status === 'executing' && !executionIsStale(court.sanctionExecution)) || (court.decision?.action === 'ban' && court.sanctionReview?.status !== 'approved')),
       button(`mod_court_record_history:${modCase.caseId}`, 'Record History', '📚'),
       button(`mod_case_appeal_history:${modCase.caseId}:0`, `Appeals${appeals.length ? ` (${appeals.length})` : ''}`, '⚖️', ButtonStyle.Secondary, !appeals.length),
       button('mod_case_appeal_queue:0', 'Appeal Queue', '📥'),
@@ -535,7 +539,8 @@ async function handleCourtInteraction(interaction) {
     const action = String(court.decision?.action || '');
     if (!isJudge(interaction) || !action || action === 'no_action') { await interaction.reply({ content: '❌ There is no executable court sanction.', flags: 64 }); return true; }
     if (court.stage !== 'published' || !court.publication) { await interaction.reply({ content: '❌ Publish the official member record before executing the sanction.', flags: 64 }); return true; }
-    if (court.sanctionExecution?.status === 'executed') { await interaction.reply({ content: '❌ This sanction has already been executed. Duplicate execution is blocked.', flags: 64 }); return true; }
+    if (court.sanctionExecution?.status === 'executed' || court.sanctionExecution?.status === 'reversed') { await interaction.reply({ content: '❌ This sanction has already been finalised. Duplicate execution is blocked.', flags: 64 }); return true; }
+    if (court.sanctionExecution?.status === 'executing' && !executionIsStale(court.sanctionExecution)) { await interaction.reply({ content: '❌ This sanction is already being executed by another judge.', flags: 64 }); return true; }
     if (action === 'ban' && court.sanctionReview?.status !== 'approved') { await interaction.reply({ content: '❌ A second admin must approve this ban before execution.', flags: 64 }); return true; }
     if (!canUseModAction(interaction.member, interaction.guild, action, interaction)) { await interaction.reply({ content: `❌ You do not have authority to execute the ${action} sanction.`, flags: 64 }); return true; }
     await interaction.showModal(sanctionExecutionModal(caseId, court)); return true;
@@ -677,9 +682,22 @@ async function handleCourtModal(interaction) {
     if (field(interaction, 'confirmation').toUpperCase() !== 'EXECUTE') { await interaction.reply({ content: '❌ Execution cancelled. Type EXECUTE exactly to confirm.', flags: 64 }); return true; }
     const parameter = field(interaction, 'parameter');
     const note = field(interaction, 'note');
-    const target = await interaction.guild.members.fetch(modCase.userId).catch(() => null);
-    if (!target) { await interaction.reply({ content: '❌ The member is not currently available in this server, so this sanction cannot be executed from Case Court.', flags: 64 }); return true; }
+    const lockKey = courtExecutionLockKey(interaction.guildId, caseId);
+    if (COURT_EXECUTION_LOCKS.has(lockKey)) { await interaction.reply({ content: '❌ This sanction is already being executed. Duplicate execution is blocked.', flags: 64 }); return true; }
+    if (court.sanctionExecution?.status === 'executing' && !executionIsStale(court.sanctionExecution)) { await interaction.reply({ content: '❌ This sanction is already being executed by another judge.', flags: 64 }); return true; }
+    COURT_EXECUTION_LOCKS.add(lockKey);
     const executionStarted = now();
+    const operationId = `court_exec_${caseId}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+    const claimedExecution = { status: 'executing', operationId, action, claimedBy: interaction.user.id, claimedAt: executionStarted, startedAt: executionStarted, executedBy: interaction.user.id, executedAt: null, linkedCaseId: null, note: note || null, error: null };
+    const claimed = saveCourt(interaction.guildId, caseId, { ...court, sanctionExecution: claimedExecution }, interaction.user.id, 'case.court.sanction_execution_claimed', court);
+    if (!claimed) { COURT_EXECUTION_LOCKS.delete(lockKey); await interaction.reply({ content: '❌ Failed to claim the sanction execution lock. No punishment was applied.', flags: 64 }); return true; }
+    const target = await interaction.guild.members.fetch(modCase.userId).catch(() => null);
+    if (!target) {
+      const failed = { ...claimedExecution, status: 'failed', executedAt: now(), error: 'Member is not currently available in this server.' };
+      saveCourt(interaction.guildId, caseId, { ...court, sanctionExecution: failed }, interaction.user.id, 'case.court.sanction_failed', claimedExecution);
+      COURT_EXECUTION_LOCKS.delete(lockKey);
+      await interaction.reply({ content: '❌ The member is not currently available in this server, so this sanction cannot be executed from Case Court.', flags: 64 }); return true;
+    }
     try {
       let linkedCaseId = null;
       let resultSummary = null;
@@ -716,12 +734,14 @@ async function handleCourtModal(interaction) {
       const sanctionExecution = { status: 'executed', action, executedBy: interaction.user.id, executedAt: now(), startedAt: executionStarted, linkedCaseId, note: note || null, result: resultSummary };
       const next = { ...court, sanctionExecution, linkedCases: linkedCaseId ? [...new Set([...court.linkedCases, linkedCaseId])] : court.linkedCases };
       const updated = saveCourt(interaction.guildId, caseId, next, interaction.user.id, 'case.court.sanction_executed', court);
+      COURT_EXECUTION_LOCKS.delete(lockKey);
       await updateCaseMessage(interaction, updated);
       return true;
     } catch (error) {
       const sanctionExecution = { status: 'failed', action, executedBy: interaction.user.id, executedAt: now(), startedAt: executionStarted, linkedCaseId: null, note: note || null, error: String(error?.message || error || 'Unknown sanction execution failure').slice(0, 500) };
       const next = { ...court, sanctionExecution };
       const updated = saveCourt(interaction.guildId, caseId, next, interaction.user.id, 'case.court.sanction_failed', court);
+      COURT_EXECUTION_LOCKS.delete(lockKey);
       await updateCaseMessage(interaction, updated);
       return true;
     }
