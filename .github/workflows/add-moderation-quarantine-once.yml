@@ -49,8 +49,12 @@ jobs:
         run: |
           git rm -f .github/workflows/add-moderation-quarantine-once.yml
           git rm -f scripts/add-moderation-quarantine-once.py
-      - name: Run Doctor
-        run: npm run doctor
+      - name: Run focused validation
+        run: |
+          npm run syntax
+          npm run imports
+          npm run dashboard-imports
+          npm run contracts
       - name: Commit quarantine controls
         run: |
           set -euo pipefail
