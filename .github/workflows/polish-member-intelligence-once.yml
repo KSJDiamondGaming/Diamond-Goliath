@@ -1,0 +1,199 @@
+name: Polish Member Intelligence Once
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - '.github/workflows/polish-member-intelligence-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  polish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: dev
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Rewrite Member Intelligence presentation
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/core/administration/mod/intelligence.js')
+          text = path.read_text()
+
+          old = """  const investigationWatch = report.investigation?.watched ? 'ON' : 'OFF';
+  const externalSummary = reputation.verifiedExternal
+    ? `**${reputation.verifiedExternal} verified**`
+    : 'No verified records';
+
+  report.embed
+    .setTitle(`🧠 Member Intelligence • ${target.user.tag}`)
+    .setDescription([
+      `**Target:** ${target.user} (\\`${target.id}\\`)`,
+      'Evidence-led member overview for authorized management. Start with status and risk, then open a drill-down when more detail is needed.',
+    ].join('\\n\\n'))
+    .setFooter({ text: `Scan ${report.scanId} • Scanned by ${interaction.user?.tag || interaction.user?.username || interaction.user?.id || 'Unknown'} • evidence-based intelligence` });
+"""
+          new = """  const investigationWatch = report.investigation?.watched ? 'On' : 'Off';
+
+  report.embed
+    .setTitle(`🧠 Member Intelligence • ${target.user.tag}`)
+    .setDescription([
+      `**Target:** ${target.user} (\\`${target.id}\\`)`,
+      'Evidence-led member overview for authorised management. Key intelligence and investigation state are summarised below.',
+    ].join('\\n\\n'))
+    .setFooter({ text: `Scanned by ${interaction.user?.tag || interaction.user?.username || interaction.user?.id || 'Unknown'} • Evidence-based intelligence` });
+"""
+          if old not in text:
+              raise SystemExit('Header block not found; refusing unsafe rewrite')
+          text = text.replace(old, new, 1)
+
+          old = """  if (context.risk.reasons?.length) {
+    riskLines.push(`Risk factors ${context.risk.reasons.slice(0, 4).map((item) => `**+${item.points}** ${item.reason}`).join(' • ')}`);
+  } else {
+    riskLines.push('Risk factors **No verified risk factors**');
+  }
+"""
+          new = """  if (context.risk.reasons?.length) {
+    riskLines.push(`Risk factors ${context.risk.reasons.slice(0, 4).map((item) => `**+${item.points}** ${item.reason}`).join(' • ')}`);
+  } else {
+    riskLines.push('**No verified risk factors**');
+  }
+"""
+          if old not in text:
+              raise SystemExit('Risk block not found; refusing unsafe rewrite')
+          text = text.replace(old, new, 1)
+
+          old = """  const previousIdentityValues = [...knownIdentityValues].filter((value) => !currentIdentityValues.has(value));
+  const identityEventCount = Array.isArray(identity.events) ? identity.events.length : 0;
+  const identityStatus = previousIdentityValues.length
+    ? `**${previousIdentityValues.length} previous name value(s)** • ${identityEventCount} recorded event(s)`
+    : '**No recorded identity changes**';
+"""
+          new = """  const previousIdentityValues = [...knownIdentityValues].filter((value) => !currentIdentityValues.has(value));
+  const identityChanges = (Array.isArray(identity.events) ? identity.events : []).filter((event) => {
+    if (event.event === 'user.identity.update') return true;
+    if (event.event !== 'member.update' && event.event !== 'member.scan.observed') return false;
+    const before = json(event.before_value, {});
+    const after = json(event.after_value, {});
+    const hasBeforeIdentity = before.username || before.globalName || before.displayName;
+    const hasAfterIdentity = after.username || after.globalName || after.displayName;
+    if (!hasBeforeIdentity || !hasAfterIdentity) return false;
+    return before.username !== after.username || before.globalName !== after.globalName || before.displayName !== after.displayName;
+  });
+  const identityChangeCount = Math.max(previousIdentityValues.length, identityChanges.length);
+  const latestIdentityChange = identityChanges[0]?.created_at || null;
+  const identityStatus = identityChangeCount
+    ? `**${identityChangeCount} change${identityChangeCount === 1 ? '' : 's'}**${latestIdentityChange ? ` • Last ${discordTime(latestIdentityChange, 'R')}` : ''}`
+    : '**No recorded changes**';
+"""
+          if old not in text:
+              raise SystemExit('Identity block not found; refusing unsafe rewrite')
+          text = text.replace(old, new, 1)
+
+          old = """    `Identity ${identityStatus}`,
+"""
+          new = """    `Identity: ${identityStatus}`,
+"""
+          if old not in text:
+              raise SystemExit('Identity line not found; refusing unsafe rewrite')
+          text = text.replace(old, new, 1)
+
+          old = """    latestCase
+      ? `Latest **#${latestCase.caseId} • ${latestCase.action} • ${latestCase.status || 'active'}** — ${String(latestCase.reason || 'No reason').slice(0, 180)}`
+      : 'Latest **No recorded moderation cases**',
+"""
+          new = """    latestCase
+      ? `Latest: **#${latestCase.caseId} • ${latestCase.action} • ${latestCase.status || 'active'}** — ${String(latestCase.reason || 'No reason').slice(0, 180)}`
+      : 'Latest: **No recorded moderation cases**',
+"""
+          if old not in text:
+              raise SystemExit('Moderation block not found; refusing unsafe rewrite')
+          text = text.replace(old, new, 1)
+
+          old = """  const investigationLines = [
+    `Investigation Watch **${investigationWatch}** • Notes **${report.investigation?.notes?.length || 0}**`,
+    `Link Evidence **${report.persistentLinks?.length || 0}** • Verified identity links **${context.confirmedLinks?.length || 0}**`,
+  ];
+"""
+          new = """  const investigationLines = [
+    `Watch **${report.investigation?.watched ? '🟢' : '⚪'} ${investigationWatch}** • Notes **${report.investigation?.notes?.length || 0}**`,
+    `Evidence **${report.persistentLinks?.length || 0}** • Verified Links **${context.confirmedLinks?.length || 0}**`,
+  ];
+"""
+          if old not in text:
+              raise SystemExit('Investigation block not found; refusing unsafe rewrite')
+          text = text.replace(old, new, 1)
+
+          old = """  const behaviourTrend = String(behavior.trend || 'stable').toLowerCase();
+  const behaviourIcon = behaviourTrend === 'increasing' ? '🟠' : '🟢';
+  setOrReplaceField(report.embed, '🌐 Network & Behaviour', [
+    `Observed guilds **${history.length}** • Current **${currentGuilds}** • Former **${formerGuilds}** • Cross-guild cases **${context.network?.caseCount || 0}**`,
+    `External **${reputation.verifiedExternal || 0} verified** • **${reputation.submitted || 0} submitted** • **${reputation.unverified || 0} unverified**`,
+    `Behaviour ${behaviourIcon} **${behaviourTrend.toUpperCase()}** • **${behavior.windows?.d30?.total || 0} cases / 30d**`,
+  ].join('\\n'));
+"""
+          new = """  const behaviourTrend = String(behavior.trend || 'stable').toLowerCase();
+  const behaviourLabel = behaviourTrend ? `${behaviourTrend.charAt(0).toUpperCase()}${behaviourTrend.slice(1)}` : 'Stable';
+  const behaviourIcon = behaviourTrend === 'increasing' ? '🟠' : '🟢';
+  const externalCount = Number(reputation.verifiedExternal || 0) + Number(reputation.submitted || 0) + Number(reputation.unverified || 0);
+  const networkLines = [
+    `Guilds **${history.length} observed • ${currentGuilds} current • ${formerGuilds} former**`,
+    `Cross-guild Cases **${context.network?.caseCount || 0}** • External Records **${externalCount}**`,
+  ];
+  if (externalCount > 0) {
+    networkLines.push(`External **${reputation.verifiedExternal || 0} verified • ${reputation.submitted || 0} submitted • ${reputation.unverified || 0} unverified**`);
+  }
+  networkLines.push(`Behaviour **${behaviourIcon} ${behaviourLabel} • ${behavior.windows?.d30?.total || 0} cases / 30d**`);
+  setOrReplaceField(report.embed, '🌐 Network & Behaviour', networkLines.join('\\n'));
+"""
+          if old not in text:
+              raise SystemExit('Network/behaviour block not found; refusing unsafe rewrite')
+          text = text.replace(old, new, 1)
+
+          old = """    .setLabel(report.investigation?.watched ? 'Investigation Watch: ON' : 'Investigation Watch: OFF')
+"""
+          new = """    .setLabel(report.investigation?.watched ? 'Watch: On' : 'Watch: Off')
+"""
+          if old not in text:
+              raise SystemExit('Watch button label not found; refusing unsafe rewrite')
+          text = text.replace(old, new, 1)
+
+          path.write_text(text)
+          PY
+
+      - name: Validate rewritten source
+        run: |
+          node --check src/core/administration/mod/intelligence.js
+          npm run contracts
+
+      - name: Remove one-off workflow before Doctor
+        run: git rm -f .github/workflows/polish-member-intelligence-once.yml
+
+      - name: Run Doctor
+        run: npm run doctor
+
+      - name: Commit polished workspace
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/core/administration/mod/intelligence.js .github/workflows/polish-member-intelligence-once.yml
+          git diff --cached --check
+          git commit -m 'refactor(mod): polish member intelligence presentation'
+          git fetch origin dev
+          git rebase origin/dev
+          git push origin HEAD:dev
