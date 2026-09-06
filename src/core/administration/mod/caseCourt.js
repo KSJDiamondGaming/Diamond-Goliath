@@ -723,7 +723,7 @@ async function handleCourtModal(interaction) {
     const claimed = saveCourt(interaction.guildId, caseId, { ...court, sanctionExecution: claimedExecution }, interaction.user.id, 'case.court.sanction_execution_claimed', court);
     if (!claimed) { COURT_EXECUTION_LOCKS.delete(lockKey); await interaction.reply({ content: '❌ Failed to claim the sanction execution lock. No punishment was applied.', flags: 64 }); return true; }
     const target = await interaction.guild.members.fetch(modCase.userId).catch(() => null);
-    if (!target) {
+    if (!target && action !== 'ban') {
       const failed = { ...claimedExecution, status: 'failed', executedAt: now(), error: 'Member is not currently available in this server.' };
       saveCourt(interaction.guildId, caseId, { ...court, sanctionExecution: failed }, interaction.user.id, 'case.court.sanction_failed', claimedExecution);
       COURT_EXECUTION_LOCKS.delete(lockKey);
@@ -743,6 +743,28 @@ async function handleCourtModal(interaction) {
         const linked = createCase({ guildId: interaction.guildId, userId: target.id, moderatorId: interaction.user.id, action: 'quarantine', reason, metadata: { sourceCourtCaseId: caseId, courtOrdered: true, quarantineResult: result }, status: 'active', actorId: interaction.user.id });
         linkedCaseId = linked?.caseId || null;
         resultSummary = result.dryRun ? 'Quarantine dry-run completed.' : 'Member quarantined.';
+      } else if (action === 'ban' && !target) {
+        await interaction.guild.members.ban(modCase.userId, {
+          deleteMessageSeconds: deleteDays * 24 * 60 * 60,
+          reason,
+        });
+        const linked = createCase({
+          guildId: interaction.guildId,
+          userId: modCase.userId,
+          moderatorId: interaction.user.id,
+          action: 'ban',
+          reason,
+          metadata: {
+            sourceCourtCaseId: caseId,
+            courtOrdered: true,
+            deleteDays,
+            executedWithoutMember: true,
+          },
+          status: 'active',
+          actorId: interaction.user.id,
+        });
+        linkedCaseId = linked?.caseId || null;
+        resultSummary = 'ban applied successfully to a user who was no longer in the server.';
       } else {
         const metadata = { sourceCourtCaseId: caseId, courtOrdered: true };
         if (action === 'timeout') {
