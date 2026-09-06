@@ -105,20 +105,33 @@ function bridgeRequest(environment, method, path, payload = null, timeoutMs = 25
 }
 async function getGuildDirectory(client) {
   const byId = new Map();
+  const bridgeStatus = {};
   for (const item of localGuildDirectory(client)) byId.set(item.id, { ...item, environments: [item.environment] });
   await Promise.all(Object.keys(BRIDGE_PORTS).filter((env) => env !== mode()).map(async (environment) => {
-    try {
-      const response = await bridgeRequest(environment, 'GET', '/guilds', null, 1200);
-      for (const item of response.guilds || []) {
-        const existing = byId.get(item.id);
-        if (existing) existing.environments = [...new Set([...(existing.environments || [existing.environment]), item.environment || environment])];
-        else byId.set(item.id, { ...item, environment: item.environment || environment, environments: [item.environment || environment] });
+    let lastError = null;
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      try {
+        const response = await bridgeRequest(environment, 'GET', '/guilds', null, 3500);
+        bridgeStatus[environment] = { ok: true, guilds: (response.guilds || []).length };
+        for (const item of response.guilds || []) {
+          const existing = byId.get(item.id);
+          if (existing) existing.environments = [...new Set([...(existing.environments || [existing.environment]), item.environment || environment])];
+          else byId.set(item.id, { ...item, environment: item.environment || environment, environments: [item.environment || environment] });
+        }
+        return;
+      } catch (error) {
+        lastError = error;
+        if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 250));
       }
-    } catch (error) { console.warn(`[Duplicator] ${environment} bridge unavailable: ${error.message}`); }
+    }
+    bridgeStatus[environment] = { ok: false, error: lastError?.message || 'unavailable' };
+    console.warn('[Duplicator] ' + environment + ' bridge unavailable after retry: ' + (lastError?.message || 'unknown error'));
   }));
-  return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
+  const guilds = [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
+  Object.defineProperty(guilds, 'bridgeStatus', { value: bridgeStatus, enumerable: false });
+  return guilds;
 }
-async function refreshSessionDirectory(client, session) { session.guildDirectory = await getGuildDirectory(client); return session.guildDirectory; }
+async function refreshSessionDirectory(client, session) { session.guildDirectory = await getGuildDirectory(client); session.bridgeStatus = session.guildDirectory.bridgeStatus || {}; return session.guildDirectory; }
 function directoryGuild(session, id) { return (session.guildDirectory || []).find((item) => item.id === String(id || '')) || null; }
 function guildDisplay(session, client, id) {
   if (!id) return '`Not selected`';
@@ -462,20 +475,43 @@ function conflictChoices(selected = 'skip') { return Object.entries(CONFLICT_MOD
 function copyOptionChoices(selectedOptions = []) { const selected = new Set(selectedOptions); return Object.entries(COPY_OPTIONS).map(([value, label]) => ({ label, value, default: selected.has(value) })); }
 async function copyPanel(interaction, session) {
   if (!session.guildDirectory?.length) await refreshSessionDirectory(interaction.client, session);
-  return { embeds: [embed('🛠️ Server Duplicator — Copy', `Source: ${guildDisplay(session, interaction.client, session.sourceGuildId)}\nDestination: ${guildDisplay(session, interaction.client, session.destinationGuildId)}\n\nAdministrator is not required. Goliath will use least-privilege capability-aware copying.`)], components: [
+  const unavailable = Object.entries(session.bridgeStatus || {}).filter(([, state]) => !state?.ok).map(([environment]) => environment);
+  const directoryNote = unavailable.length ? 'Visible servers: **' + session.guildDirectory.length + '**. Bridge unavailable: **' + unavailable.join(', ') + '** — use **Refresh Guilds** after those bot environments are online.' : 'Visible servers across Goliath environments: **' + session.guildDirectory.length + '**.';
+  const description = [
+    'Source: ' + guildDisplay(session, interaction.client, session.sourceGuildId),
+    'Destination: ' + guildDisplay(session, interaction.client, session.destinationGuildId),
+    'Conflict: ' + session.conflictMode,
+    'Dry run: **' + (session.dryRun ? 'ON' : 'OFF') + '**',
+    '',
+    directoryNote,
+    '',
+    'Exact-copy preflight blocks the transfer before mutation when required role/channel permissions cannot be reproduced safely.',
+  ].join('\n');
+  return { embeds: [embed('🛠️ Server Duplicator — Copy', description)], components: [
     new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(componentId(COPY_PREFIX, session.id, 'source')).setPlaceholder('Source server').addOptions(guildChoices(session, session.sourceGuildId))),
     new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(componentId(COPY_PREFIX, session.id, 'destination')).setPlaceholder('Destination server').addOptions(guildChoices(session, session.destinationGuildId))),
     new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(componentId(COPY_PREFIX, session.id, 'options')).setPlaceholder('What to copy').setMinValues(1).setMaxValues(Object.keys(COPY_OPTIONS).length).addOptions(copyOptionChoices(session.selectedOptions))),
     new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(componentId(COPY_PREFIX, session.id, 'conflict')).setPlaceholder('Conflict mode').addOptions(conflictChoices(session.conflictMode))),
-    new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(componentId(COPY_PREFIX, session.id, 'start')).setLabel('Start Copy').setStyle(ButtonStyle.Success).setDisabled(!session.sourceGuildId || !session.destinationGuildId || session.sourceGuildId === session.destinationGuildId), new ButtonBuilder().setCustomId(componentId(COPY_PREFIX, session.id, 'cancel')).setLabel('Cancel').setStyle(ButtonStyle.Danger)),
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(componentId(COPY_PREFIX, session.id, 'start')).setLabel('Start Copy').setStyle(ButtonStyle.Success).setDisabled(!session.sourceGuildId || !session.destinationGuildId || session.sourceGuildId === session.destinationGuildId),
+      new ButtonBuilder().setCustomId(componentId(COPY_PREFIX, session.id, 'refresh')).setLabel('Refresh Guilds').setEmoji('🔄').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(componentId(COPY_PREFIX, session.id, 'dryrun')).setLabel('Dry Run: ' + (session.dryRun ? 'ON' : 'OFF')).setStyle(session.dryRun ? ButtonStyle.Primary : ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(componentId(COPY_PREFIX, session.id, 'cancel')).setLabel('Cancel').setStyle(ButtonStyle.Danger),
+    ),
   ], flags: MessageFlags.Ephemeral };
 }
 async function analysePanel(interaction, session) {
   if (!session.guildDirectory?.length) await refreshSessionDirectory(interaction.client, session);
-  return { embeds: [embed('🔎 Server Duplicator — Analyse', 'Choose source and destination.')], components: [
+  const unavailable = Object.entries(session.bridgeStatus || {}).filter(([, state]) => !state?.ok).map(([environment]) => environment);
+  const directoryNote = unavailable.length ? 'Visible servers: **' + session.guildDirectory.length + '**. Bridge unavailable: **' + unavailable.join(', ') + '**.' : 'Visible servers across Goliath environments: **' + session.guildDirectory.length + '**.';
+  return { embeds: [embed('🔎 Server Duplicator — Analyse', ['Choose the source and destination from the shared Goliath server directory — no server IDs required.', '', directoryNote].join('\n'))], components: [
     new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(componentId(ANALYSE_PREFIX, session.id, 'source')).setPlaceholder('Source server').addOptions(guildChoices(session, session.sourceGuildId))),
     new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(componentId(ANALYSE_PREFIX, session.id, 'destination')).setPlaceholder('Destination server').addOptions(guildChoices(session, session.destinationGuildId))),
-    new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(componentId(ANALYSE_PREFIX, session.id, 'start')).setLabel('Analyse Servers').setStyle(ButtonStyle.Primary).setDisabled(!session.sourceGuildId || !session.destinationGuildId || session.sourceGuildId === session.destinationGuildId)),
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(componentId(ANALYSE_PREFIX, session.id, 'start')).setLabel('Analyse Servers').setStyle(ButtonStyle.Primary).setDisabled(!session.sourceGuildId || !session.destinationGuildId || session.sourceGuildId === session.destinationGuildId),
+      new ButtonBuilder().setCustomId(componentId(ANALYSE_PREFIX, session.id, 'refresh')).setLabel('Refresh Guilds').setEmoji('🔄').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(componentId(ANALYSE_PREFIX, session.id, 'cancel')).setLabel('Cancel').setStyle(ButtonStyle.Secondary),
+    ),
   ], flags: MessageFlags.Ephemeral };
 }
 async function startCopy(interaction) { const access = assertAccess(interaction); if (!access.allowed) return interaction.reply({ content: `❌ ${access.reason}`, flags: MessageFlags.Ephemeral }); initializeBridge(interaction.client); const session = makeSession(interaction, 'copy'); await refreshSessionDirectory(interaction.client, session); return interaction.reply(await copyPanel(interaction, session)); }
@@ -517,6 +553,8 @@ async function handleCopy(interaction, data) {
   else if (data.action === 'destination') session.destinationGuildId = interaction.values?.[0];
   else if (data.action === 'options') session.selectedOptions = interaction.values || [...ACTIVE_OPTIONS];
   else if (data.action === 'conflict') session.conflictMode = interaction.values?.[0] || 'skip';
+  else if (data.action === 'refresh') { await refreshSessionDirectory(interaction.client, session); session.expiresAt = Date.now() + SESSION_TTL_MS; }
+  else if (data.action === 'dryrun') session.dryRun = !session.dryRun;
   else if (data.action === 'cancel') { copySessions.delete(session.id); return interaction.update({ embeds: [embed('❌ Copy Cancelled', 'No changes were made.', 0xef4444)], components: [] }); }
   else if (data.action === 'start') {
     const snap = await snapshotForGuild(interaction.client, session.sourceGuildId, session.selectedOptions, session);
@@ -532,6 +570,8 @@ async function handleAnalyse(interaction, data) {
   const session = getSession(analyseSessions, interaction, data.sessionId); if (!session) return false;
   if (data.action === 'source') session.sourceGuildId = interaction.values?.[0];
   else if (data.action === 'destination') session.destinationGuildId = interaction.values?.[0];
+  else if (data.action === 'refresh') { await refreshSessionDirectory(interaction.client, session); session.expiresAt = Date.now() + SESSION_TTL_MS; }
+  else if (data.action === 'cancel') { analyseSessions.delete(session.id); return interaction.update({ embeds: [embed('❌ Analyse Cancelled', 'No changes were made.', 0xef4444)], components: [] }); }
   else if (data.action === 'start') {
     await interaction.update({ embeds: [embed('🔎 Analysing Servers', 'Working...')], components: [] });
     const snap = await snapshotForGuild(interaction.client, session.sourceGuildId, [...ACTIVE_OPTIONS], session);

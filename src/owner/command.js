@@ -345,17 +345,6 @@ function securityUnavailablePayload(guildId = null) {
   };
 }
 
-function analyseModal(interaction, explicitGuildId = null) {
-  const guildId = interactionGuildId(interaction, explicitGuildId);
-  return new ModalBuilder()
-    .setCustomId(contextualOwnerId('server-analyse-submit', guildId))
-    .setTitle('Analyse Servers')
-    .addComponents(
-      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('source_server').setLabel('Source server ID').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(25)),
-      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('destination_server').setLabel('Destination server ID').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(25))
-    );
-}
-
 function exportModal(interaction, explicitGuildId = null) {
   const guildId = interactionGuildId(interaction, explicitGuildId);
   return new ModalBuilder()
@@ -552,15 +541,6 @@ async function handleOwnerPanelInteraction(interaction) {
       return true;
     }
     await interaction.showModal(exportModal(interaction, contextGuildId));
-    return true;
-  }
-
-  if (id === `${OWNER_PREFIX}server-analyse-submit`) {
-    await runDuplicator(interaction, {
-      action: 'analyse',
-      source_server: readModalValue(interaction, 'source_server'),
-      destination_server: readModalValue(interaction, 'destination_server'),
-    }, contextGuildId);
     return true;
   }
 
