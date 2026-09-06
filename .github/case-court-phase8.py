@@ -3,27 +3,44 @@ from pathlib import Path
 p = Path('src/core/administration/mod/caseCourt.js')
 s = p.read_text()
 
-needle = "function caseIsCourt(modCase) { return Boolean(modCase && (modCase.action === COURT_ACTION || modCase.metadata?.court)); }\n"
-insert = needle + "function getCourtAppeals(modCase = {}) { return Array.isArray(modCase?.metadata?.appeals) ? modCase.metadata.appeals.filter((appeal) => appeal && typeof appeal === 'object' && appeal.id) : []; }\nfunction latestCourtAppeal(modCase = {}) { return getCourtAppeals(modCase).slice().sort((a, b) => String(b.submittedAt || '').localeCompare(String(a.submittedAt || '')))[0] || null; }\nfunction appealStatusText(appeal) { if (!appeal) return 'No appeal submitted.'; return appeal.status === 'approved' ? '✅ Approved' : appeal.status === 'denied' ? '❌ Denied' : '⏳ Pending review'; }\n"
-assert needle in s
-s = s.replace(needle, insert, 1)
+def add_after_once(anchor, addition):
+    global s
+    if addition.strip() in s:
+        return
+    if anchor not in s:
+        raise RuntimeError(f'Anchor not found: {anchor[:80]}')
+    s = s.replace(anchor, anchor + addition, 1)
 
-needle = "  const publication = court.publication\n    ? `Revision **${court.publication.revision || 1}** • Published by <@${court.publication.publishedBy}> ${discordTime(court.publication.publishedAt)}\\n${cleanExcerpt(court.publication.summary, 500)}`\n    : 'Not published. The member cannot see this internal case file.';\n"
-insert = needle + "  const appeals = getCourtAppeals(modCase);\n  const latestAppeal = latestCourtAppeal(modCase);\n  const appealSummary = latestAppeal\n    ? `${appealStatusText(latestAppeal)} • submitted ${discordTime(latestAppeal.submittedAt)}${latestAppeal.reviewedAt ? ` • reviewed ${discordTime(latestAppeal.reviewedAt)}` : ''}\\n${cleanExcerpt(latestAppeal.grounds || 'No grounds recorded.', 380)}${latestAppeal.remedy?.detail ? `\\n**Remedy:** ${cleanExcerpt(latestAppeal.remedy.detail, 260)}` : ''}`\n    : 'No appeal submitted for this court case.';\n"
-assert needle in s
-s = s.replace(needle, insert, 1)
+def replace_once(old, new):
+    global s
+    if new in s:
+        return
+    if old not in s:
+        raise RuntimeError(f'Replacement anchor not found: {old[:80]}')
+    s = s.replace(old, new, 1)
 
-needle = "      { name: '📜 Member Record', value: publication.slice(0, 1024), inline: false },\n"
-replacement = needle + "      { name: `⚖️ Appeals${appeals.length ? ` (${appeals.length})` : ''}`, value: appealSummary.slice(0, 1024), inline: false },\n"
-assert needle in s
-s = s.replace(needle, replacement, 1)
+add_after_once(
+    "function caseIsCourt(modCase) { return Boolean(modCase && (modCase.action === COURT_ACTION || modCase.metadata?.court)); }\n",
+    "function getCourtAppeals(modCase = {}) { return Array.isArray(modCase?.metadata?.appeals) ? modCase.metadata.appeals.filter((appeal) => appeal && typeof appeal === 'object' && appeal.id) : []; }\n"
+    "function latestCourtAppeal(modCase = {}) { return getCourtAppeals(modCase).slice().sort((a, b) => String(b.submittedAt || '').localeCompare(String(a.submittedAt || '')))[0] || null; }\n"
+    "function appealStatusText(appeal) { if (!appeal) return 'No appeal submitted.'; return appeal.status === 'approved' ? '✅ Approved' : appeal.status === 'denied' ? '❌ Denied' : '⏳ Pending review'; }\n"
+)
 
-needle = "      button(`mod_court_execute:${modCase.caseId}`, court.sanctionExecution?.status === 'executed' ? 'Sanction Executed' : court.sanctionExecution?.status === 'reversed' ? 'Sanction Reversed' : court.sanctionExecution?.status === 'failed' ? 'Retry Sanction' : 'Execute Sanction', '⚡', ButtonStyle.Danger, !canManage || isClosed || court.stage !== 'published' || !court.decision || court.decision.action === 'no_action' || ['executed', 'reversed'].includes(court.sanctionExecution?.status) || (court.decision?.action === 'ban' && court.sanctionReview?.status !== 'approved')),\n      button(isClosed ? `mod_court_reopen:${modCase.caseId}` : `mod_court_close:${modCase.caseId}`, isClosed ? 'Reopen' : 'Close Case', isClosed ? '🔓' : '🔒', ButtonStyle.Secondary, !canManage),\n"
-replacement = "      button(`mod_court_execute:${modCase.caseId}`, court.sanctionExecution?.status === 'executed' ? 'Sanction Executed' : court.sanctionExecution?.status === 'reversed' ? 'Sanction Reversed' : court.sanctionExecution?.status === 'failed' ? 'Retry Sanction' : 'Execute Sanction', '⚡', ButtonStyle.Danger, !canManage || isClosed || court.stage !== 'published' || !court.decision || court.decision.action === 'no_action' || ['executed', 'reversed'].includes(court.sanctionExecution?.status) || (court.decision?.action === 'ban' && court.sanctionReview?.status !== 'approved')),\n      button(`mod_court_record_history:${modCase.caseId}`, 'Record History', '📚'),\n      button(`mod_case_appeal_history:${modCase.caseId}:0`, `Appeals${appeals.length ? ` (${appeals.length})` : ''}`, '⚖️', ButtonStyle.Secondary, !appeals.length),\n      button('mod_case_appeal_queue:0', 'Appeal Queue', '📥'),\n      button(isClosed ? `mod_court_reopen:${modCase.caseId}` : `mod_court_close:${modCase.caseId}`, isClosed ? 'Reopen' : 'Close Case', isClosed ? '🔓' : '🔒', ButtonStyle.Secondary, !canManage),\n"
-assert needle in s
-s = s.replace(needle, replacement, 1)
+# Case-file appeal summary: inject immediately before the embed is built.
+anchor = "    : 'Not published. The member cannot see this internal case file.';\n\n  const embed = new EmbedBuilder()"
+addition = "    : 'Not published. The member cannot see this internal case file.';\n  const appeals = getCourtAppeals(modCase);\n  const latestAppeal = latestCourtAppeal(modCase);\n  const appealSummary = latestAppeal\n    ? `${appealStatusText(latestAppeal)} • submitted ${discordTime(latestAppeal.submittedAt)}${latestAppeal.reviewedAt ? ` • reviewed ${discordTime(latestAppeal.reviewedAt)}` : ''}\\n${cleanExcerpt(latestAppeal.grounds || 'No grounds recorded.', 380)}${latestAppeal.remedy?.detail ? `\\n**Remedy:** ${cleanExcerpt(latestAppeal.remedy.detail, 260)}` : ''}`\n    : 'No appeal submitted for this court case.';\n\n  const embed = new EmbedBuilder()"
+replace_once(anchor, addition)
 
-marker = "function buildMemberPreviewPage(modCase) {\n"
+add_after_once(
+    "      { name: '📜 Member Record', value: publication.slice(0, 1024), inline: false },\n",
+    "      { name: `⚖️ Appeals${appeals.length ? ` (${appeals.length})` : ''}`, value: appealSummary.slice(0, 1024), inline: false },\n"
+)
+
+# Add Court record/appeal controls to the existing execution/close row.
+old = "      button(`mod_court_execute:${modCase.caseId}`, court.sanctionExecution?.status === 'executed' ? 'Sanction Executed' : court.sanctionExecution?.status === 'reversed' ? 'Sanction Reversed' : court.sanctionExecution?.status === 'failed' ? 'Retry Sanction' : 'Execute Sanction', '⚡', ButtonStyle.Danger, !canManage || isClosed || court.stage !== 'published' || !court.decision || court.decision.action === 'no_action' || ['executed', 'reversed'].includes(court.sanctionExecution?.status) || (court.decision?.action === 'ban' && court.sanctionReview?.status !== 'approved')),\n      button(isClosed ? `mod_court_reopen:${modCase.caseId}` : `mod_court_close:${modCase.caseId}`, isClosed ? 'Reopen' : 'Close Case', isClosed ? '🔓' : '🔒', ButtonStyle.Secondary, !canClose),\n"
+new = "      button(`mod_court_execute:${modCase.caseId}`, court.sanctionExecution?.status === 'executed' ? 'Sanction Executed' : court.sanctionExecution?.status === 'reversed' ? 'Sanction Reversed' : court.sanctionExecution?.status === 'failed' ? 'Retry Sanction' : 'Execute Sanction', '⚡', ButtonStyle.Danger, !canManage || isClosed || court.stage !== 'published' || !court.decision || court.decision.action === 'no_action' || ['executed', 'reversed'].includes(court.sanctionExecution?.status) || (court.decision?.action === 'ban' && court.sanctionReview?.status !== 'approved')),\n      button(`mod_court_record_history:${modCase.caseId}`, 'Record History', '📚'),\n      button(`mod_case_appeal_history:${modCase.caseId}:0`, `Appeals${appeals.length ? ` (${appeals.length})` : ''}`, '⚖️', ButtonStyle.Secondary, !appeals.length),\n      button('mod_case_appeal_queue:0', 'Appeal Queue', '📥'),\n      button(isClosed ? `mod_court_reopen:${modCase.caseId}` : `mod_court_close:${modCase.caseId}`, isClosed ? 'Reopen' : 'Close Case', isClosed ? '🔓' : '🔒', ButtonStyle.Secondary, !canClose),\n"
+replace_once(old, new)
+
 record_page = '''function buildRecordHistoryPage(modCase) {
   const court = parseCourt(modCase);
   const decisions = [...court.decisionHistory, ...(court.decision ? [court.decision] : [])].filter(Boolean);
@@ -47,23 +64,19 @@ record_page = '''function buildRecordHistoryPage(modCase) {
 }
 
 '''
-assert marker in s
-s = s.replace(marker, record_page + marker, 1)
+if 'function buildRecordHistoryPage(modCase)' not in s:
+    marker = 'function buildMemberPreviewPage(modCase) {\n'
+    if marker not in s: raise RuntimeError('Member preview marker not found')
+    s = s.replace(marker, record_page + marker, 1)
 
-needle = "      { name: 'Official Summary', value: cleanExcerpt(summary, 1800), inline: false },\n"
-replacement = needle + "      { name: 'Appeal Status', value: (() => { const appeal = latestCourtAppeal(modCase); return appeal ? `${appealStatusText(appeal)}${appeal.reviewedAt ? ` • reviewed ${discordTime(appeal.reviewedAt)}` : ''}` : 'No appeal submitted.'; })(), inline: false },\n"
-assert needle in s
-s = s.replace(needle, replacement, 1)
+add_after_once(
+    "      { name: 'Official Summary', value: cleanExcerpt(summary, 1800), inline: false },\n",
+    "      { name: 'Appeal Status', value: (() => { const appeal = latestCourtAppeal(modCase); return appeal ? `${appealStatusText(appeal)}${appeal.reviewedAt ? ` • reviewed ${discordTime(appeal.reviewedAt)}` : ''}` : 'No appeal submitted.'; })(), inline: false },\n"
+)
 
-needle = "  if (key === 'mod_court_preview') { const payload = buildMemberPreviewPage(modCase); await interaction.update(payload); return true; }\n"
-replacement = needle + "  if (key === 'mod_court_record_history') { const payload = buildRecordHistoryPage(modCase); await interaction.update(payload); return true; }\n"
-assert needle in s
-s = s.replace(needle, replacement, 1)
-
-# Add appeal status to member-facing published case summary without exposing private material.
-needle = "    const court = parseCourt(entry);\n    const publication = court.publication;\n"
-if needle in s:
-    replacement = needle + "    const appeal = latestCourtAppeal(entry);\n"
-    s = s.replace(needle, replacement, 1)
+add_after_once(
+    "  if (key === 'mod_court_preview') { const payload = buildMemberPreviewPage(modCase); await interaction.update(payload); return true; }\n",
+    "  if (key === 'mod_court_record_history') { const payload = buildRecordHistoryPage(modCase); await interaction.update(payload); return true; }\n"
+)
 
 p.write_text(s)
