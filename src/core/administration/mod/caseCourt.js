@@ -104,6 +104,12 @@ function cleanExcerpt(value, max = 220) {
   const text = String(value || '').replace(/\s+/g, ' ').trim();
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
+function staffBackRow(targetId) { return row(button(`mod_court_back:${targetId}`, 'Back', '⬅️')); }
+function caseFileBackRow(caseId) { return row(button(`mod_court_file:${caseId}`, 'Back', '⬅️')); }
+function auditRows(guildId, caseId, limit = 25) {
+  try { return db.prepare('SELECT actor_id, event, after_value, metadata, created_at FROM case_audit WHERE guild_id = ? AND case_id = ? ORDER BY audit_id DESC LIMIT ?').all(String(guildId), Number(caseId), Math.max(1, Math.min(50, Number(limit) || 25))); }
+  catch { return []; }
+}
 
 function buildCourtDashboard(interaction, target) {
   const cases = target ? getCourtCases(interaction.guildId, target.id) : [];
@@ -111,7 +117,7 @@ function buildCourtDashboard(interaction, target) {
   const latest = cases.slice(0, 5);
   const embed = new EmbedBuilder()
     .setColor(0x5865F2)
-    .setTitle(target ? `⚖️ Case Court • ${target.user.tag}` : '⚖️ Case Court')
+    .setTitle(target ? `⚖️ Case Court • ${target.displayName || target.user.globalName || target.user.username || target.user.tag}` : '⚖️ Case Court')
     .setDescription(target
       ? ['Build the internal case file here. Only a **published record** is visible to the member.', '', `**Subject:** ${target.user} • \`${target.id}\``].join('\n')
       : 'Select a member to open their court case workspace.')
@@ -181,24 +187,56 @@ function buildCaseFile(interaction, modCase) {
     .setTimestamp();
 
   const canManage = canUseModAction(interaction.member, interaction.guild, 'edit_case', interaction);
+  const canDecide = canManage && ['review', 'decided'].includes(court.stage);
   const components = [
     row(
       button(`mod_court_evidence:${modCase.caseId}`, 'Add Evidence', '➕', ButtonStyle.Primary),
       button(`mod_court_note:${modCase.caseId}`, 'Case Note', '📝'),
       button(`mod_court_import:${modCase.caseId}`, 'Import Records', '🔗'),
       button(`mod_court_severity:${modCase.caseId}`, 'Severity', '⚖️'),
+      button(`mod_court_recommend:${modCase.caseId}`, 'Recommendation', '📋'),
+    ),
+    row(
+      button(`mod_court_evidence_view:${modCase.caseId}`, 'Evidence', '🔎'),
+      button(`mod_court_notes_view:${modCase.caseId}`, 'Notes', '📝'),
+      button(`mod_court_timeline:${modCase.caseId}`, 'Timeline', '🕘'),
+      button(`mod_court_submit_review:${modCase.caseId}`, court.stage === 'review' ? 'Awaiting Review' : 'Submit for Review', '👨‍⚖️', ButtonStyle.Primary, court.stage === 'review' || court.stage === 'published'),
     ),
     row(
       button(`mod_court_verify:${modCase.caseId}`, 'Verify Evidence', '✅', ButtonStyle.Secondary, !court.evidence.length),
-      button(`mod_court_submit_review:${modCase.caseId}`, court.stage === 'review' ? 'Awaiting Review' : 'Submit for Review', '👨‍⚖️', ButtonStyle.Primary, court.stage === 'review' || court.stage === 'published'),
-      button(`mod_court_decide:${modCase.caseId}`, 'Decision', '⚖️', canManage ? ButtonStyle.Danger : ButtonStyle.Secondary, !canManage || court.stage === 'published'),
-    ),
-    row(
+      button(`mod_court_decide:${modCase.caseId}`, 'Decision', '⚖️', canManage ? ButtonStyle.Danger : ButtonStyle.Secondary, !canDecide),
       button(`mod_court_publish:${modCase.caseId}`, court.publication ? 'Update Published Record' : 'Publish Record', '📜', ButtonStyle.Success, !canManage || !court.decision),
-      button(`mod_court_back:${modCase.userId}`, 'Cases', '⬅️'),
     ),
+    staffBackRow(modCase.userId),
   ];
   return { embeds: [embed], components };
+}
+
+function buildEvidencePage(interaction, modCase) {
+  const court = parseCourt(modCase);
+  const lines = court.evidence.length ? court.evidence.slice(-12).reverse().map((item) => {
+    const verification = item.status === 'verified' ? `\nVerified by <@${item.verifiedBy}> ${discordTime(item.verifiedAt)}` : item.status === 'rejected' ? `\nRejected by <@${item.verifiedBy}> ${discordTime(item.verifiedAt)}` : '';
+    return `${EVIDENCE_STATUS[item.status] || EVIDENCE_STATUS.draft} **${item.id} • ${cleanExcerpt(item.title, 90)}**\nSource: ${cleanExcerpt(item.source || 'Internal submission', 120)}\n${cleanExcerpt(item.details, 240)}${verification}`;
+  }) : ['No evidence has been added to this case.'];
+  const embed = new EmbedBuilder().setColor(0x5865F2).setTitle(`🔎 Evidence • Case #${modCase.caseId}`).setDescription(lines.join('\n\n').slice(0, 4000)).setFooter({ text: 'Draft evidence stays internal until an authorised admin verifies it' }).setTimestamp();
+  return { embeds: [embed], components: [row(button(`mod_court_evidence:${modCase.caseId}`, 'Add Evidence', '➕', ButtonStyle.Primary), button(`mod_court_verify:${modCase.caseId}`, 'Verify Evidence', '✅', ButtonStyle.Secondary, !court.evidence.length)), caseFileBackRow(modCase.caseId)] };
+}
+function buildNotesPage(modCase) {
+  const court = parseCourt(modCase);
+  const lines = court.notes.length ? court.notes.slice(-15).reverse().map((item) => `**${item.id || 'Note'}** • <@${item.authorId}> • ${discordTime(item.createdAt)}\n${cleanExcerpt(item.text, 300)}`) : ['No private staff notes have been added.'];
+  const embed = new EmbedBuilder().setColor(0x5865F2).setTitle(`📝 Case Notes • #${modCase.caseId}`).setDescription(lines.join('\n\n').slice(0, 4000)).setFooter({ text: 'Private staff paperwork • never published automatically' }).setTimestamp();
+  return { embeds: [embed], components: [row(button(`mod_court_note:${modCase.caseId}`, 'Add Case Note', '➕', ButtonStyle.Primary)), caseFileBackRow(modCase.caseId)] };
+}
+function buildTimelinePage(interaction, modCase) {
+  const rows = auditRows(interaction.guildId, modCase.caseId, 20);
+  const lines = rows.length ? rows.map((entry) => `**${String(entry.event || 'case.updated').replace(/^case\.court\./, '').replaceAll('_', ' ')}** • ${discordTime(entry.created_at)}\nActor: ${entry.actor_id ? `<@${entry.actor_id}>` : 'System'}`) : ['No case audit activity recorded yet.'];
+  const embed = new EmbedBuilder().setColor(0x5865F2).setTitle(`🕘 Case Timeline • #${modCase.caseId}`).setDescription(lines.join('\n\n').slice(0, 4000)).setFooter({ text: 'Immutable case audit trail • newest activity first' }).setTimestamp();
+  return { embeds: [embed], components: [caseFileBackRow(modCase.caseId)] };
+}
+function recommendationModal(caseId, court) {
+  return new ModalBuilder().setCustomId(`mod_court_recommend_submit:${caseId}`).setTitle('Case Recommendation').addComponents(
+    modalInput('recommendation', 'Recommended outcome / next step', TextInputStyle.Paragraph, true, 1200, 'Record the moderator recommendation for the reviewing admin.', court.recommendation?.reason || ''),
+  );
 }
 
 function newCaseModal(targetId) {
@@ -282,14 +320,14 @@ async function handleCourtInteraction(interaction) {
   }
   if (key === 'mod_court_review_queue' || key === 'mod_court_published') {
     const target = await interaction.guild.members.fetch(value).catch(() => null);
-    const all = target ? getCourtCases(interaction.guildId, target.id) : [];
     const wanted = key === 'mod_court_review_queue' ? 'review' : 'published';
+    const all = wanted === 'review' ? getCourtCases(interaction.guildId) : (target ? getCourtCases(interaction.guildId, target.id) : []);
     const matches = all.filter((entry) => parseCourt(entry).stage === wanted);
     const embed = new EmbedBuilder().setColor(0x5865F2).setTitle(wanted === 'review' ? '⚖️ Review Queue' : '📜 Published Records')
       .setDescription(matches.length ? matches.map((entry) => `**#${entry.caseId}** • Severity **${parseCourt(entry).severity}/5**\n${cleanExcerpt(parseCourt(entry).allegations, 160)}`).join('\n\n') : `No ${wanted === 'review' ? 'cases awaiting review' : 'published records'} for this member.`);
     const components = [];
     if (matches.length) components.push(row(new StringSelectMenuBuilder().setCustomId(`mod_court_open:${value}`).setPlaceholder('Open a case file').addOptions(matches.slice(0, 25).map((entry) => ({ label: `Case #${entry.caseId}`, description: cleanExcerpt(parseCourt(entry).allegations, 80), value: String(entry.caseId), emoji: wanted === 'review' ? '⚖️' : '📜' })))));
-    components.push(row(button(`mod_court_back:${value}`, 'Cases', '⬅️')));
+    components.push(staffBackRow(value));
     await interaction.update({ embeds: [embed], components });
     return true;
   }
@@ -297,6 +335,11 @@ async function handleCourtInteraction(interaction) {
   const modCase = getCaseById(interaction.guildId, caseId);
   if (!caseIsCourt(modCase)) return false;
   const court = parseCourt(modCase);
+  if (key === 'mod_court_file') { await updateCaseMessage(interaction, modCase); return true; }
+  if (key === 'mod_court_evidence_view') { await interaction.update(buildEvidencePage(interaction, modCase)); return true; }
+  if (key === 'mod_court_notes_view') { await interaction.update(buildNotesPage(modCase)); return true; }
+  if (key === 'mod_court_timeline') { await interaction.update(buildTimelinePage(interaction, modCase)); return true; }
+  if (key === 'mod_court_recommend') { await interaction.showModal(recommendationModal(caseId, court)); return true; }
   if (key === 'mod_court_evidence') { await interaction.showModal(evidenceModal(caseId)); return true; }
   if (key === 'mod_court_note') { await interaction.showModal(noteModal(caseId)); return true; }
   if (key === 'mod_court_severity') { await interaction.showModal(severityModal(caseId, court)); return true; }
@@ -366,6 +409,11 @@ async function handleCourtModal(interaction) {
   const modCase = getCaseById(interaction.guildId, caseId);
   if (!caseIsCourt(modCase)) return false;
   const court = parseCourt(modCase);
+  if (key === 'mod_court_recommend_submit') {
+    const recommendation = { reason: field(interaction, 'recommendation'), by: interaction.user.id, at: now() };
+    const next = { ...court, recommendation };
+    return updateCaseMessage(interaction, saveCourt(interaction.guildId, caseId, next, interaction.user.id, 'case.court.recommendation_updated', court)).then(() => true);
+  }
   if (key === 'mod_court_evidence_submit') {
     const item = { id: evidenceId(court), title: field(interaction, 'title'), source: field(interaction, 'source') || null, details: field(interaction, 'details'), status: 'draft', addedBy: interaction.user.id, addedAt: now(), verifiedBy: null, verifiedAt: null, verificationNote: null };
     const next = { ...court, evidence: [...court.evidence, item] };
@@ -433,11 +481,10 @@ function buildUserPublishedCasesPanel(interaction) {
     .setTimestamp();
   return {
     embeds: [embed],
-    components: [row(
-      button('user:module:appeals', 'Appeals', '📝', ButtonStyle.Primary),
-      button('user:category:account', 'Account', '⬅️'),
-      button('user:home', 'User Panel', '🏠'),
-    )],
+    components: [
+      row(button('user:module:appeals', 'Appeals', '📝', ButtonStyle.Primary)),
+      row(button('user:category:account', 'Back', '⬅️'), button('user:home', 'User Panel', '🏠')),
+    ],
   };
 }
 
