@@ -209,7 +209,8 @@ async function applyApprovedCourtAppealRemedy(interaction, modCase, fetchTarget)
     remedy = { attempted: false, action: 'no_action', ok: true, detail: 'Court finding reversed; there was no sanction to undo.' };
   }
 
-  if (linkedCaseId) {
+  const reversalSucceeded = remedy.ok !== false;
+  if (linkedCaseId && reversalSucceeded) {
     const linked = getCaseById(guild.id, linkedCaseId);
     if (linked && linked.status === 'active') updateCaseStatus(guild.id, linkedCaseId, 'reversed', actorId);
   }
@@ -221,9 +222,11 @@ async function applyApprovedCourtAppealRemedy(interaction, modCase, fetchTarget)
     ...currentCourt,
     sanctionExecution: execution ? {
       ...execution,
-      status: 'reversed',
-      reversedBy: actorId,
-      reversedAt: new Date().toISOString(),
+      status: reversalSucceeded ? 'reversed' : 'reversal_failed',
+      reversedBy: reversalSucceeded ? actorId : null,
+      reversedAt: reversalSucceeded ? new Date().toISOString() : null,
+      reversalAttemptedBy: actorId,
+      reversalAttemptedAt: new Date().toISOString(),
       reversalReason: reason,
       reversalRemedy: remedy,
     } : execution,
@@ -235,8 +238,8 @@ async function applyApprovedCourtAppealRemedy(interaction, modCase, fetchTarget)
     },
   };
   updateCaseMetadata(guild.id, modCase.caseId, metadata);
-  updateCaseStatus(guild.id, modCase.caseId, 'reversed', actorId);
-  recordCaseAudit({ guildId: guild.id, caseId: modCase.caseId, actorId, event: 'case.court.appeal_remedy_applied', before: execution, after: metadata.court.sanctionExecution, metadata: { linkedCaseId, remedy } });
+  if (reversalSucceeded) updateCaseStatus(guild.id, modCase.caseId, 'reversed', actorId);
+  recordCaseAudit({ guildId: guild.id, caseId: modCase.caseId, actorId, event: reversalSucceeded ? 'case.court.appeal_remedy_applied' : 'case.court.appeal_remedy_failed', before: execution, after: metadata.court.sanctionExecution, metadata: { linkedCaseId, remedy } });
   return remedy;
 }
 
