@@ -314,11 +314,11 @@ function buildMemberScanPayload(i, target) {
   const primaryButtons = [
     new Discord.ButtonBuilder().setCustomId(`mod_member_scan:${target.id}`).setLabel('Rescan').setEmoji('🔄').setStyle(Discord.ButtonStyle.Primary),
   ];
-  if (access.history) primaryButtons.push(new Discord.ButtonBuilder().setCustomId(`mod_scan_history:${target.id}`).setLabel('Scan History').setEmoji('🕘').setStyle(Discord.ButtonStyle.Secondary));
+  if (access.history) primaryButtons.push(new Discord.ButtonBuilder().setCustomId(`mod_scan_history:${target.id}`).setLabel('History').setEmoji('🕘').setStyle(Discord.ButtonStyle.Secondary));
   const components = [new Discord.ActionRowBuilder().addComponents(...primaryButtons)];
   const intelligenceButtons = [];
-  if (access.links) intelligenceButtons.push(new Discord.ButtonBuilder().setCustomId(`mod_scan_links:${target.id}`).setLabel(`Link Evidence (${persistentLinks.length})`.slice(0, 80)).setEmoji('🔗').setStyle(Discord.ButtonStyle.Secondary));
-  if (access.notes) intelligenceButtons.push(new Discord.ButtonBuilder().setCustomId(`mod_scan_note:${target.id}`).setLabel('Add Note').setEmoji('📝').setStyle(Discord.ButtonStyle.Secondary));
+  if (access.links) intelligenceButtons.push(new Discord.ButtonBuilder().setCustomId(`mod_scan_links:${target.id}`).setLabel(`Correlations (${persistentLinks.length})`.slice(0, 80)).setEmoji('🔗').setStyle(Discord.ButtonStyle.Secondary));
+  if (access.notes) intelligenceButtons.push(new Discord.ButtonBuilder().setCustomId(`mod_scan_note:${target.id}`).setLabel('Notes').setEmoji('📝').setStyle(Discord.ButtonStyle.Secondary));
   if (access.watch) intelligenceButtons.push(new Discord.ButtonBuilder().setCustomId(`mod_scan_watch:${target.id}`).setLabel(investigation.watched ? 'Remove Watch' : 'Watch Status').setEmoji('👁️').setStyle(investigation.watched ? Discord.ButtonStyle.Danger : Discord.ButtonStyle.Secondary));
   if (intelligenceButtons.length) components.push(new Discord.ActionRowBuilder().addComponents(...intelligenceButtons));
   const navButtons = [new Discord.ButtonBuilder().setCustomId(`mod_dashboard:${target.id}:intelligence`).setLabel('⬅️ Back').setStyle(Discord.ButtonStyle.Secondary)];
@@ -526,16 +526,29 @@ async function showPersistentLinkEvidence(i, targetId) {
   if (!target) return safeReply(i, { content: '❌ Could not find that member in this server.', flags: 64 });
   const evidence = aggregateSuspectedEvidence(i.guild.id, target.id);
   const text = evidence.length ? evidence.map((entry) => {
-    const member = i.guild.members.cache.get(entry.userId);
-    const label = entry.maxScore >= 70 ? '🔴 Strong historical correlation' : '🟠 Possible historical correlation';
-    return `${label} — ${member ? member.user : `<@${entry.userId}>`} (\`${entry.userId}\`)\n• appeared in **${entry.appearances}** scan(s) • highest score **${entry.maxScore}%**\n${entry.signals.slice(0, 8).map((signal) => `• ${signal}`).join('\n')}`;
-  }).join('\n\n') : 'No suspected-account correlation has repeated across prior Goliath scans.';
-  const embed = new Discord.EmbedBuilder()
-    .setColor(0x5865F2)
-    .setTitle(`🔗 Persistent Link Evidence • ${target.user.tag}`)
-    .setDescription(`Evidence accumulated from previous Goliath scans. Repeated heuristic matches are still **not proof** of shared ownership.\n\n${text.slice(0, 3800)}`)
-    .setFooter({ text: 'Persistent correlation uses only previously recorded Goliath scan signals.' })
-    .setTimestamp();
+  const member = i.guild.members.cache.get(entry.userId);
+  const label = entry.maxScore >= 70 ? '🔴 Strong historical correlation' : '🟠 Possible historical correlation';
+  const firstSeen = entry.firstSeen ? scanTimestamp(new Date(entry.firstSeen).getTime()) : 'Unknown';
+  const lastSeen = entry.lastSeen ? scanTimestamp(new Date(entry.lastSeen).getTime()) : 'Unknown';
+  return [
+    `${label} — ${member ? member.user : `<@${entry.userId}>`} (\`${entry.userId}\`)`,
+    `Scans **${entry.appearances}** • Highest score **${entry.maxScore}%**`,
+    `First seen ${firstSeen}`,
+    `Last seen ${lastSeen}`,
+    entry.signals.length ? `Signals\n${entry.signals.slice(0, 8).map((signal) => `• ${signal}`).join('\n')}` : 'Signals • None recorded',
+  ].join('\n');
+}).join('\n\n') : [
+  '**No persistent account correlations identified.**',
+  '',
+  'Correlations appear here only when the same suspected-account relationship is observed across multiple Goliath scans.',
+  'A heuristic match alone is **not proof** that two Discord accounts share an owner.',
+].join('\n');
+const embed = new Discord.EmbedBuilder()
+  .setColor(evidence.length ? 0x5865F2 : 0x57F287)
+  .setTitle(`🔗 Correlation Evidence • ${target.user.tag}`)
+  .setDescription(text.slice(0, 3800))
+  .setFooter({ text: evidence.length ? 'Historical correlation only • review scan history before drawing conclusions' : 'No repeated correlation signals recorded' })
+  .setTimestamp();
   recordModerationSystemEvent({ interaction: i, event: 'moderation.member_scan.link_evidence_viewed', action: 'member_scan_links', targetId: target.id, after: { matchCount: evidence.length } });
   const components = canScanCapability(i, 'scan_run') ? [new Discord.ActionRowBuilder().addComponents(new Discord.ButtonBuilder().setCustomId(`mod_scan_view:${target.id}`).setLabel('Back to Scan').setEmoji('🔎').setStyle(Discord.ButtonStyle.Primary))] : [];
   return safeUpdate(i, { content: null, embeds: [embed], components });

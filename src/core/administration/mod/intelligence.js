@@ -597,7 +597,7 @@ async function decorateScan(interaction, target, report) {
 
   const investigationLines = [
     `Watch **${report.investigation?.watched ? '🟢' : '⚪'} ${investigationWatch}** • Notes **${report.investigation?.notes?.length || 0}**`,
-    `Evidence **${report.persistentLinks?.length || 0}** • Verified Links **${context.confirmedLinks?.length || 0}**`,
+    `Correlations **${report.persistentLinks?.length || 0}** • Verified Links **${context.confirmedLinks?.length || 0}**`,
   ];
   if (report.suspects?.length) investigationLines.push(`Suspected accounts **${report.suspects.length} match(es)** — open evidence/history before drawing a conclusion.`);
   setOrReplaceField(report.embed, '🔎 Investigation', investigationLines.join('\n'));
@@ -628,18 +628,18 @@ async function decorateScan(interaction, target, report) {
   const primary = [
     new Discord.ButtonBuilder().setCustomId(`mod_member_scan:${target.id}`).setLabel('Rescan').setEmoji('🔄').setStyle(Discord.ButtonStyle.Primary),
   ];
-  if (report.access?.history) primary.push(new Discord.ButtonBuilder().setCustomId(`mod_scan_history:${target.id}`).setLabel('Scan History').setEmoji('🕘').setStyle(Discord.ButtonStyle.Secondary));
+  if (report.access?.history) primary.push(new Discord.ButtonBuilder().setCustomId(`mod_scan_history:${target.id}`).setLabel('History').setEmoji('🕘').setStyle(Discord.ButtonStyle.Secondary));
   primary.push(
-    new Discord.ButtonBuilder().setCustomId(`mod_intel_guilds:${target.id}`).setLabel('Network Reputation').setEmoji('🌐').setStyle(Discord.ButtonStyle.Secondary),
+    new Discord.ButtonBuilder().setCustomId(`mod_intel_guilds:${target.id}`).setLabel('Network').setEmoji('🌐').setStyle(Discord.ButtonStyle.Secondary),
   );
   components.push(new Discord.ActionRowBuilder().addComponents(...primary));
 
   const evidence = [];
-  if (report.access?.links) evidence.push(new Discord.ButtonBuilder().setCustomId(`mod_scan_links:${target.id}`).setLabel(`Link Evidence (${report.persistentLinks?.length || 0})`.slice(0, 80)).setEmoji('🔗').setStyle(Discord.ButtonStyle.Secondary));
-  if (report.access?.notes) evidence.push(new Discord.ButtonBuilder().setCustomId(`mod_scan_note:${target.id}`).setLabel('Add Note').setEmoji('📝').setStyle(Discord.ButtonStyle.Secondary));
+  if (report.access?.links) evidence.push(new Discord.ButtonBuilder().setCustomId(`mod_scan_links:${target.id}`).setLabel(`Correlations (${report.persistentLinks?.length || 0})`.slice(0, 80)).setEmoji('🔗').setStyle(Discord.ButtonStyle.Secondary));
+  if (report.access?.notes) evidence.push(new Discord.ButtonBuilder().setCustomId(`mod_scan_note:${target.id}`).setLabel('Notes').setEmoji('📝').setStyle(Discord.ButtonStyle.Secondary));
   if (report.access?.watch) evidence.push(new Discord.ButtonBuilder()
     .setCustomId(`mod_scan_watch:${target.id}`)
-    .setLabel(report.investigation?.watched ? 'Watch: On' : 'Watch: Off')
+    .setLabel(report.investigation?.watched ? 'Watch On' : 'Watch Off')
     .setEmoji('👁️')
     .setStyle(report.investigation?.watched ? Discord.ButtonStyle.Danger : Discord.ButtonStyle.Secondary));
   evidence.push(new Discord.ButtonBuilder()
@@ -647,11 +647,16 @@ async function decorateScan(interaction, target, report) {
     .setLabel('Watchlist')
     .setEmoji('🛡️')
     .setStyle(watchState === 'blacklisted' ? Discord.ButtonStyle.Danger : Discord.ButtonStyle.Secondary));
-  if (evidence.length) components.push(new Discord.ActionRowBuilder().addComponents(...evidence));
+  if (evidence.length) {
+    const investigationRow = evidence.slice(0, 3);
+    components.push(new Discord.ActionRowBuilder().addComponents(...investigationRow));
+  }
 
-  const nav = [new Discord.ButtonBuilder().setCustomId(`mod_dashboard:${target.id}:actions`).setLabel('⬅️ Back').setStyle(Discord.ButtonStyle.Secondary)];
-  if (report.access?.cases) nav.push(new Discord.ButtonBuilder().setCustomId(`mod_export_cases:${target.id}`).setLabel('📤 Export').setStyle(Discord.ButtonStyle.Secondary));
-  components.push(new Discord.ActionRowBuilder().addComponents(...nav));
+  const finalRow = [];
+  if (evidence[3]) finalRow.push(evidence[3]);
+  finalRow.push(new Discord.ButtonBuilder().setCustomId(`mod_dashboard:${target.id}:actions`).setLabel('Back').setEmoji('⬅️').setStyle(Discord.ButtonStyle.Secondary));
+  if (report.access?.cases) finalRow.push(new Discord.ButtonBuilder().setCustomId(`mod_export_cases:${target.id}`).setLabel('Export').setEmoji('📤').setStyle(Discord.ButtonStyle.Secondary));
+  components.push(new Discord.ActionRowBuilder().addComponents(...finalRow));
   report.components = components;
   return report;
 }
