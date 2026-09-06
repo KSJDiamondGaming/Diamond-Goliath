@@ -1,0 +1,48 @@
+name: Case Court Phase 16 Once
+
+on:
+  push:
+    branches:
+      - dev
+    paths:
+      - 'scripts/case-court-phase16-temp.js'
+      - '.github/workflows/case-court-phase16-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - name: Apply Court execution preflight hardening
+        run: node scripts/case-court-phase16-temp.js
+      - name: Validate source
+        run: node --check src/core/administration/mod/caseCourt.js
+      - name: Install dependencies
+        run: npm ci
+      - name: Validate imports
+        run: npm run imports
+      - name: Remove one-off files before Doctor
+        run: rm -f scripts/case-court-phase16-temp.js .github/workflows/case-court-phase16-once.yml
+      - name: Run Doctor
+        run: npm run doctor
+      - name: Commit Court execution preflight hardening
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet && { echo "No changes to commit"; exit 1; }
+          git commit -m "fix(mod): harden court sanction execution preflight"
+          git push origin HEAD:dev
