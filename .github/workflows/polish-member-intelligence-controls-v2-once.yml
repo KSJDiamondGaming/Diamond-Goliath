@@ -31,7 +31,7 @@ jobs:
           npm run contracts
       - name: Remove one-off files
         run: |
-          git rm -f .github/workflows/polish-member-intelligence-controls-once.yml
+          rm -f .github/workflows/polish-member-intelligence-controls-once.yml
           git rm -f .github/workflows/polish-member-intelligence-controls-v2-once.yml
           git rm -f scripts/polish-member-intelligence-controls-once.py
       - name: Run Doctor
