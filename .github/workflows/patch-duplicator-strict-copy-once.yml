@@ -5,6 +5,8 @@ on:
     branches: [dev]
     paths:
       - '.github/workflows/patch-duplicator-strict-copy-once.yml'
+      - 'scripts/patch-duplicator-strict-copy-once.js'
+      - 'scripts/fix-duplicator-strict-patch-runner-once.js'
 
 permissions:
   contents: write
