@@ -25,14 +25,18 @@ jobs:
         run: npm ci
       - name: Audit before
         run: npm audit --audit-level=moderate || true
-      - name: Apply safe audit fixes
-        run: npm audit fix
+      - name: Apply non-breaking audit fixes
+        run: npm audit fix || true
+      - name: Apply remaining security fixes
+        run: npm audit fix --force
       - name: Validate dependency tree
         run: npm ls --all
       - name: Run Doctor
         run: npm run doctor
-      - name: Audit after
-        run: npm audit --audit-level=moderate || true
+      - name: Build dashboard
+        run: npm run build
+      - name: Require clean moderate/high audit
+        run: npm audit --audit-level=moderate
       - name: Remove one-off workflow
         run: git rm -f .github/workflows/fix-npm-audit-once.yml
       - name: Commit dependency fixes
