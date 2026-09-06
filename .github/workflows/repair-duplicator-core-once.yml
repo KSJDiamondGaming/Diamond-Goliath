@@ -1,0 +1,89 @@
+name: Repair Duplicator Core Once
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - '.github/workflows/repair-duplicator-core-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: dev
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Restore known-good Duplicator core base
+        run: git show origin/beta:src/owner/dev/duplicator/core.js > src/owner/dev/duplicator/core.js
+      - name: Validate recovery patch runner
+        run: node --check scripts/repair-duplicator-core-once.js
+      - name: Apply Duplicator core recovery
+        run: node scripts/repair-duplicator-core-once.js
+      - name: Validate Duplicator source
+        run: |
+          node --check src/owner/dev/duplicator/core.js
+          node --check src/owner/dev/duplicator/selective.js
+          node --check src/owner/dev/duplicator/index.js
+          node --check src/owner/dev/duplicator/history.js
+          node --check src/owner/command.js
+      - name: Runtime integrity checks
+        shell: bash
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const source = fs.readFileSync('src/owner/dev/duplicator/core.js', 'utf8');
+          const required = [
+            'async function exactPermissionPreflight',
+            'async function executeSnapshotOnGuild',
+            'async function buildExactOverwrites',
+            'async function verifyCopyResult',
+            "'blocked-preflight'",
+            "'Goliath duplicator: exact channel/category permissions'",
+            "'Refresh Guilds'",
+          ];
+          for (const marker of required) {
+            if (!source.includes(marker)) throw new Error(`Missing recovered marker: ${marker}`);
+          }
+          const preflightStart = source.indexOf('async function exactPermissionPreflight');
+          const preflightEnd = source.indexOf('function hierarchyWarning', preflightStart);
+          const preflight = source.slice(preflightStart, preflightEnd);
+          if ((preflight.match(/exactPermissionPreflight\(/g) || []).length !== 1) {
+            throw new Error('exactPermissionPreflight contains an accidental recursive call.');
+          }
+          if ((source.match(/async function executeSnapshotOnGuild/g) || []).length !== 1) {
+            throw new Error('executeSnapshotOnGuild definition count is not exactly one.');
+          }
+          require('./src/owner/dev/duplicator/core.js');
+          require('./src/owner/dev/duplicator/selective.js');
+          require('./src/owner/dev/duplicator/index.js');
+          console.log('Duplicator runtime integrity checks passed.');
+          NODE
+      - name: Remove temporary recovery script before doctor
+        run: rm -f scripts/repair-duplicator-core-once.js
+      - name: Full project doctor
+        run: npm run doctor
+      - name: Build dashboard
+        run: npx vite build src/dashboard --outDir ../../dist --emptyOutDir --logLevel warn
+      - name: Remove one-off workflow
+        run: rm -f .github/workflows/repair-duplicator-core-once.yml
+      - name: Commit and push recovery safely
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --quiet && exit 0
+          git commit -m 'fix(duplicator): recover strict copy engine and shared selectors'
+          git fetch origin dev
+          git rebase origin/dev
+          git push origin HEAD:dev
