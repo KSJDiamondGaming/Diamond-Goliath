@@ -4,3 +4,6 @@ set -eu
 
 echo "🔎 Goliath pre-push: checking backend JavaScript syntax..."
 npm run syntax
+
+echo "🔎 Goliath pre-push: checking Duplicator runtime integrity..."
+node scripts/runtime-integrity.js
