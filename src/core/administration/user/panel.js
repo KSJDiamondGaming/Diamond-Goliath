@@ -24,7 +24,7 @@ const CATEGORY_CATALOG = [
 
 const MODULE_CATALOG = [
   { key: 'warnings', category: 'account', label: 'Warnings', emoji: '⚠️', summary: 'Planned personal warning view.', status: 'planned' },
-  { key: 'cases', category: 'account', label: 'Cases', emoji: '📁', summary: 'Planned view of your own cases.', status: 'planned' },
+  { key: 'cases', category: 'account', label: 'Cases', emoji: '📁', summary: 'View official case records published to you by staff.', status: 'live' },
   { key: 'infractions', category: 'account', label: 'Infractions', emoji: '📋', summary: 'Planned personal infraction history.', status: 'planned' },
   { key: 'appeals', category: 'account', label: 'Appeals', emoji: '📝', summary: 'Review eligible cases and submit or track your own appeals.', status: 'live' },
   { key: 'birthdays', category: 'community', label: 'Birthdays', emoji: '🎂', summary: 'Manage your birthday and privacy settings.', status: 'live' },

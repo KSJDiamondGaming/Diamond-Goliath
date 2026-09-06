@@ -41,6 +41,7 @@ const {
 const { getWarningCountForUser, syncExpiredWarningsToCases } = require('./warns');
 const { canUseModAction, getStaffDisplay, hasModPermission, fetchTarget } = require('./permissions');
 const { getQuarantineState } = require('../../security/protection/quarantine');
+const caseCourt = require('./caseCourt');
 
 const DEFAULT_VIEW = 'actions';
 const CASES_PER_PAGE = 5;
@@ -380,7 +381,7 @@ async function buildDashboardPayload(discord, interaction, target, view = DEFAUL
   const embeds = []; const components = safeView === 'analytics' ? [] : [buildUserSelectRow()];
   if (safeView === 'actions') { embeds.push(buildActionsEmbed(interaction, target, stats, staffDisplay)); components.push(...buildActionRows(target, stats, interaction.member, interaction.guild)); }
   else if (safeView === 'intelligence') { embeds.push(buildIntelligenceEmbed(interaction, target, interaction.member, interaction.guild)); components.push(...buildIntelligenceRows(targetId, interaction.member, interaction.guild)); }
-  else if (safeView === 'cases') { if (!target) { embeds.push(baseEmbed(interaction.client, COLORS.PRIMARY).setTitle('📁 Member Cases').setDescription('Select a member to open their case workspace.')); } else { const pageData = getCasesPageData(interaction.guild.id, target.id, context); embeds.push(buildCasesEmbed(target, pageData.pageCases, pageData.page, pageData.totalPages, pageData.actionFilter, pageData.statusFilter)); components.push(...buildCasesPageButtons(target.id, pageData.page, pageData.totalPages, pageData.actionFilter, pageData.statusFilter), ...buildCaseFilterButtons(target.id, pageData.actionFilter, pageData.statusFilter, pageData.page)); } }
+  else if (safeView === 'cases') { const courtView = caseCourt.buildCourtDashboard(interaction, target); embeds.push(courtView.embed); components.push(...courtView.components); }
   else if (safeView === 'analytics') { const window = context.analyticsWindow; if (context.analyticsMode === 'moderator' && context.analyticsModeratorId) embeds.push(buildModeratorAnalyticsEmbed(interaction.guild, getModeratorAnalytics(interaction.guild.id, context.analyticsModeratorId, window), interaction.user?.id || null)); else embeds.push(buildAnalyticsOverviewEmbed(interaction.guild, getModerationAnalytics(interaction.guild.id, window))); components.push(...buildAnalyticsRows(window, context.analyticsMode, context.analyticsModeratorId, interaction.user?.id || null, context.analyticsReturnTargetId || 'none')); }
   components.push(...buildDashboardNav(targetId, safeView, interaction.member, interaction.guild, context));
   return { embeds, components: validateDashboardComponents(components, safeView) };

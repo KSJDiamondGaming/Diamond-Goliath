@@ -288,7 +288,7 @@ async function handleCourtInteraction(interaction) {
     const embed = new EmbedBuilder().setColor(0x5865F2).setTitle(wanted === 'review' ? '⚖️ Review Queue' : '📜 Published Records')
       .setDescription(matches.length ? matches.map((entry) => `**#${entry.caseId}** • Severity **${parseCourt(entry).severity}/5**\n${cleanExcerpt(parseCourt(entry).allegations, 160)}`).join('\n\n') : `No ${wanted === 'review' ? 'cases awaiting review' : 'published records'} for this member.`);
     const components = [];
-    if (matches.length) components.push(row(new StringSelectMenuBuilder().setCustomId(`mod_court_open:${value}`).setPlaceholder('Open a case file').addOptions(matches.slice(0, 25).map((entry) => ({ label: `Case #${entry.caseId}`, description: cleanExcerpt(parseCourt(entry).allegations, 80), value: String(entry.caseId), emoji: wanted === 'review' ? '⚖️' : '📜' }))));
+    if (matches.length) components.push(row(new StringSelectMenuBuilder().setCustomId(`mod_court_open:${value}`).setPlaceholder('Open a case file').addOptions(matches.slice(0, 25).map((entry) => ({ label: `Case #${entry.caseId}`, description: cleanExcerpt(parseCourt(entry).allegations, 80), value: String(entry.caseId), emoji: wanted === 'review' ? '⚖️' : '📜' })))));
     components.push(row(button(`mod_court_back:${value}`, 'Cases', '⬅️')));
     await interaction.update({ embeds: [embed], components });
     return true;

@@ -22,6 +22,7 @@ const userUtilities = require('./utilities');
 const profileDevelopmentPage = require('./profileDevelopmentPage');
 const { getAllCases } = require('../mod/storage');
 const { getAppealEligibility, getCaseAppeals, openExternalAppealFromCommand } = require('../mod/cases');
+const caseCourt = require('../mod/caseCourt');
 const {
   buildCategoryPanel,
   buildModulePanel,
@@ -663,6 +664,7 @@ async function handleUserPanelInteraction(interaction) {
     if (moduleKey === 'birthdays') return showBirthdays(interaction);
     if (moduleKey === 'social') return updatePanel(interaction, socialStudio.user.buildLanding(interaction));
     if (moduleKey === 'leveling') return showLeveling(interaction);
+    if (moduleKey === 'cases') return updatePanel(interaction, caseCourt.buildUserPublishedCasesPanel(interaction));
     if (moduleKey === 'appeals') return showUserAppeals(interaction);
     if (moduleKey === 'ping') return executeUtilityCommand(interaction, userUtilities.adapters.ping);
     if (moduleKey === 'help') return executeUtilityCommand(interaction, userUtilities.adapters.help);
@@ -683,6 +685,7 @@ async function handleUserPanelInteraction(interaction) {
     if (moduleKey === 'profile') return showProfile(interaction);
     if (moduleKey === 'birthdays') return showBirthdays(interaction);
     if (moduleKey === 'leveling') return showLeveling(interaction);
+    if (moduleKey === 'cases') return updatePanel(interaction, caseCourt.buildUserPublishedCasesPanel(interaction));
     if (moduleKey === 'appeals') return showUserAppeals(interaction);
     if (moduleKey === 'ping') return executeUtilityCommand(interaction, userUtilities.adapters.ping);
     if (moduleKey === 'help') return executeUtilityCommand(interaction, userUtilities.adapters.help);
