@@ -186,8 +186,19 @@ async function applyApprovedCourtAppealRemedy(interaction, modCase, fetchTarget)
   const target = typeof fetchTarget === 'function' ? await fetchTarget(guild, modCase.userId) : null;
 
   if (action === 'warn') {
+    const linkedWarning = linkedCaseId ? getCaseById(guild.id, linkedCaseId) : null;
     const removed = linkedCaseId ? deleteWarningByCaseId(guild.id, linkedCaseId) : false;
-    remedy = { attempted: true, action: 'remove-warning', ok: Boolean(removed), detail: removed ? `Warning Case #${linkedCaseId} removed.` : 'Linked warning record was already absent or unavailable.' };
+    const alreadyAbsent = Boolean(linkedCaseId && (!linkedWarning || linkedWarning.status !== 'active'));
+    remedy = {
+      attempted: true,
+      action: 'remove-warning',
+      ok: Boolean(removed) || alreadyAbsent,
+      detail: removed
+        ? `Warning Case #${linkedCaseId} removed.`
+        : alreadyAbsent
+          ? `Warning Case #${linkedCaseId} was already absent or inactive.`
+          : 'Linked warning record could not be removed.',
+    };
   } else if (action === 'timeout') {
     if (!target) remedy = { attempted: true, action: 'remove-timeout', ok: false, detail: 'Member not available to clear timeout.' };
     else {
@@ -201,8 +212,20 @@ async function applyApprovedCourtAppealRemedy(interaction, modCase, fetchTarget)
       remedy = { attempted: true, action: 'remove-quarantine', ok: Boolean(result?.success), detail: result?.success ? `Quarantine removed; restored ${result.restoredRoles || 0} role(s).` : String(result?.error || result?.reason || 'Failed to remove quarantine.').slice(0, 300) };
     }
   } else if (action === 'ban') {
-    try { await guild.bans.remove(modCase.userId, reason); remedy = { attempted: true, action: 'unban', ok: true, detail: 'Court-ordered ban removed.' }; }
-    catch (error) { remedy = { attempted: true, action: 'unban', ok: false, detail: String(error?.message || 'Failed to remove ban.').slice(0, 300) }; }
+    try {
+      await guild.bans.remove(modCase.userId, reason);
+      remedy = { attempted: true, action: 'unban', ok: true, detail: 'Court-ordered ban removed.' };
+    } catch (error) {
+      const errorCode = Number(error?.code || error?.rawError?.code || 0);
+      const errorText = String(error?.message || error?.rawError?.message || 'Failed to remove ban.');
+      const alreadyUnbanned = errorCode === 10026 || /unknown ban|not banned/i.test(errorText);
+      remedy = {
+        attempted: true,
+        action: 'unban',
+        ok: alreadyUnbanned,
+        detail: alreadyUnbanned ? 'Court-ordered ban was already absent.' : errorText.slice(0, 300),
+      };
+    }
   } else if (action === 'kick') {
     remedy = { attempted: false, action: 'kick', ok: true, detail: 'Kick cannot be automatically undone; the court decision has been reversed.' };
   } else if (action === 'no_action') {
