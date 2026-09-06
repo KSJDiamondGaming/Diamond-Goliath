@@ -23,7 +23,22 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Apply quarantine controls
-        run: python3 scripts/add-moderation-quarantine-once.py
+        run: |
+          python3 scripts/add-moderation-quarantine-once.py
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('src/core/administration/mod/panel.js')
+          text = p.read_text()
+          text = text.replace("createDangerButton(`mod_open_quarantine:${id}`, 'Quarantine', '🚫')", "createDangerButton(`mod_open_quarantine:${id}`, 'Quarantine', '☢️')")
+          text = text.replace("createSecondaryButton(`mod_remove_quarantine:${id}`, 'Remove Quarantine', '🔓')", "createSecondaryButton(`mod_remove_quarantine:${id}`, 'Clear Quarantine', '☢️')")
+          text = text.replace("createSecondaryButton(`mod_remove_warning:${id}`, 'Remove Warn', getEmoji('DELETE', '🗑️'))", "createSecondaryButton(`mod_remove_warning:${id}`, 'Clear Warn', '⚠️')")
+          p.write_text(text)
+
+          d = Path('docs/architecture/moderation-workspace.md')
+          docs = d.read_text()
+          docs = docs.replace('Clear Timeout, Remove Quarantine, or Remove Warn', 'Clear Timeout, Clear Quarantine, or Clear Warn')
+          d.write_text(docs)
+          PY
       - name: Validate source
         run: |
           node --check src/core/administration/mod/panel.js
