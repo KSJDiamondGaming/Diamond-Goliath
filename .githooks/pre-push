@@ -6,4 +6,4 @@ echo "🔎 Goliath pre-push: checking backend JavaScript syntax..."
 npm run syntax
 
 echo "🔎 Goliath pre-push: checking Duplicator runtime integrity..."
-node scripts/runtime-integrity.js
+node -e "const checks=[['./src/owner/dev/duplicator/core',['run','handleInteraction','assertAccess','snapshot','initializeBridge','getGuildDirectory']],['./src/owner/dev/duplicator/selective',['startCopy','handleInteraction']],['./src/owner/dev/duplicator',['run','handleInteraction','initializeBridge','getGuildDirectory']]];let failed=false;for(const [file,names] of checks){const mod=require(file);const missing=names.filter((name)=>typeof mod?.[name]!=='function');if(missing.length){failed=true;console.error('❌ '+file+' missing '+missing.join(', '));}else console.log('✅ '+file);}const duplicator=require('./src/owner/dev/duplicator');if(!duplicator.selective||typeof duplicator.selective!=='object'){failed=true;console.error('❌ ./src/owner/dev/duplicator selective export missing');}if(failed)process.exit(1);console.log('✅ Duplicator runtime integrity passed');"
