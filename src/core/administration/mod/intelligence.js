@@ -531,18 +531,15 @@ async function decorateScan(interaction, target, report) {
   const latestCase = report.cases?.[0] || null;
   const watchState = context.watch?.state || 'clear';
   const watchConfig = WATCH_STATES[watchState] || WATCH_STATES.clear;
-  const investigationWatch = report.investigation?.watched ? 'ON' : 'OFF';
-  const externalSummary = reputation.verifiedExternal
-    ? `**${reputation.verifiedExternal} verified**`
-    : 'No verified records';
+  const investigationWatch = report.investigation?.watched ? 'On' : 'Off';
 
   report.embed
     .setTitle(`🧠 Member Intelligence • ${target.user.tag}`)
     .setDescription([
-      `**Target:** ${target.user} (\`${target.id}\`)`,
-      'Evidence-led member overview for authorized management. Start with status and risk, then open a drill-down when more detail is needed.',
+      `**Target:** ${target.user} • ID **${target.id}**`,
+      'Evidence-led member overview for authorised management. Key intelligence and investigation state are summarised below.',
     ].join('\n\n'))
-    .setFooter({ text: `Scan ${report.scanId} • Scanned by ${interaction.user?.tag || interaction.user?.username || interaction.user?.id || 'Unknown'} • evidence-based intelligence` });
+    .setFooter({ text: `Scanned by ${interaction.user?.tag || interaction.user?.username || interaction.user?.id || 'Unknown'} • Evidence-based intelligence` });
 
   const riskLines = [
     `Risk **${context.risk.score}/100 • ${context.risk.label}**`,
@@ -551,7 +548,7 @@ async function decorateScan(interaction, target, report) {
   if (context.risk.reasons?.length) {
     riskLines.push(`Risk factors ${context.risk.reasons.slice(0, 4).map((item) => `**+${item.points}** ${item.reason}`).join(' • ')}`);
   } else {
-    riskLines.push('Risk factors **No verified risk factors**');
+    riskLines.push('**No verified risk factors**');
   }
   setOrReplaceField(report.embed, '🚦 Status & Risk', riskLines.join('\n'));
 
@@ -567,40 +564,57 @@ async function decorateScan(interaction, target, report) {
     ...(identity.displayNames || []),
   ].filter(Boolean).map((value) => String(value)));
   const previousIdentityValues = [...knownIdentityValues].filter((value) => !currentIdentityValues.has(value));
-  const identityEventCount = Array.isArray(identity.events) ? identity.events.length : 0;
-  const identityStatus = previousIdentityValues.length
-    ? `**${previousIdentityValues.length} previous name value(s)** • ${identityEventCount} recorded event(s)`
-    : '**No recorded identity changes**';
+  const identityChanges = (Array.isArray(identity.events) ? identity.events : []).filter((event) => {
+    if (event.event === 'user.identity.update') return true;
+    if (event.event !== 'member.update' && event.event !== 'member.scan.observed') return false;
+    const before = json(event.before_value, {});
+    const after = json(event.after_value, {});
+    const hasBeforeIdentity = before.username || before.globalName || before.displayName;
+    const hasAfterIdentity = after.username || after.globalName || after.displayName;
+    if (!hasBeforeIdentity || !hasAfterIdentity) return false;
+    return before.username !== after.username || before.globalName !== after.globalName || before.displayName !== after.displayName;
+  });
+  const identityChangeCount = Math.max(previousIdentityValues.length, identityChanges.length);
+  const latestIdentityChange = identityChanges[0]?.created_at || null;
+  const identityStatus = identityChangeCount
+    ? `**${identityChangeCount} change${identityChangeCount === 1 ? '' : 's'}**${latestIdentityChange ? ` • Last ${discordTime(latestIdentityChange, 'R')}` : ''}`
+    : '**No recorded changes**';
 
   setOrReplaceField(report.embed, '👤 Member', [
     `Username **${target.user.username}** • Display **${target.displayName || target.user.username}**`,
     `Created ${discordTime(target.user.createdAt || target.user.createdTimestamp, 'F')} • Joined ${discordTime(target.joinedAt || target.joinedTimestamp, 'F')}`,
     `Roles **${roles.length}** • Elevated permissions **${elevated.length ? elevated.join(', ') : 'None'}**`,
     `Timeout **${target.communicationDisabledUntilTimestamp ? discordTime(target.communicationDisabledUntilTimestamp, 'R') : 'None'}**`,
-    `Identity ${identityStatus}`,
+    `Identity: ${identityStatus}`,
   ].join('\n'));
 
   setOrReplaceField(report.embed, '⚖️ Moderation', [
     `Cases **${report.cases?.length || 0}** • Warnings **${localSummary.warningCount}** • Timeouts **${localSummary.timeouts}** • Bans **${localSummary.bans}**`,
     latestCase
-      ? `Latest **#${latestCase.caseId} • ${latestCase.action} • ${latestCase.status || 'active'}** — ${String(latestCase.reason || 'No reason').slice(0, 180)}`
-      : 'Latest **No recorded moderation cases**',
+      ? `Latest: **#${latestCase.caseId} • ${latestCase.action} • ${latestCase.status || 'active'}** — ${String(latestCase.reason || 'No reason').slice(0, 180)}`
+      : 'Latest: **No recorded moderation cases**',
   ].join('\n'));
 
   const investigationLines = [
-    `Investigation Watch **${investigationWatch}** • Notes **${report.investigation?.notes?.length || 0}**`,
-    `Link Evidence **${report.persistentLinks?.length || 0}** • Verified identity links **${context.confirmedLinks?.length || 0}**`,
+    `Watch **${report.investigation?.watched ? '🟢' : '⚪'} ${investigationWatch}** • Notes **${report.investigation?.notes?.length || 0}**`,
+    `Evidence **${report.persistentLinks?.length || 0}** • Verified Links **${context.confirmedLinks?.length || 0}**`,
   ];
   if (report.suspects?.length) investigationLines.push(`Suspected accounts **${report.suspects.length} match(es)** — open evidence/history before drawing a conclusion.`);
   setOrReplaceField(report.embed, '🔎 Investigation', investigationLines.join('\n'));
 
   const behaviourTrend = String(behavior.trend || 'stable').toLowerCase();
+  const behaviourLabel = behaviourTrend ? `${behaviourTrend.charAt(0).toUpperCase()}${behaviourTrend.slice(1)}` : 'Stable';
   const behaviourIcon = behaviourTrend === 'increasing' ? '🟠' : '🟢';
-  setOrReplaceField(report.embed, '🌐 Network & Behaviour', [
-    `Observed guilds **${history.length}** • Current **${currentGuilds}** • Former **${formerGuilds}** • Cross-guild cases **${context.network?.caseCount || 0}**`,
-    `External **${reputation.verifiedExternal || 0} verified** • **${reputation.submitted || 0} submitted** • **${reputation.unverified || 0} unverified**`,
-    `Behaviour ${behaviourIcon} **${behaviourTrend.toUpperCase()}** • **${behavior.windows?.d30?.total || 0} cases / 30d**`,
-  ].join('\n'));
+  const externalCount = Number(reputation.verifiedExternal || 0) + Number(reputation.submitted || 0) + Number(reputation.unverified || 0);
+  const networkLines = [
+    `Guilds **${history.length} observed • ${currentGuilds} current • ${formerGuilds} former**`,
+    `Cross-guild Cases **${context.network?.caseCount || 0}** • External Records **${externalCount}**`,
+  ];
+  if (externalCount > 0) {
+    networkLines.push(`External **${reputation.verifiedExternal || 0} verified • ${reputation.submitted || 0} submitted • ${reputation.unverified || 0} unverified**`);
+  }
+  networkLines.push(`Behaviour **${behaviourIcon} ${behaviourLabel} • ${behavior.windows?.d30?.total || 0} cases / 30d**`);
+  setOrReplaceField(report.embed, '🌐 Network & Behaviour', networkLines.join('\n'));
 
   const components = [
     new Discord.ActionRowBuilder().addComponents(
@@ -625,7 +639,7 @@ async function decorateScan(interaction, target, report) {
   if (report.access?.notes) evidence.push(new Discord.ButtonBuilder().setCustomId(`mod_scan_note:${target.id}`).setLabel('Add Note').setEmoji('📝').setStyle(Discord.ButtonStyle.Secondary));
   if (report.access?.watch) evidence.push(new Discord.ButtonBuilder()
     .setCustomId(`mod_scan_watch:${target.id}`)
-    .setLabel(report.investigation?.watched ? 'Investigation Watch: ON' : 'Investigation Watch: OFF')
+    .setLabel(report.investigation?.watched ? 'Watch: On' : 'Watch: Off')
     .setEmoji('👁️')
     .setStyle(report.investigation?.watched ? Discord.ButtonStyle.Danger : Discord.ButtonStyle.Secondary));
   evidence.push(new Discord.ButtonBuilder()
