@@ -26,10 +26,10 @@ jobs:
         run: node --check src/core/administration/mod/caseCourt.js
       - name: Install dependencies
         run: npm ci
+      - name: Remove one-off files before Doctor
+        run: rm -f .github/workflows/refine-case-court-once.yml scripts/refine-case-court-once.js
       - name: Run Doctor
         run: npm run doctor
-      - name: Remove one-off files
-        run: rm -f .github/workflows/refine-case-court-once.yml scripts/refine-case-court-once.js
       - name: Commit Case Court refinement
         run: |
           git config user.name 'github-actions[bot]'
