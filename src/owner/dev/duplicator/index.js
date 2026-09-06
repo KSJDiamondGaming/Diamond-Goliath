@@ -1,9 +1,13 @@
 'use strict';
 
 const {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
   ChannelType,
   Client,
   EmbedBuilder,
+  GuildChannel,
   GuildChannelManager,
   PermissionFlagsBits,
   PermissionOverwriteManager,
@@ -12,10 +16,12 @@ const {
 } = require('discord.js');
 const core = require('./core');
 const selective = require('./selective');
+const history = require('./history');
 
 const BOOTSTRAP_KEY = Symbol.for('goliath.duplicator.bridge-bootstrap');
 const OVERWRITE_PATCH_KEY = Symbol.for('goliath.duplicator.permission-overwrite-per-target');
 const CHANNEL_CREATE_PATCH_KEY = Symbol.for('goliath.duplicator.channel-create-compat');
+const CHANNEL_DELETE_PATCH_KEY = Symbol.for('goliath.duplicator.channel-delete-recovery');
 const ROLE_ORDER_PATCH_KEY = Symbol.for('goliath.duplicator.role-order');
 const SNAPSHOT_PATCH_KEY = Symbol.for('goliath.duplicator.snapshot-bot-role-remap');
 const roleOrderState = new WeakMap();
@@ -29,7 +35,7 @@ function temporaryBotOverwrite(guild) {
   const me = guild?.members?.me;
   if (!botId || !me) return null;
   let allow = 0n;
-  for (const bit of [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ManageChannels]) {
+  for (const bit of [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.ManageRoles]) {
     if (me.permissions?.has(bit)) allow |= bit;
   }
   return allow ? { id: botId, type: 1, allow, deny: 0n } : null;
@@ -46,14 +52,17 @@ function overwriteOptions(item) {
   return options;
 }
 
-// Snapshot correction for local-source copies. Remote snapshots retain their ordinary
-// source roles unless Discord marks them managed; this avoids guessing about custom roles.
+// Snapshot correction for local-source copies. Bot/operator ACLs are runtime control-plane
+// permissions, not portable server content. Carrying them to another environment can deny
+// the destination Goliath its own ManageChannels/ManageRoles access and strand copied
+// channels. Remap the bot role as a dependency, but omit source-bot role/member overwrites.
 if (!core[SNAPSHOT_PATCH_KEY]) {
   const originalSnapshot = core.snapshot.bind(core);
   Object.defineProperty(core, SNAPSHOT_PATCH_KEY, { value: true });
   core.snapshot = function goliathDuplicatorSnapshot(guild, selectedOptions) {
     const snap = originalSnapshot(guild, selectedOptions);
     const sourceBot = guild.members.me;
+    const sourceBotId = guild.client.user?.id || null;
     const botRoleIds = new Set(sourceBot?.roles?.cache?.keys?.() || []);
     const pseudoManaged = [];
 
@@ -64,7 +73,7 @@ if (!core[SNAPSHOT_PATCH_KEY]) {
       pseudoManaged.push({
         ...role,
         managed: true,
-        tags: { botId: guild.client.user?.id || null, integrationId: null, subscriptionListingId: null },
+        tags: { botId: sourceBotId, integrationId: null, subscriptionListingId: null },
         remapOnly: true,
       });
       return false;
@@ -73,9 +82,25 @@ if (!core[SNAPSHOT_PATCH_KEY]) {
     const managedById = new Map((snap.managedRoles || []).map((role) => [role.id, role]));
     for (const role of pseudoManaged) managedById.set(role.id, role);
     snap.managedRoles = [...managedById.values()];
+
+    const operatorRoleIds = new Set(pseudoManaged.map((role) => String(role.id)));
+    if (operatorRoleIds.size || sourceBotId) {
+      snap.channels = (snap.channels || []).map((channel) => ({
+        ...channel,
+        permissionOverwrites: (channel.permissionOverwrites || []).filter((overwrite) => {
+          const type = Number(overwrite.type);
+          const id = String(overwrite.id);
+          if (type === 0 && operatorRoleIds.has(id)) return false;
+          if (type === 1 && sourceBotId && id === String(sourceBotId)) return false;
+          return true;
+        }),
+      }));
+    }
+
     if (snap.stats) {
       snap.stats.roles = snap.roles.length;
       snap.stats.managedRoles = snap.managedRoles.length;
+      snap.stats.permissionOverwrites = (snap.channels || []).reduce((sum, channel) => sum + (channel.permissionOverwrites || []).length, 0);
     }
     return snap;
   };
@@ -129,6 +154,55 @@ if (GuildChannelManager?.prototype?.create && !GuildChannelManager.prototype[CHA
       }
       return originalCreate.call(this, minimal);
     }
+  };
+}
+
+// Bulk Delete recovery. Exact-copy permissions can legitimately make a copied channel
+// restrictive. If Goliath still has ManageRoles there, repair only its own member access
+// long enough to perform the requested delete. If Discord has removed both ManageChannels
+// and ManageRoles, fail with an actionable explanation instead of a bare 50013 count.
+if (GuildChannel?.prototype?.delete && !GuildChannel.prototype[CHANNEL_DELETE_PATCH_KEY]) {
+  const originalDelete = GuildChannel.prototype.delete;
+  Object.defineProperty(GuildChannel.prototype, CHANNEL_DELETE_PATCH_KEY, { value: true });
+  GuildChannel.prototype.delete = async function goliathDuplicatorBulkDelete(reason) {
+    const reasonText = String(reason || '');
+    if (!reasonText.startsWith('Goliath Duplicator bulk delete by')) {
+      return originalDelete.call(this, reason);
+    }
+
+    const guild = this.guild;
+    const me = guild?.members?.me;
+    if (!guild || !me) return originalDelete.call(this, reason);
+
+    const administrator = Boolean(me.permissions?.has(PermissionFlagsBits.Administrator));
+    let effective = this.permissionsFor?.(me) || me.permissions;
+    let canDelete = administrator || Boolean(effective?.has(PermissionFlagsBits.ManageChannels));
+
+    if (!canDelete) {
+      const canRepair = Boolean(effective?.has(PermissionFlagsBits.ManageRoles));
+      if (canRepair && this.permissionOverwrites?.edit) {
+        await this.permissionOverwrites.edit(me, {
+          ViewChannel: true,
+          ManageChannels: true,
+          ManageRoles: true,
+        }, `Goliath Duplicator bulk delete access repair by ${me.id}`);
+        const refreshed = await guild.channels.fetch(this.id).catch(() => null);
+        effective = refreshed?.permissionsFor?.(me) || this.permissionsFor?.(me) || me.permissions;
+        canDelete = administrator || Boolean(effective?.has(PermissionFlagsBits.ManageChannels));
+      }
+    }
+
+    if (!canDelete) {
+      const hasManageRoles = Boolean(effective?.has(PermissionFlagsBits.ManageRoles));
+      const error = new Error(
+        `Cannot delete ${this.name}: Goliath lacks ManageChannels in this channel${hasManageRoles ? '' : ' and cannot repair access because ManageRoles is also denied'}. ` +
+        'Grant the Goliath bot Administrator, or allow Manage Channels + Manage Roles, then retry Bulk Delete.',
+      );
+      error.code = 50013;
+      throw error;
+    }
+
+    return originalDelete.call(this, reason);
   };
 }
 
@@ -306,6 +380,38 @@ function installRunningState(interaction) {
   };
 }
 
+function bulkDeleteFailureDetails(interaction) {
+  const entries = history.list(interaction.guild?.id, 5);
+  const latest = entries.find((item) => item.type === 'bulk-delete');
+  if (!latest || !(latest.failed || []).length) return null;
+  const failures = latest.failed || [];
+  const permissionFailures = failures.filter((item) => /permission|ManageChannels|50013/i.test(String(item.error || ''))).length;
+  const lines = failures.slice(0, 6).map((item) => `• **${item.name || item.id}** — ${item.error || 'Delete failed'}`);
+  const sessionId = String(interaction.customId || '').split(':')[1] || '';
+  return {
+    embeds: [new EmbedBuilder()
+      .setColor(0xed4245)
+      .setTitle('❌ Bulk Delete Failed')
+      .setDescription([
+        `Deleted **${latest.deletedCount || 0}/${latest.requestedCount || 0}** requested objects.`,
+        `Already missing: **${latest.missing?.length || 0}**`,
+        `Failed: **${failures.length}**`,
+        permissionFailures ? `Permission-blocked: **${permissionFailures}**` : null,
+        '',
+        '**Why:**',
+        ...lines,
+        failures.length > 6 ? `…and ${failures.length - 6} more.` : null,
+        '',
+        permissionFailures ? '**Fix:** Give Goliath Administrator, or allow Manage Channels + Manage Roles on the blocked channels/categories, then retry. New Duplicator snapshots now exclude source-bot ACLs so future copies cannot copy Goliath-specific lockouts across environments.' : null,
+        `History record: \`${latest.id}\``,
+      ].filter(Boolean).join('\n'))
+      .setTimestamp()],
+    components: sessionId ? [new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`dupselect:${sessionId}:home`).setLabel('Back to Duplicator').setStyle(ButtonStyle.Secondary),
+    )] : [],
+  };
+}
+
 async function run(interaction) {
   const action = interaction?.options?.getString?.('action', true);
   if (action === 'copy') return selective.startCopy(interaction);
@@ -314,7 +420,14 @@ async function run(interaction) {
 
 async function handleInteraction(interaction) {
   installRunningState(interaction);
-  if (await selective.handleInteraction(interaction)) return true;
+  const isBulkDeleteNow = Boolean(interaction?.customId?.startsWith('dupselect:') && interaction.customId.endsWith(':delete-now'));
+  if (await selective.handleInteraction(interaction)) {
+    if (isBulkDeleteNow) {
+      const details = bulkDeleteFailureDetails(interaction);
+      if (details && (interaction.deferred || interaction.replied)) await interaction.editReply(details).catch(() => null);
+    }
+    return true;
+  }
   return core.handleInteraction(interaction);
 }
 
