@@ -250,22 +250,21 @@ async function applyApprovedAppealRemedy(interaction, modCase, fetchTarget) {
   if (modCase.action === 'case' && modCase.metadata?.court) return applyApprovedCourtAppealRemedy(interaction, modCase, fetchTarget);
   if (modCase.action === 'warn') {
     const removed = deleteWarningByCaseId(guild.id, modCase.caseId);
+    // Desired end state is warning absent. Treat an already-absent warning as idempotent success.
     updateCaseStatus(guild.id, modCase.caseId, 'reversed', actorId);
-    return { attempted: true, action: 'remove-warning', ok: Boolean(removed), detail: removed ? 'Warning removed.' : 'Warning record was already absent.' };
+    return { attempted: true, action: 'remove-warning', ok: true, detail: removed ? 'Warning removed.' : 'Warning record was already absent; no further warning action was required.' };
   }
   if (modCase.action === 'timeout') {
     const target = typeof fetchTarget === 'function' ? await fetchTarget(guild, modCase.userId) : null;
     if (!target) {
-      updateCaseStatus(guild.id, modCase.caseId, 'reversed', actorId);
-      return { attempted: true, action: 'remove-timeout', ok: false, detail: 'Member not available to clear timeout; case status reversed.' };
+      return { attempted: true, action: 'remove-timeout', ok: false, detail: 'Member not available to clear timeout. Case remains active until the remedy succeeds.' };
     }
     try {
       await target.timeout(null, reason);
       updateCaseStatus(guild.id, modCase.caseId, 'reversed', actorId);
       return { attempted: true, action: 'remove-timeout', ok: true, detail: 'Timeout cleared.' };
     } catch (error) {
-      updateCaseStatus(guild.id, modCase.caseId, 'reversed', actorId);
-      return { attempted: true, action: 'remove-timeout', ok: false, detail: String(error?.message || 'Failed to clear timeout.').slice(0, 300) };
+      return { attempted: true, action: 'remove-timeout', ok: false, detail: `${String(error?.message || 'Failed to clear timeout.').slice(0, 260)} Case remains active until the remedy succeeds.` };
     }
   }
   if (modCase.action === 'ban') {
@@ -274,8 +273,13 @@ async function applyApprovedAppealRemedy(interaction, modCase, fetchTarget) {
       updateCaseStatus(guild.id, modCase.caseId, 'reversed', actorId);
       return { attempted: true, action: 'unban', ok: true, detail: 'Ban removed.' };
     } catch (error) {
-      updateCaseStatus(guild.id, modCase.caseId, 'reversed', actorId);
-      return { attempted: true, action: 'unban', ok: false, detail: String(error?.message || 'Failed to remove ban.').slice(0, 300) };
+      const message = String(error?.message || 'Failed to remove ban.');
+      const alreadyAbsent = /unknown ban|not banned|10026/i.test(message);
+      if (alreadyAbsent) {
+        updateCaseStatus(guild.id, modCase.caseId, 'reversed', actorId);
+        return { attempted: true, action: 'unban', ok: true, detail: 'Ban was already absent; desired appeal remedy state is satisfied.' };
+      }
+      return { attempted: true, action: 'unban', ok: false, detail: `${message.slice(0, 260)} Case remains active until the remedy succeeds.` };
     }
   }
   updateCaseStatus(guild.id, modCase.caseId, 'reversed', actorId);
