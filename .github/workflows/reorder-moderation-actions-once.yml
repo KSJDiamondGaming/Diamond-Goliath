@@ -1,0 +1,92 @@
+name: Reorder Moderation Actions Once
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - '.github/workflows/reorder-moderation-actions-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Reorder moderation workspace controls
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/core/administration/mod/panel.js')
+          text = path.read_text()
+          start = text.index('function buildActionRows(target, stats, member, guild) {')
+          end = text.index('\nfunction buildIntelligenceRows(', start)
+
+          replacement = r'''function buildActionRows(target, stats, member, guild) {
+            const id = target?.id || 'none';
+            const p = actionPermissions(member, guild);
+            const disabled = !target;
+            const quarantined = targetIsQuarantined(guild, target);
+
+            // Row 2: primary moderation actions. Keep this order consistent across the workspace.
+            const actionRow = [];
+            if (p.warn) actionRow.push(createSecondaryButton(`mod_open_warn:${id}`, 'Warn', getEmoji('WARNING', '⚠️')).setDisabled(disabled));
+            if (p.timeout) actionRow.push(createSecondaryButton(`mod_open_timeout:${id}`, 'Timeout', getEmoji('TIMEOUT', '⏳')).setDisabled(disabled));
+            if (p.quarantine) actionRow.push(createDangerButton(`mod_open_quarantine:${id}`, 'Quarantine', '☢️').setDisabled(disabled || quarantined));
+            if (p.kick) actionRow.push(createDangerButton(`mod_open_kick:${id}`, 'Kick', getEmoji('KICK', '👢')).setDisabled(disabled));
+            if (p.ban) actionRow.push(createDangerButton(`mod_open_ban:${id}`, 'Ban', getEmoji('BAN', '🔨')).setDisabled(disabled));
+
+            // Row 3: reversal / clear actions.
+            const clearRow = [];
+            if (p.removeTimeout) clearRow.push(createSecondaryButton(`mod_remove_timeout:${id}`, 'Clear Timeout', '⌛').setDisabled(disabled || !targetHasActiveTimeout(target)));
+            if (p.removeQuarantine) clearRow.push(createSecondaryButton(`mod_remove_quarantine:${id}`, 'Clear Quarantine', '☢️').setDisabled(disabled || !quarantined));
+            if (p.removeWarning) clearRow.push(createSecondaryButton(`mod_remove_warning:${id}`, 'Clear Warn', '⚠️').setDisabled(disabled || Number(stats?.warningCount || 0) <= 0));
+
+            // Row 4: workspace views.
+            const viewRow = [];
+            if (canViewDashboardSection(member, guild, 'intelligence')) viewRow.push(new ButtonBuilder().setCustomId(`mod_dashboard:${id}:intelligence`).setLabel('🧠 Intelligence').setStyle(ButtonStyle.Secondary).setDisabled(disabled));
+            if (canViewDashboardSection(member, guild, 'cases')) viewRow.push(new ButtonBuilder().setCustomId(`mod_dashboard:${id}:cases`).setLabel('📁 Cases').setStyle(ButtonStyle.Secondary).setDisabled(disabled));
+            if (canViewDashboardSection(member, guild, 'analytics')) viewRow.push(new ButtonBuilder().setCustomId(`mod_dashboard:${id}:analytics`).setLabel('📊 Analytics').setStyle(ButtonStyle.Secondary));
+
+            return [buttonRow(actionRow), buttonRow(clearRow), buttonRow(viewRow)].filter(Boolean);
+          }'''
+
+          path.write_text(text[:start] + replacement + text[end:])
+          PY
+
+      - name: Validate source
+        run: node --check src/core/administration/mod/panel.js
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Doctor
+        run: npm run doctor
+
+      - name: Remove one-off workflow
+        run: rm -f .github/workflows/reorder-moderation-actions-once.yml
+
+      - name: Commit moderation layout
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/core/administration/mod/panel.js .github/workflows/reorder-moderation-actions-once.yml
+          if git diff --cached --quiet; then
+            echo 'No changes required.'
+            exit 0
+          fi
+          git commit -m 'refactor(mod): reorder moderation workspace controls'
+          git push origin HEAD:dev
