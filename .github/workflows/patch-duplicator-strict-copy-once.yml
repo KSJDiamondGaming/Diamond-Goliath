@@ -22,52 +22,9 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Repair staged patch script parser
-        shell: bash
+      - name: Repair staged patch runner
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path('scripts/patch-duplicator-strict-copy-once.js')
-          s = p.read_text()
-          start_marker = "selective = replaceRange(selective, 'function resultPayload', 'function inferOutcome'"
-          end_marker = "fs.writeFileSync(selectivePath, selective);"
-          start = s.index(start_marker)
-          end = s.index(end_marker, start)
-          replacement = r'''selective = replaceRange(selective, 'function resultPayload', 'function inferOutcome', `function resultPayload(session, response, manifest) {
-  const unresolvedRoles = manifest.roles.filter((item) => item.status !== 'mapped').length;
-  const unresolvedChannels = manifest.channels.filter((item) => item.status !== 'mapped').length;
-  const status = String(response.log?.status || 'unknown');
-  const outcome = manifest.outcome || copyOutcome(response, { roleMappings: manifest.roles, channelMappings: manifest.channels });
-  const ok = outcome === 'success';
-  const failed = outcome === 'failed';
-  const verification = response.log?.verification || {};
-  const title = ok ? '✅ Selective Copy Verified' : failed ? (status === 'blocked-preflight' ? '🛑 Selective Copy Blocked' : '❌ Selective Copy Failed') : '⚠️ Selective Copy Partial';
-  const color = ok ? 0x22c55e : failed ? 0xed4245 : 0xf59e0b;
-  return {
-    embeds: [embed(title, [
-      '**Transfer:** ' + manifest.id,
-      '**Destination:** ' + (manifest.destinationGuildName || manifest.destinationGuildId) + ' (' + manifest.destinationGuildId + ')',
-      '**Status:** ' + status,
-      '**Outcome:** ' + outcome.toUpperCase(),
-      '',
-      'Transfer plan: Categories ' + manifest.stats.categories + ' • Channels ' + manifest.stats.channels + ' • Required Roles ' + (manifest.stats.roleDependencies ?? manifest.stats.roles) + ' • Permission Overwrites ' + manifest.stats.permissionOverwrites,
-      'Manifest mapping: Roles ' + (manifest.roles.length - unresolvedRoles) + '/' + manifest.roles.length + ' • Structure ' + (manifest.channels.length - unresolvedChannels) + '/' + manifest.channels.length,
-      verification.structureExpected != null ? 'Engine verification: Structure ' + (verification.structureMapped || 0) + '/' + verification.structureExpected + ' • Permissions ' + (verification.permissionOverwritesVerified || 0) + '/' + (verification.permissionOverwritesExpected || 0) + ' • Roles ' + (verification.roleMappingsVerified || 0) + '/' + (verification.roleMappingsExpected || 0) : null,
-      '',
-      failed && status === 'blocked-preflight' ? '**No destination mutation was started because exact-copy preflight failed.**' : 'This transfer is permanently recorded in **Transfer History** with source → destination IDs and source permission data.',
-      ...(manifest.warnings || []).slice(0, 8).map((warning) => '⚠️ ' + warning),
-    ].filter(Boolean).join('\\n'), color)],
-    components: [new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(componentId(session, 'manifest-last')).setLabel('View Transfer Manifest').setEmoji('📜').setStyle(ButtonStyle.Primary),
-      new ButtonBuilder().setCustomId(componentId(session, 'home')).setLabel('New Transfer').setStyle(ButtonStyle.Secondary),
-    )],
-  };
-}
-`, 'selective result payload');
-
-'''
-          p.write_text(s[:start] + replacement + s[end:])
-          PY
+          node scripts/fix-duplicator-strict-patch-runner-once.js
           node --check scripts/patch-duplicator-strict-copy-once.js
       - name: Apply strict Duplicator repair
         run: node scripts/patch-duplicator-strict-copy-once.js
@@ -76,8 +33,8 @@ jobs:
           node --check src/owner/dev/duplicator/core.js
           node --check src/owner/dev/duplicator/selective.js
           node --check src/owner/dev/duplicator/index.js
-      - name: Remove temporary patch script before doctor
-        run: rm -f scripts/patch-duplicator-strict-copy-once.js
+      - name: Remove temporary patch scripts before doctor
+        run: rm -f scripts/patch-duplicator-strict-copy-once.js scripts/fix-duplicator-strict-patch-runner-once.js
       - name: Full project doctor
         run: npm run doctor
       - name: Build dashboard
