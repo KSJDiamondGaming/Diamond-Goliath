@@ -197,23 +197,27 @@ function buildActionRows(target, stats, member, guild) {
   const disabled = !target;
   const quarantined = targetIsQuarantined(guild, target);
 
-  const row1 = [];
-  if (canViewDashboardSection(member, guild, 'intelligence')) row1.push(new ButtonBuilder().setCustomId(`mod_dashboard:${id}:intelligence`).setLabel('🧠 Intelligence').setStyle(ButtonStyle.Secondary).setDisabled(disabled));
-  if (canViewDashboardSection(member, guild, 'cases')) row1.push(new ButtonBuilder().setCustomId(`mod_dashboard:${id}:cases`).setLabel('📁 Cases').setStyle(ButtonStyle.Secondary).setDisabled(disabled));
-  if (p.timeout) row1.push(createSecondaryButton(`mod_open_timeout:${id}`, 'Timeout', getEmoji('TIMEOUT', '⏳')).setDisabled(disabled));
-  if (p.warn) row1.push(createSecondaryButton(`mod_open_warn:${id}`, 'Warn', getEmoji('WARNING', '⚠️')).setDisabled(disabled));
+  // Row 2: primary moderation actions. Keep this order consistent across the workspace.
+  const actionRow = [];
+  if (p.warn) actionRow.push(createSecondaryButton(`mod_open_warn:${id}`, 'Warn', getEmoji('WARNING', '⚠️')).setDisabled(disabled));
+  if (p.timeout) actionRow.push(createSecondaryButton(`mod_open_timeout:${id}`, 'Timeout', getEmoji('TIMEOUT', '⏳')).setDisabled(disabled));
+  if (p.quarantine) actionRow.push(createDangerButton(`mod_open_quarantine:${id}`, 'Quarantine', '☢️').setDisabled(disabled || quarantined));
+  if (p.kick) actionRow.push(createDangerButton(`mod_open_kick:${id}`, 'Kick', getEmoji('KICK', '👢')).setDisabled(disabled));
+  if (p.ban) actionRow.push(createDangerButton(`mod_open_ban:${id}`, 'Ban', getEmoji('BAN', '🔨')).setDisabled(disabled));
 
-  const row2 = [];
-  if (p.kick) row2.push(createDangerButton(`mod_open_kick:${id}`, 'Kick', getEmoji('KICK', '👢')).setDisabled(disabled));
-  if (p.quarantine) row2.push(createDangerButton(`mod_open_quarantine:${id}`, 'Quarantine', '☢️').setDisabled(disabled || quarantined));
-  if (p.ban) row2.push(createDangerButton(`mod_open_ban:${id}`, 'Ban', getEmoji('BAN', '🔨')).setDisabled(disabled));
+  // Row 3: reversal / clear actions.
+  const clearRow = [];
+  if (p.removeTimeout) clearRow.push(createSecondaryButton(`mod_remove_timeout:${id}`, 'Clear Timeout', '⌛').setDisabled(disabled || !targetHasActiveTimeout(target)));
+  if (p.removeQuarantine) clearRow.push(createSecondaryButton(`mod_remove_quarantine:${id}`, 'Clear Quarantine', '☢️').setDisabled(disabled || !quarantined));
+  if (p.removeWarning) clearRow.push(createSecondaryButton(`mod_remove_warning:${id}`, 'Clear Warn', '⚠️').setDisabled(disabled || Number(stats?.warningCount || 0) <= 0));
 
-  const row3 = [];
-  if (p.removeTimeout) row3.push(createSecondaryButton(`mod_remove_timeout:${id}`, 'Clear Timeout', getEmoji('SUCCESS', '✅')).setDisabled(disabled || !targetHasActiveTimeout(target)));
-  if (p.removeQuarantine) row3.push(createSecondaryButton(`mod_remove_quarantine:${id}`, 'Clear Quarantine', '☢️').setDisabled(disabled || !quarantined));
-  if (p.removeWarning) row3.push(createSecondaryButton(`mod_remove_warning:${id}`, 'Clear Warn', '⚠️').setDisabled(disabled || Number(stats?.warningCount || 0) <= 0));
+  // Row 4: workspace views.
+  const viewRow = [];
+  if (canViewDashboardSection(member, guild, 'intelligence')) viewRow.push(new ButtonBuilder().setCustomId(`mod_dashboard:${id}:intelligence`).setLabel('🧠 Intelligence').setStyle(ButtonStyle.Secondary).setDisabled(disabled));
+  if (canViewDashboardSection(member, guild, 'cases')) viewRow.push(new ButtonBuilder().setCustomId(`mod_dashboard:${id}:cases`).setLabel('📁 Cases').setStyle(ButtonStyle.Secondary).setDisabled(disabled));
+  if (canViewDashboardSection(member, guild, 'analytics')) viewRow.push(new ButtonBuilder().setCustomId(`mod_dashboard:${id}:analytics`).setLabel('📊 Analytics').setStyle(ButtonStyle.Secondary));
 
-  return [buttonRow(row1), buttonRow(row2), buttonRow(row3)].filter(Boolean);
+  return [buttonRow(actionRow), buttonRow(clearRow), buttonRow(viewRow)].filter(Boolean);
 }
 function buildIntelligenceRows(targetId, member, guild) {
   if (!targetId) return [];
