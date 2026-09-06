@@ -659,7 +659,7 @@ function bulkDeleteAccessState(channel, me) {
 async function recoverBulkDeleteAccess(guild, channel, me, actorId) {
   let current = channel;
   let state = bulkDeleteAccessState(current, me);
-  if (state.administrator || (state.viewChannel && state.manageChannels)) return { ok: true, channel: current, repaired: false, state };
+  if (state.administrator || state.manageChannels) return { ok: true, channel: current, repaired: false, state };
 
   const reason = `Goliath Duplicator bulk delete access repair by ${actorId}`;
   const tryRepair = async (target) => {
@@ -690,12 +690,12 @@ async function recoverBulkDeleteAccess(guild, channel, me, actorId) {
   if (current.parent) await tryRepair(current.parent);
   current = await guild.channels.fetch(current.id).catch(() => current);
   state = bulkDeleteAccessState(current, me);
-  if (state.administrator || (state.viewChannel && state.manageChannels)) return { ok: true, channel: current, repaired: true, state };
+  if (state.administrator || state.manageChannels) return { ok: true, channel: current, repaired: true, state };
 
   await tryRepair(current);
   current = await guild.channels.fetch(current.id).catch(() => current);
   state = bulkDeleteAccessState(current, me);
-  return { ok: state.administrator || (state.viewChannel && state.manageChannels), channel: current, repaired: true, state };
+  return { ok: state.administrator || state.manageChannels, channel: current, repaired: true, state };
 }
 
 async function deleteIds(interaction, session, ids, sourceManifestId = null) {
@@ -721,7 +721,7 @@ async function deleteIds(interaction, session, ids, sourceManifestId = null) {
       blocked.push({
         id: channel.id,
         name: channel.name,
-        error: 'Preflight blocked: Missing Access. Goliath needs View Channel + Manage Channels on this target, or Administrator at server level.',
+        error: `Preflight blocked: Goliath lacks Manage Channels on this target${access.state?.viewChannel ? '' : ' (View Channel is also denied)'}. Administrator also satisfies this requirement.`,
       });
     }
   }
@@ -732,7 +732,7 @@ async function deleteIds(interaction, session, ids, sourceManifestId = null) {
       status: 'blocked-preflight', outcome: 'failed', blockedPreflight: true,
       requestedCount: requestedIds.length, deletedCount: 0, deleted: [], missing, failed: blocked,
       sourceManifestId,
-      requiredAction: 'Grant Goliath Administrator temporarily, or restore View Channel + Manage Channels on every blocked channel/category, then retry. No selected channel was deleted because preflight failed.',
+      requiredAction: 'Grant Goliath Administrator temporarily, or restore Manage Channels on every blocked channel/category, then retry. View Channel is not required for channel deletion when Manage Channels is effective. No selected channel was deleted because preflight failed.',
     }, interaction.guild);
   }
 
