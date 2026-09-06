@@ -175,7 +175,7 @@ if (PermissionOverwriteManager?.prototype?.set && !PermissionOverwriteManager.pr
   PermissionOverwriteManager.prototype.set = async function goliathDuplicatorPermissionSet(overwrites, reason) {
     const reasonText = String(reason || '');
     const channel = this.channel;
-    const isDuplicatorTransfer = reasonText.startsWith('Goliath duplicator: least-privilege channel/category permissions');
+    const isDuplicatorTransfer = reasonText.startsWith('Goliath duplicator: least-privilege channel/category permissions') || reasonText.startsWith('Goliath duplicator: exact channel/category permissions');
     if (!isDuplicatorTransfer || !channel?.guild) return originalSet.call(this, overwrites, reason);
 
     const expected = Array.isArray(overwrites) ? [...overwrites] : [...(overwrites || [])];
