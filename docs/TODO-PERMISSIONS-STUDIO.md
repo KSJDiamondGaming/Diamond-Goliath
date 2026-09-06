@@ -1,6 +1,6 @@
 # Permissions Studio — Backlog
 
-Status: Planned after Server Duplicator permission-copy reliability is confirmed.
+Status: Planned after Server Duplicator permission-copy reliability is confirmed. The DEV Duplicator now has strict exact-copy preflight/verification and shared cross-environment guild selectors restored; final Discord runtime verification is still required before this prerequisite is marked complete.
 
 Goal: Build a bulk Discord category/channel permission editor for Goliath.
 
