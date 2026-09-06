@@ -43,3 +43,5 @@ git push origin production
 npm run dev
 
 Validated one-shot source updates must finish their checks and land as a clean source commit before the normal dev deployment is triggered.
+
+GitHub Actions note: commits pushed by a one-off workflow with the repository GITHUB_TOKEN do not automatically start another workflow run. After a one-off workflow lands validated source changes, ensure a normal dev-triggering commit or manual Deploy Goliath dispatch runs so the validated commit is actually deployed to the VPS.
