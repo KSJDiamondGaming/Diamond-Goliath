@@ -5,8 +5,8 @@ The Discord moderation UI uses one canonical selected-member workspace.
 ## Flow
 
 1. Select a member from the user dropdown.
-2. Apply direct moderation actions: Warn, Timeout, Kick, or Ban.
-3. Use reversal controls only when state permits: Remove Warn or Clear Timeout.
+2. Apply direct moderation actions: Warn, Timeout, Kick, Quarantine, or Ban.
+3. Use reversal controls only when state permits: Clear Timeout, Clear Quarantine, or Clear Warn.
 4. Open Intelligence or Cases for deeper member context.
 5. Back is always isolated on the final navigation row and exits to Administration.
 

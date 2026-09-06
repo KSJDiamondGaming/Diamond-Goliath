@@ -17,6 +17,7 @@ const { getWarningCountForUser, syncExpiredWarningsToCases, showWarningModal, sh
 const { openCaseTool, handleCaseAction, submitCaseModal, handleExternalAppealInteraction } = require('./cases');
 const { openCaseSearch, handleCaseSearchAction, handleCaseSearchSelect, handleCaseSearchModal } = require('./caseSearch');
 const memberIntelligence = require('./intelligence');
+const { quarantineMember, restoreQuarantinedMember, getQuarantineState } = require('../../security/protection/quarantine');
 const {
   renderDashboard,
   openExportModal,
@@ -29,7 +30,7 @@ const {
 
 const PUNISHMENT_ACTIONS = new Set(['timeout', 'kick', 'ban']);
 const BULK_ACTIONS = new Set(['warn', 'timeout', 'kick', 'ban']);
-const OPEN_ACTIONS = new Set(['warn', ...PUNISHMENT_ACTIONS]);
+const OPEN_ACTIONS = new Set(['warn', 'quarantine', ...PUNISHMENT_ACTIONS]);
 const CONFIRM_LOCKS = new Set();
 function isModCustomId(customId) { const id = String(customId || ''); return id.startsWith('mod_') || id.startsWith('mod:'); }
 function isExternalAppealCustomId(customId) { const id = String(customId || ''); return id === 'mod_appeal_lookup' || id === 'mod_appeal_lookup_submit' || id.startsWith('mod_appeal_external:') || id.startsWith('mod_appeal_external_submit:'); }
@@ -209,6 +210,13 @@ function buildInvestigationNoteModal(targetId) {
   return new Discord.ModalBuilder().setCustomId(`mod_scan_note_submit:${targetId}`).setTitle('Add Investigation Note').addComponents(
     new Discord.ActionRowBuilder().addComponents(
       new Discord.TextInputBuilder().setCustomId('note').setLabel('Investigation note').setStyle(Discord.TextInputStyle.Paragraph).setRequired(true).setMinLength(2).setMaxLength(1000).setPlaceholder('Record relevant context, observations, or why this account needs review.')
+    )
+  );
+}
+function buildQuarantineModal(targetId) {
+  return new Discord.ModalBuilder().setCustomId(`mod_submit_quarantine:${targetId}`).setTitle('Quarantine Member').addComponents(
+    new Discord.ActionRowBuilder().addComponents(
+      new Discord.TextInputBuilder().setCustomId('reason').setLabel('Reason').setStyle(Discord.TextInputStyle.Paragraph).setRequired(true).setMinLength(2).setMaxLength(500).setPlaceholder('Why is this member being quarantined?')
     )
   );
 }
@@ -655,9 +663,27 @@ async function handleMemberScanButton(i) {
 
 async function showPunishmentModal(i, action, targetId) { if (!PUNISHMENT_ACTIONS.has(action)) return false; const target = await requireModeratableTarget(i, targetId, action); if (!target) return true; await i.showModal(buildPunishmentModal(action, target.id)); return true; }
 async function requestRemoveTimeout(i, targetId) { const target = await requireModeratableTarget(i, targetId, 'remove_timeout'); if (!target) return true; return createConfirmation(i, target.id, 'remove-timeout', {}, `✅ Remove timeout from **${target.user.tag}**?`); }
-async function routeActionRequest(i, action, targetId) { if (action === 'warn') return showWarningModal(i, targetId); if (action === 'remove-warning') return showRemoveWarningModal(i, targetId); if (action === 'remove-timeout') return requestRemoveTimeout(i, targetId); if (PUNISHMENT_ACTIONS.has(action)) return showPunishmentModal(i, action, targetId); return false; }
+async function showQuarantineModal(i, targetId) {
+  const target = await requireModeratableTarget(i, targetId, 'quarantine');
+  if (!target) return true;
+  if (getQuarantineState(i.guild.id)?.users?.[target.id]) return safeReply(i, { content: `⚠️ **${target.user.tag}** is already quarantined.`, flags: 64 });
+  await i.showModal(buildQuarantineModal(target.id));
+  return true;
+}
+async function removeQuarantine(i, targetId) {
+  const target = await requireModeratableTarget(i, targetId, 'remove_quarantine');
+  if (!target) return true;
+  if (!getQuarantineState(i.guild.id)?.users?.[target.id]) return safeReply(i, { content: `⚠️ **${target.user.tag}** is not currently quarantined.`, flags: 64 });
+  const result = await restoreQuarantinedMember(i.guild, target, { reason: `Quarantine removed by ${i.user?.tag || i.user?.id || 'moderator'}` });
+  recordModerationSystemEvent({ interaction: i, event: result.success ? 'moderation.quarantine.removed' : 'moderation.quarantine.remove_failed', action: 'remove_quarantine', targetId: target.id, after: result });
+  if (!result.success) return safeReply(i, { content: `❌ Failed to remove quarantine from **${target.user.tag}**: ${result.error || result.reason || 'Unknown error'}`, flags: 64 });
+  await safeReply(i, { content: `🔓 Quarantine removed from **${target.user.tag}** • restored **${result.restoredRoles || 0}** role(s).`, flags: 64 });
+  await refreshDashboard(Discord, i, target, { view: 'actions' });
+  return true;
+}
+async function routeActionRequest(i, action, targetId) { if (action === 'warn') return showWarningModal(i, targetId); if (action === 'quarantine') return showQuarantineModal(i, targetId); if (action === 'remove-warning') return showRemoveWarningModal(i, targetId); if (action === 'remove-timeout') return requestRemoveTimeout(i, targetId); if (PUNISHMENT_ACTIONS.has(action)) return showPunishmentModal(i, action, targetId); return false; }
 async function handleOpenActionButton(i) { const action = getPrefixedAction(i.customId, 'mod_open_', OPEN_ACTIONS); if (!action) return false; return routeActionRequest(i, action, getTargetIdFromCustomId(i.customId)); }
-async function handleCaseToolButton(i) { const caseResult = await openCaseTool(i); if (caseResult) return caseResult; const searchResult = await handleCaseSearchAction(i); if (searchResult) return searchResult; const id = String(i.customId || ''); const targetId = getTargetIdFromCustomId(id); if (id.startsWith('mod_remove_warning:')) return routeActionRequest(i, 'remove-warning', targetId); if (id.startsWith('mod_remove_timeout:')) return routeActionRequest(i, 'remove-timeout', targetId); return false; }
+async function handleCaseToolButton(i) { const caseResult = await openCaseTool(i); if (caseResult) return caseResult; const searchResult = await handleCaseSearchAction(i); if (searchResult) return searchResult; const id = String(i.customId || ''); const targetId = getTargetIdFromCustomId(id); if (id.startsWith('mod_remove_warning:')) return routeActionRequest(i, 'remove-warning', targetId); if (id.startsWith('mod_remove_timeout:')) return routeActionRequest(i, 'remove-timeout', targetId); if (id.startsWith('mod_remove_quarantine:')) return removeQuarantine(i, targetId); return false; }
 async function handleBulkButton(i) {
   if (!String(i.customId || '').startsWith('mod_bulk_')) return false;
   const action = getBulkAction(i.customId); if (!action) return false;
@@ -714,6 +740,17 @@ async function handleBulkModal(i) {
 }
 async function handleActionModal(i) {
   const id = String(i.customId || ''); const targetId = getTargetIdFromCustomId(id);
+  if (id.startsWith('mod_submit_quarantine:')) {
+    const target = await requireModeratableTarget(i, targetId, 'quarantine');
+    if (!target) return true;
+    const reason = fieldValue(i, 'reason');
+    const result = await quarantineMember(i.guild, target, { reason, quarantinedBy: i.user?.id || null });
+    recordModerationSystemEvent({ interaction: i, event: result.success ? 'moderation.quarantine.applied' : 'moderation.quarantine.failed', action: 'quarantine', targetId: target.id, reason, after: result });
+    if (!result.success) return safeReply(i, { content: `❌ Failed to quarantine **${target.user.tag}**: ${result.error || result.reason || 'Unknown error'}`, flags: 64 });
+    await safeReply(i, { content: result.dryRun ? `🧪 Quarantine dry-run completed for **${target.user.tag}**.` : `🚫 **${target.user.tag}** has been quarantined.`, flags: 64 });
+    await refreshDashboard(Discord, i, target, { view: 'actions' });
+    return true;
+  }
   if (id.startsWith('mod_submit_warn:')) {
     const result = await submitWarningModal(i, targetId, refreshCasesDashboard);
     if (!result?.ok) auditFailure(i, 'moderation.action.failed', 'warn', targetId, result?.error?.message || result?.error || 'Warning submission failed.');

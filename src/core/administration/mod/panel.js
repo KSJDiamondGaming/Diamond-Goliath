@@ -40,6 +40,7 @@ const {
 } = require('./cases');
 const { getWarningCountForUser, syncExpiredWarningsToCases } = require('./warns');
 const { canUseModAction, getStaffDisplay, hasModPermission, fetchTarget } = require('./permissions');
+const { getQuarantineState } = require('../../security/protection/quarantine');
 
 const DEFAULT_VIEW = 'actions';
 const CASES_PER_PAGE = 5;
@@ -81,6 +82,7 @@ function increment(map, key, amount = 1) { if (key) map[key] = (map[key] || 0) +
 function topEntries(map, limit = 5) { return Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, limit); }
 function timestamp(value, style = 'R') { const ms = Number(value); return Number.isFinite(ms) && ms > 0 ? `<t:${Math.floor(ms / 1000)}:${style}>` : 'Unknown'; }
 function targetHasActiveTimeout(target) { return Number(target?.communicationDisabledUntilTimestamp || 0) > Date.now(); }
+function targetIsQuarantined(guild, target) { return Boolean(guild?.id && target?.id && getQuarantineState(guild.id)?.users?.[target.id]); }
 function formatActionBreakdown(counts = {}) {
   const primary = [
     `Warnings **${Number(counts.warn || 0)}**`,
@@ -96,7 +98,7 @@ function formatActionBreakdown(counts = {}) {
 function hasAny(member, guild, actions) { return actions.some((action) => canUseModAction(member, guild, action)); }
 function canViewDashboardSection(member, guild, view) {
   const normalized = normalizeView(view);
-  if (normalized === 'actions') return canUseModAction(member, guild, 'view_dashboard') || hasAny(member, guild, ['warn', 'timeout', 'remove_timeout', 'kick', 'ban', 'remove_warning']);
+  if (normalized === 'actions') return canUseModAction(member, guild, 'view_dashboard') || hasAny(member, guild, ['warn', 'timeout', 'remove_timeout', 'kick', 'quarantine', 'remove_quarantine', 'ban', 'remove_warning']);
   if (normalized === 'intelligence') return hasAny(member, guild, ['scan_run', 'scan_history', 'scan_compare', 'scan_suspects', 'scan_network', 'scan_notes', 'scan_watch', 'scan_links']);
   if (normalized === 'cases') return canUseModAction(member, guild, 'view_cases');
   if (normalized === 'analytics') return canUseModAction(member, guild, 'view_analytics');
@@ -188,22 +190,30 @@ function buildDashboardNav(targetId, activeView, member, guild, context = {}) {
   return rows;
 }
 function buildUserSelectRow() { return new ActionRowBuilder().addComponents(new UserSelectMenuBuilder().setCustomId('mod_user_select').setPlaceholder('👤 Select a member to investigate or moderate').setMinValues(1).setMaxValues(1)); }
-function actionPermissions(member, guild) { return { warn: canUseModAction(member, guild, 'warn'), timeout: canUseModAction(member, guild, 'timeout'), kick: canUseModAction(member, guild, 'kick'), ban: canUseModAction(member, guild, 'ban'), removeWarning: canUseModAction(member, guild, 'remove_warning'), removeTimeout: canUseModAction(member, guild, 'remove_timeout') }; }
+function actionPermissions(member, guild) { return { warn: canUseModAction(member, guild, 'warn'), timeout: canUseModAction(member, guild, 'timeout'), kick: canUseModAction(member, guild, 'kick'), quarantine: canUseModAction(member, guild, 'quarantine'), ban: canUseModAction(member, guild, 'ban'), removeWarning: canUseModAction(member, guild, 'remove_warning'), removeTimeout: canUseModAction(member, guild, 'remove_timeout'), removeQuarantine: canUseModAction(member, guild, 'remove_quarantine') }; }
 function buildActionRows(target, stats, member, guild) {
   const id = target?.id || 'none';
   const p = actionPermissions(member, guild);
   const disabled = !target;
+  const quarantined = targetIsQuarantined(guild, target);
+
   const row1 = [];
   if (canViewDashboardSection(member, guild, 'intelligence')) row1.push(new ButtonBuilder().setCustomId(`mod_dashboard:${id}:intelligence`).setLabel('🧠 Intelligence').setStyle(ButtonStyle.Secondary).setDisabled(disabled));
   if (canViewDashboardSection(member, guild, 'cases')) row1.push(new ButtonBuilder().setCustomId(`mod_dashboard:${id}:cases`).setLabel('📁 Cases').setStyle(ButtonStyle.Secondary).setDisabled(disabled));
   if (p.timeout) row1.push(createSecondaryButton(`mod_open_timeout:${id}`, 'Timeout', getEmoji('TIMEOUT', '⏳')).setDisabled(disabled));
   if (p.warn) row1.push(createSecondaryButton(`mod_open_warn:${id}`, 'Warn', getEmoji('WARNING', '⚠️')).setDisabled(disabled));
+
   const row2 = [];
   if (p.kick) row2.push(createDangerButton(`mod_open_kick:${id}`, 'Kick', getEmoji('KICK', '👢')).setDisabled(disabled));
+  if (p.quarantine) row2.push(createDangerButton(`mod_open_quarantine:${id}`, 'Quarantine', '☢️').setDisabled(disabled || quarantined));
   if (p.ban) row2.push(createDangerButton(`mod_open_ban:${id}`, 'Ban', getEmoji('BAN', '🔨')).setDisabled(disabled));
-  if (p.removeTimeout) row2.push(createSecondaryButton(`mod_remove_timeout:${id}`, 'Clear Timeout', getEmoji('SUCCESS', '✅')).setDisabled(disabled || !targetHasActiveTimeout(target)));
-  if (p.removeWarning) row2.push(createSecondaryButton(`mod_remove_warning:${id}`, 'Remove Warn', getEmoji('DELETE', '🗑️')).setDisabled(disabled || Number(stats?.warningCount || 0) <= 0));
-  return [buttonRow(row1), buttonRow(row2)].filter(Boolean);
+
+  const row3 = [];
+  if (p.removeTimeout) row3.push(createSecondaryButton(`mod_remove_timeout:${id}`, 'Clear Timeout', getEmoji('SUCCESS', '✅')).setDisabled(disabled || !targetHasActiveTimeout(target)));
+  if (p.removeQuarantine) row3.push(createSecondaryButton(`mod_remove_quarantine:${id}`, 'Clear Quarantine', '☢️').setDisabled(disabled || !quarantined));
+  if (p.removeWarning) row3.push(createSecondaryButton(`mod_remove_warning:${id}`, 'Clear Warn', '⚠️').setDisabled(disabled || Number(stats?.warningCount || 0) <= 0));
+
+  return [buttonRow(row1), buttonRow(row2), buttonRow(row3)].filter(Boolean);
 }
 function buildIntelligenceRows(targetId, member, guild) {
   if (!targetId) return [];
