@@ -32,7 +32,7 @@ const lines = [
   "      '',",
   "      failed && status === 'blocked-preflight' ? '**No destination mutation was started because exact-copy preflight failed.**' : 'This transfer is permanently recorded in **Transfer History** with source → destination IDs and source permission data.',",
   "      ...(manifest.warnings || []).slice(0, 8).map((warning) => '⚠️ ' + warning),",
-  "    ].filter(Boolean).join('\\n'), color)],",
+  "    ].filter(Boolean).join('\\\\n'), color)],",
   "    components: [new ActionRowBuilder().addComponents(",
   "      new ButtonBuilder().setCustomId(componentId(session, 'manifest-last')).setLabel('View Transfer Manifest').setEmoji('📜').setStyle(ButtonStyle.Primary),",
   "      new ButtonBuilder().setCustomId(componentId(session, 'home')).setLabel('New Transfer').setStyle(ButtonStyle.Secondary),",
