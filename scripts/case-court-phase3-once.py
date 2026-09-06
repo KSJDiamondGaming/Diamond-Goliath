@@ -1,0 +1,105 @@
+from pathlib import Path
+p = Path('src/core/administration/mod/caseCourt.js')
+s = p.read_text()
+
+def rep(old, new, label):
+    global s
+    if old not in s:
+        raise SystemExit(f'missing anchor: {label}')
+    s = s.replace(old, new, 1)
+
+rep("    submittedForReviewBy: court.submittedForReviewBy || null,\n  };",
+    "    submittedForReviewBy: court.submittedForReviewBy || null,\n    reviewClaimedAt: court.reviewClaimedAt || null,\n    closedAt: court.closedAt || null,\n    closedBy: court.closedBy || null,\n    closeReason: court.closeReason || null,\n    previousStage: court.previousStage || null,\n  };", 'parseCourt metadata')
+
+rep("  const canManage = canUseModAction(interaction.member, interaction.guild, 'edit_case', interaction);\n  const canDecide = canManage && ['review', 'decided'].includes(court.stage);",
+    "  const canManage = canUseModAction(interaction.member, interaction.guild, 'edit_case', interaction);\n  const isAssignedJudge = canManage && court.reviewingAdminId === interaction.user.id;\n  const canDecide = isAssignedJudge && ['review', 'decided'].includes(court.stage);\n  const isClosed = court.stage === 'closed';", 'case file permissions')
+
+rep("      button(`mod_court_timeline:${modCase.caseId}`, 'Timeline', '🕘'),\n      button(`mod_court_submit_review:${modCase.caseId}`, court.stage === 'review' ? 'Awaiting Review' : 'Submit for Review', '👨‍⚖️', ButtonStyle.Primary, court.stage === 'review' || court.stage === 'published'),",
+    "      button(`mod_court_timeline:${modCase.caseId}`, 'Timeline', '🕘'),\n      button(`mod_court_review_brief:${modCase.caseId}`, 'Review Brief', '⚖️'),\n      button(`mod_court_submit_review:${modCase.caseId}`, court.stage === 'review' ? 'Awaiting Review' : 'Submit for Review', '👨‍⚖️', ButtonStyle.Primary, court.stage !== 'investigation'),", 'review brief button')
+
+rep("      button(`mod_court_verify:${modCase.caseId}`, 'Verify Evidence', '✅', ButtonStyle.Secondary, !court.evidence.length),\n      button(`mod_court_decide:${modCase.caseId}`, 'Decision', '⚖️', canManage ? ButtonStyle.Danger : ButtonStyle.Secondary, !canDecide),\n      button(`mod_court_publish:${modCase.caseId}`, court.publication ? 'Update Published Record' : 'Publish Record', '📜', ButtonStyle.Success, !canManage || !court.decision),",
+    "      button(`mod_court_verify:${modCase.caseId}`, 'Verify Evidence', '✅', ButtonStyle.Secondary, !court.evidence.length),\n      button(`mod_court_preview:${modCase.caseId}`, 'Member Preview', '👁️', ButtonStyle.Secondary, !court.decision),\n      button(`mod_court_decide:${modCase.caseId}`, 'Decision', '⚖️', canManage ? ButtonStyle.Danger : ButtonStyle.Secondary, !canDecide),\n      button(`mod_court_publish:${modCase.caseId}`, court.publication ? 'Update Published Record' : 'Publish Record', '📜', ButtonStyle.Success, !canManage || !court.decision || isClosed),\n      button(isClosed ? `mod_court_reopen:${modCase.caseId}` : `mod_court_close:${modCase.caseId}`, isClosed ? 'Reopen' : 'Close Case', isClosed ? '🔓' : '🔒', ButtonStyle.Secondary, !canManage),", 'preview close buttons')
+
+marker = "function newCaseModal(targetId) {"
+insert = r'''function buildReviewBriefPage(interaction, modCase) {
+  const court = parseCourt(modCase);
+  const verified = court.evidence.filter((item) => item.status === 'verified');
+  const draft = court.evidence.filter((item) => item.status === 'draft');
+  const recommendation = court.recommendation?.reason || 'No moderator recommendation recorded.';
+  const judge = court.reviewingAdminId ? `<@${court.reviewingAdminId}>${court.reviewClaimedAt ? ` • claimed ${discordTime(court.reviewClaimedAt)}` : ''}` : 'Unassigned';
+  const readiness = [
+    verified.length ? '✅ Verified evidence present' : '❌ No verified evidence',
+    court.recommendation ? '✅ Moderator recommendation recorded' : '⚠️ No recommendation',
+    court.stage === 'review' ? '✅ Submitted for review' : `⚠️ Current stage: ${stageText(court.stage)}`,
+    court.reviewingAdminId ? '✅ Judge assigned' : '⚠️ Awaiting judge claim',
+  ].join('\n');
+  const embed = new EmbedBuilder()
+    .setColor(0xFEE75C)
+    .setTitle(`⚖️ Review Brief • Case #${modCase.caseId}`)
+    .setDescription(`**Subject:** <@${modCase.userId}> • \`${modCase.userId}\`\n**Severity:** **${severityText(court.severity)}**\n**Lead:** <@${court.leadModeratorId}>\n**Judge:** ${judge}`)
+    .addFields(
+      { name: '📋 Allegations', value: cleanExcerpt(court.allegations || modCase.reason, 1024), inline: false },
+      { name: '🔎 Evidence Position', value: `Verified **${verified.length}** • Draft **${draft.length}** • Rejected **${court.evidence.filter((item) => item.status === 'rejected').length}**\n${verified.slice(0, 6).map((item) => `• **${item.id}** ${cleanExcerpt(item.title, 90)}`).join('\n') || 'No verified evidence.'}`, inline: false },
+      { name: '📋 Moderator Recommendation', value: cleanExcerpt(recommendation, 1024), inline: false },
+      { name: '✅ Decision Readiness', value: readiness, inline: false },
+    )
+    .setFooter({ text: 'A judge must claim the review before recording a decision' })
+    .setTimestamp();
+  const canManage = canUseModAction(interaction.member, interaction.guild, 'edit_case', interaction);
+  const assignedToOther = court.reviewingAdminId && court.reviewingAdminId !== interaction.user.id;
+  const controls = [];
+  if (court.stage === 'review' && !court.reviewingAdminId) controls.push(button(`mod_court_claim_review:${modCase.caseId}`, 'Claim Review', '✋', ButtonStyle.Primary, !canManage));
+  if (court.stage === 'review' && court.reviewingAdminId === interaction.user.id) {
+    controls.push(button(`mod_court_decide:${modCase.caseId}`, 'Record Decision', '⚖️', ButtonStyle.Danger, !verified.length));
+    controls.push(button(`mod_court_return:${modCase.caseId}`, 'Return for Work', '↩️', ButtonStyle.Secondary));
+  }
+  if (assignedToOther) controls.push(button(`mod_court_claim_review:${modCase.caseId}`, 'Assigned to Another Judge', '🔒', ButtonStyle.Secondary, true));
+  const components = [];
+  if (controls.length) components.push(row(...controls.slice(0, 5)));
+  components.push(caseFileBackRow(modCase.caseId));
+  return { embeds: [embed], components };
+}
+
+function buildMemberPreviewPage(modCase) {
+  const court = parseCourt(modCase);
+  const decision = court.decision || {};
+  const published = court.publication;
+  const summary = published?.summary || 'No member-facing summary has been published yet. Use Publish Record to create one.';
+  const embed = new EmbedBuilder()
+    .setColor(0x57F287)
+    .setTitle(`👁️ Member Preview • Case #${modCase.caseId}`)
+    .setDescription('This preview intentionally excludes private notes, draft/rejected evidence, scan intelligence and staff deliberation.')
+    .addFields(
+      { name: 'Status', value: published ? `Published • Revision ${published.revision || 1}` : 'Not yet published', inline: true },
+      { name: 'Severity', value: severityText(court.severity), inline: true },
+      { name: 'Finding', value: cleanExcerpt(decision.finding || 'No finding recorded.', 1024), inline: false },
+      { name: 'Decision', value: cleanExcerpt(decision.action || 'No action recorded.', 1024), inline: false },
+      { name: 'Official Summary', value: cleanExcerpt(summary, 1800), inline: false },
+    )
+    .setFooter({ text: 'Exact privacy boundary preview • staff-only material is omitted' })
+    .setTimestamp();
+  return { embeds: [embed], components: [caseFileBackRow(modCase.caseId)] };
+}
+
+function closeCaseModal(caseId) {
+  return new ModalBuilder().setCustomId(`mod_court_close_submit:${caseId}`).setTitle('Close Court Case').addComponents(
+    modalInput('reason', 'Closure reason', TextInputStyle.Paragraph, true, 1000, 'Why is this case being closed?'),
+  );
+}
+
+'''
+if marker not in s:
+    raise SystemExit('missing anchor: modal insertion')
+s = s.replace(marker, insert + marker, 1)
+
+rep("  if (key === 'mod_court_evidence') { await interaction.showModal(evidenceModal(caseId)); return true; }",
+    "  if (key === 'mod_court_review_brief') { await interaction.update(buildReviewBriefPage(interaction, modCase)); return true; }\n  if (key === 'mod_court_preview') { await interaction.update(buildMemberPreviewPage(modCase)); return true; }\n  if (key === 'mod_court_claim_review') {\n    if (!isJudge(interaction) || court.stage !== 'review') { await interaction.reply({ content: '❌ This review cannot be claimed.', flags: 64 }); return true; }\n    if (court.reviewingAdminId && court.reviewingAdminId !== interaction.user.id) { await interaction.reply({ content: '❌ Another judge has already claimed this review.', flags: 64 }); return true; }\n    const next = { ...court, reviewingAdminId: interaction.user.id, reviewClaimedAt: now() };\n    const updated = saveCourt(interaction.guildId, caseId, next, interaction.user.id, 'case.court.review_claimed', court);\n    await interaction.update(buildReviewBriefPage(interaction, updated));\n    return true;\n  }\n  if (key === 'mod_court_return') {\n    if (!isJudge(interaction) || court.reviewingAdminId !== interaction.user.id || court.stage !== 'review') { await interaction.reply({ content: '❌ Only the assigned judge can return this case for more work.', flags: 64 }); return true; }\n    const next = { ...court, stage: 'investigation', reviewingAdminId: null, reviewClaimedAt: null, submittedForReviewAt: null, submittedForReviewBy: null, notes: [...court.notes, { id: `N${court.notes.length + 1}`, text: 'Judge returned the case to investigation for further work.', authorId: interaction.user.id, createdAt: now() }] };\n    const updated = saveCourt(interaction.guildId, caseId, next, interaction.user.id, 'case.court.returned_to_investigation', court);\n    await updateCaseMessage(interaction, updated);\n    return true;\n  }\n  if (key === 'mod_court_close') { if (!isJudge(interaction)) { await interaction.reply({ content: '❌ Admin authority is required to close a case.', flags: 64 }); return true; } await interaction.showModal(closeCaseModal(caseId)); return true; }\n  if (key === 'mod_court_reopen') {\n    if (!isJudge(interaction) || court.stage !== 'closed') { await interaction.reply({ content: '❌ This case cannot be reopened.', flags: 64 }); return true; }\n    const next = { ...court, stage: court.previousStage || (court.publication ? 'published' : court.decision ? 'decided' : 'investigation'), previousStage: null, closedAt: null, closedBy: null, closeReason: null };\n    const updated = saveCourt(interaction.guildId, caseId, next, interaction.user.id, 'case.court.reopened', court);\n    await updateCaseMessage(interaction, updated);\n    return true;\n  }\n  if (key === 'mod_court_evidence') { await interaction.showModal(evidenceModal(caseId)); return true; }", 'interaction buttons')
+
+rep("    const next = { ...court, stage: 'review', submittedForReviewAt: now(), submittedForReviewBy: interaction.user.id };",
+    "    const next = { ...court, stage: 'review', reviewingAdminId: null, reviewClaimedAt: null, submittedForReviewAt: now(), submittedForReviewBy: interaction.user.id };", 'review reset')
+
+rep("  if (key === 'mod_court_decide_submit') {\n    if (!isJudge(interaction)) { await interaction.reply({ content: '❌ Admin authority is required to record a decision.', flags: 64 }); return true; }",
+    "  if (key === 'mod_court_close_submit') {\n    if (!isJudge(interaction)) { await interaction.reply({ content: '❌ Admin authority is required to close a case.', flags: 64 }); return true; }\n    if (court.stage === 'closed') { await interaction.reply({ content: '❌ This case is already closed.', flags: 64 }); return true; }\n    const next = { ...court, previousStage: court.stage, stage: 'closed', closedAt: now(), closedBy: interaction.user.id, closeReason: field(interaction, 'reason') };\n    const updated = saveCourt(interaction.guildId, caseId, next, interaction.user.id, 'case.court.closed', court);\n    await updateCaseMessage(interaction, updated);\n    return true;\n  }\n  if (key === 'mod_court_decide_submit') {\n    if (!isJudge(interaction)) { await interaction.reply({ content: '❌ Admin authority is required to record a decision.', flags: 64 }); return true; }\n    if (court.stage !== 'review' || court.reviewingAdminId !== interaction.user.id) { await interaction.reply({ content: '❌ Claim this case from the Review Brief before recording a decision.', flags: 64 }); return true; }", 'decision claim guard')
+
+p.write_text(s)
+print('Case Court phase 3 applied')
