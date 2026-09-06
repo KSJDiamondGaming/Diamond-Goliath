@@ -33,7 +33,7 @@ const STATUS_LABELS = Object.freeze({
   reversed: '🔁 Reversed',
   expired: '⌛ Expired',
 });
-const APPEALABLE_ACTIONS = new Set(['warn', 'timeout', 'kick', 'ban']);
+const APPEALABLE_ACTIONS = new Set(['warn', 'timeout', 'kick', 'ban', 'case']);
 const APPEAL_PAGE_SIZE = 5;
 const MAX_APPEALS_PER_CASE = 20;
 const APPEAL_STATUSES = new Set(['pending', 'approved', 'denied']);
@@ -88,6 +88,10 @@ function getAppealEligibility(modCase, appellantId, nowMs = Date.now()) {
   if (!/^\d{16,20}$/.test(normalizedAppellant)) return { ok: false, error: 'Appellant ID must be a valid Discord user ID.' };
   if (String(modCase.userId) !== normalizedAppellant) return { ok: false, error: 'Only the user affected by this moderation case can appeal it.' };
   if (!APPEALABLE_ACTIONS.has(String(modCase.action || '').toLowerCase())) return { ok: false, error: 'This case type is not appealable.' };
+  if (String(modCase.action || '').toLowerCase() === 'case') {
+    const court = modCase.metadata?.court;
+    if (!court?.publication || court.stage !== 'published' || !court.decision) return { ok: false, error: 'Court cases become appealable only after an official decision is published.' };
+  }
   if (getStatus(modCase) !== 'active') return { ok: false, error: `This case is ${getStatus(modCase)} and is no longer eligible for appeal.` };
   const appeals = getCaseAppeals(modCase);
   if (appeals.length >= MAX_APPEALS_PER_CASE) return { ok: false, error: `Case appeal history is limited to ${MAX_APPEALS_PER_CASE} appeals.` };

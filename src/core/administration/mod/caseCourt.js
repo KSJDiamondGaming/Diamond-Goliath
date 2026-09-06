@@ -62,6 +62,9 @@ function parseCourt(modCase = {}) {
     closedBy: court.closedBy || null,
     closeReason: court.closeReason || null,
     previousStage: court.previousStage || null,
+    decisionHistory: Array.isArray(court.decisionHistory) ? court.decisionHistory : [],
+    publicationHistory: Array.isArray(court.publicationHistory) ? court.publicationHistory : [],
+    sanctionReview: court.sanctionReview && typeof court.sanctionReview === 'object' ? court.sanctionReview : null,
   };
 }
 function saveCourt(guildId, caseId, court, actorId, event, beforeCourt = null) {
@@ -169,8 +172,13 @@ function buildCaseFile(interaction, modCase) {
   const evidenceLines = court.evidence.slice(-6).reverse().map((item) => `${EVIDENCE_STATUS[item.status] || EVIDENCE_STATUS.draft} **${item.id}** • ${cleanExcerpt(item.title, 70)}\n${cleanExcerpt(item.details || item.source, 120)}`);
   const noteLines = court.notes.slice(-4).reverse().map((item) => `• ${cleanExcerpt(item.text, 150)} — <@${item.authorId}> ${discordTime(item.createdAt)}`);
   const linked = court.linkedCases.slice(-8).map((id) => `#${id}`).join(' • ') || 'None';
+  const sanctionGate = court.decision?.action === 'ban'
+    ? court.sanctionReview?.status === 'approved'
+      ? `\n**Ban Approval:** ✅ Approved by <@${court.sanctionReview.approvedBy}> • ${discordTime(court.sanctionReview.approvedAt)}`
+      : '\n**Ban Approval:** ⏳ Second-admin approval required before publication.'
+    : '';
   const decision = court.decision
-    ? `**Finding:** ${court.decision.finding}\n**Decision:** ${court.decision.action}\n**Reason:** ${court.decision.reason}\n**Judge:** <@${court.decision.decidedBy}> • ${discordTime(court.decision.decidedAt)}`
+    ? `**Finding:** ${court.decision.finding}\n**Decision:** ${court.decision.action}\n**Reason:** ${court.decision.reason}\n**Judge:** <@${court.decision.decidedBy}> • ${discordTime(court.decision.decidedAt)}${sanctionGate}`
     : 'No decision recorded.';
   const publication = court.publication
     ? `Revision **${court.publication.revision || 1}** • Published by <@${court.publication.publishedBy}> ${discordTime(court.publication.publishedAt)}\n${cleanExcerpt(court.publication.summary, 500)}`
@@ -214,7 +222,8 @@ function buildCaseFile(interaction, modCase) {
       button(`mod_court_verify:${modCase.caseId}`, 'Verify Evidence', '✅', ButtonStyle.Secondary, !court.evidence.length),
       button(`mod_court_preview:${modCase.caseId}`, 'Member Preview', '👁️', ButtonStyle.Secondary, !court.decision),
       button(`mod_court_decide:${modCase.caseId}`, 'Decision', '⚖️', canManage ? ButtonStyle.Danger : ButtonStyle.Secondary, !canDecide),
-      button(`mod_court_publish:${modCase.caseId}`, court.publication ? 'Update Published Record' : 'Publish Record', '📜', ButtonStyle.Success, !canManage || !court.decision || isClosed),
+      button(`mod_court_publish:${modCase.caseId}`, court.publication ? 'Update Published Record' : 'Publish Record', '📜', ButtonStyle.Success, !canManage || !court.decision || isClosed || (court.decision?.action === 'ban' && court.sanctionReview?.status !== 'approved')),
+      button(`mod_court_approve_ban:${modCase.caseId}`, 'Approve Ban', '🛡️', ButtonStyle.Danger, !canManage || court.decision?.action !== 'ban' || court.sanctionReview?.status === 'approved' || court.decision?.decidedBy === interaction.user.id),
       button(isClosed ? `mod_court_reopen:${modCase.caseId}` : `mod_court_close:${modCase.caseId}`, isClosed ? 'Reopen' : 'Close Case', isClosed ? '🔓' : '🔒', ButtonStyle.Secondary, !canManage),
     ),
     staffBackRow(modCase.userId),
@@ -433,6 +442,15 @@ async function handleCourtInteraction(interaction) {
     await updateCaseMessage(interaction, updated);
     return true;
   }
+  if (key === 'mod_court_approve_ban') {
+    if (!isJudge(interaction) || court.decision?.action !== 'ban') { await interaction.reply({ content: '❌ There is no ban decision awaiting approval.', flags: 64 }); return true; }
+    if (court.decision.decidedBy === interaction.user.id) { await interaction.reply({ content: '❌ The deciding judge cannot also approve the ban. A second admin must approve it.', flags: 64 }); return true; }
+    if (court.sanctionReview?.status === 'approved') { await interaction.reply({ content: '❌ This ban decision is already approved.', flags: 64 }); return true; }
+    const next = { ...court, sanctionReview: { ...(court.sanctionReview || {}), required: true, status: 'approved', approvedBy: interaction.user.id, approvedAt: now() } };
+    const updated = saveCourt(interaction.guildId, caseId, next, interaction.user.id, 'case.court.ban_approved', court);
+    await updateCaseMessage(interaction, updated);
+    return true;
+  }
   if (key === 'mod_court_close') { if (!isJudge(interaction)) { await interaction.reply({ content: '❌ Admin authority is required to close a case.', flags: 64 }); return true; } await interaction.showModal(closeCaseModal(caseId)); return true; }
   if (key === 'mod_court_reopen') {
     if (!isJudge(interaction) || court.stage !== 'closed') { await interaction.reply({ content: '❌ This case cannot be reopened.', flags: 64 }); return true; }
@@ -559,7 +577,11 @@ async function handleCourtModal(interaction) {
     if (!allowed.has(action)) { await interaction.reply({ content: '❌ Decision action must be warn, timeout, quarantine, kick, ban, or no_action.', flags: 64 }); return true; }
     const decision = { finding: field(interaction, 'finding'), action, reason: field(interaction, 'reason'), decidedBy: interaction.user.id, decidedAt: now() };
     const recommendationText = field(interaction, 'recommendation');
-    const next = { ...court, stage: 'decided', reviewingAdminId: interaction.user.id, decision, recommendation: recommendationText ? { reason: recommendationText, by: interaction.user.id, at: now() } : court.recommendation };
+    const decisionHistory = court.decision ? [...court.decisionHistory, court.decision].slice(-20) : court.decisionHistory;
+    const sanctionReview = action === 'ban'
+      ? { required: true, status: 'pending', requestedBy: interaction.user.id, requestedAt: now(), approvedBy: null, approvedAt: null }
+      : null;
+    const next = { ...court, stage: 'decided', reviewingAdminId: interaction.user.id, decision, decisionHistory, sanctionReview, recommendation: recommendationText ? { reason: recommendationText, by: interaction.user.id, at: now() } : court.recommendation };
     const updated = saveCourt(interaction.guildId, caseId, next, interaction.user.id, 'case.court.decision_recorded', court);
     await updateCaseMessage(interaction, updated);
     return true;
@@ -567,10 +589,12 @@ async function handleCourtModal(interaction) {
   if (key === 'mod_court_publish_submit') {
     if (!isJudge(interaction)) { await interaction.reply({ content: '❌ Admin authority is required to publish a record.', flags: 64 }); return true; }
     if (!court.decision) { await interaction.reply({ content: '❌ Record a decision before publishing the member record.', flags: 64 }); return true; }
+    if (court.decision.action === 'ban' && court.sanctionReview?.status !== 'approved') { await interaction.reply({ content: '❌ Ban decisions require approval from a second admin before the member record can be published.', flags: 64 }); return true; }
     const summary = field(interaction, 'summary');
     const previousRevision = Number(court.publication?.revision || 0);
+    const publicationHistory = court.publication ? [...court.publicationHistory, court.publication].slice(-20) : court.publicationHistory;
     const publication = { revision: previousRevision + 1, summary, publishedBy: interaction.user.id, publishedAt: court.publication?.publishedAt || now(), updatedAt: now(), verifiedEvidenceIds: court.evidence.filter((item) => item.status === 'verified').map((item) => item.id) };
-    const next = { ...court, stage: 'published', publication };
+    const next = { ...court, stage: 'published', publication, publicationHistory };
     const updated = saveCourt(interaction.guildId, caseId, next, interaction.user.id, previousRevision ? 'case.court.publication_updated' : 'case.court.published', court);
     await updateCaseMessage(interaction, updated);
     return true;
@@ -584,7 +608,10 @@ function buildUserPublishedCasesPanel(interaction) {
     .setDescription(cases.length
       ? ['These are the official records staff have published to you. Internal staff notes, drafts and rejected evidence are not shown.', '', ...cases.slice(0, 10).map((entry) => {
         const court = parseCourt(entry); const pub = court.publication; const decision = court.decision || {};
-        return `**Case #${entry.caseId}** • Severity **${court.severity}/5** • Revision **${pub.revision || 1}**\n**Finding:** ${decision.finding || 'Recorded'}\n**Decision:** ${decision.action || 'No action'}\n${cleanExcerpt(pub.summary, 350)}\nPublished ${discordTime(pub.updatedAt || pub.publishedAt)}`;
+        const appeals = Array.isArray(entry.metadata?.appeals) ? entry.metadata.appeals : [];
+        const latestAppeal = appeals.slice().sort((a, b) => String(b.submittedAt || '').localeCompare(String(a.submittedAt || '')))[0];
+        const appealLine = latestAppeal ? `\n**Appeal:** ${latestAppeal.status === 'pending' ? '⏳ Pending' : latestAppeal.status === 'approved' ? '✅ Approved' : '❌ Denied'}` : '';
+        return `**Case #${entry.caseId}** • Severity **${court.severity}/5** • Revision **${pub.revision || 1}**\n**Finding:** ${decision.finding || 'Recorded'}\n**Decision:** ${decision.action || 'No action'}${appealLine}\n${cleanExcerpt(pub.summary, 350)}\nPublished ${discordTime(pub.updatedAt || pub.publishedAt)}`;
       })].join('\n\n')
       : 'No court case records have been published to you.')
     .setFooter({ text: 'Only verified, published information is visible here' })
@@ -592,8 +619,8 @@ function buildUserPublishedCasesPanel(interaction) {
   return {
     embeds: [embed],
     components: [
-      row(button('user:module:appeals', 'Appeals', '📝', ButtonStyle.Primary)),
-      row(button('user:category:account', 'Back', '⬅️'), button('user:home', 'User Panel', '🏠')),
+      row(button('user:module:appeals', 'Appeals', '📝', ButtonStyle.Primary), button('user:home', 'User Panel', '🏠')),
+      row(button('user:category:account', 'Back', '⬅️')),
     ],
   };
 }
