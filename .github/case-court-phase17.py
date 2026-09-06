@@ -39,8 +39,8 @@ if old not in source:
     raise RuntimeError('Notes controls anchor not found')
 source = source.replace(old, new, 1)
 
-old = """if (id.startsWith('mod_court_notes_view:')) return updateCaseMessage(interaction, buildNotesPage(modCase)).then(() => true);"""
-new = """if (id.startsWith('mod_court_notes_view:')) return updateCaseMessage(interaction, buildNotesPage(interaction, modCase)).then(() => true);"""
+old = """  if (key === 'mod_court_notes_view') { await interaction.update(buildNotesPage(modCase)); return true; }"""
+new = """  if (key === 'mod_court_notes_view') { await interaction.update(buildNotesPage(interaction, modCase)); return true; }"""
 if old not in source:
     raise RuntimeError('Notes route anchor not found')
 source = source.replace(old, new, 1)
