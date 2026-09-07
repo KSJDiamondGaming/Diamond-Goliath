@@ -164,6 +164,13 @@ function formatUptime(totalSeconds) {
 
 /* ---------------- BUTTONS ---------------- */
 
+function moderationControlLabel(id, label) {
+  const customId = String(id || '');
+  if (customId.startsWith('mod_open_quarantine:') && label === 'Quarantine') return 'Investigate';
+  if (customId.startsWith('mod_remove_quarantine:') && label === 'Clear Quarantine') return 'Clear Investigation';
+  return label;
+}
+
 function createButton({
   id,
   label,
@@ -173,7 +180,7 @@ function createButton({
 }) {
   const button = new ButtonBuilder()
     .setCustomId(id)
-    .setLabel(label)
+    .setLabel(moderationControlLabel(id, label))
     .setStyle(style)
     .setDisabled(disabled);
 
