@@ -6,6 +6,7 @@ const { SlashCommandBuilder } = require('discord.js');
 const { enforceCommandAccess } = require('../../commands/commandAccess');
 const { errorEmbed } = require('../../ui/embeds');
 const { safeEditReply } = require('../../ui/interactionResponse');
+require('./caseManagementUx');
 const { openModPanel } = require('./panel');
 const { recordModerationSystemEvent, getModerationDoctorStatus } = require('./permissions');
 
