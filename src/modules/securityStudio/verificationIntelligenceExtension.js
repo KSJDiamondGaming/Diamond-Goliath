@@ -116,6 +116,25 @@ function injectButton(payload) {
   return payload;
 }
 
+async function replacePanelMessage(interaction, payload) {
+  // interactionCreate wraps update/reply payloads and normalizes the Verification
+  // overview into a fixed two-row layout. That normalization intentionally drops
+  // unknown controls, which previously removed Join Intelligence. A direct edit
+  // after acknowledging the component preserves the extended overview safely.
+  if (!interaction.deferred && !interaction.replied && typeof interaction.deferUpdate === 'function') {
+    await interaction.deferUpdate();
+  }
+  if (interaction.message?.edit) {
+    await interaction.message.edit(payload);
+    return true;
+  }
+  if (interaction.editReply) {
+    await interaction.editReply(payload);
+    return true;
+  }
+  return false;
+}
+
 function install() {
   if (verificationPanel[PATCH_FLAG]) return verificationPanel;
   verificationPanel[PATCH_FLAG] = true;
@@ -134,7 +153,7 @@ function install() {
       const id = String(interaction?.customId || '');
       if (id === 'admin:verification') {
         const payload = await originalBuild(interaction.guild, displayName(interaction));
-        await interaction.update(injectButton(payload));
+        await replacePanelMessage(interaction, injectButton(payload));
         return true;
       }
       if (!id.startsWith('admin:verification:intelligence')) return originalHandler(interaction);
@@ -146,7 +165,7 @@ function install() {
       if (id === PAGE_ID || id === BACK_ID) {
         if (id === BACK_ID) {
           const payload = await originalBuild(interaction.guild, displayName(interaction));
-          await interaction.update(injectButton(payload));
+          await replacePanelMessage(interaction, injectButton(payload));
         } else {
           await interaction.update(buildPage(interaction));
         }
