@@ -2,20 +2,21 @@
 
 ## Canonical deployment model
 
-DEV is the source of truth for tracked application code.
+GitHub `dev` is the central source of truth for tracked application code.
 
-A normal push to `dev` now performs the complete deployment chain automatically:
+DEV now uses a safe two-way Git workflow:
 
 ```text
 LOCAL DEV
-  -> local beta + production refs aligned by .githooks/pre-push
-  -> origin/dev pushed
-  -> Deploy Goliath validates and deploys VPS DEV
-  -> Sync Goliath Environments aligns origin/beta + origin/production to the same DEV commit
-  -> VPS BETA updated and restarted
-  -> VPS PRODUCTION updated and restarted
-  -> final commit/tree/PM2 verification
+  <-> origin/dev
+        -> Deploy Goliath validates and deploys VPS DEV
+        -> Sync Goliath Environments aligns origin/beta + origin/production to the same validated DEV commit
+        -> VPS BETA updated and restarted
+        -> VPS PRODUCTION updated and restarted
+        -> final commit/tree/PM2 verification
 ```
+
+Direct VPS DEV source edits are only persistent when they are committed and pushed back to `origin/dev`. Uncommitted VPS edits can be replaced by the deployment reset and must not be treated as canonical source.
 
 Runtime data is intentionally NOT synchronised between environments.
 
@@ -45,19 +46,46 @@ goliath-production
 
 The automated deployment reloads the correct PM2 process after the checkout is updated and verifies that the process is online, has the correct working directory and is running the correct `BOT_MODE`.
 
+## Sync local DEV before working
+
+Run this from the local Windows `dev` branch with a clean working tree:
+
+```bash
+npm run sync:dev
+```
+
+The command safely synchronises local DEV and GitHub DEV in either fast-forward direction:
+
+- if GitHub DEV is ahead, local DEV fast-forwards to it;
+- if local DEV is ahead, the command pushes DEV through the normal pre-push validation hook;
+- if both sides diverged, it stops rather than overwriting either side;
+- after a successful DEV sync, local `beta` and `production` refs are moved to the same DEV commit.
+
+This means automated commits made on GitHub DEV can be pulled back into local DEV, while ordinary local DEV commits can be pushed outward through the same command.
+
 ## Normal workflow
 
 Work only on `dev`.
 
+Before starting or before pushing, synchronise DEV:
+
+```bash
+npm run sync:dev
+```
+
+Then work normally:
+
 ```bash
 git add .
 git commit -m "describe the change"
-git push origin dev
+npm run sync:dev
 ```
 
-Do not manually merge `dev -> beta -> production` during the normal workflow. The deployment pipeline now keeps the tracked source branches and VPS checkouts aligned automatically.
+A normal `git push origin dev` remains supported. The tracked pre-push hook moves the local `beta` and `production` refs to the exact DEV commit before the push and runs the required validation checks.
 
-The tracked pre-push hook also moves the local `beta` and `production` refs to the exact DEV commit before the push. `package.json` configures `.githooks` through the npm `prepare` script.
+Do not manually merge `dev -> beta -> production` during the normal workflow. The deployment pipeline keeps the tracked GitHub branches and VPS checkouts aligned automatically after DEV validates successfully.
+
+`package.json` configures `.githooks` through the npm `prepare` script.
 
 If hooks are not active on a fresh clone, run once:
 
@@ -66,7 +94,7 @@ npm install
 git config core.hooksPath .githooks
 ```
 
-## What a successful push guarantees
+## What a successful deployment proves
 
 For tracked source code, a completed automatic deployment verifies:
 
@@ -78,6 +106,8 @@ PM2 dev           = online / BOT_MODE=dev
 PM2 beta          = online / BOT_MODE=beta
 PM2 production    = online / BOT_MODE=production
 ```
+
+Running `npm run sync:dev` additionally verifies local DEV equals `origin/dev` at that moment and aligns the local `beta` and `production` refs to that same DEV commit.
 
 The environments can and should still have different runtime data, Discord guilds, tokens, `.env` files and moderation databases.
 
