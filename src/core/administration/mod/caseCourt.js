@@ -183,7 +183,13 @@ function buildCourtDashboard(interaction, target) {
       .addOptions(cases.slice(0, 25).map((entry) => {
         const court = parseCourt(entry);
         const memberName = target.displayName || target.user?.globalName || target.user?.username || 'Unknown Member';
-        return { label: cleanExcerpt(memberName, 92), description: `Case #${entry.caseId} • ${stageText(court.stage).replace(/^\S+\s/, '')} • ${SEVERITY[court.severity]}`, value: String(entry.caseId), emoji: court.stage === 'published' ? '📜' : court.stage === 'review' ? '⚖️' : '📂' };
+        const caseTitle = cleanExcerpt(court.title || court.allegations || entry.reason || 'Untitled Case', 42);
+        return {
+          label: cleanExcerpt(`${memberName} • ${target.id} • ${caseTitle}`, 100),
+          description: cleanExcerpt(`Case #${entry.caseId} • ${stageText(court.stage).replace(/^\S+\s/, '')} • Severity ${severityText(court.severity)}`, 100),
+          value: String(entry.caseId),
+          emoji: court.stage === 'published' ? '📜' : court.stage === 'review' ? '⚖️' : '📂',
+        };
       }))));
     components.push(row(
       button(`mod_court_new:${target.id}`, 'New Case', '➕', ButtonStyle.Primary, !canManageCourt(interaction)),
