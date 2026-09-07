@@ -117,22 +117,18 @@ function injectButton(payload) {
 }
 
 async function replacePanelMessage(interaction, payload) {
-  // interactionCreate wraps update/reply payloads and normalizes the Verification
-  // overview into a fixed two-row layout. That normalization intentionally drops
-  // unknown controls, which previously removed Join Intelligence. A direct edit
-  // after acknowledging the component preserves the extended overview safely.
+  // This panel is ephemeral. Editing interaction.message uses Discord's normal
+  // channel-message endpoint and fails with Unknown Message for ephemeral replies.
+  // Acknowledge the component, then edit the original interaction response through
+  // its webhook token so the extended Verification payload is preserved verbatim.
   if (!interaction.deferred && !interaction.replied && typeof interaction.deferUpdate === 'function') {
     await interaction.deferUpdate();
   }
-  if (interaction.message?.edit) {
-    await interaction.message.edit(payload);
+  if (interaction.webhook?.editMessage) {
+    await interaction.webhook.editMessage('@original', payload);
     return true;
   }
-  if (interaction.editReply) {
-    await interaction.editReply(payload);
-    return true;
-  }
-  return false;
+  throw new Error('Verification intelligence could not edit the ephemeral interaction response.');
 }
 
 function install() {
