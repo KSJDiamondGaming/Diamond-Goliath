@@ -36,8 +36,8 @@ const SEVERITY = Object.freeze({
 });
 const STAGES = Object.freeze({
   investigation: '🔎 Under Investigation',
-  review: '⚖️ Awaiting Review',
-  decided: '👨‍⚖️ Decision Recorded',
+  review: '📥 Awaiting Review',
+  decided: '✅ Decision Recorded',
   published: '📜 Published',
   closed: '🔒 Closed',
 });
@@ -199,83 +199,114 @@ function buildCaseFile(interaction, modCase) {
   const verified = court.evidence.filter((item) => item.status === 'verified');
   const draft = court.evidence.filter((item) => item.status === 'draft');
   const rejected = court.evidence.filter((item) => item.status === 'rejected');
-  const evidenceLines = court.evidence.slice(-6).reverse().map((item) => `${EVIDENCE_STATUS[item.status] || EVIDENCE_STATUS.draft} **${item.id}** • ${cleanExcerpt(item.title, 70)}\n${cleanExcerpt(item.details || item.source, 120)}`);
-  const noteLines = court.notes.slice(-4).reverse().map((item) => `• ${cleanExcerpt(item.text, 150)} — <@${item.authorId}> ${discordTime(item.createdAt)}`);
-  const linked = court.linkedCases.slice(-8).map((id) => `#${id}`).join(' • ') || 'None';
-  const sanctionGate = court.decision?.action === 'ban'
-    ? court.sanctionReview?.status === 'approved'
-      ? `\n**Ban Approval:** ✅ Approved by <@${court.sanctionReview.approvedBy}> • ${discordTime(court.sanctionReview.approvedAt)}`
-      : '\n**Ban Approval:** ⏳ Second-admin approval required before publication.'
-    : '';
-  const executionLine = court.sanctionExecution
-    ? `\n**Execution:** ${court.sanctionExecution.status === 'executed' ? '✅ Executed' : court.sanctionExecution.status === 'reversed' ? '↩️ Reversed' : court.sanctionExecution.status === 'reversal_failed' ? '⚠️ Appeal reversal failed' : court.sanctionExecution.status === 'executing' ? (executionIsStale(court.sanctionExecution) ? '⚠️ Execution lock stale' : '⏳ Executing') : '❌ Failed'} by <@${court.sanctionExecution.executedBy || court.sanctionExecution.claimedBy}> • ${discordTime(court.sanctionExecution.executedAt || court.sanctionExecution.startedAt || court.sanctionExecution.claimedAt)}${court.sanctionExecution.linkedCaseId ? ` • Moderation Case #${court.sanctionExecution.linkedCaseId}` : ''}${court.sanctionExecution.status === 'reversed' ? `\nReversed by <@${court.sanctionExecution.reversedBy}> • ${discordTime(court.sanctionExecution.reversedAt)}` : court.sanctionExecution.status === 'reversal_failed' ? `\nAppeal approved, but sanction reversal still needs staff action.${court.sanctionExecution.reversalRemedy?.detail ? `\n${cleanExcerpt(court.sanctionExecution.reversalRemedy.detail, 180)}` : ''}` : ''}${court.sanctionExecution.error ? `\n${cleanExcerpt(court.sanctionExecution.error, 180)}` : ''}`
-    : court.decision?.action && court.decision.action !== 'no_action' ? '\n**Execution:** ⏳ Not executed' : '';
-  const decision = court.decision
-    ? `**Finding:** ${court.decision.finding}\n**Decision:** ${court.decision.action}\n**Reason:** ${court.decision.reason}\n**Decision by:** <@${court.decision.decidedBy}> • ${discordTime(court.decision.decidedAt)}${sanctionGate}${executionLine}`
-    : 'No decision recorded.';
-  const publication = court.publication
-    ? `Revision **${court.publication.revision || 1}** • Published by <@${court.publication.publishedBy}> ${discordTime(court.publication.publishedAt)}\n${cleanExcerpt(court.publication.summary, 500)}`
-    : 'Not published. The member cannot see this internal case file.';
   const appeals = getCourtAppeals(modCase);
   const latestAppeal = latestCourtAppeal(modCase);
+  const canManage = canManageCourt(interaction);
+  const reviewerAuthority = isJudge(interaction);
+  const executionAction = String(court.decision?.action || '');
+  const canExecuteAction = Boolean(executionAction && executionAction !== 'no_action' && canUseModAction(interaction.member, interaction.guild, executionAction, interaction));
+  const isAssignedReviewer = reviewerAuthority && court.reviewingAdminId === interaction.user.id;
+  const canDecide = isAssignedReviewer && ['review', 'decided'].includes(court.stage);
+  const isClosed = court.stage === 'closed';
+
+  const nextStep = (() => {
+    if (isClosed) return 'This case is closed. Reopen it before making further changes.';
+    if (court.stage === 'investigation') return 'Build the case file, verify the available material, then submit it for review.';
+    if (court.stage === 'review') return court.reviewingAdminId
+      ? `Review is assigned to <@${court.reviewingAdminId}>. Verify evidence and record the decision.`
+      : 'The case is waiting for an authorised reviewer to claim it from the Review Brief.';
+    if (court.stage === 'decided') {
+      if (court.decision?.action === 'ban' && court.sanctionReview?.status !== 'approved') return 'A second administrator must approve the ban before the member record can be published.';
+      return 'The decision is recorded. Check the member preview, then publish the official member record.';
+    }
+    if (court.stage === 'published') {
+      if (court.decision?.action && court.decision.action !== 'no_action' && court.sanctionExecution?.status !== 'executed') return 'The member record is published. Execute the approved moderation action when ready.';
+      return latestAppeal?.status === 'pending' ? 'A member appeal is waiting for review.' : 'The published case is active. Monitor appeals or close the case when complete.';
+    }
+    return 'Continue working through the case workflow.';
+  })();
+
+  const decisionSummary = court.decision
+    ? [
+        `**Finding:** ${cleanExcerpt(court.decision.finding, 180)}`,
+        `**Action:** ${String(court.decision.action || 'none').replaceAll('_', ' ')}`,
+        `**Recorded by:** <@${court.decision.decidedBy}> • ${discordTime(court.decision.decidedAt)}`,
+        court.decision.action === 'ban' ? `**Second approval:** ${court.sanctionReview?.status === 'approved' ? `✅ Approved by <@${court.sanctionReview.approvedBy}>` : '⏳ Required'}` : null,
+        court.sanctionExecution ? `**Execution:** ${court.sanctionExecution.status === 'executed' ? '✅ Completed' : court.sanctionExecution.status === 'reversed' ? '↩️ Reversed' : court.sanctionExecution.status === 'reversal_failed' ? '⚠️ Appeal remedy failed' : court.sanctionExecution.status === 'executing' ? '⏳ In progress' : court.sanctionExecution.status === 'failed' ? '❌ Failed' : '⏳ Pending'}` : (court.decision.action !== 'no_action' ? '**Execution:** ⏳ Pending' : null),
+      ].filter(Boolean).join('\n')
+    : 'No decision has been recorded yet.';
+
+  const recordSummary = court.publication
+    ? `✅ **Published** • Revision ${court.publication.revision || 1}\nPublished by <@${court.publication.publishedBy}> ${discordTime(court.publication.publishedAt)}\n${cleanExcerpt(court.publication.summary, 360)}`
+    : '🔒 **Internal only** • Nothing from this case is currently visible to the member.';
+
   const appealSummary = latestAppeal
-    ? `${appealStatusText(latestAppeal)} • submitted ${discordTime(latestAppeal.submittedAt)}${latestAppeal.reviewedAt ? ` • reviewed ${discordTime(latestAppeal.reviewedAt)}` : ''}\n${cleanExcerpt(latestAppeal.grounds || 'No grounds recorded.', 380)}${latestAppeal.remedy?.detail ? `\n**Remedy:** ${cleanExcerpt(latestAppeal.remedy.detail, 260)}` : ''}`
-    : 'No appeal submitted for this case.';
+    ? `${appealStatusText(latestAppeal)} • ${discordTime(latestAppeal.submittedAt)}${latestAppeal.reviewedAt ? ` • reviewed ${discordTime(latestAppeal.reviewedAt)}` : ''}`
+    : 'No appeal submitted.';
 
   const embed = new EmbedBuilder()
-    .setColor(court.stage === 'review' ? 0xFEE75C : court.stage === 'published' ? 0x57F287 : 0x5865F2)
-    .setTitle(`📂 ${cleanExcerpt(court.title, 75)} • #${modCase.caseId}`)
-    .setDescription(`**Status:** ${stageText(court.stage)}\n**Subject:** <@${modCase.userId}> • \`${modCase.userId}\`\n**Severity:** **${severityText(court.severity)}**\n**Lead:** <@${court.leadModeratorId}>`)
+    .setColor(court.stage === 'review' ? 0xFEE75C : court.stage === 'published' ? 0x57F287 : court.stage === 'closed' ? 0x747F8D : 0x5865F2)
+    .setTitle(`📂 ${cleanExcerpt(court.title, 72)} • Case #${modCase.caseId}`)
+    .setDescription([
+      `**${stageText(court.stage)}** • Severity **${severityText(court.severity)}**`,
+      `**Subject:** <@${modCase.userId}> • \`${modCase.userId}\``,
+      `**Case lead:** <@${court.leadModeratorId}>`,
+      '',
+      `**Next step:** ${nextStep}`,
+    ].join('\n'))
     .addFields(
-      { name: '📋 Allegations / Concerns', value: cleanExcerpt(court.allegations || modCase.reason || 'No allegation recorded.', 1024), inline: false },
-      { name: '🔎 Evidence', value: `Verified **${verified.length}** • Draft **${draft.length}** • Rejected **${rejected.length}**\n${evidenceLines.join('\n\n') || 'No evidence added yet.'}`.slice(0, 1024), inline: false },
-      { name: '🔗 Linked Moderation Records', value: linked, inline: false },
-      { name: '📝 Staff Notes', value: (noteLines.join('\n') || 'No private case notes yet.').slice(0, 1024), inline: false },
-      { name: '👨‍⚖️ Decision', value: decision.slice(0, 1024), inline: false },
-      { name: '📜 Member Record', value: publication.slice(0, 1024), inline: false },
-      { name: `⚖️ Appeals${appeals.length ? ` (${appeals.length})` : ''}`, value: appealSummary.slice(0, 1024), inline: false },
+      { name: '📋 Case Summary', value: cleanExcerpt(court.allegations || modCase.reason || 'No case summary recorded.', 1024), inline: false },
+      { name: '🗂️ Working File', value: [
+        `**Evidence:** ✅ ${verified.length} verified • 🟡 ${draft.length} draft • 🔴 ${rejected.length} rejected`,
+        `**Private notes:** ${court.notes.length}`,
+        `**Linked moderation records:** ${court.linkedCases.length}`,
+        `**Recommendation:** ${court.recommendation?.reason ? cleanExcerpt(court.recommendation.reason, 180) : 'Not set'}`,
+      ].join('\n'), inline: false },
+      { name: '✅ Review & Decision', value: decisionSummary.slice(0, 1024), inline: false },
+      { name: '📜 Member Record', value: `${recordSummary}\n**Appeal:** ${appealSummary}`.slice(0, 1024), inline: false },
     )
-    .setFooter({ text: 'Internal case file • only verified evidence may be represented in the published member record' })
+    .setFooter({ text: 'Private staff case file • only verified, approved information may be published to the member' })
     .setTimestamp();
 
-  const canManage = canManageCourt(interaction);
-  const judgeAuthority = isJudge(interaction);
-  const executionAction = String(court.decision?.action || '');
-  const canExecuteAction = !executionAction || executionAction === 'no_action'
-    ? false
-    : canUseModAction(interaction.member, interaction.guild, executionAction, interaction);
-  const isAssignedJudge = judgeAuthority && court.reviewingAdminId === interaction.user.id;
-  const canDecide = isAssignedJudge && ['review', 'decided'].includes(court.stage);
-  const isClosed = court.stage === 'closed';
+  const workspace = new StringSelectMenuBuilder()
+    .setCustomId(`mod_court_workspace:${modCase.caseId}`)
+    .setPlaceholder('🗂️ Open case workspace')
+    .addOptions(
+      { label: 'Evidence', description: `${court.evidence.length} item(s) • review sources and verification`, value: 'evidence', emoji: '🔎' },
+      { label: 'Private Notes', description: `${court.notes.length} note(s) • internal staff working notes`, value: 'notes', emoji: '📝' },
+      { label: 'Timeline', description: 'Audit trail and case activity', value: 'timeline', emoji: '🕘' },
+      { label: 'Review Brief', description: 'Reviewer summary, assignment and review controls', value: 'review', emoji: '📋' },
+      { label: 'Member Preview', description: 'Exactly what the member can see', value: 'preview', emoji: '👁️' },
+      { label: 'Record History', description: 'Decision and publication history', value: 'history', emoji: '📚' },
+    );
+
+  const workflowButtons = [
+    button(`mod_court_submit_review:${modCase.caseId}`, court.stage === 'review' ? 'Awaiting Review' : 'Submit for Review', '📥', ButtonStyle.Primary, !canManage || court.stage !== 'investigation'),
+    button(`mod_court_verify:${modCase.caseId}`, 'Verify Evidence', '✅', ButtonStyle.Secondary, !reviewerAuthority || !court.evidence.length || isClosed),
+    button(`mod_court_decide:${modCase.caseId}`, 'Record Decision', '🧾', canDecide ? ButtonStyle.Primary : ButtonStyle.Secondary, !canDecide),
+    button(`mod_court_publish:${modCase.caseId}`, court.publication ? 'Update Record' : 'Publish Record', '📜', ButtonStyle.Success, !canPublishCourt(interaction) || !court.decision || isClosed || (court.decision?.action === 'ban' && court.sanctionReview?.status !== 'approved')),
+    button(`mod_court_execute:${modCase.caseId}`, court.sanctionExecution?.status === 'executed' ? 'Action Completed' : court.sanctionExecution?.status === 'reversed' ? 'Action Reversed' : court.sanctionExecution?.status === 'executing' && !executionIsStale(court.sanctionExecution) ? 'Action Running' : court.sanctionExecution?.status === 'failed' || executionIsStale(court.sanctionExecution) ? 'Retry Action' : 'Execute Action', '⚡', ButtonStyle.Danger, !reviewerAuthority || !canExecuteAction || isClosed || court.stage !== 'published' || !court.decision || court.decision.action === 'no_action' || ['executed', 'reversed', 'reversal_failed'].includes(court.sanctionExecution?.status) || (court.sanctionExecution?.status === 'executing' && !executionIsStale(court.sanctionExecution)) || (court.decision?.action === 'ban' && court.sanctionReview?.status !== 'approved')),
+  ];
+
+  const controlButtons = [];
+  if (court.decision?.action === 'ban' && court.sanctionReview?.status !== 'approved') {
+    controlButtons.push(button(`mod_court_approve_ban:${modCase.caseId}`, 'Approve Ban', '🛡️', ButtonStyle.Danger, !reviewerAuthority || court.decision?.decidedBy === interaction.user.id));
+  }
+  if (appeals.length) controlButtons.push(button(`mod_case_appeal_history:${modCase.caseId}:0`, `Appeals (${appeals.length})`, '⚖️'));
+  controlButtons.push(button('mod_case_appeal_queue:0', 'Appeal Queue', '📥'));
+  controlButtons.push(button(isClosed ? `mod_court_reopen:${modCase.caseId}` : `mod_court_close:${modCase.caseId}`, isClosed ? 'Reopen Case' : 'Close Case', isClosed ? '🔓' : '🔒', ButtonStyle.Secondary, !canCloseCourt(interaction)));
+
   const components = [
+    row(workspace),
     row(
       button(`mod_court_evidence:${modCase.caseId}`, 'Add Evidence', '➕', ButtonStyle.Primary, !canManage || isClosed),
-      button(`mod_court_note:${modCase.caseId}`, 'Case Note', '📝', ButtonStyle.Secondary, !canManage || isClosed),
+      button(`mod_court_note:${modCase.caseId}`, 'Add Note', '📝', ButtonStyle.Secondary, !canManage || isClosed),
       button(`mod_court_import:${modCase.caseId}`, 'Import Records', '🔗', ButtonStyle.Secondary, !canManage || isClosed),
-      button(`mod_court_severity:${modCase.caseId}`, 'Severity', '⚖️', ButtonStyle.Secondary, !canManage || isClosed),
+      button(`mod_court_severity:${modCase.caseId}`, 'Change Severity', '📊', ButtonStyle.Secondary, !canManage || isClosed),
       button(`mod_court_recommend:${modCase.caseId}`, 'Recommendation', '📋', ButtonStyle.Secondary, !canManage || isClosed),
     ),
-    row(
-      button(`mod_court_evidence_view:${modCase.caseId}`, 'Evidence', '🔎'),
-      button(`mod_court_notes_view:${modCase.caseId}`, 'Notes', '📝'),
-      button(`mod_court_timeline:${modCase.caseId}`, 'Timeline', '🕘'),
-      button(`mod_court_review_brief:${modCase.caseId}`, 'Review Brief', '⚖️'),
-      button(`mod_court_submit_review:${modCase.caseId}`, court.stage === 'review' ? 'Awaiting Review' : 'Submit for Review', '👨‍⚖️', ButtonStyle.Primary, !canManage || court.stage !== 'investigation'),
-    ),
-    row(
-      button(`mod_court_verify:${modCase.caseId}`, 'Verify Evidence', '✅', ButtonStyle.Secondary, !judgeAuthority || !court.evidence.length),
-      button(`mod_court_preview:${modCase.caseId}`, 'Member Preview', '👁️', ButtonStyle.Secondary, !court.decision),
-      button(`mod_court_decide:${modCase.caseId}`, 'Decision', '⚖️', judgeAuthority ? ButtonStyle.Danger : ButtonStyle.Secondary, !canDecide),
-      button(`mod_court_publish:${modCase.caseId}`, court.publication ? 'Update Published Record' : 'Publish Record', '📜', ButtonStyle.Success, !canPublishCourt(interaction) || !court.decision || isClosed || (court.decision?.action === 'ban' && court.sanctionReview?.status !== 'approved')),
-      button(`mod_court_approve_ban:${modCase.caseId}`, 'Approve Ban', '🛡️', ButtonStyle.Danger, !judgeAuthority || court.decision?.action !== 'ban' || court.sanctionReview?.status === 'approved' || court.decision?.decidedBy === interaction.user.id),
-    ),
-    row(
-      button(`mod_court_execute:${modCase.caseId}`, court.sanctionExecution?.status === 'executed' ? 'Sanction Executed' : court.sanctionExecution?.status === 'reversed' ? 'Sanction Reversed' : court.sanctionExecution?.status === 'reversal_failed' ? 'Appeal Reversal Failed' : court.sanctionExecution?.status === 'executing' && !executionIsStale(court.sanctionExecution) ? 'Sanction Executing' : court.sanctionExecution?.status === 'failed' || executionIsStale(court.sanctionExecution) ? 'Retry Sanction' : !canExecuteAction && executionAction ? 'No Sanction Authority' : 'Execute Sanction', '⚡', ButtonStyle.Danger, !judgeAuthority || !canExecuteAction || isClosed || court.stage !== 'published' || !court.decision || court.decision.action === 'no_action' || ['executed', 'reversed', 'reversal_failed'].includes(court.sanctionExecution?.status) || (court.sanctionExecution?.status === 'executing' && !executionIsStale(court.sanctionExecution)) || (court.decision?.action === 'ban' && court.sanctionReview?.status !== 'approved')),
-      button(`mod_court_record_history:${modCase.caseId}`, 'Record History', '📚'),
-      button(`mod_case_appeal_history:${modCase.caseId}:0`, `Appeals${appeals.length ? ` (${appeals.length})` : ''}`, '⚖️', ButtonStyle.Secondary, !appeals.length),
-      button('mod_case_appeal_queue:0', 'Appeal Queue', '📥'),
-      button(isClosed ? `mod_court_reopen:${modCase.caseId}` : `mod_court_close:${modCase.caseId}`, isClosed ? 'Reopen' : 'Close Case', isClosed ? '🔓' : '🔒', ButtonStyle.Secondary, !canCloseCourt(interaction)),
-    ),
+    row(...workflowButtons),
+    row(...controlButtons),
     caseFileNavigationRow(interaction, modCase),
   ];
   return { embeds: [embed], components };
@@ -508,8 +539,21 @@ function canCloseCourt(interaction) { return canUseModAction(interaction.member,
 async function handleCourtInteraction(interaction) {
   const id = String(interaction.customId || '');
   if (!id.startsWith('mod_court_')) return false;
-  if (interaction.isStringSelectMenu?.() && id.startsWith('mod_court_open:')) {
-    return openCase(interaction, interaction.values?.[0]);
+  if (interaction.isStringSelectMenu?.()) {
+    if (id.startsWith('mod_court_open:')) return openCase(interaction, interaction.values?.[0]);
+    if (id.startsWith('mod_court_workspace:')) {
+      const caseId = Number(id.split(':')[1]);
+      const modCase = getCaseById(interaction.guildId, caseId);
+      if (!caseIsCourt(modCase)) return false;
+      const section = String(interaction.values?.[0] || '');
+      if (section === 'evidence') { await interaction.update(buildEvidencePage(interaction, modCase)); return true; }
+      if (section === 'notes') { await interaction.update(buildNotesPage(interaction, modCase)); return true; }
+      if (section === 'timeline') { await interaction.update(buildTimelinePage(interaction, modCase)); return true; }
+      if (section === 'review') { await interaction.update(buildReviewBriefPage(interaction, modCase)); return true; }
+      if (section === 'preview') { await interaction.update(buildMemberPreviewPage(modCase)); return true; }
+      if (section === 'history') { await interaction.update(buildRecordHistoryPage(modCase)); return true; }
+      return false;
+    }
   }
   if (!interaction.isButton?.()) return false;
   const parts = id.split(':');
@@ -783,7 +827,7 @@ async function handleCourtModal(interaction) {
       const failed = { ...claimedExecution, status: 'failed', executedAt: now(), error: 'Member is not currently available in this server.' };
       saveCourt(interaction.guildId, caseId, { ...court, sanctionExecution: failed }, interaction.user.id, 'case.court.sanction_failed', claimedExecution);
       COURT_EXECUTION_LOCKS.delete(lockKey);
-      await interaction.reply({ content: '❌ The member is not currently available in this server, so this sanction cannot be executed from Case Court.', flags: 64 }); return true;
+      await interaction.reply({ content: '❌ The member is not currently available in this server, so this action cannot be executed from Case Management.', flags: 64 }); return true;
     }
     try {
       let linkedCaseId = null;
