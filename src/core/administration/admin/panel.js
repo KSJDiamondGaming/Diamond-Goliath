@@ -26,7 +26,7 @@ const moduleAdminPanels = require('./modules');
 
 const PANEL_COLOR = '#5865F2';
 const AUTHORITY_SECTION = 'goliathAuthority';
-const AUTHORITY_VERSION = 4;
+const AUTHORITY_VERSION = 5;
 const AUTHORITY_PER_PAGE = 10;
 
 const LOG_TYPES = {
@@ -68,6 +68,7 @@ const CORE_GUILD_PERMISSIONS = [
   { key: 'mod.court.review', label: 'Review & Decide Cases', group: 'Cases' },
   { key: 'mod.court.publish', label: 'Publish Case Decisions', group: 'Cases' },
   { key: 'mod.court.close', label: 'Close / Reopen Cases', group: 'Cases' },
+  { key: 'mod.court.delete', label: 'Permanently Delete Cases', group: 'Cases' },
   { key: 'mod.evidence.manage', label: 'Manage Evidence', group: 'Cases' },
   { key: 'mod.appeals.view', label: 'View Appeal Queue', group: 'Cases' },
   { key: 'mod.appeals.decide', label: 'Decide Appeals', group: 'Cases' },
@@ -96,7 +97,7 @@ const baseModeratorPermissions = {
   'admin.backups.view': false, 'admin.backups.create': false, 'admin.backups.requestRestore': false, 'admin.purge': false,
   'mod.panel.view': true, 'mod.warn': true, 'mod.timeout': true, 'mod.timeout.remove': true, 'mod.kick': true,
   'mod.ban': false, 'mod.unban': false, 'mod.cases.view': true, 'mod.cases.search': true, 'mod.cases.export': false,
-  'mod.cases.manage': true, 'mod.court.manage': true, 'mod.court.review': false, 'mod.court.publish': false, 'mod.court.close': false, 'mod.evidence.manage': true, 'mod.appeals.view': true, 'mod.appeals.decide': false,
+  'mod.cases.manage': true, 'mod.court.manage': true, 'mod.court.review': false, 'mod.court.publish': false, 'mod.court.close': false, 'mod.court.delete': false, 'mod.evidence.manage': true, 'mod.appeals.view': true, 'mod.appeals.decide': false,
   'mod.presets.manage': true, 'mod.bulk': false, 'mod.analytics.view': true, 'mod.scan.run': true, 'mod.scan.history': true,
   'mod.scan.compare': true, 'mod.scan.suspectedAccounts': true, 'mod.scan.network': true, 'mod.scan.notes': true,
   'mod.scan.watch': true, 'mod.scan.links': true,
@@ -106,7 +107,7 @@ const baseJuniorPermissions = {
   'admin.backups.view': false, 'admin.backups.create': false, 'admin.backups.requestRestore': false, 'admin.purge': false,
   'mod.panel.view': true, 'mod.warn': true, 'mod.timeout': true, 'mod.timeout.remove': false, 'mod.kick': false,
   'mod.ban': false, 'mod.unban': false, 'mod.cases.view': true, 'mod.cases.search': true, 'mod.cases.export': false,
-  'mod.cases.manage': false, 'mod.court.manage': false, 'mod.court.review': false, 'mod.court.publish': false, 'mod.court.close': false, 'mod.evidence.manage': false, 'mod.appeals.view': false, 'mod.appeals.decide': false,
+  'mod.cases.manage': false, 'mod.court.manage': false, 'mod.court.review': false, 'mod.court.publish': false, 'mod.court.close': false, 'mod.court.delete': false, 'mod.evidence.manage': false, 'mod.appeals.view': false, 'mod.appeals.decide': false,
   'mod.presets.manage': false, 'mod.bulk': false, 'mod.analytics.view': false, 'mod.scan.run': true, 'mod.scan.history': true,
   'mod.scan.compare': true, 'mod.scan.suspectedAccounts': false, 'mod.scan.network': false, 'mod.scan.notes': false,
   'mod.scan.watch': false, 'mod.scan.links': false,
