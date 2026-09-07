@@ -41,6 +41,29 @@ function fieldValue(interaction, key) {
   }
 }
 
+async function ensureInitiatorInterviewAccess(guild, channelId, initiatorId) {
+  if (!guild || !channelId || !initiatorId) return { success: false, reason: 'Missing guild/channel/initiator.' };
+  const channel = guild.channels.cache.get(String(channelId))
+    || await guild.channels.fetch(String(channelId)).catch(() => null);
+  if (!channel?.permissionOverwrites?.edit) return { success: false, reason: 'Investigation room is unavailable.' };
+  const member = guild.members.cache.get(String(initiatorId))
+    || await guild.members.fetch(String(initiatorId)).catch(() => null);
+  if (!member) return { success: false, reason: 'Initiating moderator is no longer in the guild.' };
+  try {
+    await channel.permissionOverwrites.edit(member.id, {
+      ViewChannel: true,
+      SendMessages: true,
+      ReadMessageHistory: true,
+      AttachFiles: true,
+      EmbedLinks: true,
+      ManageMessages: true,
+    }, { reason: 'Ensure investigating moderator can access the private interview room' });
+    return { success: true, channelId: channel.id, memberId: member.id };
+  } catch (error) {
+    return { success: false, reason: error.message };
+  }
+}
+
 function investigationModal(targetId) {
   return new Discord.ModalBuilder()
     .setCustomId(`mod_submit_quarantine_investigation:${targetId}`)
@@ -172,6 +195,25 @@ async function submitQuarantine(interaction, targetId, requestedMode, legacy = f
       content: `❌ Failed to investigate **${target.user.tag}**: ${result?.error || result?.reason || 'Unknown error'}`,
       flags: 64,
     });
+  }
+
+  if (!result.dryRun && result.interviewChannelId) {
+    const access = await ensureInitiatorInterviewAccess(
+      interaction.guild,
+      result.interviewChannelId,
+      interaction.user.id,
+    );
+    if (!access.success) {
+      console.warn(`[InvestigationIsolation] Could not guarantee initiator access in ${interaction.guild.id}: ${access.reason}`);
+      recordModerationSystemEvent({
+        interaction,
+        event: 'moderation.investigation.initiator_access_failed',
+        action: 'quarantine',
+        targetId: target.id,
+        reason: access.reason,
+        metadata: { interviewChannelId: result.interviewChannelId },
+      });
+    }
   }
 
   let modCase = null;
@@ -325,5 +367,6 @@ async function handleQuarantineInteraction(interaction) {
 
 module.exports = {
   handleQuarantineInteraction,
+  ensureInitiatorInterviewAccess,
   isGuildOwner,
 };
