@@ -11,6 +11,9 @@ const INITIAL_STATE = {
   protectionScore: 100,
   protectionStatus: 'protected',
   incidents: { total: 0, critical: 0, high: 0, webhook: 0, recent: [] },
+  incidentPackages: [],
+  capabilityHealth: {},
+  protectedAssets: { enabled: true, roleIds: [], channelIds: [] },
   lockdown: { active: false },
   quarantine: { users: {} },
   emergencyControls: { invites: { active: false }, roles: { active: false } },
@@ -52,6 +55,10 @@ function hasFeature(entitlements, featureKey) {
   return Array.isArray(entitlements?.features) && entitlements.features.includes(featureKey);
 }
 
+function parseIds(value = '') {
+  return [...new Set(String(value || '').split(/[\s,]+/).map((item) => item.trim()).filter(Boolean))];
+}
+
 function StatusPill({ theme, tone = 'info', children }) {
   const tones = {
     info: { bg: 'rgba(59,130,246,0.14)', border: 'rgba(59,130,246,0.28)', text: '#bfdbfe' },
@@ -80,6 +87,23 @@ function IncidentCard({ theme, incident }) {
   );
 }
 
+function PackageCard({ theme, incidentPackage }) {
+  return (
+    <div style={{ background: theme.softBg, border: `1px solid ${theme.cardBorder}`, borderRadius: 16, padding: 14, display: 'grid', gap: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+        <strong style={{ overflowWrap: 'anywhere' }}>{incidentPackage?.packageId || 'Incident package'}</strong>
+        <StatusPill theme={theme} tone={getSeverityTone(incidentPackage?.severity)}>{incidentPackage?.severity || 'low'}</StatusPill>
+      </div>
+      <div style={{ color: theme.mutedText, fontSize: 13, lineHeight: 1.5 }}>
+        Actor: {incidentPackage?.actorTag || incidentPackage?.actorId || 'Unknown'}<br />
+        Threat score: {incidentPackage?.threatScore ?? 0}<br />
+        Correlated event types: {incidentPackage?.distinctEventTypes ?? 0}<br />
+        Audit entry: {incidentPackage?.auditEvidence?.auditEntryId || 'Unavailable'}
+      </div>
+    </div>
+  );
+}
+
 function StateRow({ theme, label, children }) {
   return <div style={{ background: theme.softBg, border: `1px solid ${theme.cardBorder}`, borderRadius: 16, padding: 14, display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}><span style={{ color: theme.cardText, fontWeight: 900 }}>{label}</span>{children}</div>;
 }
@@ -87,7 +111,7 @@ function StateRow({ theme, label, children }) {
 function MonitorCard({ theme, monitor }) {
   const enabled = monitor?.enabled !== false;
   const status = monitor?.status || (enabled ? 'online' : 'disabled');
-  const tone = status === 'active' ? 'danger' : enabled ? 'success' : 'warning';
+  const tone = status === 'active' || status === 'degraded' ? 'danger' : enabled ? 'success' : 'warning';
   return <div style={{ border: `1px solid ${theme.cardBorder}`, background: theme.softBg, borderRadius: 16, padding: 14, display: 'grid', gap: 8 }}><div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}><strong>{monitor?.label || 'Monitor'}</strong><StatusPill theme={theme} tone={tone}>{status}</StatusPill></div><p style={{ margin: 0, color: theme.mutedText, fontSize: 13, lineHeight: 1.45 }}>{monitor?.description || 'No description available.'}</p></div>;
 }
 
@@ -101,6 +125,10 @@ export default function Security({ selectedGuild, selectedGuildId, theme, guilds
   const [entitlementsLoading, setEntitlementsLoading] = useState(false);
   const [entitlements, setEntitlements] = useState(null);
   const [data, setData] = useState(INITIAL_STATE);
+  const [protectedRoleInput, setProtectedRoleInput] = useState('');
+  const [protectedChannelInput, setProtectedChannelInput] = useState('');
+  const [protectedSaving, setProtectedSaving] = useState(false);
+  const [protectedMessage, setProtectedMessage] = useState('');
 
   const selectedGuildData = useMemo(() => guilds.find((guild) => String(guild.id) === activeGuildId) || null, [guilds, activeGuildId]);
   const pageGuild = useMemo(() => ({ id: activeGuildId, name: selectedGuildData?.name || 'Security Center', iconUrl: getGuildAvatar(selectedGuildData) }), [activeGuildId, selectedGuildData]);
@@ -124,7 +152,33 @@ export default function Security({ selectedGuild, selectedGuildId, theme, guilds
     }
   }
 
+  async function saveProtectedAssets() {
+    if (!activeGuildId) return;
+    setProtectedSaving(true);
+    setProtectedMessage('');
+    try {
+      const result = await api.saveSecurityProtectedAssets(activeGuildId, {
+        enabled: true,
+        roleIds: parseIds(protectedRoleInput),
+        channelIds: parseIds(protectedChannelInput),
+      });
+      setProtectedRoleInput((result.roleIds || []).join('\n'));
+      setProtectedChannelInput((result.channelIds || []).join('\n'));
+      setProtectedMessage('Protected assets saved. Goliath will apply a higher threat score when these roles or channels are targeted.');
+      await loadSecurityOverview();
+    } catch (error) {
+      setProtectedMessage(error.message || 'Unable to save protected assets. Only the Discord server owner can change this list.');
+    } finally {
+      setProtectedSaving(false);
+    }
+  }
+
   useEffect(() => { loadSecurityOverview(); }, [activeGuildId]);
+
+  useEffect(() => {
+    setProtectedRoleInput((data.protectedAssets?.roleIds || []).join('\n'));
+    setProtectedChannelInput((data.protectedAssets?.channelIds || []).join('\n'));
+  }, [activeGuildId, data.protectedAssets?.roleIds, data.protectedAssets?.channelIds]);
 
   useEffect(() => {
     if (!activeGuildId) return;
@@ -164,10 +218,12 @@ export default function Security({ selectedGuild, selectedGuildId, theme, guilds
 
   const quarantineCount = Number(data.quarantineCount ?? Object.keys(data.quarantine?.users || {}).length);
   const recentIncidents = Array.isArray(data.incidents?.recent) ? data.incidents.recent : [];
+  const incidentPackages = Array.isArray(data.incidentPackages) ? data.incidentPackages : [];
   const threatAccent = getThreatAccent(theme, data.threatLevel);
   const lockdownActive = Boolean(data.lockdown?.active);
   const inviteFreezeActive = Boolean(data.emergencyControls?.invites?.active);
   const roleFreezeActive = Boolean(data.emergencyControls?.roles?.active);
+  const capabilityHealthy = data.capabilityHealth?.healthy !== false;
   const protectionScore = Number(data.protectionScore ?? 100);
   const monitors = Object.values(data.monitors || {}).filter(Boolean);
   const protectionModules = data.protectionModules?.length ? data.protectionModules : monitors;
@@ -182,10 +238,13 @@ export default function Security({ selectedGuild, selectedGuildId, theme, guilds
         <SummaryStat theme={theme} label="Threat Level" value={data.threatLevel || 'low'} accent={threatAccent} description="Current live security level" />
         <SummaryStat theme={theme} label="Total Incidents" value={data.incidents?.total || 0} description="Detected security events" />
         <SummaryStat theme={theme} label="Critical" value={data.incidents?.critical || 0} accent={theme.danger || '#ef4444'} description="Highest severity events" />
-        <SummaryStat theme={theme} label="Webhook Events" value={data.incidents?.webhook || 0} accent="#60a5fa" description="Webhook-related incidents" />
+        <SummaryStat theme={theme} label="Forensic Packages" value={incidentPackages.length} description="Correlated audit evidence" />
         <SummaryStat theme={theme} label="Lockdown" value={lockdownActive ? 'ACTIVE' : 'Inactive'} accent={lockdownActive ? theme.danger || '#ef4444' : theme.success || '#22c55e'} description="Emergency protection" />
+        <SummaryStat theme={theme} label="Response Health" value={capabilityHealthy ? 'Healthy' : 'DEGRADED'} accent={capabilityHealthy ? theme.success || '#22c55e' : theme.danger || '#ef4444'} description="Permissions and hierarchy" />
         <SummaryStat theme={theme} label="Quarantined" value={quarantineCount} accent={quarantineCount > 0 ? theme.warning || '#f59e0b' : theme.success || '#22c55e'} description="Users currently isolated" />
       </StatGrid>
+
+      {!capabilityHealthy ? <Notice theme={theme} tone="danger">Goliath security response capability is degraded. Missing permissions: {(data.capabilityHealth?.missingPermissions || []).join(', ') || 'none listed'}{data.capabilityHealth?.hierarchyDegraded ? `. Role hierarchy is blocked by ${data.capabilityHealth?.blockingRoleName || data.capabilityHealth?.blockingRoleId || 'a higher privileged role'}.` : '.'}</Notice> : null}
 
       <SectionCard theme={theme} title="Protection Monitors" subtitle="Live status from the Goliath security engine.">
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 240px), 1fr))', gap: 12 }}>{protectionModules.length ? protectionModules.map((monitor) => <MonitorCard key={monitor.key} theme={theme} monitor={monitor} />) : <EmptyState theme={theme} text="No monitor state returned yet." />}</div>
@@ -203,21 +262,44 @@ export default function Security({ selectedGuild, selectedGuildId, theme, guilds
               <StateRow theme={theme} label="Quarantine"><StatusPill theme={theme} tone={quarantineCount > 0 ? 'warning' : 'success'}>{quarantineCount} Users</StatusPill></StateRow>
               <StateRow theme={theme} label="Invite Freeze"><StatusPill theme={theme} tone={inviteFreezeActive ? 'danger' : 'success'}>{inviteFreezeActive ? 'Active' : 'Standby'}</StatusPill></StateRow>
               <StateRow theme={theme} label="Role Freeze"><StatusPill theme={theme} tone={roleFreezeActive ? 'danger' : 'success'}>{roleFreezeActive ? 'Active' : 'Standby'}</StatusPill></StateRow>
+              <StateRow theme={theme} label="Threat Correlation"><StatusPill theme={theme} tone={data.monitors?.threatCorrelation?.enabled === false ? 'warning' : 'success'}>{data.monitors?.threatCorrelation?.status || 'online'}</StatusPill></StateRow>
+              <StateRow theme={theme} label="Response Capability"><StatusPill theme={theme} tone={capabilityHealthy ? 'success' : 'danger'}>{capabilityHealthy ? 'Healthy' : 'Degraded'}</StatusPill></StateRow>
               <StateRow theme={theme} label="Anti-Nuke"><StatusPill theme={theme} tone={data.monitors?.antiNuke?.enabled === false ? 'warning' : 'success'}>{data.monitors?.antiNuke?.status || 'online'}</StatusPill></StateRow>
               <StateRow theme={theme} label="Webhook Monitor"><StatusPill theme={theme} tone={data.monitors?.webhooks?.enabled === false ? 'warning' : 'success'}>{data.monitors?.webhooks?.status || 'online'}</StatusPill></StateRow>
-              <StateRow theme={theme} label="Owner Monitoring"><StatusPill theme={theme} tone={data.monitors?.ownerMonitoring?.enabled === false ? 'warning' : 'success'}>{data.monitors?.ownerMonitoring?.status || 'online'}</StatusPill></StateRow>
-              <StateRow theme={theme} label="Audit Log Health"><StatusPill theme={theme} tone={data.monitors?.auditLog?.enabled === false ? 'warning' : 'success'}>{data.monitors?.auditLog?.status || 'online'}</StatusPill></StateRow>
+              <StateRow theme={theme} label="Audit Log Health"><StatusPill theme={theme} tone={data.monitors?.auditLog?.status === 'degraded' ? 'danger' : 'success'}>{data.monitors?.auditLog?.status || 'online'}</StatusPill></StateRow>
             </div>
           </SectionCard>
 
-          <SectionCard theme={theme} title="Automatic Emergency Response" subtitle="Goliath escalates protection according to incident severity.">
-            <Notice theme={theme} tone="info">LOW: log and monitor. MEDIUM: alert the guild owner. HIGH: emergency backup and Full Security Isolation of the detected actor. CRITICAL: backup, Full Security Isolation, lockdown, invite freeze, role freeze, owner alert, then a post-incident backup. Timed emergency controls recover automatically.</Notice>
+          <SectionCard theme={theme} title="Automatic Emergency Response" subtitle="Goliath escalates protection according to incident severity and correlated actor behaviour.">
+            <Notice theme={theme} tone="info">LOW: log and monitor. MEDIUM: owner alert. HIGH: emergency backup and Full Security Isolation. CRITICAL: backup, Full Security Isolation, lockdown, invite freeze, role freeze, owner alert, then post-incident backup. Multiple different dangerous actions by one actor within 60 seconds increase the threat score automatically.</Notice>
           </SectionCard>
         </div>
       </div>
 
+      <SectionCard theme={theme} title="Protected Security Assets" subtitle="Server-owner controlled. Targeting these roles or channels receives a much higher threat score.">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 300px), 1fr))', gap: 14 }}>
+          <label style={{ display: 'grid', gap: 7, color: theme.cardText, fontWeight: 800 }}>
+            Protected Role IDs
+            <textarea value={protectedRoleInput} onChange={(event) => setProtectedRoleInput(event.target.value)} rows={5} placeholder="One role ID per line" style={{ width: '100%', borderRadius: 12, border: `1px solid ${theme.cardBorder}`, background: theme.softBg, color: theme.cardText, padding: 12, resize: 'vertical' }} />
+          </label>
+          <label style={{ display: 'grid', gap: 7, color: theme.cardText, fontWeight: 800 }}>
+            Protected Channel IDs
+            <textarea value={protectedChannelInput} onChange={(event) => setProtectedChannelInput(event.target.value)} rows={5} placeholder="One channel ID per line" style={{ width: '100%', borderRadius: 12, border: `1px solid ${theme.cardBorder}`, background: theme.softBg, color: theme.cardText, padding: 12, resize: 'vertical' }} />
+          </label>
+        </div>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginTop: 14 }}>
+          <button type="button" disabled={protectedSaving} onClick={saveProtectedAssets} style={{ border: `1px solid ${theme.cardBorder}`, background: theme.softBg, color: theme.cardText, borderRadius: 12, padding: '10px 14px', fontWeight: 900 }}>{protectedSaving ? 'Saving...' : 'Save Protected Assets'}</button>
+          <span style={{ color: theme.mutedText, fontSize: 13 }}>Goliath's own bot role is protected automatically and does not need to be entered.</span>
+        </div>
+        {protectedMessage ? <div style={{ marginTop: 10, color: theme.mutedText, fontSize: 13, fontWeight: 700 }}>{protectedMessage}</div> : null}
+      </SectionCard>
+
+      <SectionCard theme={theme} title="Forensic Incident Packages" subtitle="Serious correlated security events retain actor, audit-log evidence, threat session and automatic response details.">
+        {incidentPackages.length ? <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 300px), 1fr))', gap: 12 }}>{incidentPackages.slice(0, 12).map((incidentPackage) => <PackageCard key={incidentPackage.packageId} theme={theme} incidentPackage={incidentPackage} />)}</div> : <EmptyState theme={theme} text="No correlated incident packages have been created." />}
+      </SectionCard>
+
       {entitlementsLoading ? <LoadingPanel theme={theme} text="Checking Advanced Security access..." /> : null}
-      {hasAdvancedSecurity ? <SectionCard theme={theme} title="Advanced Security Intelligence" subtitle="Pro-level security insights for this guild."><div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: 12 }}><StateRow theme={theme} label="Threat Analytics"><StatusPill theme={theme} tone="success">Unlocked</StatusPill></StateRow><StateRow theme={theme} label="Audit Intelligence"><StatusPill theme={theme} tone="success">Unlocked</StatusPill></StateRow><StateRow theme={theme} label="Webhook Intelligence"><StatusPill theme={theme} tone="success">Unlocked</StatusPill></StateRow><StateRow theme={theme} label="Owner Monitoring"><StatusPill theme={theme} tone="success">Unlocked</StatusPill></StateRow></div></SectionCard> : <AdvancedSecurityLock theme={theme} entitlements={entitlements} />}
+      {hasAdvancedSecurity ? <SectionCard theme={theme} title="Advanced Security Intelligence" subtitle="Pro-level security insights for this guild."><div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: 12 }}><StateRow theme={theme} label="Threat Analytics"><StatusPill theme={theme} tone="success">Unlocked</StatusPill></StateRow><StateRow theme={theme} label="Audit Intelligence"><StatusPill theme={theme} tone="success">Unlocked</StatusPill></StateRow><StateRow theme={theme} label="Webhook Intelligence"><StatusPill theme={theme} tone="success">Unlocked</StatusPill></StateRow><StateRow theme={theme} label="Cross-Incident Correlation"><StatusPill theme={theme} tone="success">Active</StatusPill></StateRow></div></SectionCard> : <AdvancedSecurityLock theme={theme} entitlements={entitlements} />}
     </PageShell>
   );
 }
