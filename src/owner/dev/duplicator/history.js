@@ -114,9 +114,6 @@ async function acquireTemporaryAdmin(guild) {
     return state;
   }
 
-  // Discord does not allow a bot to create authority it does not already control. For
-  // legacy copied channels, borrow an existing Administrator role only when that role is
-  // already below Goliath's highest role and Goliath has Manage Roles at guild level.
   if (!me.permissions.has(PermissionFlagsBits.ManageRoles)) return null;
 
   const highest = Number(me.roles.highest?.position || 0);
@@ -157,10 +154,6 @@ async function acquireTemporaryAdmin(guild) {
   return null;
 }
 
-// recoverBulkDeleteAccess() edits Goliath's own overwrite before a batch is allowed to
-// start. Old exact copies can deny the bot enough access that this edit itself receives
-// 50001/50013. In that case temporarily borrow a manageable existing Administrator role,
-// retry the same edit, and leave cleanup to the bulk-delete manifest/fail-safe timer.
 if (PermissionOverwriteManager?.prototype?.edit && !PermissionOverwriteManager.prototype[OVERWRITE_RESCUE_PATCH]) {
   const originalEdit = PermissionOverwriteManager.prototype.edit;
   Object.defineProperty(PermissionOverwriteManager.prototype, OVERWRITE_RESCUE_PATCH, { value: true });
@@ -186,10 +179,6 @@ if (PermissionOverwriteManager?.prototype?.edit && !PermissionOverwriteManager.p
   };
 }
 
-// Also guard the final Discord DELETE request. discord.js permission calculations can say
-// Manage Channels is effective while Discord still returns Missing Access for a legacy
-// channel. This catches the authoritative API failure and retries once under the same
-// temporary Administrator rescue.
 if (GuildChannel?.prototype?.delete && !GuildChannel.prototype[DELETE_RESCUE_PATCH]) {
   const originalDelete = GuildChannel.prototype.delete;
   Object.defineProperty(GuildChannel.prototype, DELETE_RESCUE_PATCH, { value: true });
@@ -234,9 +223,6 @@ function add(controlGuildId, manifest, guildOrMeta = {}) {
   };
   saveHistory(controlGuildId, [entry, ...transferHistory.filter((item) => item?.id !== entry.id)], guildOrMeta);
 
-  // The rescue exists only to complete this explicitly-confirmed delete. Remove it as soon
-  // as the result is recorded. The 90-second timer above remains a second cleanup path if
-  // an exception prevents a manifest from being written.
   if (manifest.type === 'bulk-delete' && destinationGuildId && rescue && !rescue.preExisting) {
     queueMicrotask(() => { void releaseTemporaryAdmin(destinationGuildId); });
   }
@@ -282,15 +268,4 @@ function clearWhere(controlGuildId, predicate, guildOrMeta = {}) {
   return removed;
 }
 
-module.exports = {
-  add,
-  list,
-  get,
-  update,
-  remove,
-  clearWhere,
-  makeId,
-  acquireTemporaryAdmin,
-  releaseTemporaryAdmin,
-  scheduleTemporaryAdminRelease,
-};
+module.exports = { add, list, get, update, remove, clearWhere, makeId };
