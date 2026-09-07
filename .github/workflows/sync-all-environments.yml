@@ -30,8 +30,7 @@ jobs:
           ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
 
-      - name: Align remote beta and production to dev
-        id: align
+      - name: Align remote beta and production to validated dev commit
         shell: bash
         env:
           SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
@@ -41,14 +40,12 @@ jobs:
           git fetch origin dev beta production
           git cat-file -e "$SOURCE_SHA^{commit}"
 
-          DEV_SHA="$(git rev-parse origin/dev)"
-          if [ "$SOURCE_SHA" != "$DEV_SHA" ]; then
-            echo "Skipping stale sync: workflow commit $SOURCE_SHA is not current origin/dev $DEV_SHA"
-            echo "stale=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          echo "stale=false" >> "$GITHUB_OUTPUT"
+          # SOURCE_SHA came from a successful Deploy Goliath run. Dev may already
+          # have moved forward due to another push, so do not skip this validated
+          # deployment merely because origin/dev is newer.
+          CURRENT_DEV_SHA="$(git rev-parse origin/dev)"
+          printf 'validated source: %s\n' "$SOURCE_SHA"
+          printf 'current dev:      %s\n' "$CURRENT_DEV_SHA"
 
           BETA_OLD="$(git rev-parse origin/beta)"
           PROD_OLD="$(git rev-parse origin/production)"
@@ -61,22 +58,18 @@ jobs:
             --force-with-lease=refs/heads/production:"$PROD_OLD" \
             origin "$SOURCE_SHA:refs/heads/production"
 
-          git fetch origin dev beta production
+          git fetch origin beta production
 
-          DEV_REMOTE="$(git rev-parse origin/dev)"
           BETA_REMOTE="$(git rev-parse origin/beta)"
           PROD_REMOTE="$(git rev-parse origin/production)"
 
-          printf 'dev:        %s\n' "$DEV_REMOTE"
           printf 'beta:       %s\n' "$BETA_REMOTE"
           printf 'production: %s\n' "$PROD_REMOTE"
 
-          [ "$DEV_REMOTE" = "$SOURCE_SHA" ]
           [ "$BETA_REMOTE" = "$SOURCE_SHA" ]
           [ "$PROD_REMOTE" = "$SOURCE_SHA" ]
 
-      - name: Deploy beta and production from the same commit
-        if: steps.align.outputs.stale != 'true'
+      - name: Deploy beta and production from the same validated commit
         uses: appleboy/ssh-action@v1
         env:
           EXPECTED_SHA: ${{ github.event.workflow_run.head_sha }}
@@ -124,7 +117,7 @@ jobs:
               cd "$APP_DIR"
               OLD_SHA="$(git rev-parse HEAD 2>/dev/null || true)"
 
-              git fetch --no-tags origin dev beta production
+              git fetch --no-tags origin beta production
               REMOTE_SHA="$(git rev-parse "origin/$ENVIRONMENT")"
               [ "$REMOTE_SHA" = "$EXPECTED_SHA" ] || {
                 echo "origin/$ENVIRONMENT is $REMOTE_SHA, expected $EXPECTED_SHA" >&2
@@ -225,10 +218,14 @@ jobs:
             printf 'BETA       %s | %s\n' "$BETA_SHA" "$BETA_TREE"
             printf 'PRODUCTION %s | %s\n' "$PROD_SHA" "$PROD_TREE"
 
-            [ "$DEV_SHA" = "$EXPECTED_SHA" ]
             [ "$BETA_SHA" = "$EXPECTED_SHA" ]
             [ "$PROD_SHA" = "$EXPECTED_SHA" ]
-            [ "$DEV_TREE" = "$BETA_TREE" ]
-            [ "$DEV_TREE" = "$PROD_TREE" ]
+            [ "$BETA_TREE" = "$PROD_TREE" ]
 
-            echo "✅ DEV/BETA/PRODUCTION VPS checkouts are on the same commit and tracked tree."
+            if [ "$DEV_SHA" = "$EXPECTED_SHA" ]; then
+              [ "$DEV_TREE" = "$BETA_TREE" ]
+              echo "✅ DEV/BETA/PRODUCTION VPS checkouts are on the same validated commit and tracked tree."
+            else
+              echo "ℹ️ DEV advanced to $DEV_SHA while this validated sync was queued/running."
+              echo "✅ BETA/PRODUCTION are verified on $EXPECTED_SHA; the later successful DEV deployment will trigger the next serialized sync."
+            fi
