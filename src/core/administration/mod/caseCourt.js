@@ -131,6 +131,11 @@ function cleanExcerpt(value, max = 220) {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
 function staffBackRow(targetId) { return row(button(`mod_court_back:${targetId}`, 'Back', '⬅️')); }
+function caseManagementNavigationRow(interaction, targetId) {
+  const items = [button(`mod_dashboard:${targetId}:actions`, 'Back', '⬅️')];
+  if (canUseModAction(interaction.member, interaction.guild, 'export_cases', interaction)) items.push(button(`mod_export_cases:${targetId}`, 'Export', '📤'));
+  return row(...items);
+}
 function caseFileBackRow(caseId) { return row(button(`mod_court_file:${caseId}`, 'Back', '⬅️')); }
 function canDeleteCourt(interaction) { return canUseModAction(interaction.member, interaction.guild, 'court_delete', interaction); }
 function caseFileNavigationRow(interaction, modCase) {
@@ -184,6 +189,7 @@ function buildCourtDashboard(interaction, target) {
       button(`mod_court_review_queue:${target.id}`, 'Review Queue', '⚖️'),
       button(`mod_court_published:${target.id}`, 'Published', '📜'),
     ));
+    components.push(caseManagementNavigationRow(interaction, target.id));
   }
   return { embed, components };
 }
