@@ -243,8 +243,20 @@ jobs:
             if [ "$PUSH_TRIGGERED" = "true" ]; then
               LATEST_REMOTE_SHA="$(git rev-parse "origin/$TARGET_BRANCH")"
               if [ "$EXPECTED_SHA" != "$LATEST_REMOTE_SHA" ]; then
-                echo "Skipping stale deployment for $EXPECTED_SHA; latest origin/$TARGET_BRANCH is $LATEST_REMOTE_SHA."
-                exit 0
+                if git merge-base --is-ancestor "$EXPECTED_SHA" "$LATEST_REMOTE_SHA"; then
+                  STALE_DIFF="$(git diff --name-only "$EXPECTED_SHA" "$LATEST_REMOTE_SHA")"
+                  UNSAFE_STALE_DIFF="$(printf '%s\n' "$STALE_DIFF" | grep -Ev '^(\.github/workflows/.*-once\.yml|scripts/.*-once\.js|scripts/.*-temp\.js)$' || true)"
+                  if [ -z "$UNSAFE_STALE_DIFF" ]; then
+                    echo "Fast-forwarding deployment from $EXPECTED_SHA to $LATEST_REMOTE_SHA because the intervening commits only changed deploy-ignored one-off files."
+                    EXPECTED_SHA="$LATEST_REMOTE_SHA"
+                  else
+                    echo "Superseding stale deployment for $EXPECTED_SHA; newer deployable changes exist at $LATEST_REMOTE_SHA. The newer push run must deploy them."
+                    exit 0
+                  fi
+                else
+                  echo "Superseding stale deployment for $EXPECTED_SHA; latest origin/$TARGET_BRANCH is $LATEST_REMOTE_SHA and is not a descendant."
+                  exit 0
+                fi
               fi
             fi
 
@@ -298,6 +310,7 @@ jobs:
             rm -f "$PLAN_ERROR"
 
             if [ "$FORCE_COMMAND_SYNC" = "true" ]; then NEED_COMMAND_SYNC=true; fi
+            if [ "$OLD_SHA" != "$EXPECTED_SHA" ]; then NEED_APP_RELOAD=true; fi
 
             if [ -n "$OLD_SHA" ] && git cat-file -e "$OLD_SHA^{commit}" 2>/dev/null; then
               if git diff --name-only "$OLD_SHA" "$EXPECTED_SHA" | grep -Eq '^(src/core/commands/|src/core/administration/(admin|mod|user)/command\.js$)'; then
@@ -334,6 +347,15 @@ jobs:
             if pm2 describe "$PM2_NAME" >/dev/null 2>&1; then
               pm2 save
             fi
+
+            FINAL_SHA="$(git rev-parse HEAD)"
+            [ "$FINAL_SHA" = "$EXPECTED_SHA" ] || { echo "Checkout verification failed: $FINAL_SHA != $EXPECTED_SHA" >&2; exit 1; }
+
+            PID="$(pm2 pid "$PM2_NAME" 2>/dev/null | tail -n 1 | tr -d '[:space:]')"
+            [ -n "$PID" ] && [ "$PID" != "0" ] || { echo "PM2 process $PM2_NAME is not running." >&2; exit 1; }
+            PROCESS_CWD="$(readlink -f "/proc/$PID/cwd")"
+            [ "$PROCESS_CWD" = "$APP_DIR" ] || { echo "PM2 cwd mismatch: $PROCESS_CWD != $APP_DIR" >&2; exit 1; }
+            echo "✅ Deployment verified: $PM2_NAME is running $FINAL_SHA from $PROCESS_CWD"
 
             restore_runtime
             trap - EXIT
