@@ -61,9 +61,13 @@ function validateJsonFile(filePath) {
 }
 
 function syncFile(filePath) {
-  const fd = fs.openSync(filePath, 'r');
+  let fd;
 
   try {
+    // Windows' FlushFileBuffers requires a handle opened with write access.
+    // A read-only descriptor can surface EPERM on OneDrive-backed paths even
+    // though the file itself is writable, so use r+ there without truncation.
+    fd = fs.openSync(filePath, process.platform === 'win32' ? 'r+' : 'r');
     fs.fsyncSync(fd);
     return true;
   } catch (error) {
@@ -77,7 +81,7 @@ function syncFile(filePath) {
 
     return false;
   } finally {
-    fs.closeSync(fd);
+    if (fd !== undefined) fs.closeSync(fd);
   }
 }
 
