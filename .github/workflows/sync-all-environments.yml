@@ -1,11 +1,7 @@
 name: Sync Goliath Environments
 
 on:
-  workflow_run:
-    workflows:
-      - Deploy Goliath
-    types:
-      - completed
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -16,36 +12,40 @@ concurrency:
 
 jobs:
   sync:
-    if: >-
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'push' &&
-      github.event.workflow_run.head_branch == 'dev'
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
     steps:
-      - name: Check out validated dev commit
+      - name: Check out current dev commit
         uses: actions/checkout@v5
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: dev
           fetch-depth: 0
 
-      - name: Align remote beta and production to validated dev commit
+      - name: Resolve manual dev source
         shell: bash
-        env:
-          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          git fetch origin dev
+          SOURCE_SHA="$(git rev-parse origin/dev)"
+          echo "SOURCE_SHA=$SOURCE_SHA" >> "$GITHUB_ENV"
+          echo "Manual sync source: $SOURCE_SHA"
+
+      - name: Align remote beta and production to dev
+        shell: bash
         run: |
           set -euo pipefail
 
           git fetch origin dev beta production
           git cat-file -e "$SOURCE_SHA^{commit}"
 
-          # SOURCE_SHA came from a successful Deploy Goliath run. Dev may already
-          # have moved forward due to another push, so do not skip this validated
-          # deployment merely because origin/dev is newer.
           CURRENT_DEV_SHA="$(git rev-parse origin/dev)"
-          printf 'validated source: %s\n' "$SOURCE_SHA"
-          printf 'current dev:      %s\n' "$CURRENT_DEV_SHA"
+          [ "$CURRENT_DEV_SHA" = "$SOURCE_SHA" ] || {
+            echo "DEV moved during manual sync setup: $CURRENT_DEV_SHA != $SOURCE_SHA" >&2
+            exit 1
+          }
+
+          printf 'manual source: %s\n' "$SOURCE_SHA"
 
           BETA_OLD="$(git rev-parse origin/beta)"
           PROD_OLD="$(git rev-parse origin/production)"
@@ -69,10 +69,10 @@ jobs:
           [ "$BETA_REMOTE" = "$SOURCE_SHA" ]
           [ "$PROD_REMOTE" = "$SOURCE_SHA" ]
 
-      - name: Deploy beta and production from the same validated commit
+      - name: Deploy beta and production from the same manual dev commit
         uses: appleboy/ssh-action@v1
         env:
-          EXPECTED_SHA: ${{ github.event.workflow_run.head_sha }}
+          EXPECTED_SHA: ${{ env.SOURCE_SHA }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
@@ -124,7 +124,6 @@ jobs:
                 return 1
               }
 
-              # Runtime data is ignored by Git and intentionally remains deployment-local.
               git checkout -B "$ENVIRONMENT" "origin/$ENVIRONMENT"
               git reset --hard "$EXPECTED_SHA"
 
@@ -224,8 +223,8 @@ jobs:
 
             if [ "$DEV_SHA" = "$EXPECTED_SHA" ]; then
               [ "$DEV_TREE" = "$BETA_TREE" ]
-              echo "✅ DEV/BETA/PRODUCTION VPS checkouts are on the same validated commit and tracked tree."
+              echo "✅ DEV/BETA/PRODUCTION VPS checkouts are on the same manual sync commit and tracked tree."
             else
-              echo "ℹ️ DEV advanced to $DEV_SHA while this validated sync was queued/running."
-              echo "✅ BETA/PRODUCTION are verified on $EXPECTED_SHA; the later successful DEV deployment will trigger the next serialized sync."
+              echo "ℹ️ DEV is now at $DEV_SHA."
+              echo "✅ BETA/PRODUCTION remain verified on the manually selected DEV snapshot $EXPECTED_SHA."
             fi
