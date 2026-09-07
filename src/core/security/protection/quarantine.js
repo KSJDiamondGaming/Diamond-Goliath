@@ -1,6 +1,6 @@
 'use strict';
 
-const { PermissionFlagsBits } = require('discord.js');
+const { ChannelType, PermissionFlagsBits } = require('discord.js');
 const guildManager = require('../../guild/guildManager');
 const { shouldBlockOwnerDestructiveAction } = require('../../../owner/dev/DevOverrideManager');
 const { canManageTargetMember } = require('./core');
@@ -8,8 +8,14 @@ const schedulerRegistry = require('../../../owner/sentinel/schedulerRegistry');
 const { emitGuildUpdate } = require('../../../server/sockets/socketHub');
 
 const DEFAULT_QUARANTINE_ROLE_NAME = 'Goliath Quarantine';
+const DEFAULT_INVESTIGATION_CATEGORY_NAME = 'Goliath Investigations';
+const QUARANTINE_MODES = Object.freeze({
+  INVESTIGATION: 'investigation',
+  SECURITY: 'security',
+});
 const QUARANTINE_SWEEP_INTERVAL_MS = 60_000;
 const QUARANTINE_SCHEDULER_ID = 'security:quarantine-expiry:global';
+const MAX_ARCHIVED_INVESTIGATION_ROOMS = 50;
 let quarantineSweepTimer = null;
 
 function emptyQuarantineState() {
@@ -18,12 +24,19 @@ function emptyQuarantineState() {
     roleId: null,
     roleName: DEFAULT_QUARANTINE_ROLE_NAME,
     isolationSyncedAt: null,
+    investigationCategoryId: null,
+    investigationCategoryName: DEFAULT_INVESTIGATION_CATEGORY_NAME,
+    archivedRooms: [],
     users: {},
   };
 }
 
 function normalizeUsers(users) {
   return users && typeof users === 'object' && !Array.isArray(users) ? users : {};
+}
+
+function normalizeArchivedRooms(value) {
+  return Array.isArray(value) ? value.slice(-MAX_ARCHIVED_INVESTIGATION_ROOMS) : [];
 }
 
 function getQuarantineState(guildId) {
@@ -34,6 +47,7 @@ function getQuarantineState(guildId) {
   return {
     ...emptyQuarantineState(),
     ...raw,
+    archivedRooms: normalizeArchivedRooms(raw.archivedRooms),
     users: normalizeUsers(raw.users),
   };
 }
@@ -42,6 +56,7 @@ function saveQuarantineState(guild, state) {
   const normalized = {
     ...emptyQuarantineState(),
     ...(state || {}),
+    archivedRooms: normalizeArchivedRooms(state?.archivedRooms),
     users: normalizeUsers(state?.users),
   };
   return guildManager.updateSecurityConfig(
@@ -70,6 +85,49 @@ function emitCurrentQuarantineState(guild, action, extra = {}) {
 function cleanRoleName(value) {
   const name = String(value || '').trim().slice(0, 100);
   return name || DEFAULT_QUARANTINE_ROLE_NAME;
+}
+
+function cleanCategoryName(value) {
+  const name = String(value || '').trim().slice(0, 100);
+  return name || DEFAULT_INVESTIGATION_CATEGORY_NAME;
+}
+
+function cleanChannelName(value) {
+  const safe = String(value || 'member')
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 56);
+  return safe || 'member';
+}
+
+function resolveRequestedMode(options = {}) {
+  const requested = String(options.mode || '').trim().toLowerCase();
+  if (requested === QUARANTINE_MODES.SECURITY) return QUARANTINE_MODES.SECURITY;
+  if (requested === QUARANTINE_MODES.INVESTIGATION) return QUARANTINE_MODES.INVESTIGATION;
+  if (String(options.source || '').toLowerCase() === 'anti_nuke' || String(options.quarantinedBy || '').toLowerCase() === 'anti_nuke') {
+    return QUARANTINE_MODES.SECURITY;
+  }
+  return QUARANTINE_MODES.INVESTIGATION;
+}
+
+function getQuarantineMode(snapshot = {}) {
+  const value = String(snapshot?.mode || '').trim().toLowerCase();
+  if (value === QUARANTINE_MODES.INVESTIGATION) return QUARANTINE_MODES.INVESTIGATION;
+  if (value === QUARANTINE_MODES.SECURITY) return QUARANTINE_MODES.SECURITY;
+  // Legacy snapshots pre-date investigation isolation and were full containment.
+  return QUARANTINE_MODES.SECURITY;
+}
+
+function isAutomatedSecurityRequest(options = {}) {
+  return options.system === true
+    || String(options.source || '').toLowerCase() === 'anti_nuke'
+    || String(options.quarantinedBy || '').toLowerCase() === 'anti_nuke';
+}
+
+function canManuallyUseSecurityIsolation(guild, options = {}) {
+  if (isAutomatedSecurityRequest(options)) return true;
+  return Boolean(guild?.ownerId && options.quarantinedBy && String(guild.ownerId) === String(options.quarantinedBy));
 }
 
 function resolveConfiguredRoleName(guildId, options = {}) {
@@ -124,6 +182,28 @@ function quarantineDenyOverwrite() {
   };
 }
 
+function investigationMemberOverwrite() {
+  return {
+    ViewChannel: true,
+    SendMessages: true,
+    ReadMessageHistory: true,
+    AttachFiles: true,
+    EmbedLinks: true,
+    AddReactions: true,
+  };
+}
+
+function investigationStaffOverwrite() {
+  return {
+    ViewChannel: true,
+    SendMessages: true,
+    ReadMessageHistory: true,
+    AttachFiles: true,
+    EmbedLinks: true,
+    ManageMessages: true,
+  };
+}
+
 async function syncQuarantineIsolation(guild, options = {}) {
   if (!guild) return { success: false, reason: 'Missing guild.', updated: 0, failed: 0 };
   const botMember = guild.members?.me || await guild.members.fetchMe().catch(() => null);
@@ -175,13 +255,142 @@ async function syncQuarantineIsolation(guild, options = {}) {
   return { success: failed === 0, roleId: role.id, roleName: role.name, updated, failed, failures };
 }
 
+function getInvestigationStaffRoleIds(guild, options = {}) {
+  const explicit = Array.isArray(options.staffRoleIds) ? options.staffRoleIds.map(String) : [];
+  const selected = new Set(explicit);
+  const staffPermissions = [
+    PermissionFlagsBits.Administrator,
+    PermissionFlagsBits.ManageGuild,
+    PermissionFlagsBits.ModerateMembers,
+    PermissionFlagsBits.KickMembers,
+    PermissionFlagsBits.BanMembers,
+  ];
+  for (const role of guild.roles.cache.values()) {
+    if (role.id === guild.id || role.managed) continue;
+    if (staffPermissions.some((permission) => role.permissions.has(permission))) selected.add(String(role.id));
+  }
+  return [...selected].filter((roleId) => guild.roles.cache.has(roleId)).slice(0, 80);
+}
+
+async function ensureInvestigationCategory(guild, options = {}) {
+  if (!guild) throw new Error('Missing guild.');
+  const state = getQuarantineState(guild.id);
+  const categoryName = cleanCategoryName(options.categoryName || state.investigationCategoryName);
+  let category = state.investigationCategoryId ? guild.channels.cache.get(String(state.investigationCategoryId)) : null;
+  if (!category || category.type !== ChannelType.GuildCategory) {
+    category = guild.channels.cache.find((channel) => channel.type === ChannelType.GuildCategory && channel.name === categoryName) || null;
+  }
+  if (!category) {
+    category = await guild.channels.create({
+      name: categoryName,
+      type: ChannelType.GuildCategory,
+      permissionOverwrites: [
+        { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
+      ],
+      reason: 'Goliath investigation isolation category',
+    });
+  }
+  if (state.investigationCategoryId !== category.id || state.investigationCategoryName !== category.name) {
+    saveQuarantineState(guild, {
+      ...state,
+      investigationCategoryId: category.id,
+      investigationCategoryName: category.name,
+    });
+  }
+  return category;
+}
+
+async function buildInvestigationRoomOverwrites(guild, member, quarantineRole, options = {}) {
+  const botMember = guild.members?.me || await guild.members.fetchMe().catch(() => null);
+  if (!botMember) throw new Error('Goliath guild member is unavailable.');
+  const overwrites = [
+    { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
+    { id: quarantineRole.id, deny: Object.entries(quarantineDenyOverwrite()).filter(([, value]) => value === false).map(([name]) => PermissionFlagsBits[name]).filter(Boolean) },
+    { id: member.id, allow: Object.entries(investigationMemberOverwrite()).filter(([, value]) => value === true).map(([name]) => PermissionFlagsBits[name]).filter(Boolean) },
+    {
+      id: botMember.id,
+      allow: [
+        PermissionFlagsBits.ViewChannel,
+        PermissionFlagsBits.SendMessages,
+        PermissionFlagsBits.ReadMessageHistory,
+        PermissionFlagsBits.ManageChannels,
+        PermissionFlagsBits.ManageMessages,
+      ],
+    },
+  ];
+
+  if (guild.ownerId && guild.ownerId !== member.id && guild.ownerId !== botMember.id) {
+    overwrites.push({
+      id: guild.ownerId,
+      allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.ManageMessages],
+    });
+  }
+
+  for (const roleId of getInvestigationStaffRoleIds(guild, options)) {
+    if (roleId === quarantineRole.id) continue;
+    overwrites.push({
+      id: roleId,
+      allow: Object.entries(investigationStaffOverwrite()).filter(([, value]) => value === true).map(([name]) => PermissionFlagsBits[name]).filter(Boolean),
+    });
+  }
+  return overwrites.slice(0, 95);
+}
+
+async function createInvestigationRoom(guild, member, quarantineRole, options = {}) {
+  const category = await ensureInvestigationCategory(guild, options);
+  const suffix = String(member.id).slice(-6);
+  const channel = await guild.channels.create({
+    name: `investigation-${cleanChannelName(member.user?.username || member.displayName)}-${suffix}`.slice(0, 100),
+    type: ChannelType.GuildText,
+    parent: category.id,
+    topic: `Goliath investigation isolation • Member ${member.id} • ${String(options.reason || 'No reason provided').slice(0, 700)}`,
+    permissionOverwrites: await buildInvestigationRoomOverwrites(guild, member, quarantineRole, options),
+    reason: `Goliath investigation isolation for ${member.user?.tag || member.id}`,
+  });
+
+  await channel.send({
+    content: [
+      `🔒 **Investigation Isolation** • ${member}`,
+      '',
+      'Your normal server access has been temporarily isolated while staff review this matter.',
+      'You can use **this private room only** to speak with authorised staff during the investigation.',
+      '',
+      `**Reason:** ${String(options.reason || 'No reason provided').slice(0, 1000)}`,
+      '',
+      'This is an investigation hold, not a full Security Isolation. Please keep discussion relevant to the review.',
+    ].join('\n'),
+    allowedMentions: { users: [member.id], roles: [], repliedUser: false },
+  }).catch((error) => console.warn(`[QuarantineSystem] Failed to send investigation room intro in ${guild.id}:`, error.message));
+
+  return channel;
+}
+
+async function ensureInvestigationRoomForSnapshot(guild, member, role, snapshot, options = {}) {
+  let channel = snapshot?.interviewChannelId ? guild.channels.cache.get(String(snapshot.interviewChannelId)) : null;
+  if (!channel && snapshot?.interviewChannelId) channel = await guild.channels.fetch(String(snapshot.interviewChannelId)).catch(() => null);
+  if (!channel) {
+    channel = await createInvestigationRoom(guild, member, role, { ...options, reason: snapshot?.reason || options.reason });
+    const state = getQuarantineState(guild.id);
+    if (state.users?.[member.id]) {
+      state.users[member.id].interviewChannelId = channel.id;
+      saveQuarantineState(guild, state);
+    }
+  } else {
+    await channel.permissionOverwrites.edit(role.id, quarantineDenyOverwrite(), { reason: 'Reasserting investigation quarantine role isolation' });
+    await channel.permissionOverwrites.edit(member.id, investigationMemberOverwrite(), { reason: 'Restoring investigation interview access' });
+  }
+  return channel;
+}
+
 function createQuarantineDryRunResult(guild, member, options = {}) {
   const snapshotRoles = member.roles.cache
     .filter((role) => role.id !== guild.id)
     .map((role) => role.id);
+  const mode = resolveRequestedMode(options);
 
   emitCurrentQuarantineState(guild, 'member_quarantine_dry_run', {
     memberId: member.id,
+    mode,
     testMode: true,
     dryRun: true,
   });
@@ -193,7 +402,9 @@ function createQuarantineDryRunResult(guild, member, options = {}) {
     dryRun: true,
     action: 'quarantine',
     executed: false,
+    mode,
     roleId: null,
+    interviewChannelId: null,
     snapshotRoles,
     memberId: member.id,
     memberTag: member.user?.tag || null,
@@ -201,54 +412,136 @@ function createQuarantineDryRunResult(guild, member, options = {}) {
   };
 }
 
+async function escalateInvestigationToSecurity(guild, member, existing, options = {}) {
+  const state = getQuarantineState(guild.id);
+  try {
+    let interviewChannel = existing.interviewChannelId ? guild.channels.cache.get(String(existing.interviewChannelId)) : null;
+    if (!interviewChannel && existing.interviewChannelId) interviewChannel = await guild.channels.fetch(String(existing.interviewChannelId)).catch(() => null);
+    if (interviewChannel?.permissionOverwrites?.edit) {
+      await interviewChannel.permissionOverwrites.edit(member.id, {
+        ViewChannel: false,
+        SendMessages: false,
+        AddReactions: false,
+      }, { reason: 'Investigation escalated to full Security Isolation' }).catch(() => null);
+      await interviewChannel.send({
+        content: '🚨 This investigation hold has been escalated to **Full Security Isolation**. Member access to this room has been revoked.',
+        allowedMentions: { parse: [] },
+      }).catch(() => null);
+    }
+    state.users[member.id] = {
+      ...existing,
+      mode: QUARANTINE_MODES.SECURITY,
+      reason: options.reason || existing.reason || 'Security isolation escalation',
+      source: options.source || existing.source || 'security',
+      quarantinedBy: options.quarantinedBy || existing.quarantinedBy || null,
+      securityEscalatedAt: Date.now(),
+      interviewChannelId: null,
+      previousInterviewChannelId: existing.interviewChannelId || null,
+      expiresAt: options.durationMs && Number(options.durationMs) > 0 ? Date.now() + Number(options.durationMs) : existing.expiresAt || null,
+    };
+    saveQuarantineState(guild, state);
+    emitCurrentQuarantineState(guild, 'member_quarantine_escalated', { memberId: member.id, mode: QUARANTINE_MODES.SECURITY });
+    return { success: true, escalated: true, mode: QUARANTINE_MODES.SECURITY, roleId: state.roleId, interviewChannelId: null };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
 async function quarantineMember(guild, member, options = {}) {
   if (!guild || !member) return { success: false, reason: 'Missing guild/member' };
+  const mode = resolveRequestedMode(options);
+
+  if (mode === QUARANTINE_MODES.SECURITY && !canManuallyUseSecurityIsolation(guild, options)) {
+    return { success: false, reason: 'Full Security Isolation can only be applied manually by the server owner.' };
+  }
 
   if (shouldBlockOwnerDestructiveAction({ guild, member, action: 'quarantine' })) {
-    return createQuarantineDryRunResult(guild, member, options);
+    return createQuarantineDryRunResult(guild, member, { ...options, mode });
   }
 
   const manageCheck = canManageTargetMember(guild, member);
   if (!manageCheck.allowed) return { success: false, reason: manageCheck.reason || 'Target cannot be managed by Goliath.' };
 
   const existing = getQuarantineState(guild.id).users?.[member.id];
-  if (existing) return { success: false, alreadyQuarantined: true, reason: 'Member is already quarantined.' };
+  if (existing) {
+    const existingMode = getQuarantineMode(existing);
+    if (existingMode === QUARANTINE_MODES.INVESTIGATION && mode === QUARANTINE_MODES.SECURITY) {
+      return escalateInvestigationToSecurity(guild, member, existing, options);
+    }
+    return { success: false, alreadyQuarantined: true, mode: existingMode, reason: 'Member is already quarantined.' };
+  }
 
+  let interviewRoom = null;
+  let snapshotRoles = [];
   try {
     const role = await ensureQuarantineRole(guild, options);
     const isolation = await syncQuarantineIsolation(guild, { ...options, role });
     if (!isolation.success) {
       return {
         success: false,
+        mode,
         reason: `Quarantine isolation could not be guaranteed: ${isolation.reason || `${isolation.failed} channel(s) failed`}`,
         isolation,
       };
     }
 
-    const snapshotRoles = member.roles.cache
+    snapshotRoles = member.roles.cache
       .filter((entry) => entry.id !== guild.id && entry.id !== role.id)
       .map((entry) => entry.id);
 
-    await member.roles.set([role.id], options.reason || 'Goliath quarantine applied.');
+    if (mode === QUARANTINE_MODES.INVESTIGATION) {
+      try {
+        interviewRoom = await createInvestigationRoom(guild, member, role, options);
+      } catch (error) {
+        return { success: false, mode, reason: `Investigation room could not be created: ${error.message}` };
+      }
+    }
+
+    try {
+      await member.roles.set([role.id], options.reason || 'Goliath quarantine applied.');
+    } catch (error) {
+      if (interviewRoom) await interviewRoom.delete('Rolling back failed investigation isolation').catch(() => null);
+      throw error;
+    }
+
     const state = getQuarantineState(guild.id);
     state.roleId = role.id;
     state.roleName = role.name;
     state.users[member.id] = {
       memberId: member.id,
       memberTag: member.user?.tag || null,
+      mode,
       quarantinedAt: Date.now(),
       reason: options.reason || 'No reason provided',
       roles: snapshotRoles,
       quarantinedBy: options.quarantinedBy || null,
       source: options.source || (options.quarantinedBy === 'anti_nuke' ? 'anti_nuke' : 'moderation'),
+      caseId: options.caseId || null,
+      interviewChannelId: interviewRoom?.id || null,
       expiresAt: options.durationMs && Number(options.durationMs) > 0 ? Date.now() + Number(options.durationMs) : null,
     };
-    saveQuarantineState(guild, state);
-    emitCurrentQuarantineState(guild, 'member_quarantined', { memberId: member.id });
-    return { success: true, roleId: role.id, snapshotRoles, isolation };
+    try {
+      saveQuarantineState(guild, state);
+    } catch (error) {
+      await member.roles.set(snapshotRoles, 'Rolling back failed quarantine state persistence').catch(() => null);
+      if (interviewRoom) await interviewRoom.delete('Rolling back failed investigation state persistence').catch(() => null);
+      throw error;
+    }
+    emitCurrentQuarantineState(guild, 'member_quarantined', { memberId: member.id, mode, interviewChannelId: interviewRoom?.id || null });
+    return { success: true, mode, roleId: role.id, interviewChannelId: interviewRoom?.id || null, snapshotRoles, isolation };
   } catch (error) {
-    return { success: false, error: error.message };
+    return { success: false, mode, error: error.message };
   }
+}
+
+function attachQuarantineCase(guild, memberId, caseId) {
+  if (!guild || !memberId || !caseId) return false;
+  const state = getQuarantineState(guild.id);
+  if (!state.users?.[String(memberId)]) return false;
+  state.users[String(memberId)].caseId = Number(caseId);
+  saveQuarantineState(guild, state);
+  emitCurrentQuarantineState(guild, 'member_quarantine_case_linked', { memberId: String(memberId), caseId: Number(caseId) });
+  return true;
 }
 
 async function getRestorableRoleIds(guild, snapshotRoleIds = [], quarantineRoleId = null) {
@@ -276,33 +569,90 @@ async function getRestorableRoleIds(guild, snapshotRoleIds = [], quarantineRoleI
   return { restored, skipped };
 }
 
+async function archiveInvestigationRoom(guild, snapshot, options = {}) {
+  const channelId = snapshot?.interviewChannelId || snapshot?.previousInterviewChannelId || null;
+  if (!channelId) return { success: true, archived: false, reason: 'No investigation room.' };
+  let channel = guild.channels.cache.get(String(channelId));
+  if (!channel) channel = await guild.channels.fetch(String(channelId)).catch(() => null);
+  if (!channel) return { success: true, archived: false, missing: true, channelId: String(channelId) };
+
+  try {
+    await channel.send({
+      content: `🔓 Investigation containment closed${snapshot.caseId ? ` • Case #${snapshot.caseId}` : ''}. The member's previous manageable roles have been restored.`,
+      allowedMentions: { parse: [] },
+    }).catch(() => null);
+    if (snapshot.memberId && channel.permissionOverwrites?.edit) {
+      await channel.permissionOverwrites.edit(String(snapshot.memberId), {
+        ViewChannel: false,
+        SendMessages: false,
+        AddReactions: false,
+      }, { reason: options.reason || 'Investigation isolation closed' });
+    }
+    const closedName = `closed-investigation-${String(snapshot.memberId || 'member').slice(-6)}-${Math.floor(Date.now() / 1000).toString(36)}`.slice(0, 100);
+    await channel.setName(closedName, options.reason || 'Investigation isolation closed').catch(() => null);
+    await channel.setTopic(`Closed Goliath investigation isolation • Member ${snapshot.memberId || 'unknown'}${snapshot.caseId ? ` • Case #${snapshot.caseId}` : ''}`, options.reason || 'Investigation isolation closed').catch(() => null);
+
+    const state = getQuarantineState(guild.id);
+    state.archivedRooms = normalizeArchivedRooms([
+      ...(state.archivedRooms || []),
+      {
+        channelId: channel.id,
+        memberId: snapshot.memberId || null,
+        caseId: snapshot.caseId || null,
+        closedAt: Date.now(),
+        closedBy: options.restoredBy || options.closedBy || null,
+      },
+    ]);
+    saveQuarantineState(guild, state);
+    return { success: true, archived: true, channelId: channel.id };
+  } catch (error) {
+    return { success: false, archived: false, channelId: channel.id, error: error.message };
+  }
+}
+
 async function restoreQuarantinedMember(guild, member, options = {}) {
   if (!guild || !member) return { success: false, reason: 'Missing guild/member' };
   const state = getQuarantineState(guild.id);
   const snapshot = state.users?.[member.id];
   if (!snapshot) return { success: false, reason: 'No quarantine snapshot' };
+  const mode = getQuarantineMode(snapshot);
+
+  if (mode === QUARANTINE_MODES.SECURITY && options.system !== true && String(options.restoredBy || '') !== String(guild.ownerId || '')) {
+    return { success: false, mode, reason: 'Full Security Isolation can only be cleared manually by the server owner.' };
+  }
 
   try {
     const quarantineRoleId = state.roleId || null;
     const roles = await getRestorableRoleIds(guild, snapshot.roles, quarantineRoleId);
     await member.roles.set(roles.restored, options.reason || 'Restoring quarantined member');
-    delete state.users[member.id];
-    saveQuarantineState(guild, state);
+    const archive = mode === QUARANTINE_MODES.INVESTIGATION
+      ? await archiveInvestigationRoom(guild, snapshot, options)
+      : { success: true, archived: false };
+    const latest = getQuarantineState(guild.id);
+    delete latest.users[member.id];
+    saveQuarantineState(guild, latest);
     emitCurrentQuarantineState(guild, 'member_restored', {
       memberId: member.id,
+      mode,
       restoredRoles: roles.restored.length,
       skippedRoles: roles.skipped,
+      archive,
     });
-    return { success: true, restoredRoles: roles.restored.length, restoredRoleIds: roles.restored, skippedRoles: roles.skipped };
+    return { success: true, mode, restoredRoles: roles.restored.length, restoredRoleIds: roles.restored, skippedRoles: roles.skipped, archive };
   } catch (error) {
-    return { success: false, error: error.message };
+    return { success: false, mode, error: error.message };
   }
 }
 
 async function clearExpiredAbsentMember(guild, userId, state) {
-  delete state.users[userId];
-  saveQuarantineState(guild, state);
-  emitCurrentQuarantineState(guild, 'member_quarantine_expired_absent', { memberId: userId });
+  const snapshot = state.users?.[userId];
+  if (snapshot && getQuarantineMode(snapshot) === QUARANTINE_MODES.INVESTIGATION) {
+    await archiveInvestigationRoom(guild, snapshot, { reason: 'Automatic investigation quarantine expiry while member absent', system: true });
+  }
+  const latest = getQuarantineState(guild.id);
+  delete latest.users[userId];
+  saveQuarantineState(guild, latest);
+  emitCurrentQuarantineState(guild, 'member_quarantine_expired_absent', { memberId: userId, mode: snapshot ? getQuarantineMode(snapshot) : null });
 }
 
 async function restoreExpiredQuarantines(client) {
@@ -323,7 +673,7 @@ async function restoreExpiredQuarantines(client) {
           continue;
         }
         console.log(`[QuarantineSystem] Auto restoring ${member.user.tag}`);
-        const restored = await restoreQuarantinedMember(guild, member, { reason: 'Automatic quarantine expiry' });
+        const restored = await restoreQuarantinedMember(guild, member, { reason: 'Automatic quarantine expiry', system: true });
         if (restored.success) result.restored += 1;
         else result.failed += 1;
         state = getQuarantineState(guild.id);
@@ -342,23 +692,26 @@ async function enforceQuarantineOnMember(member, options = {}) {
   const state = getQuarantineState(guild.id);
   const snapshot = state.users?.[member.id];
   if (!snapshot) return { success: false, notQuarantined: true, reason: 'No quarantine snapshot' };
+  const mode = getQuarantineMode(snapshot);
 
   if (snapshot.expiresAt && Date.now() >= Number(snapshot.expiresAt)) {
-    delete state.users[member.id];
-    saveQuarantineState(guild, state);
-    emitCurrentQuarantineState(guild, 'member_quarantine_expired_on_join', { memberId: member.id });
-    return { success: true, expired: true, executed: false };
+    await clearExpiredAbsentMember(guild, member.id, state);
+    return { success: true, mode, expired: true, executed: false };
   }
 
   try {
     const role = await ensureQuarantineRole(guild, options);
     const isolation = await syncQuarantineIsolation(guild, { ...options, role });
-    if (!isolation.success) return { success: false, reason: 'Quarantine isolation sync failed.', isolation };
-    await member.roles.set([role.id], 'Reapplying active Goliath quarantine');
-    emitCurrentQuarantineState(guild, 'member_quarantine_reapplied', { memberId: member.id });
-    return { success: true, roleId: role.id, isolation };
+    if (!isolation.success) return { success: false, mode, reason: 'Quarantine isolation sync failed.', isolation };
+    let interviewRoom = null;
+    if (mode === QUARANTINE_MODES.INVESTIGATION) {
+      interviewRoom = await ensureInvestigationRoomForSnapshot(guild, member, role, snapshot, options);
+    }
+    await member.roles.set([role.id], `Reapplying active Goliath ${mode} quarantine`);
+    emitCurrentQuarantineState(guild, 'member_quarantine_reapplied', { memberId: member.id, mode, interviewChannelId: interviewRoom?.id || null });
+    return { success: true, mode, roleId: role.id, interviewChannelId: interviewRoom?.id || null, isolation };
   } catch (error) {
-    return { success: false, error: error.message };
+    return { success: false, mode, error: error.message };
   }
 }
 
@@ -383,7 +736,7 @@ async function recoverGuildQuarantine(guild) {
     const member = await guild.members.fetch(userId).catch(() => null);
     if (snapshot?.expiresAt && Date.now() >= Number(snapshot.expiresAt)) {
       if (member) {
-        const result = await restoreQuarantinedMember(guild, member, { reason: 'Automatic quarantine expiry during startup recovery' });
+        const result = await restoreQuarantinedMember(guild, member, { reason: 'Automatic quarantine expiry during startup recovery', system: true });
         if (result.success) restored += 1;
         else failed += 1;
       } else {
@@ -459,13 +812,18 @@ function stopQuarantineExpiryScheduler() {
 
 module.exports = {
   DEFAULT_QUARANTINE_ROLE_NAME,
+  DEFAULT_INVESTIGATION_CATEGORY_NAME,
+  QUARANTINE_MODES,
   QUARANTINE_SWEEP_INTERVAL_MS,
   emptyQuarantineState,
   getQuarantineState,
+  getQuarantineMode,
   saveQuarantineState,
   ensureQuarantineRole,
+  ensureInvestigationCategory,
   syncQuarantineIsolation,
   quarantineMember,
+  attachQuarantineCase,
   restoreQuarantinedMember,
   restoreExpiredQuarantines,
   enforceQuarantineOnMember,

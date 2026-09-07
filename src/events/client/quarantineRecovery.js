@@ -2,7 +2,9 @@
 
 const { Events } = require('discord.js');
 const {
+  QUARANTINE_MODES,
   getQuarantineState,
+  getQuarantineMode,
   recoverQuarantines,
   recoverGuildQuarantine,
   syncQuarantineIsolation,
@@ -36,6 +38,27 @@ module.exports = [
         await syncQuarantineIsolation(channel.guild);
       } catch (error) {
         console.warn(`[QuarantineSystem] Failed to secure new channel ${channel.id}:`, error.message);
+      }
+    },
+  },
+  {
+    name: Events.ChannelDelete,
+    async execute(channel) {
+      if (!channel?.guild || !hasActiveQuarantine(channel.guild.id)) return;
+      const state = getQuarantineState(channel.guild.id);
+      const affected = Object.values(state.users || {}).filter((snapshot) => (
+        getQuarantineMode(snapshot) === QUARANTINE_MODES.INVESTIGATION
+        && String(snapshot.interviewChannelId || '') === String(channel.id)
+      ));
+      for (const snapshot of affected) {
+        const member = await channel.guild.members.fetch(String(snapshot.memberId)).catch(() => null);
+        if (!member) continue;
+        try {
+          const result = await enforceQuarantineOnMember(member);
+          if (!result.success) console.warn(`[QuarantineSystem] Failed to recreate deleted interview room for ${member.id}: ${result.error || result.reason}`);
+        } catch (error) {
+          console.warn(`[QuarantineSystem] Failed interview-room recovery for ${member.id}:`, error.message);
+        }
       }
     },
   },
