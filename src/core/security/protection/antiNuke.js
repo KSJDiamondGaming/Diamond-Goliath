@@ -6,6 +6,7 @@ const guildManager = require('../../guild/guildManager');
 const { enableLockdown, getLockdownState, getLockdownModeFromSeverity } = require('./lockdown');
 const { validateBotHierarchy } = require('./system');
 const { quarantineMember: quarantineSystemMember } = require('./quarantine');
+const { disableInvites, freezeRoles } = require('./emergencyControls');
 const schedulerRegistry = require('../../../owner/sentinel/schedulerRegistry');
 
 const { SEVERITY, INCIDENT_TYPES, logIncident, calculateIncidentSeverity } = securitySystem;
@@ -22,6 +23,7 @@ const DEFAULT_CONFIG = {
   },
   lockdown: { enabled: true, reason: 'Goliath Anti-Nuke emergency lockdown triggered.', durationMs: DEFAULT_RESPONSE_DURATION_MS },
   quarantine: { enabled: true, roleName: QUARANTINE_ROLE_NAME, reason: 'Goliath Anti-Nuke quarantine triggered.', durationMs: DEFAULT_RESPONSE_DURATION_MS },
+  emergencyControls: { enabled: true, disableInvites: true, freezeRoles: true, durationMs: DEFAULT_RESPONSE_DURATION_MS },
   ownerAlerts: { enabled: true },
   backups: { beforeIncident: true, afterIncident: true },
   trustedUserIds: [],
@@ -68,6 +70,7 @@ function getAntiNukeConfig(guildId) {
     },
     lockdown: { ...DEFAULT_CONFIG.lockdown, ...(saved.lockdown || {}), durationMs: normalizeDuration(saved.lockdown?.durationMs, DEFAULT_CONFIG.lockdown.durationMs) },
     quarantine: { ...DEFAULT_CONFIG.quarantine, ...(saved.quarantine || {}), durationMs: normalizeDuration(saved.quarantine?.durationMs || saved.durationMs, DEFAULT_CONFIG.quarantine.durationMs) },
+    emergencyControls: { ...DEFAULT_CONFIG.emergencyControls, ...(saved.emergencyControls || {}), durationMs: normalizeDuration(saved.emergencyControls?.durationMs, DEFAULT_CONFIG.emergencyControls.durationMs) },
     ownerAlerts: { ...DEFAULT_CONFIG.ownerAlerts, ...(saved.ownerAlerts || {}) },
     backups: { ...DEFAULT_CONFIG.backups, ...(saved.backups || {}) },
     trustedUserIds: Array.isArray(saved.trustedUserIds) ? [...new Set(saved.trustedUserIds.map(String))] : [],
@@ -153,7 +156,119 @@ async function maybeQuarantine(guild, member, config, reason) {
   return quarantineMember(guild, member, config, reason);
 }
 async function maybeAlertOwner(guild, config, incident) {
-  if (config.ownerAlerts.enabled) await alertOwner(guild, incident);
+  if (config.ownerAlerts.enabled) return alertOwner(guild, incident);
+  return false;
+}
+function severityAtLeast(severity, minimum) {
+  const order = { low: 0, medium: 1, high: 2, critical: 3 };
+  return (order[String(severity || 'low').toLowerCase()] || 0) >= (order[String(minimum || 'low').toLowerCase()] || 0);
+}
+function actionSummary(result) {
+  if (!result) return 'not attempted';
+  if (result.success) return 'success';
+  return `failed/skipped: ${result.reason || result.error || 'unknown'}`;
+}
+
+async function executeResponsePolicy({ guild, config, member, executor, analysis, incidentType, reason, target = null, targetType = null, metadata = {} }) {
+  const severity = analysis?.severity || SEVERITY.LOW;
+  const high = severityAtLeast(severity, SEVERITY.HIGH);
+  const critical = severityAtLeast(severity, SEVERITY.CRITICAL);
+  const response = {
+    policy: severity,
+    beforeBackup: null,
+    quarantine: null,
+    lockdown: null,
+    invites: null,
+    roles: null,
+    ownerAlerted: false,
+    afterBackup: null,
+  };
+
+  if (high && config.backups.beforeIncident) {
+    response.beforeBackup = await createEmergencyBackup(guild, `Before automatic ${severity} response: ${incidentType}`, 'before_incident_response');
+  }
+
+  if (high) {
+    response.quarantine = await maybeQuarantine(guild, member, config, reason);
+  }
+
+  if (critical) {
+    const profile = getLockdownModeFromSeverity(severity);
+    response.lockdown = config.lockdown.enabled
+      ? await enableLockdown(guild, {
+        reason: config.lockdown.reason,
+        enabledBy: 'anti_nuke',
+        enabledByTag: 'Goliath Anti-Nuke',
+        severity,
+        lockdownMode: profile.mode,
+        slowmodeSeconds: profile.slowmodeSeconds,
+        lockText: profile.lockText,
+        lockVoice: profile.lockVoice,
+        lockThreads: profile.lockThreads,
+        lockCommands: profile.lockCommands,
+        durationMs: config.lockdown.durationMs,
+      })
+      : { success: false, reason: 'Lockdown is disabled.' };
+
+    if (config.emergencyControls.enabled && config.emergencyControls.disableInvites) {
+      response.invites = await disableInvites(guild, {
+        reason: `Critical Anti-Nuke response: ${reason}`,
+        durationMs: config.emergencyControls.durationMs,
+        trustedRoleIds: config.trustedRoleIds,
+      });
+    }
+    if (config.emergencyControls.enabled && config.emergencyControls.freezeRoles) {
+      response.roles = await freezeRoles(guild, {
+        reason: `Critical Anti-Nuke response: ${reason}`,
+        durationMs: config.emergencyControls.durationMs,
+        trustedRoleIds: config.trustedRoleIds,
+      });
+    }
+  }
+
+  const actions = [];
+  if (response.beforeBackup) actions.push(`backup-before=${response.beforeBackup ? 'created' : 'failed'}`);
+  if (response.quarantine) actions.push(`security-isolation=${actionSummary(response.quarantine)}`);
+  if (response.lockdown) actions.push(`lockdown=${actionSummary(response.lockdown)}`);
+  if (response.invites) actions.push(`invite-freeze=${actionSummary(response.invites)}`);
+  if (response.roles) actions.push(`role-freeze=${actionSummary(response.roles)}`);
+  if (!actions.length) actions.push(severity === SEVERITY.MEDIUM ? 'owner alert + monitoring' : 'logged + monitoring');
+
+  const incident = await logIncident(guild, {
+    type: incidentType,
+    severity,
+    actorId: executor?.id || null,
+    actorTag: executor?.tag || null,
+    targetId: target?.id || null,
+    targetName: target?.name || null,
+    targetType,
+    reason,
+    actionTaken: actions.join('; '),
+    metadata: {
+      ...metadata,
+      severityScore: analysis?.score || 0,
+      recommendedActions: analysis?.recommendedActions || [],
+      automaticResponse: response,
+    },
+  });
+
+  if (severityAtLeast(severity, SEVERITY.MEDIUM)) {
+    response.ownerAlerted = await maybeAlertOwner(guild, config, incident);
+  }
+
+  if (critical && config.backups.afterIncident) {
+    response.afterBackup = await createEmergencyBackup(guild, `After automatic critical response: ${incidentType}`, 'after_incident_response');
+    if (response.afterBackup) {
+      await logIncident(guild, {
+        type: INCIDENT_TYPES.BACKUP_CREATED,
+        severity: SEVERITY.HIGH,
+        reason: 'Emergency after-incident backup created.',
+        actionTaken: 'Backup created after automatic critical response.',
+        metadata: { backupId: response.afterBackup.backupId || null, backupCreatedAt: response.afterBackup.createdAt || null, relatedIncidentId: incident.id },
+      });
+    }
+  }
+  return incident;
 }
 
 async function handleDeleteEvent({ guild, target, actionType, auditType, incidentType, massIncidentType }) {
@@ -166,25 +281,28 @@ async function handleDeleteEvent({ guild, target, actionType, auditType, inciden
   const { executor, member } = resolved;
   const threshold = actionType === 'channelDelete' ? config.thresholds.channelDelete : config.thresholds.roleDelete;
   const count = addAction(guild.id, executor.id, actionType, threshold.windowMs);
-  const normalIncident = await logIncident(guild, { type: incidentType, severity: SEVERITY.MEDIUM, actorId: executor.id, actorTag: executor.tag, targetId: target?.id || null, targetName: target?.name || null, targetType: actionType, reason: `${actionType} detected.`, metadata: { actionCount: count, threshold: threshold.maxActions, windowMs: threshold.windowMs, responseCapability: capability } });
-  if (count < threshold.maxActions) return normalIncident;
+
+  if (count < threshold.maxActions) {
+    return logIncident(guild, {
+      type: incidentType,
+      severity: SEVERITY.MEDIUM,
+      actorId: executor.id,
+      actorTag: executor.tag,
+      targetId: target?.id || null,
+      targetName: target?.name || null,
+      targetType: actionType,
+      reason: `${actionType} detected.`,
+      actionTaken: 'Logged and monitoring action threshold.',
+      metadata: { actionCount: count, threshold: threshold.maxActions, windowMs: threshold.windowMs, responseCapability: capability },
+    });
+  }
 
   const analysis = analyseIncident(massIncidentType, { actionCount: count, threshold: threshold.maxActions, actorIsBot: executor.bot, actorTrusted: false });
-  const beforeBackup = config.backups.beforeIncident ? await createEmergencyBackup(guild, `Before anti-nuke response: ${massIncidentType}`, 'before_incident_response') : null;
-  const profile = getLockdownModeFromSeverity(analysis.severity);
-  const lockdownResult = config.lockdown.enabled
-    ? await enableLockdown(guild, { reason: config.lockdown.reason, enabledBy: 'anti_nuke', enabledByTag: 'Goliath Anti-Nuke', severity: analysis.severity, lockdownMode: profile.mode, slowmodeSeconds: profile.slowmodeSeconds, lockText: profile.lockText, lockVoice: profile.lockVoice, lockThreads: profile.lockThreads, lockCommands: profile.lockCommands, durationMs: config.lockdown.durationMs })
-    : { success: false, reason: 'Lockdown is disabled.' };
-  const quarantineResult = await maybeQuarantine(guild, member, config, `Mass ${actionType} detected.`);
-  const incident = await logIncident(guild, {
-    type: massIncidentType, severity: analysis.severity, actorId: executor.id, actorTag: executor.tag, targetId: target?.id || null, targetName: target?.name || null, targetType: actionType, reason: `Mass ${actionType} detected.`,
-    actionTaken: `${lockdownResult.success ? 'Emergency lockdown triggered.' : `Lockdown failed/skipped: ${lockdownResult.reason || lockdownResult.error || 'unknown'}.`} ${quarantineResult.success ? 'Attacker quarantined.' : `Quarantine failed/skipped: ${quarantineResult.reason || quarantineResult.error || 'unknown'}.`}`,
-    metadata: { actionCount: count, threshold: threshold.maxActions, windowMs: threshold.windowMs, beforeBackupCreated: Boolean(beforeBackup), lockdown: lockdownResult, quarantine: quarantineResult, severityScore: analysis.score, recommendedActions: analysis.recommendedActions, responseCapability: capability },
+  return executeResponsePolicy({
+    guild, config, member, executor, analysis, incidentType: massIncidentType,
+    reason: `Mass ${actionType} detected.`, target, targetType: actionType,
+    metadata: { actionCount: count, threshold: threshold.maxActions, windowMs: threshold.windowMs, responseCapability: capability },
   });
-  await maybeAlertOwner(guild, config, incident);
-  const afterBackup = config.backups.afterIncident ? await createEmergencyBackup(guild, `After anti-nuke response: ${massIncidentType}`, 'after_incident_response') : null;
-  if (afterBackup) await logIncident(guild, { type: INCIDENT_TYPES.BACKUP_CREATED, severity: SEVERITY.HIGH, reason: 'Emergency after-incident backup created.', actionTaken: 'Backup created after anti-nuke response.', metadata: { backupId: afterBackup.backupId || null, backupCreatedAt: afterBackup.createdAt || null, relatedIncidentId: incident.id } });
-  return incident;
 }
 
 async function handleChannelDelete(channel) { return handleDeleteEvent({ guild: channel.guild, target: channel, actionType: 'channelDelete', auditType: AuditLogEvent.ChannelDelete, incidentType: INCIDENT_TYPES.CHANNEL_DELETE, massIncidentType: INCIDENT_TYPES.MASS_CHANNEL_DELETE }); }
@@ -196,9 +314,9 @@ async function handleRoleCreate(role) {
   const capability = responseCapability(guild);
   const resolved = await resolveExecutor(guild, AuditLogEvent.RoleCreate, config); if (!resolved) return null;
   const dangerous = getDangerousRolePermissions(role); if (!dangerous.length) return null;
-  const quarantine = await maybeQuarantine(guild, resolved.member, config, 'Dangerous role creation detected.');
-  const incident = await logIncident(guild, { type: INCIDENT_TYPES.DANGEROUS_ROLE_CREATE || 'dangerous_role_create', severity: analyseIncident(INCIDENT_TYPES.DANGEROUS_ROLE_CREATE, { dangerousPermissionCount: dangerous.length }).severity, actorId: resolved.executor.id, actorTag: resolved.executor.tag, targetId: role.id, targetName: role.name, targetType: 'role', reason: 'Dangerous role created.', actionTaken: quarantine.success ? 'Executor quarantined automatically.' : `Role creation flagged; quarantine failed/skipped: ${quarantine.reason || quarantine.error}`, metadata: { dangerousPermissionCount: dangerous.length, quarantine, responseCapability: capability } });
-  await maybeAlertOwner(guild, config, incident); return incident;
+  const incidentType = INCIDENT_TYPES.DANGEROUS_ROLE_CREATE || 'dangerous_role_create';
+  const analysis = analyseIncident(incidentType, { dangerousPermissionCount: dangerous.length, actorIsBot: resolved.executor.bot, actorTrusted: false });
+  return executeResponsePolicy({ guild, config, member: resolved.member, executor: resolved.executor, analysis, incidentType, reason: 'Dangerous role created.', target: role, targetType: 'role', metadata: { dangerousPermissionCount: dangerous.length, responseCapability: capability } });
 }
 
 async function handleRoleUpdate(oldRole, newRole) {
@@ -207,21 +325,20 @@ async function handleRoleUpdate(oldRole, newRole) {
   const capability = responseCapability(guild);
   const resolved = await resolveExecutor(guild, AuditLogEvent.RoleUpdate, config); if (!resolved) return null;
   const added = getDangerousRolePermissions(newRole).filter((flag) => !oldRole.permissions.has(flag)); if (!added.length) return null;
-  const quarantine = await maybeQuarantine(guild, resolved.member, config, 'Dangerous role permission escalation detected.');
-  const incident = await logIncident(guild, { type: INCIDENT_TYPES.DANGEROUS_ROLE_PERMISSION_ADDED || 'dangerous_role_permission_added', severity: analyseIncident(INCIDENT_TYPES.DANGEROUS_ROLE_PERMISSION_ADDED, { dangerousPermissionCount: added.length }).severity, actorId: resolved.executor.id, actorTag: resolved.executor.tag, targetId: newRole.id, targetName: newRole.name, targetType: 'role', reason: 'Dangerous permissions were added to an existing role.', actionTaken: quarantine.success ? 'Executor quarantined automatically.' : `Role escalation flagged; quarantine failed/skipped: ${quarantine.reason || quarantine.error}`, metadata: { addedPermissionCount: added.length, quarantine, responseCapability: capability } });
-  await maybeAlertOwner(guild, config, incident); return incident;
+  const incidentType = INCIDENT_TYPES.DANGEROUS_ROLE_PERMISSION_ADDED || 'dangerous_role_permission_added';
+  const analysis = analyseIncident(incidentType, { dangerousPermissionCount: added.length, actorIsBot: resolved.executor.bot, actorTrusted: false });
+  return executeResponsePolicy({ guild, config, member: resolved.member, executor: resolved.executor, analysis, incidentType, reason: 'Dangerous permissions were added to an existing role.', target: newRole, targetType: 'role', metadata: { addedPermissionCount: added.length, responseCapability: capability } });
 }
 
-async function handleWebhookCreate(webhook) { return handleWebhookObject(webhook, AuditLogEvent.WebhookCreate, INCIDENT_TYPES.WEBHOOK_CREATE || 'webhook_create', 'Webhook creation detected.', 'Suspicious webhook creation detected.'); }
-async function handleWebhookDelete(webhook) { return handleWebhookObject(webhook, AuditLogEvent.WebhookDelete, INCIDENT_TYPES.WEBHOOK_DELETE || 'webhook_delete', 'Webhook deletion detected.', 'Suspicious webhook deletion detected.'); }
-async function handleWebhookObject(webhook, auditType, incidentType, reason, quarantineReason) {
+async function handleWebhookCreate(webhook) { return handleWebhookObject(webhook, AuditLogEvent.WebhookCreate, INCIDENT_TYPES.WEBHOOK_CREATE || 'webhook_create', 'Webhook creation detected.'); }
+async function handleWebhookDelete(webhook) { return handleWebhookObject(webhook, AuditLogEvent.WebhookDelete, INCIDENT_TYPES.WEBHOOK_DELETE || 'webhook_delete', 'Webhook deletion detected.'); }
+async function handleWebhookObject(webhook, auditType, incidentType, reason) {
   const guild = webhook?.guild; if (!guild) return null;
   const config = getAntiNukeConfig(guild.id); if (!config.enabled) return null;
   const capability = responseCapability(guild);
   const resolved = await resolveExecutor(guild, auditType, config); if (!resolved) return null;
-  const quarantine = await maybeQuarantine(guild, resolved.member, config, quarantineReason);
-  const incident = await logIncident(guild, { type: incidentType, severity: analyseIncident(incidentType, {}).severity, actorId: resolved.executor.id, actorTag: resolved.executor.tag, targetId: webhook.id, targetName: webhook.name, targetType: 'webhook', reason, actionTaken: quarantine.success ? 'Executor quarantined automatically.' : `Webhook activity flagged; quarantine failed/skipped: ${quarantine.reason || quarantine.error}`, metadata: { quarantine, responseCapability: capability } });
-  await maybeAlertOwner(guild, config, incident); return incident;
+  const analysis = analyseIncident(incidentType, { actionCount: 1, actorIsBot: resolved.executor.bot, actorTrusted: false });
+  return executeResponsePolicy({ guild, config, member: resolved.member, executor: resolved.executor, analysis, incidentType, reason, target: webhook, targetType: 'webhook', metadata: { responseCapability: capability } });
 }
 
 async function handleWebhookUpdate(channel) {
@@ -233,10 +350,26 @@ async function handleWebhookUpdate(channel) {
     resolved = await resolveExecutor(guild, auditType, config); if (resolved) break;
   }
   if (!resolved) return null;
-  const quarantine = await maybeQuarantine(guild, resolved.member, config, 'Suspicious webhook activity detected.');
   const incidentType = INCIDENT_TYPES.SUSPICIOUS_WEBHOOK_ACTIVITY || INCIDENT_TYPES.WEBHOOK_UPDATE || 'suspicious_webhook_activity';
-  const incident = await logIncident(guild, { type: incidentType, severity: analyseIncident(incidentType, {}).severity, actorId: resolved.executor.id, actorTag: resolved.executor.tag, targetId: channel.id, targetName: channel.name, targetType: 'webhook_channel', reason: `Webhook activity detected in #${channel.name}.`, actionTaken: quarantine.success ? 'Executor quarantined automatically.' : `Webhook activity flagged; quarantine failed/skipped: ${quarantine.reason || quarantine.error}`, metadata: { auditAction: resolved.executor.entry?.action || null, quarantine, responseCapability: capability } });
-  await maybeAlertOwner(guild, config, incident); return incident;
+  const analysis = analyseIncident(incidentType, { actionCount: 1, actorIsBot: resolved.executor.bot, actorTrusted: false });
+  return executeResponsePolicy({ guild, config, member: resolved.member, executor: resolved.executor, analysis, incidentType, reason: `Webhook activity detected in #${channel.name}.`, target: channel, targetType: 'webhook_channel', metadata: { auditAction: resolved.executor.entry?.action || null, responseCapability: capability } });
 }
 
-module.exports = { DEFAULT_CONFIG, QUARANTINE_ROLE_NAME, DEFAULT_RESPONSE_DURATION_MS, getAntiNukeConfig, handleChannelDelete, handleRoleDelete, handleWebhookCreate, handleWebhookDelete, handleWebhookUpdate, handleRoleCreate, handleRoleUpdate, emergencyLockdown, quarantineMember, alertOwner, createEmergencyBackup };
+module.exports = {
+  DEFAULT_CONFIG,
+  QUARANTINE_ROLE_NAME,
+  DEFAULT_RESPONSE_DURATION_MS,
+  getAntiNukeConfig,
+  executeResponsePolicy,
+  handleChannelDelete,
+  handleRoleDelete,
+  handleWebhookCreate,
+  handleWebhookDelete,
+  handleWebhookUpdate,
+  handleRoleCreate,
+  handleRoleUpdate,
+  emergencyLockdown,
+  quarantineMember,
+  alertOwner,
+  createEmergencyBackup,
+};
