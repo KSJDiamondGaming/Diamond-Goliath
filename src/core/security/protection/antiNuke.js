@@ -86,6 +86,8 @@ function addAction(guildId, userId, actionType, windowMs) {
 }
 function isTrustedMember(member, config) {
   if (!member) return false;
+  if (member.id === member.guild?.ownerId) return true;
+  if (member.id === member.guild?.members?.me?.id) return true;
   if (config.trustedUserIds.includes(String(member.id))) return true;
   return member.roles.cache.some((role) => config.trustedRoleIds.includes(String(role.id)));
 }
@@ -227,7 +229,7 @@ async function executeResponsePolicy({ guild, config, member, executor, analysis
   }
 
   const actions = [];
-  if (response.beforeBackup) actions.push(`backup-before=${response.beforeBackup ? 'created' : 'failed'}`);
+  if (response.beforeBackup) actions.push('backup-before=created');
   if (response.quarantine) actions.push(`security-isolation=${actionSummary(response.quarantine)}`);
   if (response.lockdown) actions.push(`lockdown=${actionSummary(response.lockdown)}`);
   if (response.invites) actions.push(`invite-freeze=${actionSummary(response.invites)}`);
