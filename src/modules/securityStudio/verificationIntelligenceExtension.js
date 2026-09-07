@@ -30,6 +30,13 @@ function canManage(interaction) {
   );
 }
 
+function displayName(interaction) {
+  return interaction?.member?.displayName
+    || interaction?.user?.displayName
+    || interaction?.user?.username
+    || 'Unknown User';
+}
+
 function getSection(guildId) {
   return verificationStore.getVerificationSection(guildId);
 }
@@ -156,6 +163,14 @@ function install() {
   if (typeof originalHandler === 'function') {
     verificationPanel.handleVerificationAdminInteraction = async function patchedHandler(interaction) {
       const id = String(interaction?.customId || '');
+
+      // The original handler closes over its private build function, so intercept the
+      // Verification root explicitly to guarantee the new entry point is visible.
+      if (id === 'admin:verification') {
+        await interaction.update(injectButton(originalBuild(interaction.guild, displayName(interaction))));
+        return true;
+      }
+
       if (!id.startsWith('admin:verification:intelligence')) return originalHandler(interaction);
 
       if (!canManage(interaction)) {
@@ -165,8 +180,7 @@ function install() {
 
       if (id === PAGE_ID || id === BACK_ID) {
         if (id === BACK_ID) {
-          const payload = injectButton(originalBuild(interaction.guild, interaction.member?.displayName || interaction.user?.username || 'Unknown User'));
-          await interaction.update(payload);
+          await interaction.update(injectButton(originalBuild(interaction.guild, displayName(interaction))));
         } else {
           await interaction.update(buildPage(interaction));
         }
