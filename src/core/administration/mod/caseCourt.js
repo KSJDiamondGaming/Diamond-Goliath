@@ -222,7 +222,7 @@ function buildCaseFile(interaction, modCase) {
       { name: '📜 Member Record', value: publication.slice(0, 1024), inline: false },
       { name: `⚖️ Appeals${appeals.length ? ` (${appeals.length})` : ''}`, value: appealSummary.slice(0, 1024), inline: false },
     )
-    .setFooter({ text: 'Internal court file • verified evidence only may be represented in the published member record' })
+    .setFooter({ text: 'Internal case file • only verified evidence may be represented in the published member record' })
     .setTimestamp();
 
   const canManage = canManageCourt(interaction);
@@ -303,24 +303,24 @@ function buildReviewBriefPage(interaction, modCase) {
   const verified = court.evidence.filter((item) => item.status === 'verified');
   const draft = court.evidence.filter((item) => item.status === 'draft');
   const recommendation = court.recommendation?.reason || 'No moderator recommendation recorded.';
-  const judge = court.reviewingAdminId ? `<@${court.reviewingAdminId}>${court.reviewClaimedAt ? ` • claimed ${discordTime(court.reviewClaimedAt)}` : ''}` : 'Unassigned';
+  const reviewer = court.reviewingAdminId ? `<@${court.reviewingAdminId}>${court.reviewClaimedAt ? ` • claimed ${discordTime(court.reviewClaimedAt)}` : ''}` : 'Unassigned';
   const readiness = [
     verified.length ? '✅ Verified evidence present' : '❌ No verified evidence',
     court.recommendation ? '✅ Moderator recommendation recorded' : '⚠️ No recommendation',
     court.stage === 'review' ? '✅ Submitted for review' : `⚠️ Current stage: ${stageText(court.stage)}`,
-    court.reviewingAdminId ? '✅ Judge assigned' : '⚠️ Awaiting judge claim',
+    court.reviewingAdminId ? '✅ Reviewer assigned' : '⚠️ Awaiting reviewer claim',
   ].join('\n');
   const embed = new EmbedBuilder()
     .setColor(0xFEE75C)
     .setTitle(`⚖️ Review Brief • Case #${modCase.caseId}`)
-    .setDescription(`**Subject:** <@${modCase.userId}> • \`${modCase.userId}\`\n**Severity:** **${severityText(court.severity)}**\n**Lead:** <@${court.leadModeratorId}>\n**Decision by:** ${judge}`)
+    .setDescription(`**Subject:** <@${modCase.userId}> • \`${modCase.userId}\`\n**Severity:** **${severityText(court.severity)}**\n**Lead:** <@${court.leadModeratorId}>\n**Decision by:** ${reviewer}`)
     .addFields(
       { name: '📋 Allegations', value: cleanExcerpt(court.allegations || modCase.reason, 1024), inline: false },
       { name: '🔎 Evidence Position', value: `Verified **${verified.length}** • Draft **${draft.length}** • Rejected **${court.evidence.filter((item) => item.status === 'rejected').length}**\n${verified.slice(0, 6).map((item) => `• **${item.id}** ${cleanExcerpt(item.title, 90)}`).join('\n') || 'No verified evidence.'}`, inline: false },
       { name: '📋 Moderator Recommendation', value: cleanExcerpt(recommendation, 1024), inline: false },
       { name: '✅ Decision Readiness', value: readiness, inline: false },
     )
-    .setFooter({ text: 'A judge must claim the review before recording a decision' })
+    .setFooter({ text: 'An authorised reviewer must claim the case before recording a decision' })
     .setTimestamp();
   const judgeAuthority = isJudge(interaction);
   const assignedToOther = court.reviewingAdminId && court.reviewingAdminId !== interaction.user.id;
@@ -330,7 +330,7 @@ function buildReviewBriefPage(interaction, modCase) {
     controls.push(button(`mod_court_decide:${modCase.caseId}`, 'Record Decision', '⚖️', ButtonStyle.Danger, !verified.length));
     controls.push(button(`mod_court_return:${modCase.caseId}`, 'Return for Work', '↩️', ButtonStyle.Secondary));
   }
-  if (assignedToOther) controls.push(button(`mod_court_claim_review:${modCase.caseId}`, 'Assigned to Another Judge', '🔒', ButtonStyle.Secondary, true));
+  if (assignedToOther) controls.push(button(`mod_court_claim_review:${modCase.caseId}`, 'Assigned to Another Reviewer', '🔒', ButtonStyle.Secondary, true));
   const components = [];
   if (controls.length) components.push(row(...controls.slice(0, 5)));
   components.push(caseFileBackRow(modCase.caseId));
@@ -366,7 +366,7 @@ function buildRecordHistoryPage(modCase) {
   const embed = new EmbedBuilder()
     .setColor(0x5865F2)
     .setTitle(`📚 Official Record History • Case #${modCase.caseId}`)
-    .setDescription('Decision, publication and appeal history for this Court Case. Internal evidence and private staff notes are intentionally excluded.')
+    .setDescription('Decision, publication and appeal history for this case. Internal evidence and private staff notes are intentionally excluded.')
     .addFields(
       { name: '👨‍⚖️ Decision History', value: decisionLines.join('\n\n').slice(0, 1024), inline: false },
       { name: '📜 Publication Revisions', value: publicationLines.join('\n\n').slice(0, 1024), inline: false },
@@ -400,7 +400,7 @@ function buildMemberPreviewPage(modCase) {
 }
 
 function closeCaseModal(caseId) {
-  return new ModalBuilder().setCustomId(`mod_court_close_submit:${caseId}`).setTitle('Close Court Case').addComponents(
+  return new ModalBuilder().setCustomId(`mod_court_close_submit:${caseId}`).setTitle('Close Case').addComponents(
     modalInput('reason', 'Closure reason', TextInputStyle.Paragraph, true, 1000, 'Why is this case being closed?'),
   );
 }
@@ -438,7 +438,7 @@ function verifyModal(caseId) {
   );
 }
 function decisionModal(caseId, court) {
-  return new ModalBuilder().setCustomId(`mod_court_decide_submit:${caseId}`).setTitle('Record Court Decision').addComponents(
+  return new ModalBuilder().setCustomId(`mod_court_decide_submit:${caseId}`).setTitle('Record Case Decision').addComponents(
     modalInput('finding', 'Finding', TextInputStyle.Short, true, 120, 'Confirmed / Not substantiated / Partially confirmed'),
     modalInput('action', 'Decision action', TextInputStyle.Short, true, 30, 'warn / timeout / quarantine / kick / ban / no_action'),
     modalInput('reason', 'Decision rationale', TextInputStyle.Paragraph, true, 1800, 'Record the reasoning behind the final decision.'),
@@ -509,7 +509,7 @@ async function handleCourtInteraction(interaction) {
     const all = wanted === 'review' ? getCourtCases(interaction.guildId) : (target ? getCourtCases(interaction.guildId, target.id) : []);
     const matches = all.filter((entry) => parseCourt(entry).stage === wanted);
     const embed = new EmbedBuilder().setColor(0x5865F2).setTitle(wanted === 'review' ? '⚖️ Review Queue' : '📜 Published Records')
-      .setDescription(matches.length ? matches.map((entry) => `**#${entry.caseId}** • Severity **${parseCourt(entry).severity}/5**\n${cleanExcerpt(parseCourt(entry).allegations, 160)}`).join('\n\n') : `No ${wanted === 'review' ? 'cases awaiting review' : 'published records'} for this member.`);
+      .setDescription(matches.length ? matches.map((entry) => `**#${entry.caseId}** • Severity **${severityText(parseCourt(entry).severity)}**\n${cleanExcerpt(parseCourt(entry).allegations, 160)}`).join('\n\n') : `No ${wanted === 'review' ? 'cases awaiting review' : 'published records'} for this member.`);
     const components = [];
     if (matches.length) components.push(row(new StringSelectMenuBuilder().setCustomId(`mod_court_open:${value}`).setPlaceholder('Open a case file').addOptions(matches.slice(0, 25).map((entry) => ({ label: `Case #${entry.caseId}`, description: cleanExcerpt(parseCourt(entry).allegations, 80), value: String(entry.caseId), emoji: wanted === 'review' ? '⚖️' : '📜' })))));
     components.push(staffBackRow(value));
@@ -530,22 +530,22 @@ async function handleCourtInteraction(interaction) {
   if (key === 'mod_court_record_history') { await interaction.update(buildRecordHistoryPage(modCase)); return true; }
   if (key === 'mod_court_claim_review') {
     if (!isJudge(interaction) || court.stage !== 'review') { await interaction.reply({ content: '❌ This review cannot be claimed.', flags: 64 }); return true; }
-    if (court.reviewingAdminId && court.reviewingAdminId !== interaction.user.id) { await interaction.reply({ content: '❌ Another judge has already claimed this review.', flags: 64 }); return true; }
+    if (court.reviewingAdminId && court.reviewingAdminId !== interaction.user.id) { await interaction.reply({ content: '❌ Another reviewer has already claimed this review.', flags: 64 }); return true; }
     const next = { ...court, reviewingAdminId: interaction.user.id, reviewClaimedAt: now() };
     const updated = saveCourt(interaction.guildId, caseId, next, interaction.user.id, 'case.court.review_claimed', court);
     await interaction.update(buildReviewBriefPage(interaction, updated));
     return true;
   }
   if (key === 'mod_court_return') {
-    if (!isJudge(interaction) || court.reviewingAdminId !== interaction.user.id || court.stage !== 'review') { await interaction.reply({ content: '❌ Only the assigned judge can return this case for more work.', flags: 64 }); return true; }
-    const next = { ...court, stage: 'investigation', reviewingAdminId: null, reviewClaimedAt: null, submittedForReviewAt: null, submittedForReviewBy: null, notes: [...court.notes, { id: `N${court.notes.length + 1}`, text: 'Judge returned the case to investigation for further work.', authorId: interaction.user.id, createdAt: now() }] };
+    if (!isJudge(interaction) || court.reviewingAdminId !== interaction.user.id || court.stage !== 'review') { await interaction.reply({ content: '❌ Only the assigned reviewer can return this case for more work.', flags: 64 }); return true; }
+    const next = { ...court, stage: 'investigation', reviewingAdminId: null, reviewClaimedAt: null, submittedForReviewAt: null, submittedForReviewBy: null, notes: [...court.notes, { id: `N${court.notes.length + 1}`, text: 'Reviewer returned the case to investigation for further work.', authorId: interaction.user.id, createdAt: now() }] };
     const updated = saveCourt(interaction.guildId, caseId, next, interaction.user.id, 'case.court.returned_to_investigation', court);
     await updateCaseMessage(interaction, updated);
     return true;
   }
   if (key === 'mod_court_approve_ban') {
     if (!isJudge(interaction) || court.decision?.action !== 'ban') { await interaction.reply({ content: '❌ There is no ban decision awaiting approval.', flags: 64 }); return true; }
-    if (court.decision.decidedBy === interaction.user.id) { await interaction.reply({ content: '❌ The deciding judge cannot also approve the ban. A second admin must approve it.', flags: 64 }); return true; }
+    if (court.decision.decidedBy === interaction.user.id) { await interaction.reply({ content: '❌ The admin who recorded the decision cannot also approve the ban. A second admin must approve it.', flags: 64 }); return true; }
     if (court.sanctionReview?.status === 'approved') { await interaction.reply({ content: '❌ This ban decision is already approved.', flags: 64 }); return true; }
     const next = { ...court, sanctionReview: { ...(court.sanctionReview || {}), required: true, status: 'approved', approvedBy: interaction.user.id, approvedAt: now() } };
     const updated = saveCourt(interaction.guildId, caseId, next, interaction.user.id, 'case.court.ban_approved', court);
@@ -564,8 +564,8 @@ async function handleCourtInteraction(interaction) {
   if (key === 'mod_court_note') { if (!canManageCourt(interaction) || court.stage === 'closed') { await interaction.reply({ content: '❌ This case cannot be edited with your current authority or stage.', flags: 64 }); return true; } await interaction.showModal(noteModal(caseId)); return true; }
   if (key === 'mod_court_severity') { if (!canManageCourt(interaction) || court.stage === 'closed') { await interaction.reply({ content: '❌ This case cannot be edited with your current authority or stage.', flags: 64 }); return true; } await interaction.showModal(severityModal(caseId, court)); return true; }
   if (key === 'mod_court_verify') { if (!isJudge(interaction)) return interaction.reply({ content: '❌ Admin authority is required to verify evidence.', flags: 64 }).then(() => true); await interaction.showModal(verifyModal(caseId)); return true; }
-  if (key === 'mod_court_decide') { if (!isJudge(interaction)) return interaction.reply({ content: '❌ Admin authority is required to act as case judge.', flags: 64 }).then(() => true); await interaction.showModal(decisionModal(caseId, court)); return true; }
-  if (key === 'mod_court_publish') { if (!canPublishCourt(interaction)) return interaction.reply({ content: '❌ Court publishing authority is required to publish the member record.', flags: 64 }).then(() => true); await interaction.showModal(publishModal(caseId, court)); return true; }
+  if (key === 'mod_court_decide') { if (!isJudge(interaction)) return interaction.reply({ content: '❌ Case-review authority is required to record a decision.', flags: 64 }).then(() => true); await interaction.showModal(decisionModal(caseId, court)); return true; }
+  if (key === 'mod_court_publish') { if (!canPublishCourt(interaction)) return interaction.reply({ content: '❌ Case-publishing authority is required to publish the member record.', flags: 64 }).then(() => true); await interaction.showModal(publishModal(caseId, court)); return true; }
   if (key === 'mod_court_execute') {
     const action = String(court.decision?.action || '');
     if (!isJudge(interaction) || !action || action === 'no_action') { await interaction.reply({ content: '❌ There is no executable sanction.', flags: 64 }); return true; }
