@@ -1,15 +1,47 @@
 'use strict';
 
 const express = require('express');
+const { PermissionFlagsBits } = require('discord.js');
 const router = express.Router();
 
 const guildManager = require('../../guild/guildManager');
 const notifications = require('../../notifications/notificationStore');
 const { requireEntitlement } = require('../../../server/middleware/requireEntitlement');
+const securityCore = require('./core');
 const { getAntiNukeConfig } = require('./antiNuke');
 
+function cleanDiscordId(value) {
+  const id = String(value || '').replace(/[<@#!&>]/g, '').trim();
+  return /^\d{15,25}$/.test(id) ? id : null;
+}
+
 function getGuildId(req) {
-  return req.params.guildId || req.query.guildId || req.session?.guildId || req.session?.selectedGuildId || null;
+  return cleanDiscordId(req.params.guildId || req.query.guildId || req.session?.guildId || req.session?.selectedGuildId || null);
+}
+
+async function requireSecurityGuildAccess(req, res, next) {
+  try {
+    const userId = cleanDiscordId(req.session?.user?.id);
+    if (!userId) return res.status(401).json({ ok: false, success: false, error: 'Authentication required.' });
+    const guildId = getGuildId(req);
+    if (!guildId) return res.status(400).json({ ok: false, success: false, error: 'Missing or invalid guildId.' });
+    if (securityCore.isBotOwner(userId)) return next();
+
+    const client = req.client || req.app?.get?.('goliath.client');
+    const guild = client?.guilds?.cache?.get(guildId) || await client?.guilds?.fetch?.(guildId).catch(() => null);
+    if (!guild) return res.status(403).json({ ok: false, success: false, error: 'Guild is unavailable or not accessible.' });
+    const member = guild.members.cache.get(userId) || await guild.members.fetch(userId).catch(() => null);
+    const allowed = Boolean(
+      member?.id === guild.ownerId
+      || member?.permissions?.has(PermissionFlagsBits.Administrator)
+      || member?.permissions?.has(PermissionFlagsBits.ManageGuild)
+    );
+    if (!allowed) return res.status(403).json({ ok: false, success: false, error: 'Manage Server permission is required.' });
+    return next();
+  } catch (error) {
+    console.error('[Security Routes] access check failed:', error);
+    return res.status(403).json({ ok: false, success: false, error: 'Unable to verify server access.' });
+  }
 }
 
 function asArray(value) {
@@ -85,7 +117,7 @@ function buildProtectionModules(security = {}, modules = {}, antiNukeConfig = {}
   const lockdown = asObject(security.lockdown);
   const quarantine = asObject(security.quarantine);
   const antiNukeEnabled = securityModuleEnabled && antiNukeConfig.enabled !== false;
-  const quarantineEnabled = quarantine.enabled !== false;
+  const quarantineEnabled = securityModuleEnabled && quarantine.enabled !== false;
 
   return [
     { key: 'antiNuke', label: 'Anti-Nuke Core', enabled: antiNukeEnabled, status: antiNukeEnabled ? 'online' : 'disabled', description: 'Role, channel and destructive action protection.' },
@@ -169,10 +201,9 @@ function buildOverview(guildId) {
   };
 }
 
-router.get('/overview', async (req, res) => {
+router.get('/overview', requireSecurityGuildAccess, async (req, res) => {
   try {
     const guildId = getGuildId(req);
-    if (!guildId) return res.status(400).json({ ok: false, success: false, error: 'Missing guildId.' });
     const overview = buildOverview(guildId);
     notifySecurity(guildId, overview);
     return res.json(overview);
@@ -182,7 +213,7 @@ router.get('/overview', async (req, res) => {
   }
 });
 
-router.get('/:guildId/advanced', requireEntitlement('security.advanced'), async (req, res) => {
+router.get('/:guildId/advanced', requireSecurityGuildAccess, requireEntitlement('security.advanced'), async (req, res) => {
   try {
     const guildId = getGuildId(req);
     const overview = buildOverview(guildId);
