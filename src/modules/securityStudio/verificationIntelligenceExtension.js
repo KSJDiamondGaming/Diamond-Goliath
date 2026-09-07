@@ -123,14 +123,18 @@ function install() {
   const originalHandler = verificationPanel.handleVerificationAdminInteraction;
 
   if (typeof originalBuild === 'function') {
-    verificationPanel.buildVerificationAdminPanel = function patchedBuild(...args) { return injectButton(originalBuild(...args)); };
+    verificationPanel.buildVerificationAdminPanel = async function patchedBuild(...args) {
+      const payload = await originalBuild(...args);
+      return injectButton(payload);
+    };
   }
 
   if (typeof originalHandler === 'function') {
     verificationPanel.handleVerificationAdminInteraction = async function patchedHandler(interaction) {
       const id = String(interaction?.customId || '');
       if (id === 'admin:verification') {
-        await interaction.update(injectButton(originalBuild(interaction.guild, displayName(interaction))));
+        const payload = await originalBuild(interaction.guild, displayName(interaction));
+        await interaction.update(injectButton(payload));
         return true;
       }
       if (!id.startsWith('admin:verification:intelligence')) return originalHandler(interaction);
@@ -140,9 +144,12 @@ function install() {
       }
 
       if (id === PAGE_ID || id === BACK_ID) {
-        await interaction.update(id === BACK_ID
-          ? injectButton(originalBuild(interaction.guild, displayName(interaction)))
-          : buildPage(interaction));
+        if (id === BACK_ID) {
+          const payload = await originalBuild(interaction.guild, displayName(interaction));
+          await interaction.update(injectButton(payload));
+        } else {
+          await interaction.update(buildPage(interaction));
+        }
         return true;
       }
       if (id === TOGGLE_ID) {
