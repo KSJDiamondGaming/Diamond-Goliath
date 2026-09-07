@@ -2,6 +2,20 @@
 
 set -eu
 
+SYNC_SHA=""
+while read -r local_ref local_sha remote_ref remote_sha; do
+  if [ "$local_ref" = "refs/heads/dev" ] && [ "$remote_ref" = "refs/heads/dev" ]; then
+    SYNC_SHA="$local_sha"
+  fi
+done
+
+if [ -n "$SYNC_SHA" ] && [ "$SYNC_SHA" != "0000000000000000000000000000000000000000" ]; then
+  echo "🔄 Goliath pre-push: aligning local beta and production refs to dev..."
+  git update-ref refs/heads/beta "$SYNC_SHA"
+  git update-ref refs/heads/production "$SYNC_SHA"
+  echo "✅ Local dev/beta/production now point to $SYNC_SHA"
+fi
+
 echo "🔎 Goliath pre-push: checking backend JavaScript syntax..."
 npm run syntax
 
