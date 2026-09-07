@@ -45,6 +45,19 @@ function isAccessError(error) {
   return [50001, 50013].includes(Number(error?.code));
 }
 
+function channelControlState(channel, me) {
+  const effective = channel?.permissionsFor?.(me) || me?.permissions;
+  return {
+    viewChannel: Boolean(effective?.has(PermissionFlagsBits.ViewChannel)),
+    manageChannels: Boolean(effective?.has(PermissionFlagsBits.ManageChannels)),
+    manageRoles: Boolean(effective?.has(PermissionFlagsBits.ManageRoles)),
+  };
+}
+
+function hasDeleteAccess(state) {
+  return Boolean(state?.viewChannel && state?.manageChannels);
+}
+
 function botOnlyRoleScore(role) {
   const name = String(role?.name || '').toLowerCase();
   let score = 0;
@@ -86,7 +99,7 @@ function scheduleTemporaryControlRelease(guildId, delayMs = 90_000) {
   if (typeof state.timer.unref === 'function') state.timer.unref();
 }
 
-async function acquireTemporaryControl(guild) {
+async function acquireTemporaryControl(guild, channel = null) {
   if (!guild) return null;
   const guildId = String(guild.id);
   const existing = rescueByGuild.get(guildId);
@@ -100,10 +113,12 @@ async function acquireTemporaryControl(guild) {
   const me = guild.members.me;
   if (!me) return null;
 
-  const hasControl = me.permissions.has(PermissionFlagsBits.ViewChannel)
-    && me.permissions.has(PermissionFlagsBits.ManageChannels)
-    && me.permissions.has(PermissionFlagsBits.ManageRoles);
-  if (hasControl) {
+  const currentState = channel ? channelControlState(channel, me) : {
+    viewChannel: me.permissions.has(PermissionFlagsBits.ViewChannel),
+    manageChannels: me.permissions.has(PermissionFlagsBits.ManageChannels),
+    manageRoles: me.permissions.has(PermissionFlagsBits.ManageRoles),
+  };
+  if (currentState.viewChannel && currentState.manageChannels && currentState.manageRoles) {
     const state = {
       guild,
       roleId: null,
@@ -139,9 +154,18 @@ async function acquireTemporaryControl(guild) {
         `Goliath Duplicator temporary bulk-delete control rescue (${guildId})`,
       );
       await guild.members.fetchMe().catch(() => null);
-      const refreshed = guild.members.me;
-      if (!refreshed?.permissions?.has(PermissionFlagsBits.ManageChannels)
-        || !refreshed?.permissions?.has(PermissionFlagsBits.ManageRoles)) {
+      const refreshedMe = guild.members.me;
+      const refreshedChannel = channel
+        ? await guild.channels.fetch(channel.id).catch(() => channel)
+        : null;
+      const refreshedState = refreshedChannel
+        ? channelControlState(refreshedChannel, refreshedMe)
+        : {
+          viewChannel: refreshedMe?.permissions?.has(PermissionFlagsBits.ViewChannel),
+          manageChannels: refreshedMe?.permissions?.has(PermissionFlagsBits.ManageChannels),
+          manageRoles: refreshedMe?.permissions?.has(PermissionFlagsBits.ManageRoles),
+        };
+      if (!refreshedState.viewChannel || !refreshedState.manageChannels || !refreshedState.manageRoles) {
         await role.setPermissions(originalPermissions, 'Goliath Duplicator control rescue verification rollback').catch(() => null);
         continue;
       }
@@ -168,6 +192,40 @@ async function acquireTemporaryControl(guild) {
   return null;
 }
 
+async function repairChannelAccess(channel, reason) {
+  const guild = channel?.guild;
+  if (!guild) return { ok: false, state: null, channel };
+  await guild.members.fetchMe().catch(() => null);
+  let me = guild.members.me;
+  let current = await guild.channels.fetch(channel.id).catch(() => channel);
+  let state = channelControlState(current, me);
+  if (hasDeleteAccess(state)) return { ok: true, state, channel: current };
+
+  if (state.manageRoles && current?.permissionOverwrites?.edit) {
+    try {
+      await current.permissionOverwrites.edit(me.id, {
+        ViewChannel: true,
+        ManageChannels: true,
+        ManageRoles: true,
+      }, { type: 1, reason });
+    } catch {
+      try {
+        await current.permissionOverwrites.edit(me, {
+          ViewChannel: true,
+          ManageChannels: true,
+          ManageRoles: true,
+        }, reason);
+      } catch {}
+    }
+    await guild.members.fetchMe().catch(() => null);
+    me = guild.members.me || me;
+    current = await guild.channels.fetch(channel.id).catch(() => current);
+    state = channelControlState(current, me);
+  }
+
+  return { ok: hasDeleteAccess(state), state, channel: current };
+}
+
 if (PermissionOverwriteManager?.prototype?.edit && !PermissionOverwriteManager.prototype[OVERWRITE_RESCUE_PATCH]) {
   const originalEdit = PermissionOverwriteManager.prototype.edit;
   Object.defineProperty(PermissionOverwriteManager.prototype, OVERWRITE_RESCUE_PATCH, { value: true });
@@ -185,7 +243,7 @@ if (PermissionOverwriteManager?.prototype?.edit && !PermissionOverwriteManager.p
     } catch (error) {
       if (!isAccessError(error)) throw error;
       const guild = this.channel?.guild;
-      const rescue = await acquireTemporaryControl(guild);
+      const rescue = await acquireTemporaryControl(guild, this.channel);
       if (!rescue) throw error;
       if (!rescue.preExisting) scheduleTemporaryControlRelease(guild.id);
       return originalEdit.call(this, target, options, reasonOrOptions);
@@ -205,16 +263,32 @@ if (GuildChannel?.prototype?.delete && !GuildChannel.prototype[DELETE_RESCUE_PAT
     } catch (error) {
       if (!isAccessError(error)) throw error;
       const guild = this.guild;
-      const rescue = await acquireTemporaryControl(guild);
-      if (!rescue) {
+      const repairReason = `Goliath Duplicator bulk delete access repair by ${guild?.members?.me?.id || 'bot'}`;
+
+      let repaired = await repairChannelAccess(this, repairReason);
+      if (!repaired.ok) {
+        const rescue = await acquireTemporaryControl(guild, repaired.channel || this);
+        if (rescue) {
+          if (!rescue.preExisting) scheduleTemporaryControlRelease(guild.id);
+          repaired = await repairChannelAccess(repaired.channel || this, repairReason);
+        }
+      }
+
+      if (!repaired.ok) {
+        const state = repaired.state || {};
+        const missing = [
+          !state.viewChannel ? 'View Channel' : null,
+          !state.manageChannels ? 'Manage Channels' : null,
+          !state.manageRoles ? 'Manage Roles (needed to repair the overwrite automatically)' : null,
+        ].filter(Boolean).join(', ');
         const wrapped = new Error(
-          `Missing Access on ${this.name}. Administrator escalation is disabled. Goliath needs Manage Roles so Bulk Delete can temporarily apply only View Channel + Manage Channels + Manage Roles to its bot-only control role, or the target channel must already allow Manage Channels.`,
+          `Missing Access on ${this.name}. Goliath is still denied: ${missing || 'channel access'}. No Administrator permission was requested or used.`,
         );
         wrapped.code = Number(error?.code) || 50001;
         throw wrapped;
       }
-      if (!rescue.preExisting) scheduleTemporaryControlRelease(guild.id);
-      return originalDelete.call(this, reason);
+
+      return originalDelete.call(repaired.channel || this, reason);
     }
   };
 }
