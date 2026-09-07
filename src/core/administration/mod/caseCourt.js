@@ -19,6 +19,7 @@ const {
   getAllCases,
   recordCaseAudit,
   emitCaseUpdated,
+  claimCourtOperationAtomic,
 } = require('./storage');
 const { canUseModAction } = require('./permissions');
 const { executeEnginePunishment } = require('./punishments');
@@ -720,8 +721,19 @@ async function handleCourtModal(interaction) {
     const executionStarted = now();
     const operationId = `court_exec_${caseId}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
     const claimedExecution = { status: 'executing', operationId, action, claimedBy: interaction.user.id, claimedAt: executionStarted, startedAt: executionStarted, executedBy: interaction.user.id, executedAt: null, linkedCaseId: null, note: note || null, error: null };
-    const claimed = saveCourt(interaction.guildId, caseId, { ...court, sanctionExecution: claimedExecution }, interaction.user.id, 'case.court.sanction_execution_claimed', court);
-    if (!claimed) { COURT_EXECUTION_LOCKS.delete(lockKey); await interaction.reply({ content: '❌ Failed to claim the sanction execution lock. No punishment was applied.', flags: 64 }); return true; }
+    const atomicClaim = claimCourtOperationAtomic(interaction.guildId, caseId, { mode: 'execution', claim: claimedExecution, staleMs: COURT_EXECUTION_STALE_MS });
+    const claimed = atomicClaim?.case || null;
+    if (!atomicClaim?.ok || !claimed) {
+      COURT_EXECUTION_LOCKS.delete(lockKey);
+      const message = atomicClaim?.reason === 'busy'
+        ? '❌ This sanction is already being executed by another Goliath process.'
+        : atomicClaim?.reason === 'finalized'
+          ? '❌ This sanction was already finalised before this execution claim completed.'
+          : '❌ Failed to claim the sanction execution lock. No punishment was applied.';
+      await interaction.reply({ content: message, flags: 64 });
+      return true;
+    }
+    recordCaseAudit({ guildId: interaction.guildId, caseId, actorId: interaction.user.id, event: 'case.court.sanction_execution_claimed', before: atomicClaim.previous || court.sanctionExecution || null, after: claimedExecution, metadata: { court: true, atomic: true, operationId } });
     const target = await interaction.guild.members.fetch(modCase.userId).catch(() => null);
     if (!target && action !== 'ban') {
       const failed = { ...claimedExecution, status: 'failed', executedAt: now(), error: 'Member is not currently available in this server.' };

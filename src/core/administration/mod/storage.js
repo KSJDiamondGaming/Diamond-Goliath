@@ -203,6 +203,55 @@ function createCase({ guildId, userId, moderatorId, action, reason, metadata = {
   return created;
 }
 function getCaseById(guildId, caseId) { return mapCase(db.prepare('SELECT * FROM cases WHERE guild_id = ? AND case_id = ?').get(guildId, Number(caseId))); }
+function courtOperationTimestamp(execution, mode) {
+  if (!execution || typeof execution !== 'object') return 0;
+  const value = mode === 'reversal'
+    ? (execution.reversalClaimedAt || execution.reversalAttemptedAt || execution.startedAt || execution.claimedAt)
+    : (execution.startedAt || execution.claimedAt || execution.reversalClaimedAt || execution.reversalAttemptedAt);
+  const timestamp = new Date(value || 0).getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+function claimCourtOperationAtomic(guildId, caseId, { mode = 'execution', claim, staleMs = 5 * 60 * 1000 } = {}) {
+  const normalizedGuildId = String(guildId || '').trim();
+  const normalizedCaseId = Number(caseId);
+  if (!normalizedGuildId || !Number.isInteger(normalizedCaseId) || normalizedCaseId <= 0 || !claim || typeof claim !== 'object') {
+    return { ok: false, reason: 'invalid' };
+  }
+  const transaction = db.transaction(() => {
+    const row = db.prepare('SELECT * FROM cases WHERE guild_id = ? AND case_id = ?').get(normalizedGuildId, normalizedCaseId);
+    if (!row) return { ok: false, reason: 'missing' };
+    const metadata = parseMetadata(row.metadata);
+    const court = metadata.court && typeof metadata.court === 'object' ? metadata.court : null;
+    if (!court) return { ok: false, reason: 'not_court' };
+    const current = court.sanctionExecution && typeof court.sanctionExecution === 'object' ? court.sanctionExecution : null;
+    const status = String(current?.status || '');
+    const timestamp = courtOperationTimestamp(current, mode);
+    const stale = !timestamp || Date.now() - timestamp > Math.max(1000, Number(staleMs) || 0);
+
+    if (mode === 'execution') {
+      if (['executed', 'reversed', 'reversal_failed'].includes(status)) return { ok: false, reason: 'finalized', current };
+      if (status === 'reversing' && !stale) return { ok: false, reason: 'busy', current };
+      if (status === 'executing' && !stale) return { ok: false, reason: 'busy', current };
+    } else if (mode === 'reversal') {
+      if (status === 'reversed') return { ok: false, reason: 'finalized', current };
+      if (status === 'reversing' && !stale) return { ok: false, reason: 'busy', current };
+      if (!['reversal_failed', 'reversing'].includes(status)) return { ok: false, reason: 'invalid_state', current };
+    } else {
+      return { ok: false, reason: 'invalid_mode', current };
+    }
+
+    const nextMetadata = { ...metadata, court: { ...court, sanctionExecution: claim } };
+    const updatedAt = now();
+    const result = db.prepare('UPDATE cases SET metadata = ?, updated_at = ? WHERE guild_id = ? AND case_id = ?')
+      .run(JSON.stringify(nextMetadata), updatedAt, normalizedGuildId, normalizedCaseId);
+    if (!result.changes) return { ok: false, reason: 'update_failed', current };
+    const updatedRow = db.prepare('SELECT * FROM cases WHERE guild_id = ? AND case_id = ?').get(normalizedGuildId, normalizedCaseId);
+    return { ok: true, case: mapCase(updatedRow), previous: current };
+  });
+  const outcome = transaction.immediate();
+  if (outcome?.ok && outcome.case) emitCaseUpdated(normalizedGuildId, outcome.case);
+  return outcome;
+}
 function getCasesForUser(guildId, userId) { return db.prepare('SELECT * FROM cases WHERE guild_id = ? AND user_id = ? ORDER BY case_id DESC').all(guildId, userId).map(mapCase); }
 function getCasesByModerator(guildId, moderatorId, filters = {}) {
   let query = 'SELECT * FROM cases WHERE guild_id = ? AND moderator_id = ?';
@@ -670,6 +719,7 @@ async function sendModLog(payload = {}) {
 }
 
 module.exports = {
+  claimCourtOperationAtomic,
   db,
   EVENTS,
   emit,

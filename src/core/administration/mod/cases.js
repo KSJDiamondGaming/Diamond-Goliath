@@ -22,6 +22,7 @@ const {
   deleteWarningByCaseId,
   recordCaseAudit,
   emitCaseUpdated,
+  claimCourtOperationAtomic,
 } = require('./storage');
 const { COLORS, EMOJIS } = require('../../ui/uiConfig');
 const { createEmbed } = require('../../ui/embeds');
@@ -390,10 +391,12 @@ async function retryApprovedCourtAppealRemedy(interaction, caseId, appealId, fet
       reversalAttemptedAt: claimedAt,
       error: null,
     };
-    const claimedMetadata = { ...(modCase.metadata || {}), court: { ...court, sanctionExecution: claimedExecution } };
-    const claimed = updateCaseMetadata(guildId, caseId, claimedMetadata);
-    if (!claimed) return { ok: false, error: 'Failed to claim the appeal remedy retry. No reversal action was attempted.' };
-    recordCaseAudit({ guildId, caseId, actorId, event: 'case.court.appeal_remedy_retry_claimed', before: execution, after: claimedExecution, metadata: { appealId, operationId } });
+    const atomicClaim = claimCourtOperationAtomic(guildId, caseId, { mode: 'reversal', claim: claimedExecution, staleMs: APPEAL_REMEDY_STALE_MS });
+    const claimed = atomicClaim?.case || null;
+    if (!atomicClaim?.ok || !claimed) {
+      return { ok: false, error: atomicClaim?.reason === 'busy' ? 'This appeal remedy is already being retried by another Goliath process.' : atomicClaim?.reason === 'finalized' ? 'This appeal remedy has already completed.' : 'Failed to claim the appeal remedy retry. No reversal action was attempted.' };
+    }
+    recordCaseAudit({ guildId, caseId, actorId, event: 'case.court.appeal_remedy_retry_claimed', before: atomicClaim.previous || execution, after: claimedExecution, metadata: { appealId, operationId, atomic: true } });
 
     let remedy;
     try {
