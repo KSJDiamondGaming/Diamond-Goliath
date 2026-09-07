@@ -9,6 +9,16 @@ const INTERVAL_MS = 60_000;
 const SCHEDULER_ID = 'security:capability-health:global';
 let timer = null;
 
+function getTrustedRoleIds(guildId) {
+  const antiNuke = guildManager.getGuildSection(guildId, 'antiNuke', {}) || {};
+  return new Set(Array.isArray(antiNuke.trustedRoleIds) ? antiNuke.trustedRoleIds.map(String) : []);
+}
+
+function isOwnerOnlyRole(role, guild) {
+  const members = [...(role?.members?.values?.() || [])];
+  return members.length > 0 && members.every((member) => member.id === guild.ownerId);
+}
+
 function evaluateGuildSecurityHealth(guild) {
   const bot = guild?.members?.me;
   const missingPermissions = [];
@@ -25,9 +35,12 @@ function evaluateGuildSecurityHealth(guild) {
   let blockingRoleId = null;
   let blockingRoleName = null;
   if (bot?.roles?.highest) {
+    const trustedRoleIds = getTrustedRoleIds(guild.id);
     const protectedRoles = [...guild.roles.cache.values()].filter((role) =>
       !role.managed
       && role.id !== guild.id
+      && !trustedRoleIds.has(String(role.id))
+      && !isOwnerOnlyRole(role, guild)
       && (
         role.permissions.has(PermissionFlagsBits.Administrator)
         || role.permissions.has(PermissionFlagsBits.ManageRoles)
