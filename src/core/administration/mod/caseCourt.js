@@ -406,7 +406,7 @@ function closeCaseModal(caseId) {
 }
 
 function newCaseModal(targetId) {
-  return new ModalBuilder().setCustomId(`mod_court_new_submit:${targetId}`).setTitle('Open New Case').addComponents(
+  return new ModalBuilder().setCustomId(`mod_case_new_submit_v2:${targetId}`).setTitle('Open New Case').addComponents(
     modalInput('allegations', 'Allegations / details', TextInputStyle.Paragraph, true, 2000, 'Describe what happened, including context, dates, channels and users involved.'),
     modalInput('severity', 'Initial severity (Low–Critical)', TextInputStyle.Short, true, 8, 'Low, Medium, High, Severe, or Critical'),
     modalInput('recommendation', 'Recommended action (optional)', TextInputStyle.Paragraph, false, 800, 'What action or next step should the review team consider?'),
@@ -577,7 +577,7 @@ async function handleCourtInteraction(interaction) {
     await interaction.showModal(sanctionExecutionModal(caseId, court)); return true;
   }
   if (key === 'mod_court_import') {
-    if (!canManageCourt(interaction) || court.stage === 'closed') { await interaction.reply({ content: '❌ Court case-management authority is required to import records into an open case.', flags: 64 }); return true; }
+    if (!canManageCourt(interaction) || court.stage === 'closed') { await interaction.reply({ content: '❌ Case-management authority is required to import records into an open case.', flags: 64 }); return true; }
     const before = court;
     const related = getCasesForUser(interaction.guildId, modCase.userId).filter((entry) => entry.caseId !== caseId && !caseIsCourt(entry));
     const linkedCases = [...new Set([...court.linkedCases, ...related.map((entry) => entry.caseId)])].slice(-50);
@@ -625,16 +625,16 @@ async function handleCourtInteraction(interaction) {
 
 async function handleCourtModal(interaction) {
   const id = String(interaction.customId || '');
-  if (!id.startsWith('mod_court_') || !interaction.isModalSubmit?.()) return false;
+  if (!(id.startsWith('mod_court_') || id.startsWith('mod_case_new_submit_v2:')) || !interaction.isModalSubmit?.()) return false;
   const [key, raw] = id.split(':');
-  if (key === 'mod_court_new_submit') {
+  if (key === 'mod_case_new_submit_v2') {
     if (!canManageCourt(interaction)) { await interaction.reply({ content: '❌ Case-management authority is required to open a case.', flags: 64 }); return true; }
     const severity = parseSeverityInput(field(interaction, 'severity'));
     if (!severity) { await interaction.reply({ content: '❌ Severity must be Low, Medium, High, Severe, or Critical.', flags: 64 }); return true; }
     const allegations = field(interaction, 'allegations');
     const recommendation = field(interaction, 'recommendation');
     const created = createCase({ guildId: interaction.guildId, userId: raw, moderatorId: interaction.user.id, action: COURT_ACTION, reason: allegations, metadata: { court: { stage: 'investigation', severity, allegations, leadModeratorId: interaction.user.id, reviewingAdminId: null, evidence: [], notes: [], linkedCases: [], recommendation: recommendation ? { reason: recommendation, by: interaction.user.id, at: now() } : null, decision: null, publication: null } }, status: 'active', actorId: interaction.user.id });
-    if (!created) { await interaction.reply({ content: '❌ Failed to create the court case.', flags: 64 }); return true; }
+    if (!created) { await interaction.reply({ content: '❌ Failed to create the case.', flags: 64 }); return true; }
     await interaction.update(buildCaseFile(interaction, created));
     return true;
   }
