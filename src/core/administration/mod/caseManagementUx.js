@@ -1,0 +1,302 @@
+'use strict';
+
+const { MessageFlags } = require('discord.js');
+const panel = require('./panel');
+const caseCourt = require('./caseCourt');
+const storage = require('./storage');
+const { canUseModAction } = require('./permissions');
+
+const PATCH_KEY = Symbol.for('goliath.mod.case-management-ux-v1');
+if (globalThis[PATCH_KEY]) module.exports = globalThis[PATCH_KEY];
+else {
+  const state = { installed: true };
+  globalThis[PATCH_KEY] = state;
+
+  function textField(interaction, id) {
+    try { return String(interaction.fields?.getTextInputValue?.(id) || '').trim(); }
+    catch { return ''; }
+  }
+
+  function subjectName(member, fallbackId = '') {
+    return String(
+      member?.displayName
+      || member?.user?.globalName
+      || member?.user?.username
+      || member?.user?.tag
+      || fallbackId
+      || 'Unknown Member'
+    ).replace(/\s+/g, ' ').trim();
+  }
+
+  function buildDisplayTitle(caseId, memberName, shortTitle) {
+    const prefix = `Case #${caseId} • ${memberName} • `;
+    const remaining = Math.max(16, 180 - prefix.length);
+    return `${prefix}${String(shortTitle || 'Untitled Case').replace(/\s+/g, ' ').trim().slice(0, remaining)}`;
+  }
+
+  function caseDisplayTitle(modCase, fallbackMemberName = null) {
+    if (!modCase) return null;
+    const court = modCase.metadata?.court || {};
+    if (court.displayTitle) return String(court.displayTitle);
+    const base = String(court.title || court.allegations || modCase.reason || 'Untitled Case').replace(/\s+/g, ' ').trim();
+    const memberName = String(court.subjectName || fallbackMemberName || modCase.userId || 'Unknown Member');
+    return buildDisplayTitle(modCase.caseId, memberName, base);
+  }
+
+  function getCase(guildId, caseId) {
+    if (!guildId || !caseId) return null;
+    try { return storage.getCaseById(guildId, Number(caseId)); }
+    catch { return null; }
+  }
+
+  function rowJson(row) {
+    try { return typeof row?.toJSON === 'function' ? row.toJSON() : row; }
+    catch { return row; }
+  }
+
+  function componentJson(component) {
+    try { return typeof component?.toJSON === 'function' ? component.toJSON() : component; }
+    catch { return component; }
+  }
+
+  function isUserSelectRow(row) {
+    const data = rowJson(row);
+    return Array.isArray(data?.components) && data.components.some((component) => Number(componentJson(component)?.type) === 5);
+  }
+
+  function payloadTitle(payload) {
+    const embed = payload?.embed || payload?.embeds?.[0];
+    const data = typeof embed?.toJSON === 'function' ? embed.toJSON() : embed;
+    return String(data?.title || '');
+  }
+
+  function applyEmbedTitle(embed, title) {
+    if (!embed || !title) return;
+    if (typeof embed.setTitle === 'function') embed.setTitle(title.slice(0, 256));
+    else if (embed.data && typeof embed.data === 'object') embed.data.title = title.slice(0, 256);
+    else embed.title = title.slice(0, 256);
+  }
+
+  function decorateEmbed(embed, guildId) {
+    if (!embed) return;
+    const data = typeof embed?.toJSON === 'function' ? embed.toJSON() : (embed.data || embed);
+    const title = String(data?.title || '');
+    const caseIdMatch = title.match(/(?:Case\s*#|•\s*#)(\d+)/i);
+    if (caseIdMatch) {
+      const modCase = getCase(guildId, caseIdMatch[1]);
+      const display = caseDisplayTitle(modCase);
+      if (display && (title.startsWith('📂') || title.includes('Case #'))) {
+        const icon = title.startsWith('📂') ? '📂 ' : title.startsWith('⚖️') ? '⚖️ ' : title.startsWith('👁️') ? '👁️ ' : '';
+        if (title.startsWith('📂')) applyEmbedTitle(embed, `${icon}${display}`);
+      }
+    }
+
+    const fields = data?.fields;
+    if (Array.isArray(fields)) {
+      const recentIndex = fields.findIndex((field) => field?.name === 'Recent Case Files');
+      if (recentIndex >= 0) {
+        const description = String(data?.description || '');
+        const targetId = description.match(/`(\d{15,25})`/)?.[1];
+        if (targetId) {
+          let cases = [];
+          try { cases = (storage.getCasesForUser(guildId, targetId) || []).filter(caseCourt.caseIsCourt).slice(0, 5); } catch {}
+          if (cases.length) {
+            const value = cases.map((entry) => {
+              const court = caseCourt.parseCourt(entry);
+              const display = caseDisplayTitle(entry, targetId);
+              const stage = court.stage === 'review' ? '⚖️ Awaiting Review' : court.stage === 'published' ? '📜 Published' : court.stage === 'closed' ? '🔒 Closed' : court.stage === 'decided' ? '👨‍⚖️ Decision Recorded' : '🔎 Under Investigation';
+              const severity = ['Low', 'Medium', 'High', 'Severe', 'Critical'][Math.max(0, Math.min(4, Number(court.severity || 1) - 1))];
+              return `**${display}**\n${stage} • Severity **${severity}**`;
+            }).join('\n\n').slice(0, 1024);
+            if (typeof embed.spliceFields === 'function') embed.spliceFields(recentIndex, 1, { ...fields[recentIndex], value });
+            else if (embed.data?.fields) embed.data.fields[recentIndex] = { ...embed.data.fields[recentIndex], value };
+          }
+        }
+      }
+    }
+  }
+
+  function decorateComponents(components, guildId) {
+    if (!Array.isArray(components)) return components;
+    for (const row of components) {
+      const items = row?.components || row?.data?.components;
+      if (!Array.isArray(items)) continue;
+      for (const component of items) {
+        const data = component?.data || component;
+        const customId = data?.custom_id || data?.customId;
+        if (!String(customId || '').startsWith('mod_court_open:')) continue;
+        const options = component?.options || data?.options;
+        if (!Array.isArray(options)) continue;
+        for (const option of options) {
+          const optionData = option?.data || option;
+          const modCase = getCase(guildId, optionData?.value);
+          const display = caseDisplayTitle(modCase);
+          if (!display) continue;
+          const label = display.slice(0, 100);
+          if (option?.data) option.data.label = label;
+          else option.label = label;
+        }
+      }
+    }
+    return components;
+  }
+
+  function decorateCasePayload(payload, interaction, { stripMemberSelector = false } = {}) {
+    if (!payload || typeof payload !== 'object') return payload;
+    const guildId = interaction?.guildId || interaction?.guild?.id;
+    if (payload.embed) decorateEmbed(payload.embed, guildId);
+    if (Array.isArray(payload.embeds)) for (const embed of payload.embeds) decorateEmbed(embed, guildId);
+    decorateComponents(payload.components, guildId);
+
+    if (stripMemberSelector && payloadTitle(payload).startsWith('📂 Case Management') && Array.isArray(payload.components)) {
+      payload.components = payload.components.filter((row) => !isUserSelectRow(row));
+    }
+    return payload;
+  }
+
+  function wrapInteractionOutput(interaction, options = {}) {
+    const restores = [];
+    const wrapMethod = (owner, key) => {
+      if (!owner || typeof owner[key] !== 'function') return;
+      const original = owner[key];
+      owner[key] = function caseManagementFilteredOutput(payload, ...rest) {
+        return original.call(this, decorateCasePayload(payload, interaction, options), ...rest);
+      };
+      restores.push(() => { owner[key] = original; });
+    };
+    wrapMethod(interaction, 'update');
+    wrapMethod(interaction, 'editReply');
+    wrapMethod(interaction, 'reply');
+    wrapMethod(interaction?.message, 'edit');
+    return () => { while (restores.length) restores.pop()(); };
+  }
+
+  function wrapPanelMethod(name) {
+    const original = panel[name];
+    if (typeof original !== 'function') return;
+    panel[name] = async function caseManagementPanelWrapper(interaction, ...args) {
+      const restore = wrapInteractionOutput(interaction, { stripMemberSelector: true });
+      try { return await original.call(this, interaction, ...args); }
+      finally { restore(); }
+    };
+  }
+
+  for (const method of ['openModPanel', 'renderDashboard', 'refreshDashboard', 'refreshCasesDashboard', 'handleDashboardNavigation', 'handleUserSelectMenu']) {
+    wrapPanelMethod(method);
+  }
+
+  for (const method of ['buildCourtDashboard', 'buildCaseFile', 'buildUserPublishedCasesPanel']) {
+    const original = caseCourt[method];
+    if (typeof original !== 'function') continue;
+    caseCourt[method] = function caseManagementBuildWrapper(interaction, ...args) {
+      return decorateCasePayload(original.call(this, interaction, ...args), interaction);
+    };
+  }
+
+  const originalCourtInteraction = caseCourt.handleCourtInteraction;
+  if (typeof originalCourtInteraction === 'function') {
+    caseCourt.handleCourtInteraction = async function caseManagementCourtInteraction(interaction, ...args) {
+      const restore = wrapInteractionOutput(interaction);
+      try { return await originalCourtInteraction.call(this, interaction, ...args); }
+      finally { restore(); }
+    };
+  }
+
+  const originalCourtModal = caseCourt.handleCourtModal;
+  caseCourt.handleCourtModal = async function caseManagementCourtModal(interaction, ...args) {
+    const id = String(interaction?.customId || '');
+    if (id.startsWith('mod_case_new_submit_v2:') && interaction.isModalSubmit?.()) {
+      if (!canUseModAction(interaction.member, interaction.guild, 'court_manage', interaction)) {
+        await interaction.reply({ content: '❌ Case-management authority is required to open a case.', flags: MessageFlags.Ephemeral });
+        return true;
+      }
+
+      const targetId = id.split(':')[1];
+      const rawSeverity = textField(interaction, 'severity').toLowerCase();
+      const severityMap = { '1': 1, low: 1, '2': 2, medium: 2, moderate: 2, '3': 3, high: 3, '4': 4, severe: 4, '5': 5, critical: 5 };
+      const severity = severityMap[rawSeverity] || null;
+      if (!severity) {
+        await interaction.reply({ content: '❌ Severity must be Low, Medium, High, Severe, or Critical.', flags: MessageFlags.Ephemeral });
+        return true;
+      }
+
+      const shortTitle = textField(interaction, 'caseTitle');
+      const allegations = textField(interaction, 'allegations');
+      const recommendation = textField(interaction, 'recommendation');
+      const target = await interaction.guild.members.fetch(targetId).catch(() => null);
+      const memberName = subjectName(target, targetId);
+      const createdAt = new Date().toISOString();
+
+      const created = storage.createCase({
+        guildId: interaction.guildId,
+        userId: targetId,
+        moderatorId: interaction.user.id,
+        action: caseCourt.COURT_ACTION,
+        reason: allegations,
+        metadata: {
+          court: {
+            stage: 'investigation',
+            severity,
+            title: shortTitle,
+            displayTitle: null,
+            subjectName: memberName,
+            allegations,
+            leadModeratorId: interaction.user.id,
+            reviewingAdminId: null,
+            evidence: [],
+            notes: [],
+            linkedCases: [],
+            recommendation: recommendation ? { reason: recommendation, by: interaction.user.id, at: createdAt } : null,
+            decision: null,
+            publication: null,
+          },
+        },
+        status: 'active',
+        actorId: interaction.user.id,
+      });
+
+      if (!created) {
+        await interaction.reply({ content: '❌ Failed to create the case.', flags: MessageFlags.Ephemeral });
+        return true;
+      }
+
+      const displayTitle = buildDisplayTitle(created.caseId, memberName, shortTitle);
+      const metadata = {
+        ...(created.metadata || {}),
+        court: {
+          ...(created.metadata?.court || {}),
+          title: shortTitle,
+          displayTitle,
+          subjectName: memberName,
+        },
+      };
+      const updatedAt = new Date().toISOString();
+      storage.db.prepare('UPDATE cases SET metadata = ?, updated_at = ? WHERE guild_id = ? AND case_id = ?')
+        .run(JSON.stringify(metadata), updatedAt, String(interaction.guildId), Number(created.caseId));
+      storage.recordCaseAudit({
+        guildId: interaction.guildId,
+        caseId: created.caseId,
+        actorId: interaction.user.id,
+        event: 'case.management.identity_assigned',
+        before: created.metadata?.court || null,
+        after: metadata.court,
+        metadata: { generatedDisplayTitle: true, subjectId: targetId },
+      });
+      const updated = storage.getCaseById(interaction.guildId, created.caseId) || created;
+      storage.emitCaseUpdated(interaction.guildId, updated);
+
+      const payload = decorateCasePayload(caseCourt.buildCaseFile(interaction, updated), interaction);
+      if (interaction.deferred || interaction.replied) await interaction.editReply(payload);
+      else await interaction.update(payload);
+      return true;
+    }
+
+    const restore = wrapInteractionOutput(interaction);
+    try { return await originalCourtModal.call(this, interaction, ...args); }
+    finally { restore(); }
+  };
+
+  state.decorateCasePayload = decorateCasePayload;
+  state.buildDisplayTitle = buildDisplayTitle;
+  module.exports = state;
+}
