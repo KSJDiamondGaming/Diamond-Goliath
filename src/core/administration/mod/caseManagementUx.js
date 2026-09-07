@@ -28,19 +28,26 @@ else {
     ).replace(/\s+/g, ' ').trim();
   }
 
-  function buildDisplayTitle(caseId, memberName, shortTitle) {
-    const prefix = `Case #${caseId} • ${memberName} • `;
-    const remaining = Math.max(16, 180 - prefix.length);
-    return `${prefix}${String(shortTitle || 'Untitled Case').replace(/\s+/g, ' ').trim().slice(0, remaining)}`;
+  function buildDisplayTitle(caseId, memberName, shortTitle, userId = '') {
+    const identity = [memberName, userId, shortTitle || 'Untitled Case'].filter(Boolean).join(' • ');
+    return String(identity).replace(/\s+/g, ' ').trim().slice(0, 180);
+  }
+
+  function liveSubjectName(interaction, userId, storedName = null) {
+    const cached = interaction?.guild?.members?.cache?.get?.(String(userId));
+    const live = subjectName(cached, '');
+    if (live && live !== 'Unknown Member') return live;
+    const stored = String(storedName || '').trim();
+    if (stored && stored !== String(userId) && !/^\d{15,25}$/.test(stored)) return stored;
+    return String(userId || 'Unknown Member');
   }
 
   function caseDisplayTitle(modCase, fallbackMemberName = null) {
     if (!modCase) return null;
     const court = modCase.metadata?.court || {};
-    if (court.displayTitle) return String(court.displayTitle);
     const base = String(court.title || court.allegations || modCase.reason || 'Untitled Case').replace(/\s+/g, ' ').trim();
-    const memberName = String(court.subjectName || fallbackMemberName || modCase.userId || 'Unknown Member');
-    return buildDisplayTitle(modCase.caseId, memberName, base);
+    const memberName = String(fallbackMemberName || court.subjectName || modCase.userId || 'Unknown Member');
+    return buildDisplayTitle(modCase.caseId, memberName, base, modCase.userId);
   }
 
   function getCase(guildId, caseId) {
@@ -77,14 +84,15 @@ else {
     else embed.title = title.slice(0, 256);
   }
 
-  function decorateEmbed(embed, guildId) {
+  function decorateEmbed(embed, interaction) {
+    const guildId = interaction?.guildId || interaction?.guild?.id;
     if (!embed) return;
     const data = typeof embed?.toJSON === 'function' ? embed.toJSON() : (embed.data || embed);
     const title = String(data?.title || '');
     const caseIdMatch = title.match(/(?:Case\s*#|•\s*#)(\d+)/i);
     if (caseIdMatch) {
       const modCase = getCase(guildId, caseIdMatch[1]);
-      const display = caseDisplayTitle(modCase);
+      const display = caseDisplayTitle(modCase, liveSubjectName(interaction, modCase?.userId, modCase?.metadata?.court?.subjectName));
       if (display && (title.startsWith('📂') || title.includes('Case #'))) {
         const icon = title.startsWith('📂') ? '📂 ' : title.startsWith('⚖️') ? '⚖️ ' : title.startsWith('👁️') ? '👁️ ' : '';
         if (title.startsWith('📂')) applyEmbedTitle(embed, `${icon}${display}`);
@@ -103,7 +111,7 @@ else {
           if (cases.length) {
             const value = cases.map((entry) => {
               const court = caseCourt.parseCourt(entry);
-              const display = caseDisplayTitle(entry, targetId);
+              const display = caseDisplayTitle(entry, liveSubjectName(interaction, targetId, entry?.metadata?.court?.subjectName));
               const stage = court.stage === 'review' ? '⚖️ Awaiting Review' : court.stage === 'published' ? '📜 Published' : court.stage === 'closed' ? '🔒 Closed' : court.stage === 'decided' ? '👨‍⚖️ Decision Recorded' : '🔎 Under Investigation';
               const severity = ['Low', 'Medium', 'High', 'Severe', 'Critical'][Math.max(0, Math.min(4, Number(court.severity || 1) - 1))];
               return `**${display}**\n${stage} • Severity **${severity}**`;
@@ -116,8 +124,9 @@ else {
     }
   }
 
-  function decorateComponents(components, guildId) {
+  function decorateComponents(components, interaction) {
     if (!Array.isArray(components)) return components;
+    const guildId = interaction?.guildId || interaction?.guild?.id;
     for (const row of components) {
       const items = row?.components || row?.data?.components;
       if (!Array.isArray(items)) continue;
@@ -125,16 +134,22 @@ else {
         const data = component?.data || component;
         const customId = data?.custom_id || data?.customId;
         if (!String(customId || '').startsWith('mod_court_open:')) continue;
+        const targetId = String(customId).split(':')[1] || '';
         const options = component?.options || data?.options;
         if (!Array.isArray(options)) continue;
         for (const option of options) {
           const optionData = option?.data || option;
           const modCase = getCase(guildId, optionData?.value);
-          const display = caseDisplayTitle(modCase);
-          if (!display) continue;
-          const label = display.slice(0, 100);
-          if (option?.data) option.data.label = label;
-          else option.label = label;
+          if (!modCase) continue;
+          const court = modCase.metadata?.court || {};
+          const memberName = liveSubjectName(interaction, targetId || modCase.userId, court.subjectName);
+          const caseTitle = String(court.title || court.allegations || modCase.reason || 'Untitled Case').replace(/\s+/g, ' ').trim();
+          const label = buildDisplayTitle(modCase.caseId, memberName, caseTitle, targetId || modCase.userId).slice(0, 100);
+          const stage = caseCourt.stageText(court.stage || 'investigation').replace(/^\S+\s/, '');
+          const severity = caseCourt.severityText(court.severity || 1);
+          const description = `Case #${modCase.caseId} • ${stage} • Severity ${severity}`.slice(0, 100);
+          if (option?.data) { option.data.label = label; option.data.description = description; }
+          else { option.label = label; option.description = description; }
         }
       }
     }
@@ -144,9 +159,9 @@ else {
   function decorateCasePayload(payload, interaction, { stripMemberSelector = false } = {}) {
     if (!payload || typeof payload !== 'object') return payload;
     const guildId = interaction?.guildId || interaction?.guild?.id;
-    if (payload.embed) decorateEmbed(payload.embed, guildId);
-    if (Array.isArray(payload.embeds)) for (const embed of payload.embeds) decorateEmbed(embed, guildId);
-    decorateComponents(payload.components, guildId);
+    if (payload.embed) decorateEmbed(payload.embed, interaction);
+    if (Array.isArray(payload.embeds)) for (const embed of payload.embeds) decorateEmbed(embed, interaction);
+    decorateComponents(payload.components, interaction);
 
     if (stripMemberSelector && payloadTitle(payload).startsWith('📂 Case Management') && Array.isArray(payload.components)) {
       payload.components = payload.components.filter((row) => !isUserSelectRow(row));
@@ -260,7 +275,7 @@ else {
         return true;
       }
 
-      const displayTitle = buildDisplayTitle(created.caseId, memberName, shortTitle);
+      const displayTitle = buildDisplayTitle(created.caseId, memberName, shortTitle, targetId);
       const metadata = {
         ...(created.metadata || {}),
         court: {
