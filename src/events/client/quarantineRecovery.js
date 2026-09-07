@@ -11,9 +11,29 @@ const {
   enforceQuarantineOnMember,
   startQuarantineExpiryScheduler,
 } = require('../../core/security/protection/quarantine');
+const { ensureInitiatorInterviewAccess } = require('../../core/administration/mod/quarantineInteractions');
 
 function hasActiveQuarantine(guildId) {
   return Object.keys(getQuarantineState(guildId)?.users || {}).length > 0;
+}
+
+async function recoverInvestigationInitiatorAccess(guild) {
+  if (!guild) return { checked: 0, restored: 0, failed: 0 };
+  const state = getQuarantineState(guild.id);
+  const result = { checked: 0, restored: 0, failed: 0 };
+  for (const snapshot of Object.values(state.users || {})) {
+    if (getQuarantineMode(snapshot) !== QUARANTINE_MODES.INVESTIGATION) continue;
+    if (!snapshot.interviewChannelId || !snapshot.quarantinedBy) continue;
+    result.checked += 1;
+    const access = await ensureInitiatorInterviewAccess(
+      guild,
+      snapshot.interviewChannelId,
+      snapshot.quarantinedBy,
+    );
+    if (access.success) result.restored += 1;
+    else result.failed += 1;
+  }
+  return result;
 }
 
 module.exports = [
@@ -24,6 +44,12 @@ module.exports = [
       try {
         const result = await recoverQuarantines(client);
         console.log(`[QuarantineSystem] Startup recovery: ${result.guilds} guild(s), ${result.active} active, ${result.reapplied} re-applied, ${result.restored} restored, ${result.failed} failed.`);
+        for (const guild of client.guilds.cache.values()) {
+          const access = await recoverInvestigationInitiatorAccess(guild);
+          if (access.checked) {
+            console.log(`[InvestigationIsolation] Initiator access recovery in ${guild.id}: ${access.restored}/${access.checked} restored, ${access.failed} failed.`);
+          }
+        }
       } catch (error) {
         console.error('[QuarantineSystem] Startup recovery failed:', error);
       }
@@ -55,7 +81,14 @@ module.exports = [
         if (!member) continue;
         try {
           const result = await enforceQuarantineOnMember(member);
-          if (!result.success) console.warn(`[QuarantineSystem] Failed to recreate deleted interview room for ${member.id}: ${result.error || result.reason}`);
+          if (!result.success) {
+            console.warn(`[QuarantineSystem] Failed to recreate deleted interview room for ${member.id}: ${result.error || result.reason}`);
+            continue;
+          }
+          if (result.interviewChannelId && snapshot.quarantinedBy) {
+            const access = await ensureInitiatorInterviewAccess(channel.guild, result.interviewChannelId, snapshot.quarantinedBy);
+            if (!access.success) console.warn(`[InvestigationIsolation] Failed to restore initiator access after room recreation for ${member.id}: ${access.reason}`);
+          }
         } catch (error) {
           console.warn(`[QuarantineSystem] Failed interview-room recovery for ${member.id}:`, error.message);
         }
@@ -67,8 +100,20 @@ module.exports = [
     async execute(member) {
       if (!member?.guild || !getQuarantineState(member.guild.id)?.users?.[member.id]) return;
       try {
+        const snapshot = getQuarantineState(member.guild.id)?.users?.[member.id];
         const result = await enforceQuarantineOnMember(member);
-        if (!result.success) console.warn(`[QuarantineSystem] Failed to reapply quarantine to ${member.id}: ${result.error || result.reason}`);
+        if (!result.success) {
+          console.warn(`[QuarantineSystem] Failed to reapply quarantine to ${member.id}: ${result.error || result.reason}`);
+          return;
+        }
+        if (
+          getQuarantineMode(snapshot) === QUARANTINE_MODES.INVESTIGATION
+          && result.interviewChannelId
+          && snapshot.quarantinedBy
+        ) {
+          const access = await ensureInitiatorInterviewAccess(member.guild, result.interviewChannelId, snapshot.quarantinedBy);
+          if (!access.success) console.warn(`[InvestigationIsolation] Failed to restore initiator access after rejoin for ${member.id}: ${access.reason}`);
+        }
       } catch (error) {
         console.warn(`[QuarantineSystem] Failed join enforcement for ${member.id}:`, error.message);
       }
@@ -83,6 +128,7 @@ module.exports = [
       try {
         const result = await recoverGuildQuarantine(role.guild);
         if (!result.success) console.warn(`[QuarantineSystem] Quarantine role recovery incomplete in ${role.guild.id}.`);
+        await recoverInvestigationInitiatorAccess(role.guild);
       } catch (error) {
         console.warn(`[QuarantineSystem] Failed to recover deleted quarantine role in ${role.guild.id}:`, error.message);
       }
