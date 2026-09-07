@@ -55,6 +55,16 @@ function rescueRoleScore(role) {
   return score;
 }
 
+function botOnlyRoleScore(role) {
+  const name = String(role?.name || '').toLowerCase();
+  let score = 0;
+  if (/^operations?$/.test(name)) score += 200;
+  if (/goliath|bot/.test(name)) score += 80;
+  if (/owner|staff/.test(name)) score += 20;
+  score += Math.min(10, Number(role?.position || 0) / 1000);
+  return score;
+}
+
 async function releaseTemporaryAdmin(guildId) {
   const key = String(guildId || '');
   const state = rescueByGuild.get(key);
@@ -66,15 +76,25 @@ async function releaseTemporaryAdmin(guildId) {
   const guild = state.guild;
   if (!guild) return false;
   const me = guild.members.me || await guild.members.fetchMe().catch(() => null);
-  if (!me || !me.roles.cache.has(state.roleId)) return true;
+  if (!me) return false;
 
   try {
+    if (state.mode === 'elevated-bot-role') {
+      const role = guild.roles.cache.get(state.roleId) || await guild.roles.fetch(state.roleId).catch(() => null);
+      if (!role) return true;
+      if (state.originalPermissions != null) {
+        await role.setPermissions(BigInt(state.originalPermissions), `Goliath Duplicator bulk-delete rescue cleanup (${state.roleName})`);
+      }
+      return true;
+    }
+
+    if (!me.roles.cache.has(state.roleId)) return true;
     await me.roles.remove(state.roleId, `Goliath Duplicator bulk-delete rescue cleanup (${state.roleName})`);
+    return true;
   } catch (error) {
-    console.error('[Duplicator] Failed to remove temporary bulk-delete Administrator role:', error);
+    console.error('[Duplicator] Failed to restore temporary bulk-delete Administrator rescue:', error);
     return false;
   }
-  return true;
 }
 
 function scheduleTemporaryAdminRelease(guildId, delayMs = 90_000) {
@@ -108,6 +128,7 @@ async function acquireTemporaryAdmin(guild) {
       roleName: 'existing Administrator',
       acquiredAt: Date.now(),
       preExisting: true,
+      mode: 'pre-existing',
       timer: null,
     };
     rescueByGuild.set(guildId, state);
@@ -140,6 +161,8 @@ async function acquireTemporaryAdmin(guild) {
         roleName: role.name,
         acquiredAt: Date.now(),
         preExisting: false,
+        mode: 'attached-admin-role',
+        originalPermissions: null,
         timer: null,
       };
       rescueByGuild.set(guildId, state);
@@ -148,6 +171,53 @@ async function acquireTemporaryAdmin(guild) {
       return state;
     } catch (error) {
       console.warn(`[Duplicator] Could not attach rescue role ${role.name} (${role.id}): ${error?.message || error}`);
+    }
+  }
+
+  // No pre-existing Administrator role is assignable. As a last safe owner-tool rescue,
+  // temporarily elevate a non-managed role that is already assigned only to Goliath.
+  // This avoids granting Administrator to any human member and preserves/restores the
+  // role's exact original permission bitfield after the destructive operation completes.
+  const botOnlyCandidates = [...guild.roles.cache.values()]
+    .filter((role) => role.id !== guild.id)
+    .filter((role) => !role.managed)
+    .filter((role) => Number(role.position || 0) < highest)
+    .filter((role) => me.roles.cache.has(role.id))
+    .filter((role) => role.members?.size === 1 && role.members.has(me.id))
+    .filter((role) => !role.permissions?.has(PermissionFlagsBits.Administrator))
+    .sort((a, b) => botOnlyRoleScore(b) - botOnlyRoleScore(a));
+
+  for (const role of botOnlyCandidates) {
+    const originalPermissions = role.permissions.bitfield;
+    try {
+      await role.setPermissions(
+        originalPermissions | PermissionFlagsBits.Administrator,
+        `Goliath Duplicator temporary bulk-delete Administrator elevation (${guildId})`,
+      );
+      await guild.members.fetchMe().catch(() => null);
+      const refreshed = guild.members.me;
+      if (!refreshed?.permissions?.has(PermissionFlagsBits.Administrator)) {
+        await role.setPermissions(originalPermissions, 'Goliath Duplicator rescue verification rollback').catch(() => null);
+        continue;
+      }
+
+      const state = {
+        guild,
+        roleId: role.id,
+        roleName: role.name,
+        acquiredAt: Date.now(),
+        preExisting: false,
+        mode: 'elevated-bot-role',
+        originalPermissions: originalPermissions.toString(),
+        timer: null,
+      };
+      rescueByGuild.set(guildId, state);
+      scheduleTemporaryAdminRelease(guildId);
+      console.warn(`[Duplicator] Temporary Administrator rescue elevated bot-only role ${role.name} (${role.id}) in ${guild.name} (${guild.id}).`);
+      return state;
+    } catch (error) {
+      await role.setPermissions(originalPermissions, 'Goliath Duplicator rescue failure rollback').catch(() => null);
+      console.warn(`[Duplicator] Could not elevate bot-only rescue role ${role.name} (${role.id}): ${error?.message || error}`);
     }
   }
 
@@ -194,7 +264,7 @@ if (GuildChannel?.prototype?.delete && !GuildChannel.prototype[DELETE_RESCUE_PAT
       const rescue = await acquireTemporaryAdmin(guild);
       if (!rescue) {
         const wrapped = new Error(
-          `Missing Access on ${this.name}. Automatic rescue could not find an existing Administrator role below Goliath's highest role that Goliath is allowed to assign.`,
+          `Missing Access on ${this.name}. Automatic rescue could not obtain Administrator safely. Goliath needs Manage Roles and either an assignable Administrator role or a non-managed bot-only role below its highest role.`,
         );
         wrapped.code = Number(error?.code) || 50001;
         throw wrapped;
@@ -217,6 +287,7 @@ function add(controlGuildId, manifest, guildOrMeta = {}) {
       temporaryAdminRescue: {
         roleId: rescue.roleId,
         roleName: rescue.roleName,
+        mode: rescue.mode,
         acquiredAt: new Date(rescue.acquiredAt).toISOString(),
       },
     } : {}),
