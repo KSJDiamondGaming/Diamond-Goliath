@@ -41,27 +41,27 @@ function normalizeDuration(value, fallback = 60 * 60 * 1000) {
     : fallback;
 }
 
-function permissionOverwriteSnapshot(channel, id) {
-  const overwrite = channel.permissionOverwrites?.cache?.get(String(id));
-  return overwrite ? {
-    id: String(id),
-    existed: true,
-    type: overwrite.type,
-    allow: overwrite.allow.bitfield.toString(),
-    deny: overwrite.deny.bitfield.toString(),
-  } : { id: String(id), existed: false };
+function serializeChannelOverwrites(channel) {
+  try {
+    return channel.permissionOverwrites.cache.map((overwrite) => ({
+      id: overwrite.id,
+      type: overwrite.type,
+      allow: overwrite.allow.bitfield.toString(),
+      deny: overwrite.deny.bitfield.toString(),
+    }));
+  } catch {
+    return [];
+  }
 }
 
-async function restoreOverwrite(channel, snapshot, reason) {
-  if (!snapshot?.id) return;
-  if (!snapshot.existed) {
-    await channel.permissionOverwrites.delete(snapshot.id, reason).catch(() => null);
-    return;
-  }
-  await channel.permissionOverwrites.edit(snapshot.id, {
-    allow: BigInt(snapshot.allow || 0),
-    deny: BigInt(snapshot.deny || 0),
-  }, { reason });
+async function restoreChannelOverwrites(channel, snapshot, reason) {
+  const payload = (snapshot?.overwrites || []).map((overwrite) => ({
+    id: overwrite.id,
+    type: overwrite.type,
+    allow: BigInt(overwrite.allow || 0),
+    deny: BigInt(overwrite.deny || 0),
+  }));
+  await channel.permissionOverwrites.set(payload, reason);
 }
 
 function inviteCapableRoleIds(guild, trustedRoleIds = []) {
@@ -88,24 +88,23 @@ async function disableInvites(guild, options = {}) {
 
   for (const [, channel] of channels) {
     if (!channel?.permissionOverwrites?.edit || !channel.manageable) continue;
-    const targets = [guild.id, ...roleIds];
-    const channelSnapshot = { channelId: channel.id, overwrites: targets.map((id) => permissionOverwriteSnapshot(channel, id)) };
+    const snapshot = { channelId: channel.id, overwrites: serializeChannelOverwrites(channel) };
     try {
-      for (const id of targets) {
-        await channel.permissionOverwrites.edit(id, { CreateInstantInvite: false }, { reason: options.reason || 'Goliath emergency invite freeze' });
+      await channel.permissionOverwrites.edit(guild.id, { CreateInstantInvite: false }, { reason: options.reason || 'Goliath emergency invite freeze' });
+      for (const roleId of roleIds) {
+        await channel.permissionOverwrites.edit(roleId, { CreateInstantInvite: false }, { reason: options.reason || 'Goliath emergency invite freeze' });
       }
-      snapshots.push(channelSnapshot);
+      snapshots.push(snapshot);
     } catch (error) {
       failures.push({ channelId: channel.id, error: String(error?.message || error).slice(0, 250) });
-      for (const overwrite of channelSnapshot.overwrites) await restoreOverwrite(channel, overwrite, 'Rolling back incomplete Goliath invite freeze').catch(() => null);
+      await restoreChannelOverwrites(channel, snapshot, 'Rolling back incomplete Goliath invite freeze').catch(() => null);
     }
   }
 
   if (failures.length) {
     for (const saved of snapshots) {
       const channel = guild.channels.cache.get(saved.channelId) || await guild.channels.fetch(saved.channelId).catch(() => null);
-      if (!channel) continue;
-      for (const overwrite of saved.overwrites) await restoreOverwrite(channel, overwrite, 'Rolling back incomplete Goliath invite freeze').catch(() => null);
+      if (channel) await restoreChannelOverwrites(channel, saved, 'Rolling back incomplete Goliath invite freeze').catch(() => null);
     }
     return { success: false, reason: 'Invite freeze could not be applied atomically.', failures };
   }
@@ -133,7 +132,7 @@ async function restoreInvites(guild, options = {}) {
     const channel = guild.channels.cache.get(saved.channelId) || await guild.channels.fetch(saved.channelId).catch(() => null);
     if (!channel) continue;
     try {
-      for (const overwrite of saved.overwrites || []) await restoreOverwrite(channel, overwrite, options.reason || 'Restoring emergency invite freeze');
+      await restoreChannelOverwrites(channel, saved, options.reason || 'Restoring emergency invite freeze');
       restoredChannels += 1;
     } catch (error) {
       failures.push({ channelId: saved.channelId, error: String(error?.message || error).slice(0, 250) });
