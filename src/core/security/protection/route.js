@@ -9,6 +9,7 @@ const notifications = require('../../notifications/notificationStore');
 const { requireEntitlement } = require('../../../server/middleware/requireEntitlement');
 const securityCore = require('./core');
 const { getAntiNukeConfig } = require('./antiNuke');
+const { getEmergencyControlState } = require('./emergencyControls');
 
 function cleanDiscordId(value) {
   const id = String(value || '').replace(/[<@#!&>]/g, '').trim();
@@ -110,7 +111,7 @@ function severityWeight(severity = 'info') {
   return 1;
 }
 
-function buildProtectionModules(security = {}, modules = {}, antiNukeConfig = {}, securityModuleEnabled = true) {
+function buildProtectionModules(security = {}, modules = {}, antiNukeConfig = {}, securityModuleEnabled = true, emergencyControls = {}) {
   const webhook = asObject(security.webhooks || security.webhookMonitor || modules.security?.webhooks);
   const ownerMonitoring = asObject(security.ownerMonitoring || security.ownerMonitor || modules.security?.ownerMonitoring);
   const auditLog = asObject(security.auditLog || security.audit || modules.security?.auditLog);
@@ -118,11 +119,15 @@ function buildProtectionModules(security = {}, modules = {}, antiNukeConfig = {}
   const quarantine = asObject(security.quarantine);
   const antiNukeEnabled = securityModuleEnabled && antiNukeConfig.enabled !== false;
   const quarantineEnabled = securityModuleEnabled && quarantine.enabled !== false;
+  const inviteFreezeActive = Boolean(emergencyControls?.invites?.active);
+  const roleFreezeActive = Boolean(emergencyControls?.roles?.active);
 
   return [
     { key: 'antiNuke', label: 'Anti-Nuke Core', enabled: antiNukeEnabled, status: antiNukeEnabled ? 'online' : 'disabled', description: 'Role, channel and destructive action protection.' },
     { key: 'lockdown', label: 'Lockdown', enabled: securityModuleEnabled, status: lockdown.active ? 'active' : securityModuleEnabled ? 'standby' : 'disabled', description: 'Emergency server restriction state.' },
     { key: 'quarantine', label: 'Quarantine', enabled: quarantineEnabled, status: quarantineEnabled ? 'online' : 'disabled', description: 'Isolation flow for dangerous members.' },
+    { key: 'inviteFreeze', label: 'Invite Freeze', enabled: antiNukeEnabled && antiNukeConfig.emergencyControls?.disableInvites !== false, status: inviteFreezeActive ? 'active' : antiNukeEnabled ? 'standby' : 'disabled', description: 'Automatically blocks new invite creation during critical incidents.' },
+    { key: 'roleFreeze', label: 'Role Freeze', enabled: antiNukeEnabled && antiNukeConfig.emergencyControls?.freezeRoles !== false, status: roleFreezeActive ? 'active' : antiNukeEnabled ? 'standby' : 'disabled', description: 'Automatically removes role-management capability from manageable untrusted roles during critical incidents.' },
     { key: 'webhookMonitor', label: 'Webhook Monitor', enabled: securityModuleEnabled && webhook.enabled !== false, status: securityModuleEnabled && webhook.enabled !== false ? 'online' : 'disabled', description: 'Webhook creation, deletion and abuse monitoring.' },
     { key: 'ownerMonitoring', label: 'Owner Monitoring', enabled: securityModuleEnabled && ownerMonitoring.enabled !== false, status: securityModuleEnabled && ownerMonitoring.enabled !== false ? 'online' : 'disabled', description: 'Owner/admin action visibility.' },
     { key: 'auditLog', label: 'Audit Log Health', enabled: securityModuleEnabled && auditLog.enabled !== false, status: securityModuleEnabled && auditLog.enabled !== false ? 'online' : 'disabled', description: 'Audit-log driven event correlation.' },
@@ -147,11 +152,12 @@ function buildOverview(guildId) {
   const modules = asObject(guildData.modules);
   const securityModuleEnabled = guildManager.isModuleEnabled(guildId, 'security');
   const antiNukeConfig = getAntiNukeConfig(guildId);
+  const emergencyControls = getEmergencyControlState(guildId);
   const incidents = asArray(security.incidents).map(normaliseIncident);
   const lockdown = { active: false, ...asObject(security.lockdown) };
   const quarantine = { users: {}, ...asObject(security.quarantine) };
   const quarantinedCount = Object.keys(asObject(quarantine.users)).length;
-  const protectionModules = buildProtectionModules(security, modules, antiNukeConfig, securityModuleEnabled);
+  const protectionModules = buildProtectionModules(security, modules, antiNukeConfig, securityModuleEnabled, emergencyControls);
   const critical = incidents.filter((incident) => incident.severity === 'critical').length;
   const high = incidents.filter((incident) => incident.severity === 'high').length;
   const webhookIncidents = incidents.filter((incident) => String(incident.type || '').toLowerCase().includes('webhook')).length;
@@ -175,12 +181,15 @@ function buildOverview(guildId) {
     lockdown,
     quarantine,
     quarantineCount: quarantinedCount,
+    emergencyControls,
     antiNuke: antiNukeConfig,
     protectionModules,
     monitors: {
       antiNuke: protectionModules.find((module) => module.key === 'antiNuke'),
       lockdown: protectionModules.find((module) => module.key === 'lockdown'),
       quarantine: protectionModules.find((module) => module.key === 'quarantine'),
+      inviteFreeze: protectionModules.find((module) => module.key === 'inviteFreeze'),
+      roleFreeze: protectionModules.find((module) => module.key === 'roleFreeze'),
       webhooks: protectionModules.find((module) => module.key === 'webhookMonitor'),
       ownerMonitoring: protectionModules.find((module) => module.key === 'ownerMonitoring'),
       auditLog: protectionModules.find((module) => module.key === 'auditLog'),

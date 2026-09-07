@@ -13,6 +13,7 @@ const INITIAL_STATE = {
   incidents: { total: 0, critical: 0, high: 0, webhook: 0, recent: [] },
   lockdown: { active: false },
   quarantine: { users: {} },
+  emergencyControls: { invites: { active: false }, roles: { active: false } },
   protectionModules: [],
   monitors: {},
 };
@@ -165,6 +166,8 @@ export default function Security({ selectedGuild, selectedGuildId, theme, guilds
   const recentIncidents = Array.isArray(data.incidents?.recent) ? data.incidents.recent : [];
   const threatAccent = getThreatAccent(theme, data.threatLevel);
   const lockdownActive = Boolean(data.lockdown?.active);
+  const inviteFreezeActive = Boolean(data.emergencyControls?.invites?.active);
+  const roleFreezeActive = Boolean(data.emergencyControls?.roles?.active);
   const protectionScore = Number(data.protectionScore ?? 100);
   const monitors = Object.values(data.monitors || {}).filter(Boolean);
   const protectionModules = data.protectionModules?.length ? data.protectionModules : monitors;
@@ -198,6 +201,8 @@ export default function Security({ selectedGuild, selectedGuildId, theme, guilds
             <div style={{ display: 'grid', gap: 12 }}>
               <StateRow theme={theme} label="Lockdown"><StatusPill theme={theme} tone={lockdownActive ? 'danger' : 'success'}>{lockdownActive ? 'Active' : 'Inactive'}</StatusPill></StateRow>
               <StateRow theme={theme} label="Quarantine"><StatusPill theme={theme} tone={quarantineCount > 0 ? 'warning' : 'success'}>{quarantineCount} Users</StatusPill></StateRow>
+              <StateRow theme={theme} label="Invite Freeze"><StatusPill theme={theme} tone={inviteFreezeActive ? 'danger' : 'success'}>{inviteFreezeActive ? 'Active' : 'Standby'}</StatusPill></StateRow>
+              <StateRow theme={theme} label="Role Freeze"><StatusPill theme={theme} tone={roleFreezeActive ? 'danger' : 'success'}>{roleFreezeActive ? 'Active' : 'Standby'}</StatusPill></StateRow>
               <StateRow theme={theme} label="Anti-Nuke"><StatusPill theme={theme} tone={data.monitors?.antiNuke?.enabled === false ? 'warning' : 'success'}>{data.monitors?.antiNuke?.status || 'online'}</StatusPill></StateRow>
               <StateRow theme={theme} label="Webhook Monitor"><StatusPill theme={theme} tone={data.monitors?.webhooks?.enabled === false ? 'warning' : 'success'}>{data.monitors?.webhooks?.status || 'online'}</StatusPill></StateRow>
               <StateRow theme={theme} label="Owner Monitoring"><StatusPill theme={theme} tone={data.monitors?.ownerMonitoring?.enabled === false ? 'warning' : 'success'}>{data.monitors?.ownerMonitoring?.status || 'online'}</StatusPill></StateRow>
@@ -205,8 +210,8 @@ export default function Security({ selectedGuild, selectedGuildId, theme, guilds
             </div>
           </SectionCard>
 
-          <SectionCard theme={theme} title="Emergency Actions" subtitle="Core emergency controls remain available to all plans.">
-            <Notice theme={theme} tone="info">Controls planned: trigger lockdown, release lockdown, review quarantine, and restore protected permissions.</Notice>
+          <SectionCard theme={theme} title="Automatic Emergency Response" subtitle="Goliath escalates protection according to incident severity.">
+            <Notice theme={theme} tone="info">LOW: log and monitor. MEDIUM: alert the guild owner. HIGH: emergency backup and Full Security Isolation of the detected actor. CRITICAL: backup, Full Security Isolation, lockdown, invite freeze, role freeze, owner alert, then a post-incident backup. Timed emergency controls recover automatically.</Notice>
           </SectionCard>
         </div>
       </div>
