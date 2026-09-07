@@ -37,13 +37,12 @@ function claimCourtOperationAtomic(guildId, caseId, { mode = 'execution', claim,
     if (!court) return { ok: false, reason: 'not_court' };
     const current = court.sanctionExecution && typeof court.sanctionExecution === 'object' ? court.sanctionExecution : null;
     const status = String(current?.status || '');
-    const age = Date.now() - courtOperationTimestamp(current, mode);
-    const stale = !courtOperationTimestamp(current, mode) || age > Math.max(1000, Number(staleMs) || 0);
+    const timestamp = courtOperationTimestamp(current, mode);
+    const stale = !timestamp || Date.now() - timestamp > Math.max(1000, Number(staleMs) || 0);
 
     if (mode === 'execution') {
-      if (['executed', 'reversed', 'reversal_failed', 'reversing'].includes(status) && !(status === 'reversing' && stale)) {
-        return { ok: false, reason: status === 'reversing' ? 'busy' : 'finalized', current };
-      }
+      if (['executed', 'reversed', 'reversal_failed'].includes(status)) return { ok: false, reason: 'finalized', current };
+      if (status === 'reversing' && !stale) return { ok: false, reason: 'busy', current };
       if (status === 'executing' && !stale) return { ok: false, reason: 'busy', current };
     } else if (mode === 'reversal') {
       if (status === 'reversed') return { ok: false, reason: 'finalized', current };
@@ -68,7 +67,6 @@ function claimCourtOperationAtomic(guildId, caseId, { mode = 'execution', claim,
 '''
     storage = replace_once(storage, anchor, anchor + helper, 'storage getCaseById')
 
-# Export helper.
 if 'claimCourtOperationAtomic,' not in storage:
     match = re.search(r'module\.exports\s*=\s*\{', storage)
     if not match:
@@ -78,7 +76,7 @@ if 'claimCourtOperationAtomic,' not in storage:
 
 storage_path.write_text(storage)
 
-# --- caseCourt.js: execution claim moves from process-local save to DB atomic claim.
+# --- caseCourt.js: sanction execution claim becomes DB-atomic.
 court_path = ROOT / 'src/core/administration/mod/caseCourt.js'
 court = court_path.read_text()
 if 'claimCourtOperationAtomic,' not in court.split("} = require('./storage');", 1)[0]:
@@ -98,7 +96,7 @@ elif 'const atomicClaim = claimCourtOperationAtomic' not in court:
 
 court_path.write_text(court)
 
-# --- cases.js: retry reversal claim also moves to the shared DB atomic helper.
+# --- cases.js: Phase 19 remedy retry claim becomes DB-atomic.
 cases_path = ROOT / 'src/core/administration/mod/cases.js'
 cases = cases_path.read_text()
 if 'claimCourtOperationAtomic,' not in cases.split("} = require('./storage');", 1)[0]:
@@ -109,18 +107,10 @@ if 'claimCourtOperationAtomic,' not in cases.split("} = require('./storage');", 
         'cases storage import',
     )
 
-# Find the Phase 19 retry claim block semantically and replace only the metadata claim portion.
-pattern = re.compile(
-    r"(const claimedExecution = \{[\s\S]*?status: 'reversing',[\s\S]*?\};\n)"
-    r"\s*const claimedMetadata = \{[\s\S]*?\};\n"
-    r"\s*const claimed = updateCaseMetadata\(guildId, caseId, claimedMetadata\);\n"
-    r"\s*if \(!claimed\) \{ APPEAL_REMEDY_LOCKS\.delete\(lockKey\); return \{ ok: false, error: 'Failed to claim appeal remedy retry\.' \}; \}\n",
-    re.M,
-)
-match = pattern.search(cases)
-if match:
-    replacement = match.group(1) + """  const atomicClaim = claimCourtOperationAtomic(guildId, caseId, { mode: 'reversal', claim: claimedExecution, staleMs: APPEAL_REMEDY_STALE_MS });\n  const claimed = atomicClaim?.case || null;\n  if (!atomicClaim?.ok || !claimed) {\n    APPEAL_REMEDY_LOCKS.delete(lockKey);\n    return { ok: false, error: atomicClaim?.reason === 'busy' ? 'This appeal remedy is already being retried by another Goliath process.' : atomicClaim?.reason === 'finalized' ? 'This appeal remedy has already completed.' : 'Failed to claim appeal remedy retry.' };\n  }\n  recordCaseAudit({ guildId, caseId, actorId, event: 'case.court.appeal_remedy_retry_claimed', before: atomicClaim.previous || execution, after: claimedExecution, metadata: { appealId, atomic: true, operationId } });\n"""
-    cases = cases[:match.start()] + replacement + cases[match.end():]
+old_retry = """    const claimedMetadata = { ...(modCase.metadata || {}), court: { ...court, sanctionExecution: claimedExecution } };\n    const claimed = updateCaseMetadata(guildId, caseId, claimedMetadata);\n    if (!claimed) return { ok: false, error: 'Failed to claim the appeal remedy retry. No reversal action was attempted.' };\n    recordCaseAudit({ guildId, caseId, actorId, event: 'case.court.appeal_remedy_retry_claimed', before: execution, after: claimedExecution, metadata: { appealId, operationId } });\n"""
+new_retry = """    const atomicClaim = claimCourtOperationAtomic(guildId, caseId, { mode: 'reversal', claim: claimedExecution, staleMs: APPEAL_REMEDY_STALE_MS });\n    const claimed = atomicClaim?.case || null;\n    if (!atomicClaim?.ok || !claimed) {\n      return { ok: false, error: atomicClaim?.reason === 'busy' ? 'This appeal remedy is already being retried by another Goliath process.' : atomicClaim?.reason === 'finalized' ? 'This appeal remedy has already completed.' : 'Failed to claim the appeal remedy retry. No reversal action was attempted.' };\n    }\n    recordCaseAudit({ guildId, caseId, actorId, event: 'case.court.appeal_remedy_retry_claimed', before: atomicClaim.previous || execution, after: claimedExecution, metadata: { appealId, operationId, atomic: true } });\n"""
+if old_retry in cases:
+    cases = replace_once(cases, old_retry, new_retry, 'Phase 19 retry claim')
 elif "mode: 'reversal', claim: claimedExecution" not in cases:
     raise RuntimeError('Phase 19 retry claim anchor not found')
 
