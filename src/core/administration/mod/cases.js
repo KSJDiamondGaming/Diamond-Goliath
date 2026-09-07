@@ -94,7 +94,7 @@ function getAppealEligibility(modCase, appellantId, nowMs = Date.now()) {
   if (!APPEALABLE_ACTIONS.has(String(modCase.action || '').toLowerCase())) return { ok: false, error: 'This case type is not appealable.' };
   if (String(modCase.action || '').toLowerCase() === 'case') {
     const court = modCase.metadata?.court;
-    if (!court?.publication || court.stage !== 'published' || !court.decision) return { ok: false, error: 'Court cases become appealable only after an official decision is published.' };
+    if (!court?.publication || court.stage !== 'published' || !court.decision) return { ok: false, error: 'Cases become appealable only after an official decision is published.' };
   }
   if (getStatus(modCase) !== 'active') return { ok: false, error: `This case is ${getStatus(modCase)} and is no longer eligible for appeal.` };
   const appeals = getCaseAppeals(modCase);
@@ -183,14 +183,14 @@ async function applyApprovedCourtAppealRemedy(interaction, modCase, fetchTarget)
   const execution = court?.sanctionExecution && typeof court.sanctionExecution === 'object' ? court.sanctionExecution : null;
   const action = String(execution?.action || court?.decision?.action || 'no_action').toLowerCase();
   const linkedCaseId = Number(execution?.linkedCaseId || 0) || null;
-  const reason = `Court appeal approved for Case #${modCase.caseId}`;
+  const reason = `Appeal approved for Case #${modCase.caseId}`;
 
   if (!court?.publication || !court?.decision) {
     updateCaseStatus(guild.id, modCase.caseId, 'reversed', actorId);
-    return { attempted: false, action: 'court', ok: true, detail: 'Court case reversed; no published sanction was available to undo.' };
+    return { attempted: false, action: 'court', ok: true, detail: 'Case reversed; no published sanction was available to undo.' };
   }
 
-  let remedy = { attempted: false, action, ok: true, detail: 'Published court decision reversed.' };
+  let remedy = { attempted: false, action, ok: true, detail: 'Published case decision reversed.' };
   const target = typeof fetchTarget === 'function' ? await fetchTarget(guild, modCase.userId) : null;
 
   if (action === 'warn') {
@@ -210,7 +210,7 @@ async function applyApprovedCourtAppealRemedy(interaction, modCase, fetchTarget)
   } else if (action === 'timeout') {
     if (!target) remedy = { attempted: true, action: 'remove-timeout', ok: false, detail: 'Member not available to clear timeout.' };
     else {
-      try { await target.timeout(null, reason); remedy = { attempted: true, action: 'remove-timeout', ok: true, detail: 'Court-ordered timeout cleared.' }; }
+      try { await target.timeout(null, reason); remedy = { attempted: true, action: 'remove-timeout', ok: true, detail: 'Timeout cleared following the approved appeal.' }; }
       catch (error) { remedy = { attempted: true, action: 'remove-timeout', ok: false, detail: String(error?.message || 'Failed to clear timeout.').slice(0, 300) }; }
     }
   } else if (action === 'quarantine') {
@@ -222,7 +222,7 @@ async function applyApprovedCourtAppealRemedy(interaction, modCase, fetchTarget)
   } else if (action === 'ban') {
     try {
       await guild.bans.remove(modCase.userId, reason);
-      remedy = { attempted: true, action: 'unban', ok: true, detail: 'Court-ordered ban removed.' };
+      remedy = { attempted: true, action: 'unban', ok: true, detail: 'Ban removed following the approved appeal.' };
     } catch (error) {
       const errorCode = Number(error?.code || error?.rawError?.code || 0);
       const errorText = String(error?.message || error?.rawError?.message || 'Failed to remove ban.');
@@ -231,13 +231,13 @@ async function applyApprovedCourtAppealRemedy(interaction, modCase, fetchTarget)
         attempted: true,
         action: 'unban',
         ok: alreadyUnbanned,
-        detail: alreadyUnbanned ? 'Court-ordered ban was already absent.' : errorText.slice(0, 300),
+        detail: alreadyUnbanned ? 'Ban was already absent; the approved appeal outcome is satisfied.' : errorText.slice(0, 300),
       };
     }
   } else if (action === 'kick') {
-    remedy = { attempted: false, action: 'kick', ok: true, detail: 'Kick cannot be automatically undone; the court decision has been reversed.' };
+    remedy = { attempted: false, action: 'kick', ok: true, detail: 'Kick cannot be automatically undone; the case decision has been reversed.' };
   } else if (action === 'no_action') {
-    remedy = { attempted: false, action: 'no_action', ok: true, detail: 'Court finding reversed; there was no sanction to undo.' };
+    remedy = { attempted: false, action: 'no_action', ok: true, detail: 'Finding reversed; there was no sanction to undo.' };
   }
 
   const reversalSucceeded = remedy.ok !== false;
@@ -369,14 +369,14 @@ async function retryApprovedCourtAppealRemedy(interaction, caseId, appealId, fet
   APPEAL_REMEDY_LOCKS.add(lockKey);
   try {
     let modCase = getCaseById(guildId, caseId);
-    if (!modCase || modCase.action !== 'case' || !modCase.metadata?.court) return { ok: false, error: 'Court case could not be found.' };
+    if (!modCase || modCase.action !== 'case' || !modCase.metadata?.court) return { ok: false, error: 'Case could not be found.' };
     let appeals = getCaseAppeals(modCase);
     let index = appeals.findIndex((appeal) => String(appeal.id) === String(appealId));
-    if (index < 0 || appeals[index].status !== 'approved') return { ok: false, error: 'Only an approved Court appeal can retry its remedy.' };
+    if (index < 0 || appeals[index].status !== 'approved') return { ok: false, error: 'Only an approved appeal can retry its remedy.' };
     if (appeals[index].remedy?.ok !== false) return { ok: false, error: 'This appeal remedy is already satisfied.' };
     const court = modCase.metadata.court;
     const execution = court.sanctionExecution && typeof court.sanctionExecution === 'object' ? court.sanctionExecution : null;
-    if (!execution || !['reversal_failed', 'reversing'].includes(execution.status)) return { ok: false, error: 'This Court sanction is not awaiting reversal recovery.' };
+    if (!execution || !['reversal_failed', 'reversing'].includes(execution.status)) return { ok: false, error: 'This sanction is not awaiting reversal recovery.' };
     if (execution.status === 'reversing' && !appealRemedyIsStale(execution)) return { ok: false, error: 'This appeal remedy is already being processed by another reviewer.' };
 
     const claimedAt = new Date().toISOString();
