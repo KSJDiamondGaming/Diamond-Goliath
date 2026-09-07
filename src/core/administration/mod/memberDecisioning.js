@@ -63,6 +63,11 @@ function classify(context = {}, suspects = []) {
   if (watchState === 'restricted' || watchState === 'blacklisted') { decision = 'high'; reasons.push(`watch state ${watchState}`); }
   if (Number(context.network?.banCount || 0) > 0 && riskScore >= 40) { decision = 'high'; reasons.push('cross-guild ban history with elevated risk'); }
 
+  const currentGuild = (context.guildHistory || []).find((entry) => String(entry.guildId || '') === String(context.guild?.id || ''));
+  const joins = Number(currentGuild?.joinCount || 0);
+  if (joins >= 3 && decision === 'clear') { decision = 'review'; reasons.push(`${joins} recorded joins/rejoins`); }
+  if (joins >= 5 && riskScore >= 40) { decision = 'high'; reasons.push('repeated rejoins with elevated risk'); }
+
   return {
     decision,
     riskScore,
@@ -112,8 +117,7 @@ function saveDecision(guildId, userId, assessment, { trigger = 'scan', scanId = 
       decision=excluded.decision,risk_score=excluded.risk_score,watch_state=excluded.watch_state,
       network_cases=excluded.network_cases,network_bans=excluded.network_bans,external_records=excluded.external_records,
       suspect_score=excluded.suspect_score,reasons_json=excluded.reasons_json,trigger=excluded.trigger,scan_id=excluded.scan_id,
-      reviewed_by=COALESCE(excluded.reviewed_by,member_intelligence_decisions.reviewed_by),
-      reviewed_at=COALESCE(excluded.reviewed_at,member_intelligence_decisions.reviewed_at),updated_at=excluded.updated_at
+      reviewed_by=excluded.reviewed_by,reviewed_at=excluded.reviewed_at,updated_at=excluded.updated_at
   `).run(
     String(guildId), String(userId), normalizeDecision(assessment.decision), Number(assessment.riskScore || 0), assessment.watchState || 'clear',
     Number(assessment.networkCases || 0), Number(assessment.networkBans || 0), Number(assessment.externalRecords || 0), Number(assessment.suspectScore || 0),
@@ -135,6 +139,16 @@ function markClear(guildId, userId, actorId, reason = 'Reviewed by staff and mar
   return { before, after };
 }
 
+function sameEvidence(before, assessment) {
+  return Boolean(before
+    && Number(before.riskScore || 0) === Number(assessment.riskScore || 0)
+    && String(before.watchState || 'clear') === String(assessment.watchState || 'clear')
+    && Number(before.networkCases || 0) === Number(assessment.networkCases || 0)
+    && Number(before.networkBans || 0) === Number(assessment.networkBans || 0)
+    && Number(before.externalRecords || 0) === Number(assessment.externalRecords || 0)
+    && Number(before.suspectScore || 0) === Number(assessment.suspectScore || 0));
+}
+
 function meaningfulChange(before, after) {
   if (!before) return { changed: true, reasons: ['initial assessment'] };
   const reasons = [];
@@ -152,8 +166,18 @@ function meaningfulChange(before, after) {
 
 async function evaluateMember(member, local, suspects = [], { trigger = 'continuous', scanId = null } = {}) {
   const context = await intelligence.buildContext(member.client, member, local || {});
-  const assessment = classify(context, suspects);
+  let assessment = classify({ ...context, guild: member.guild }, suspects);
   const before = getDecision(member.guild.id, member.id);
+  if (before?.trigger === 'staff_clear' && sameEvidence(before, assessment)) {
+    assessment = { ...assessment, decision: 'clear', reasons: before.reasons || ['Reviewed by staff and marked clear.'] };
+    const after = saveDecision(member.guild.id, member.id, assessment, {
+      trigger: 'staff_clear',
+      scanId: before.scanId,
+      reviewedBy: before.reviewedBy,
+      reviewedAt: before.reviewedAt,
+    });
+    return { context, assessment, before, after, change: { changed: false, reasons: [] } };
+  }
   const after = saveDecision(member.guild.id, member.id, assessment, { trigger, scanId });
   return { context, assessment, before, after, change: meaningfulChange(before, after) };
 }
