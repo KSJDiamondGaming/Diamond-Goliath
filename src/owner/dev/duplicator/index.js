@@ -157,10 +157,10 @@ if (GuildChannelManager?.prototype?.create && !GuildChannelManager.prototype[CHA
   };
 }
 
-// Bulk Delete recovery. Exact-copy permissions can legitimately make a copied channel
-// restrictive. If Goliath still has ManageRoles there, repair only its own member access
-// long enough to perform the requested delete. If Discord has removed both ManageChannels
-// and ManageRoles, fail with an actionable explanation instead of a bare 50013 count.
+// Bulk Delete recovery. A delete is treated as safe only when Goliath can both see the
+// target and manage channels there. If those effective permissions are missing, try to
+// repair Goliath's own member overwrite using existing Manage Roles access. Administrator
+// is never requested or enabled by this path.
 if (GuildChannel?.prototype?.delete && !GuildChannel.prototype[CHANNEL_DELETE_PATCH_KEY]) {
   const originalDelete = GuildChannel.prototype.delete;
   Object.defineProperty(GuildChannel.prototype, CHANNEL_DELETE_PATCH_KEY, { value: true });
@@ -176,27 +176,45 @@ if (GuildChannel?.prototype?.delete && !GuildChannel.prototype[CHANNEL_DELETE_PA
 
     const administrator = Boolean(me.permissions?.has(PermissionFlagsBits.Administrator));
     let effective = this.permissionsFor?.(me) || me.permissions;
-    let canDelete = administrator || Boolean(effective?.has(PermissionFlagsBits.ManageChannels));
+    let canView = administrator || Boolean(effective?.has(PermissionFlagsBits.ViewChannel));
+    let canManage = administrator || Boolean(effective?.has(PermissionFlagsBits.ManageChannels));
+    let canDelete = canView && canManage;
 
     if (!canDelete) {
-      const canRepair = Boolean(effective?.has(PermissionFlagsBits.ManageRoles));
+      const canRepair = Boolean(effective?.has(PermissionFlagsBits.ManageRoles))
+        || Boolean(me.permissions?.has(PermissionFlagsBits.ManageRoles));
       if (canRepair && this.permissionOverwrites?.edit) {
-        await this.permissionOverwrites.edit(me, {
-          ViewChannel: true,
-          ManageChannels: true,
-          ManageRoles: true,
-        }, `Goliath Duplicator bulk delete access repair by ${me.id}`);
+        try {
+          await this.permissionOverwrites.edit(me, {
+            ViewChannel: true,
+            ManageChannels: true,
+            ManageRoles: true,
+          }, `Goliath Duplicator bulk delete access repair by ${me.id}`);
+        } catch (error) {
+          const wrapped = new Error(
+            `Missing Access on ${this.name}. Goliath could not repair its own channel overwrite. ` +
+            'Allow View Channel + Manage Channels for Goliath (or its bot-only Operations role) on this channel/category, then retry. Administrator is not required.',
+          );
+          wrapped.code = Number(error?.code) || 50001;
+          throw wrapped;
+        }
+
         const refreshed = await guild.channels.fetch(this.id).catch(() => null);
         effective = refreshed?.permissionsFor?.(me) || this.permissionsFor?.(me) || me.permissions;
-        canDelete = administrator || Boolean(effective?.has(PermissionFlagsBits.ManageChannels));
+        canView = administrator || Boolean(effective?.has(PermissionFlagsBits.ViewChannel));
+        canManage = administrator || Boolean(effective?.has(PermissionFlagsBits.ManageChannels));
+        canDelete = canView && canManage;
       }
     }
 
     if (!canDelete) {
-      const hasManageRoles = Boolean(effective?.has(PermissionFlagsBits.ManageRoles));
+      const missing = [
+        !canView ? 'View Channel' : null,
+        !canManage ? 'Manage Channels' : null,
+      ].filter(Boolean).join(' + ');
       const error = new Error(
-        `Cannot delete ${this.name}: Goliath lacks ManageChannels in this channel${hasManageRoles ? '' : ' and cannot repair access because ManageRoles is also denied'}. ` +
-        'Grant the Goliath bot Administrator, or allow Manage Channels + Manage Roles, then retry Bulk Delete.',
+        `Cannot delete ${this.name}: Goliath is missing ${missing || 'required channel access'}. ` +
+        'Allow View Channel + Manage Channels for Goliath (or its bot-only Operations role) on the target/category, then retry. Administrator is not required.',
       );
       error.code = 50013;
       throw error;
@@ -271,15 +289,10 @@ if (PermissionOverwriteManager?.prototype?.set && !PermissionOverwriteManager.pr
     };
 
     try {
-      // Never bulk-replace the channel with only the Goliath member. That was the reason
-      // child channels ended up showing @everyone + .Goliath.#xxxx and no mapped roles.
       if (botOverwrite && !sourceHadBotMemberOverwrite) {
         await upsertExplicit(botOverwrite, 'Goliath duplicator: temporary transfer access');
       }
 
-      // Role overwrites first, member overwrites next, @everyone last. This minimizes the
-      // chance that a restrictive @everyone rule removes useful access before mapped roles
-      // have been written.
       const ordered = [...expected].sort((a, b) => {
         const aEveryone = String(a.id) === String(guild.id);
         const bEveryone = String(b.id) === String(guild.id);
@@ -299,9 +312,6 @@ if (PermissionOverwriteManager?.prototype?.set && !PermissionOverwriteManager.pr
         }
       }
 
-      // Refresh before pruning inherited/extraneous targets. Source channel overwrites are
-      // authoritative: inherited entries that do not exist on an intentionally unsynced
-      // source channel must be removed from the destination.
       const refreshed = await guild.channels.fetch(channel.id).catch(() => null);
       const cache = refreshed?.permissionOverwrites?.cache || channel.permissionOverwrites?.cache;
       if (cache) {
@@ -333,9 +343,6 @@ if (PermissionOverwriteManager?.prototype?.set && !PermissionOverwriteManager.pr
 
       return channel.permissionOverwrites;
     } finally {
-      // Keep a destination-only Goliath control-plane member overwrite on copied structure.
-      // Source bot/operator ACLs are excluded from snapshots; this operational ACL prevents
-      // exact source permissions from locking Goliath out of verification, undo and cleanup.
       if (botId && botOverwrite && !sourceHadBotMemberOverwrite) {
         try {
           await upsertExplicit(botOverwrite, 'Goliath duplicator: retain destination control-plane access');
@@ -348,12 +355,33 @@ if (PermissionOverwriteManager?.prototype?.set && !PermissionOverwriteManager.pr
 }
 
 function installRunningState(interaction) {
-  if (!interaction?.customId?.startsWith('dupselect:') || !interaction.customId.endsWith(':copy-now')) return;
+  const customId = String(interaction?.customId || '');
+  if (!customId.startsWith('dupselect:')) return;
+  const isCopy = customId.endsWith(':copy-now');
+  const isDelete = customId.endsWith(':delete-now') || customId.includes(':delete-manifest-now:');
+  if (!isCopy && !isDelete) return;
   if (typeof interaction.deferUpdate !== 'function' || typeof interaction.update !== 'function') return;
 
   const originalDeferUpdate = interaction.deferUpdate.bind(interaction);
   interaction.deferUpdate = async function goliathDuplicatorRunningUpdate() {
     try {
+      if (isDelete) {
+        return await interaction.update({
+          embeds: [new EmbedBuilder()
+            .setColor(0xf59e0b)
+            .setTitle('⏳ Bulk Delete Running')
+            .setDescription([
+              'Goliath accepted the confirmation and is checking access before deleting the selected channels/categories.',
+              '',
+              '**Stages:** Resolve targets → Permission preflight/repair → Delete channels → Delete categories → Verify → Save history',
+              '',
+              'The confirmation controls have been removed so the delete cannot be started twice. The final result will replace this message.',
+            ].join('\n'))
+            .setTimestamp()],
+          components: [],
+        });
+      }
+
       return await interaction.update({
         embeds: [new EmbedBuilder()
           .setColor(0x5865f2)
@@ -379,7 +407,7 @@ function bulkDeleteFailureDetails(interaction) {
   const latest = entries.find((item) => item.type === 'bulk-delete');
   if (!latest || !(latest.failed || []).length) return null;
   const failures = latest.failed || [];
-  const permissionFailures = failures.filter((item) => /permission|ManageChannels|50013/i.test(String(item.error || ''))).length;
+  const permissionFailures = failures.filter((item) => /permission|ManageChannels|View Channel|Missing Access|50001|50013/i.test(String(item.error || ''))).length;
   const lines = failures.slice(0, 6).map((item) => `• **${item.name || item.id}** — ${item.error || 'Delete failed'}`);
   const sessionId = String(interaction.customId || '').split(':')[1] || '';
   return {
@@ -396,7 +424,7 @@ function bulkDeleteFailureDetails(interaction) {
         ...lines,
         failures.length > 6 ? `…and ${failures.length - 6} more.` : null,
         '',
-        permissionFailures ? (latest.blockedPreflight ? '**Fix:** Bulk Delete was stopped before deleting anything. Temporarily grant Goliath Administrator, or restore View Channel + Manage Channels on every blocked target, then retry. New copies retain a destination-only Goliath control-plane overwrite so this lockout cannot recur.' : '**Fix:** Give Goliath Administrator, or restore View Channel + Manage Channels on the blocked targets, then retry.') : null,
+        permissionFailures ? '**Fix:** Allow **View Channel + Manage Channels** for Goliath (or its bot-only Operations role) on the blocked category/channel, then retry. **Administrator is not required and Bulk Delete will not request it.**' : null,
         `History record: \`${latest.id}\``,
       ].filter(Boolean).join('\n'))
       .setTimestamp()],
