@@ -1,96 +1,118 @@
-name: Proceedings Compatibility Validation
+name: Sync Goliath
 
 on:
-  push:
-    branches: [dev]
-    paths:
-      - '.github/workflows/sync-dev-now.yml'
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Target environment
+        required: true
+        default: beta
+        type: choice
+        options:
+          - beta
+          - production
+          - dev
 
 permissions:
   contents: write
+  statuses: write
+
+concurrency:
+  group: sync-goliath-${{ inputs.target }}
+  cancel-in-progress: false
 
 jobs:
-  validate:
+  promote:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
+    outputs:
+      promoted_sha: ${{ steps.promote.outputs.promoted_sha }}
     steps:
       - uses: actions/checkout@v5
         with:
           ref: dev
           fetch-depth: 0
 
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Apply compatibility hardening and validate
+      - name: Promote DEV application tree to target branch
+        id: promote
         shell: bash
+        env:
+          TARGET: ${{ inputs.target }}
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          import base64
-          dec=lambda s: base64.b64decode(s).decode()
-          insert=dec('Y29uc3QgQVBQRUFMX05PVElDRV9BQ1RJT05TID0gbmV3IFNldChbJ3dhcm4nLCAndGltZW91dCcsICdraWNrJywgJ2JhbiddKTsKY29uc3QgTEVHQUNZX1BST0NFRURJTkdfTkFNRVNQQUNFID0gU3RyaW5nLmZyb21DaGFyQ29kZSg5OSwgMTExLCAxMTcsIDExNCwgMTE2KTsKCmZ1bmN0aW9uIG5vcm1hbGl6ZVBlcnNpc3RlZENhc2VNZXRhZGF0YShzb3VyY2UpIHsKICBjb25zdCBtZXRhZGF0YSA9IHNvdXJjZSAmJiB0eXBlb2Ygc291cmNlID09PSAnb2JqZWN0JyAmJiAhQXJyYXkuaXNBcnJheShzb3VyY2UpID8geyAuLi5zb3VyY2UgfSA6IHt9OwogIGNvbnN0IGxlZ2FjeU5hbWVzcGFjZSA9IExFR0FDWV9QUk9DRUVESU5HX05BTUVTUEFDRTsKICBjb25zdCBsZWdhY3lQcm9jZWVkaW5nID0gbWV0YWRhdGFbbGVnYWN5TmFtZXNwYWNlXTsKICBpZiAoKCFtZXRhZGF0YS5wcm9jZWVkaW5nIHx8IHR5cGVvZiBtZXRhZGF0YS5wcm9jZWVkaW5nICE9PSAnb2JqZWN0JykgJiYgbGVnYWN5UHJvY2VlZGluZyAmJiB0eXBlb2YgbGVnYWN5UHJvY2VlZGluZyA9PT0gJ29iamVjdCcgJiYgIUFycmF5LmlzQXJyYXkobGVnYWN5UHJvY2VlZGluZykpIHsKICAgIG1ldGFkYXRhLnByb2NlZWRpbmcgPSBsZWdhY3lQcm9jZWVkaW5nOwogIH0KICBkZWxldGUgbWV0YWRhdGFbbGVnYWN5TmFtZXNwYWNlXTsKCiAgY29uc3QgbGVnYWN5VGl0bGUgPSBgJHtsZWdhY3lOYW1lc3BhY2VbMF0udG9VcHBlckNhc2UoKX0ke2xlZ2FjeU5hbWVzcGFjZS5zbGljZSgxKX1gOwogIGNvbnN0IGxlZ2FjeVNvdXJjZUNhc2VJZEtleSA9IGBzb3VyY2Uke2xlZ2FjeVRpdGxlfUNhc2VJZGA7CiAgY29uc3QgbGVnYWN5T3JkZXJlZEtleSA9IGAke2xlZ2FjeU5hbWVzcGFjZX1PcmRlcmVkYDsKICBpZiAobWV0YWRhdGEuc291cmNlUHJvY2VlZGluZ0Nhc2VJZCA9PSBudWxsICYmIG1ldGFkYXRhW2xlZ2FjeVNvdXJjZUNhc2VJZEtleV0gIT0gbnVsbCkgbWV0YWRhdGEuc291cmNlUHJvY2VlZGluZ0Nhc2VJZCA9IG1ldGFkYXRhW2xlZ2FjeVNvdXJjZUNhc2VJZEtleV07CiAgaWYgKG1ldGFkYXRhLnByb2NlZWRpbmdPcmRlcmVkID09IG51bGwgJiYgbWV0YWRhdGFbbGVnYWN5T3JkZXJlZEtleV0gIT0gbnVsbCkgbWV0YWRhdGEucHJvY2VlZGluZ09yZGVyZWQgPSBtZXRhZGF0YVtsZWdhY3lPcmRlcmVkS2V5XTsKICBkZWxldGUgbWV0YWRhdGFbbGVnYWN5U291cmNlQ2FzZUlkS2V5XTsKICBkZWxldGUgbWV0YWRhdGFbbGVnYWN5T3JkZXJlZEtleV07CiAgcmV0dXJuIG1ldGFkYXRhOwp9Cg==')
-          old_parse=dec('ZnVuY3Rpb24gcGFyc2VNZXRhZGF0YSh2YWx1ZSkgewogIGlmICghdmFsdWUpIHJldHVybiB7fTsKICB0cnkgewogICAgY29uc3QgcGFyc2VkID0gSlNPTi5wYXJzZSh2YWx1ZSk7CiAgICByZXR1cm4gcGFyc2VkICYmIHR5cGVvZiBwYXJzZWQgPT09ICdvYmplY3QnICYmICFBcnJheS5pc0FycmF5KHBhcnNlZCkgPyBwYXJzZWQgOiB7fTsKICB9IGNhdGNoIHsgcmV0dXJuIHt9OyB9Cn0K')
-          new_parse=dec('ZnVuY3Rpb24gcGFyc2VNZXRhZGF0YSh2YWx1ZSkgewogIGlmICghdmFsdWUpIHJldHVybiB7fTsKICB0cnkgewogICAgY29uc3QgcGFyc2VkID0gSlNPTi5wYXJzZSh2YWx1ZSk7CiAgICByZXR1cm4gbm9ybWFsaXplUGVyc2lzdGVkQ2FzZU1ldGFkYXRhKHBhcnNlZCk7CiAgfSBjYXRjaCB7IHJldHVybiB7fTsgfQp9CgpmdW5jdGlvbiBtaWdyYXRlU3RvcmVkQ2FzZU1ldGFkYXRhKCkgewogIGNvbnN0IHJvd3MgPSBkYi5wcmVwYXJlKCJTRUxFQ1QgY2FzZV9pZCwgbWV0YWRhdGEgRlJPTSBjYXNlcyBXSEVSRSBtZXRhZGF0YSBJUyBOT1QgTlVMTCBBTkQgbWV0YWRhdGEgPD4gJyciKS5hbGwoKTsKICBjb25zdCB1cGRhdGUgPSBkYi5wcmVwYXJlKCdVUERBVEUgY2FzZXMgU0VUIG1ldGFkYXRhID0gPyBXSEVSRSBjYXNlX2lkID0gPycpOwogIGxldCBtaWdyYXRlZCA9IDA7CiAgY29uc3QgdHJhbnNhY3Rpb24gPSBkYi50cmFuc2FjdGlvbigoKSA9PiB7CiAgICBmb3IgKGNvbnN0IHJvdyBvZiByb3dzKSB7CiAgICAgIGxldCBwYXJzZWQ7CiAgICAgIHRyeSB7IHBhcnNlZCA9IEpTT04ucGFyc2Uocm93Lm1ldGFkYXRhKTsgfSBjYXRjaCB7IGNvbnRpbnVlOyB9CiAgICAgIGlmICghcGFyc2VkIHx8IHR5cGVvZiBwYXJzZWQgIT09ICdvYmplY3QnIHx8IEFycmF5LmlzQXJyYXkocGFyc2VkKSkgY29udGludWU7CiAgICAgIGNvbnN0IG5vcm1hbGl6ZWQgPSBub3JtYWxpemVQZXJzaXN0ZWRDYXNlTWV0YWRhdGEocGFyc2VkKTsKICAgICAgY29uc3Qgc2VyaWFsaXplZCA9IEpTT04uc3RyaW5naWZ5KG5vcm1hbGl6ZWQpOwogICAgICBpZiAoc2VyaWFsaXplZCA9PT0gcm93Lm1ldGFkYXRhKSBjb250aW51ZTsKICAgICAgdXBkYXRlLnJ1bihzZXJpYWxpemVkLCByb3cuY2FzZV9pZCk7CiAgICAgIG1pZ3JhdGVkICs9IDE7CiAgICB9CiAgfSk7CiAgdHJhbnNhY3Rpb24oKTsKICByZXR1cm4gbWlncmF0ZWQ7Cn0KCmNvbnN0IG1pZ3JhdGVkU3RvcmVkQ2FzZU1ldGFkYXRhID0gbWlncmF0ZVN0b3JlZENhc2VNZXRhZGF0YSgpOwppZiAobWlncmF0ZWRTdG9yZWRDYXNlTWV0YWRhdGEgPiAwKSBjb25zb2xlLmxvZyhg4pyFIE1pZ3JhdGVkICR7bWlncmF0ZWRTdG9yZWRDYXNlTWV0YWRhdGF9IHNhdmVkIGNhc2UgbWV0YWRhdGEgcmVjb3JkKHMpIHRvIHRoZSBjdXJyZW50IHNjaGVtYS5gKTsK')
-          old_norm=dec('ZnVuY3Rpb24gbm9ybWFsaXplUGVybWlzc2lvbk1hcChzb3VyY2UsIGRlZmF1bHRzKSB7CiAgY29uc3QgcGVybWlzc2lvbnMgPSB7IC4uLmRlZmF1bHRzIH07CiAgZm9yIChjb25zdCBba2V5LCB2YWx1ZV0gb2YgT2JqZWN0LmVudHJpZXMoc291cmNlIHx8IHt9KSkgaWYgKEdVSUxEX1BFUk1JU1NJT05fS0VZUy5oYXMoa2V5KSkgcGVybWlzc2lvbnNba2V5XSA9IEJvb2xlYW4odmFsdWUpOwogIHJldHVybiBwZXJtaXNzaW9uczsKfQo=')
-          new_norm=dec('Y29uc3QgTEVHQUNZX1BFUk1JU1NJT05fU0NPUEUgPSBTdHJpbmcuZnJvbUNoYXJDb2RlKDk5LCAxMTEsIDExNywgMTE0LCAxMTYpOwpmdW5jdGlvbiBub3JtYWxpemVBdXRob3JpdHlQZXJtaXNzaW9uS2V5KGtleSkgewogIGNvbnN0IHJhdyA9IFN0cmluZyhrZXkgfHwgJycpOwogIGNvbnN0IGxlZ2FjeVByZWZpeCA9IGBtb2QuJHtMRUdBQ1lfUEVSTUlTU0lPTl9TQ09QRX0uYDsKICByZXR1cm4gcmF3LnN0YXJ0c1dpdGgobGVnYWN5UHJlZml4KSA/IGBtb2QucHJvY2VlZGluZy4ke3Jhdy5zbGljZShsZWdhY3lQcmVmaXgubGVuZ3RoKX1gIDogcmF3Owp9CmZ1bmN0aW9uIG5vcm1hbGl6ZVBlcm1pc3Npb25NYXAoc291cmNlLCBkZWZhdWx0cykgewogIGNvbnN0IHBlcm1pc3Npb25zID0geyAuLi5kZWZhdWx0cyB9OwogIGZvciAoY29uc3QgW2tleSwgdmFsdWVdIG9mIE9iamVjdC5lbnRyaWVzKHNvdXJjZSB8fCB7fSkpIHsKICAgIGNvbnN0IG5vcm1hbGl6ZWRLZXkgPSBub3JtYWxpemVBdXRob3JpdHlQZXJtaXNzaW9uS2V5KGtleSk7CiAgICBpZiAoR1VJTERfUEVSTUlTU0lPTl9LRVlTLmhhcyhub3JtYWxpemVkS2V5KSkgcGVybWlzc2lvbnNbbm9ybWFsaXplZEtleV0gPSBCb29sZWFuKHZhbHVlKTsKICB9CiAgcmV0dXJuIHBlcm1pc3Npb25zOwp9Cg==')
-          storage=Path('src/core/administration/mod/storage.js')
-          text=storage.read_text(encoding='utf-8')
-          anchor="const APPEAL_NOTICE_ACTIONS = new Set(['warn', 'timeout', 'kick', 'ban']);\n"
-          if 'LEGACY_PROCEEDING_NAMESPACE' not in text:
-              if anchor not in text: raise SystemExit('storage anchor missing')
-              text=text.replace(anchor,insert,1)
-          if old_parse in text: text=text.replace(old_parse,new_parse,1)
-          elif 'function migrateStoredCaseMetadata()' not in text: raise SystemExit('parseMetadata anchor missing')
-          storage.write_text(text,encoding='utf-8')
-          panel=Path('src/core/administration/admin/panel.js')
-          text=panel.read_text(encoding='utf-8').replace('const AUTHORITY_VERSION = 5;','const AUTHORITY_VERSION = 6;',1)
-          if old_norm in text: text=text.replace(old_norm,new_norm,1)
-          elif 'normalizeAuthorityPermissionKey' not in text: raise SystemExit('permission anchor missing')
-          panel.write_text(text,encoding='utf-8')
-          PY
 
-          needle="$(printf '\143\157\165\162\164')"
-          if git ls-files | grep -i "$needle"; then exit 1; fi
-          if git grep -in "$needle" -- ':!.github/workflows/sync-dev-now.yml'; then exit 1; fi
+          if [ "$TARGET" = "dev" ]; then
+            SHA="$(git rev-parse HEAD)"
+            echo "DEV selected: no branch promotion required."
+            echo "promoted_sha=$SHA" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
-          npm ci
-          npm audit --audit-level=moderate
-          npm run doctor
-          npm run build
+          git fetch --no-tags origin dev "$TARGET"
+          DEV_SHA="$(git rev-parse origin/dev)"
+          TARGET_SHA="$(git rev-parse origin/$TARGET)"
 
-          node <<'NODE'
-          process.env.BOT_MODE='dev';
-          const storage=require('./src/core/administration/mod/storage');
-          const ns=String.fromCharCode(99,111,117,114,116), cap=ns[0].toUpperCase()+ns.slice(1);
-          const guildId='999999999999999998', userId='999999999999999997', moderatorId='999999999999999996';
-          const old={ [ns]:{stage:'review',severity:4,allegations:'compatibility smoke'}, [`source${cap}CaseId`]:321, [`${ns}Ordered`]:true };
-          const r=storage.db.prepare('INSERT INTO cases (guild_id,user_id,moderator_id,action,reason,metadata,status,created_at) VALUES (?,?,?,?,?,?,?,?)').run(guildId,userId,moderatorId,'case','compatibility smoke',JSON.stringify(old),'active',new Date().toISOString());
-          const loaded=storage.getCaseById(guildId,r.lastInsertRowid);
-          if(loaded?.metadata?.proceeding?.stage!=='review') throw new Error('saved proceeding migration failed');
-          if(loaded?.metadata?.sourceProceedingCaseId!==321||loaded?.metadata?.proceedingOrdered!==true) throw new Error('linked metadata migration failed');
-          if(Object.prototype.hasOwnProperty.call(loaded.metadata,ns)) throw new Error('legacy namespace leaked');
-          storage.db.prepare('DELETE FROM case_audit WHERE guild_id=?').run(guildId);
-          storage.db.prepare('DELETE FROM cases WHERE guild_id=?').run(guildId);
-          console.log('✅ Saved-case compatibility smoke passed');
-          NODE
+          git config user.name "Goliath Sync"
+          git config user.email "goliath-sync@users.noreply.github.com"
+          git switch -C "promote-$TARGET" "$TARGET_SHA"
 
-          node <<'NODE'
-          const p=require('./src/core/administration/mod/caseProceeding');
-          for(const n of ['parseProceeding','caseIsProceeding','getProceedingCases','buildProceedingDashboard','buildCaseFile','buildUserPublishedCasesPanel','handleProceedingInteraction','handleProceedingModal']) if(typeof p[n]!=='function') throw new Error(`missing export ${n}`);
-          const admin=require('./src/core/administration/admin/panel');
-          const keys=new Set((admin.GUILD_PERMISSION_CATALOG||[]).map(x=>x.key));
-          for(const k of ['mod.proceeding.manage','mod.proceeding.review','mod.proceeding.publish','mod.proceeding.close','mod.proceeding.delete']) if(!keys.has(k)) throw new Error(`missing permission ${k}`);
-          console.log('✅ Proceedings contracts passed');
-          NODE
+          # Promote the complete application tree from DEV while keeping the
+          # target branch's GitHub workflow control files. GITHUB_TOKEN cannot
+          # rewrite workflow files without an additional workflows permission,
+          # and workflow YAML is not part of the running Goliath application.
+          git diff --binary "$TARGET_SHA" "$DEV_SHA" -- . ':(exclude).github/workflows/**' > /tmp/goliath-promotion.patch
 
-          git diff --check
-          git config user.name "Goliath Compatibility"
-          git config user.email "goliath-compatibility@users.noreply.github.com"
-          git add src/core/administration/mod/storage.js src/core/administration/admin/panel.js
-          git diff --cached --check
-          git commit -m "fix(mod): preserve saved proceedings across rename"
-          git push origin HEAD:dev
+          if [ -s /tmp/goliath-promotion.patch ]; then
+            git apply --index /tmp/goliath-promotion.patch
+            git commit -m "Promote DEV $DEV_SHA to $TARGET"
+            git push origin "HEAD:refs/heads/$TARGET"
+          else
+            echo "$TARGET already matches DEV application files."
+          fi
+
+          git fetch --no-tags origin dev "$TARGET"
+          FINAL_SHA="$(git rev-parse origin/$TARGET)"
+
+          if ! git diff --quiet origin/dev "origin/$TARGET" -- . ':(exclude).github/workflows/**'; then
+            echo "Promotion verification failed: $TARGET application files do not match DEV." >&2
+            git diff --stat origin/dev "origin/$TARGET" -- . ':(exclude).github/workflows/**' >&2
+            exit 1
+          fi
+
+          echo "promoted_sha=$FINAL_SHA" >> "$GITHUB_OUTPUT"
+          echo "✅ DEV application tree promoted to $TARGET at $FINAL_SHA"
+
+  deploy:
+    needs: promote
+    uses: ./.github/workflows/deploy-dev.yml
+    with:
+      environment: ${{ inputs.target }}
+      operation: sync
+    secrets: inherit
+
+  summary:
+    needs: [promote, deploy]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Write sync summary
+        shell: bash
+        run: |
+          {
+            echo "## Sync Goliath"
+            echo ""
+            echo "- Target: **${{ inputs.target }}**"
+            echo "- Promotion result: **${{ needs.promote.result }}**"
+            echo "- VPS deploy result: **${{ needs.deploy.result }}**"
+            echo "- Target commit: **${{ needs.promote.outputs.promoted_sha }}**"
+            echo ""
+            if [ "${{ inputs.target }}" = "dev" ]; then
+              echo "DEV branch → DEV VPS."
+            else
+              echo "DEV application files → $TARGET branch → $TARGET VPS."
+              echo "Target branch workflow-control YAML is intentionally preserved; all Goliath runtime/application files come from DEV."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          [ "${{ needs.promote.result }}" = "success" ]
+          [ "${{ needs.deploy.result }}" = "success" ]
