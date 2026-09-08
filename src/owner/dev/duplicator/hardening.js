@@ -1,6 +1,6 @@
 'use strict';
 
-const { GuildChannel } = require('discord.js');
+const { GuildChannel, PermissionFlagsBits } = require('discord.js');
 const history = require('./history');
 
 const INSTALL_KEY = Symbol.for('goliath.duplicator.history-hardening-v1');
@@ -77,20 +77,44 @@ function installHistoryHardening() {
   };
 }
 
+function hasManageChannels(channel) {
+  const guild = channel?.guild;
+  const me = guild?.members?.me;
+  if (!guild || !me) return false;
+  const effective = channel.permissionsFor?.(me) || me.permissions;
+  return Boolean(effective?.has(PermissionFlagsBits.ManageChannels));
+}
+
 function installDeleteErrorHardening() {
   if (!GuildChannel?.prototype?.delete || GuildChannel.prototype[DELETE_ERROR_KEY]) return;
   const previousDelete = GuildChannel.prototype.delete;
   Object.defineProperty(GuildChannel.prototype, DELETE_ERROR_KEY, { value: true });
 
   GuildChannel.prototype.delete = async function hardenedDuplicatorDelete(reason) {
+    const isBulkDelete = String(reason || '').startsWith('Goliath Duplicator bulk delete');
     try {
       return await previousDelete.call(this, reason);
     } catch (error) {
-      if (!String(reason || '').startsWith('Goliath Duplicator bulk delete')) throw error;
-      if (!/administrator/i.test(String(error?.message || ''))) throw error;
+      if (!isBulkDelete) throw error;
 
-      const wrapped = new Error(String(error.message).replace(/Administrator[^.]*\.?/gi, 'Manage Channels access is required; Administrator is not requested.'));
-      wrapped.code = error.code;
+      // A channel can be hidden from Goliath while Manage Channels is still effective.
+      // In that case, use the guild channel manager directly instead of treating a
+      // View Channel denial as a fatal delete blocker. No Administrator escalation.
+      if ([50001, 50013].includes(Number(error?.code)) && hasManageChannels(this) && this.guild?.channels?.delete) {
+        try {
+          return await this.guild.channels.delete(this.id, reason);
+        } catch (managerError) {
+          error = managerError;
+        }
+      }
+
+      const message = String(error?.message || error || 'Bulk delete failed.');
+      const wrapped = new Error(
+        /administrator/i.test(message)
+          ? message.replace(/Administrator[^.]*\.?/gi, 'Manage Channels access is required; Administrator is not requested.')
+          : `${message} No Administrator permission was requested or used.`,
+      );
+      wrapped.code = error?.code;
       wrapped.cause = error;
       throw wrapped;
     }
@@ -107,4 +131,5 @@ module.exports = {
   normalizeRecord,
   normaliseRequiredAction,
   createdObjectCount,
+  hasManageChannels,
 };
