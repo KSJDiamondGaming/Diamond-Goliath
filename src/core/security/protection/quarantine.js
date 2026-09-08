@@ -231,25 +231,36 @@ async function syncQuarantineIsolation(guild, options = {}) {
   let skipped = 0;
   let failed = 0;
   const failures = [];
+  const memberViewAllowRestores = [];
   const targetMemberId = options.targetMemberId ? String(options.targetMemberId) : null;
 
   for (const [, channel] of channels || []) {
     if (!channel?.permissionOverwrites?.edit || channel.isThread?.()) continue;
 
-    // A member-specific ViewChannel allow wins over a role-level deny in Discord's
-    // overwrite hierarchy. Refuse to claim guaranteed isolation if one exists.
-    // This check runs before the role-level skip so private channels cannot leak
-    // through a personal allow that would otherwise override the quarantine role.
+    // A member-specific ViewChannel allow wins over a role-level deny. Rather than
+    // rejecting a valid investigation, temporarily replace that allow with a deny
+    // and remember it so restoreQuarantinedMember can put the original allow back.
     if (targetMemberId) {
       const memberOverwrite = channel.permissionOverwrites.cache?.get(targetMemberId);
       if (memberOverwrite?.allow?.has(PermissionFlagsBits.ViewChannel)) {
-        failed += 1;
-        failures.push({
-          channelId: channel.id,
-          channelName: channel.name || null,
-          error: 'Target has an explicit member View Channel allow that overrides role quarantine isolation.',
-        });
-        continue;
+        const botPermissions = channel.permissionsFor?.(botMember);
+        if (!botPermissions?.has(PermissionFlagsBits.ManageRoles)) {
+          failed += 1;
+          failures.push({ channelId: channel.id, channelName: channel.name || null, error: 'Goliath cannot temporarily contain the target member overwrite in this channel.' });
+          continue;
+        }
+        try {
+          await channel.permissionOverwrites.edit(
+            targetMemberId,
+            { ViewChannel: false },
+            { reason: 'Goliath quarantine: temporarily contain explicit member channel access' }
+          );
+          memberViewAllowRestores.push(channel.id);
+        } catch (error) {
+          failed += 1;
+          failures.push({ channelId: channel.id, channelName: channel.name || null, error: String(error?.message || error).slice(0, 250) });
+          continue;
+        }
       }
     }
 
@@ -319,9 +330,10 @@ async function syncQuarantineIsolation(guild, options = {}) {
       skipped,
       failed,
       failures,
+      memberViewAllowRestores,
     };
   }
-  return { success: true, roleId: role.id, roleName: role.name, updated, skipped, failed: 0, failures };
+  return { success: true, roleId: role.id, roleName: role.name, updated, skipped, failed: 0, failures, memberViewAllowRestores };
 }
 
 function getInvestigationStaffRoleIds(guild, options = {}) {
@@ -590,6 +602,7 @@ async function quarantineMember(guild, member, options = {}) {
       quarantinedAt: Date.now(),
       reason: options.reason || 'No reason provided',
       roles: snapshotRoles,
+      memberViewAllowRestores: isolation.memberViewAllowRestores || [],
       quarantinedBy: options.quarantinedBy || null,
       source: options.source || (options.quarantinedBy === 'anti_nuke' ? 'anti_nuke' : 'moderation'),
       caseId: options.caseId || null,
@@ -643,6 +656,27 @@ async function getRestorableRoleIds(guild, snapshotRoleIds = [], quarantineRoleI
     restored.push(role.id);
   }
   return { restored, skipped };
+}
+
+async function restoreMemberViewAllows(guild, memberId, channelIds = [], options = {}) {
+  const restored = [];
+  const failed = [];
+  for (const channelId of [...new Set((channelIds || []).map(String))]) {
+    let channel = guild.channels.cache.get(channelId);
+    if (!channel) channel = await guild.channels.fetch(channelId).catch(() => null);
+    if (!channel?.permissionOverwrites?.edit) continue;
+    try {
+      await channel.permissionOverwrites.edit(
+        String(memberId),
+        { ViewChannel: true },
+        { reason: options.reason || 'Restoring pre-quarantine member channel access' }
+      );
+      restored.push(channelId);
+    } catch (error) {
+      failed.push({ channelId, error: String(error?.message || error).slice(0, 250) });
+    }
+  }
+  return { restored, failed };
 }
 
 async function archiveInvestigationRoom(guild, snapshot, options = {}) {
@@ -699,6 +733,10 @@ async function restoreQuarantinedMember(guild, member, options = {}) {
     const quarantineRoleId = state.roleId || null;
     const roles = await getRestorableRoleIds(guild, snapshot.roles, quarantineRoleId);
     await member.roles.set(roles.restored, options.reason || 'Restoring quarantined member');
+    const memberAccess = await restoreMemberViewAllows(guild, member.id, snapshot.memberViewAllowRestores, options);
+    if (memberAccess.failed.length) {
+      return { success: false, mode, reason: 'Member roles were restored but one or more pre-quarantine channel allows could not be restored.', memberAccess };
+    }
     const archive = mode === QUARANTINE_MODES.INVESTIGATION
       ? await archiveInvestigationRoom(guild, snapshot, options)
       : { success: true, archived: false };
@@ -711,8 +749,9 @@ async function restoreQuarantinedMember(guild, member, options = {}) {
       restoredRoles: roles.restored.length,
       skippedRoles: roles.skipped,
       archive,
+      restoredMemberChannelAllows: memberAccess.restored.length,
     });
-    return { success: true, mode, restoredRoles: roles.restored.length, restoredRoleIds: roles.restored, skippedRoles: roles.skipped, archive };
+    return { success: true, mode, restoredRoles: roles.restored.length, restoredRoleIds: roles.restored, skippedRoles: roles.skipped, memberAccess, archive };
   } catch (error) {
     return { success: false, mode, error: error.message };
   }
@@ -801,10 +840,9 @@ async function recoverGuildQuarantine(guild) {
   });
   if (!role) return { success: false, reason: 'Quarantine role recovery failed.', active: entries.length, reapplied: 0, restored: 0, failed: entries.length };
 
-  const isolation = await syncQuarantineIsolation(guild, { role });
   let reapplied = 0;
   let restored = 0;
-  let failed = isolation.success ? 0 : 1;
+  let failed = 0;
 
   for (const [userId, snapshot] of entries) {
     const member = await guild.members.fetch(userId).catch(() => null);
