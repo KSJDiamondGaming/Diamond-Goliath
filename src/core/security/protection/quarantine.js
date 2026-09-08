@@ -480,8 +480,6 @@ async function escalateInvestigationToSecurity(guild, member, existing, options 
     if (interviewChannel?.permissionOverwrites?.edit) {
       await interviewChannel.permissionOverwrites.edit(member.id, {
         ViewChannel: false,
-        SendMessages: false,
-        AddReactions: false,
       }, { reason: 'Investigation escalated to full Security Isolation' }).catch(() => null);
       await interviewChannel.send({
         content: '🚨 This investigation hold has been escalated to **Full Security Isolation**. Member access to this room has been revoked.',
@@ -644,8 +642,6 @@ async function archiveInvestigationRoom(guild, snapshot, options = {}) {
     if (snapshot.memberId && channel.permissionOverwrites?.edit) {
       await channel.permissionOverwrites.edit(String(snapshot.memberId), {
         ViewChannel: false,
-        SendMessages: false,
-        AddReactions: false,
       }, { reason: options.reason || 'Investigation isolation closed' });
     }
     const closedName = `closed-investigation-${String(snapshot.memberId || 'member').slice(-6)}-${Math.floor(Date.now() / 1000).toString(36)}`.slice(0, 100);
