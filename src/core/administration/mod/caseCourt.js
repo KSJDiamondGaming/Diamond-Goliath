@@ -809,9 +809,10 @@ async function handleCourtModal(interaction) {
     if (action === 'warn' && (!Number.isInteger(strikeWeight) || strikeWeight < 1 || strikeWeight > 5)) { await interaction.reply({ content: '❌ Warning strike weight must be a whole number from 1 to 5.', flags: 64 }); return true; }
     if (action === 'timeout' && !durationMs) { await interaction.reply({ content: '❌ Invalid timeout duration. Use values such as 10m, 1h or 1d; maximum 28 days.', flags: 64 }); return true; }
     if (action === 'ban' && (!Number.isInteger(deleteDays) || deleteDays < 0 || deleteDays > 7)) { await interaction.reply({ content: '❌ Ban delete-message days must be a whole number from 0 to 7.', flags: 64 }); return true; }
+    if (!interaction.deferred && !interaction.replied) await interaction.deferReply({ flags: 64 });
     const lockKey = courtExecutionLockKey(interaction.guildId, caseId);
-    if (COURT_EXECUTION_LOCKS.has(lockKey)) { await interaction.reply({ content: '❌ This sanction is already being executed. Duplicate execution is blocked.', flags: 64 }); return true; }
-    if (court.sanctionExecution?.status === 'executing' && !executionIsStale(court.sanctionExecution)) { await interaction.reply({ content: '❌ This sanction is already being executed by another reviewer.', flags: 64 }); return true; }
+    if (COURT_EXECUTION_LOCKS.has(lockKey)) { await interaction.editReply({ content: '❌ This sanction is already being executed. Duplicate execution is blocked.' }); return true; }
+    if (court.sanctionExecution?.status === 'executing' && !executionIsStale(court.sanctionExecution)) { await interaction.editReply({ content: '❌ This sanction is already being executed by another reviewer.' }); return true; }
     COURT_EXECUTION_LOCKS.add(lockKey);
     const executionStarted = now();
     const operationId = `court_exec_${caseId}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
@@ -825,7 +826,7 @@ async function handleCourtModal(interaction) {
         : atomicClaim?.reason === 'finalized'
           ? '❌ This sanction was already finalised before this execution claim completed.'
           : '❌ Failed to claim the sanction execution lock. No punishment was applied.';
-      await interaction.reply({ content: message, flags: 64 });
+      await interaction.editReply({ content: message });
       return true;
     }
     recordCaseAudit({ guildId: interaction.guildId, caseId, actorId: interaction.user.id, event: 'case.court.sanction_execution_claimed', before: atomicClaim.previous || court.sanctionExecution || null, after: claimedExecution, metadata: { court: true, atomic: true, operationId } });
@@ -834,7 +835,7 @@ async function handleCourtModal(interaction) {
       const failed = { ...claimedExecution, status: 'failed', executedAt: now(), error: 'Member is not currently available in this server.' };
       saveCourt(interaction.guildId, caseId, { ...court, sanctionExecution: failed }, interaction.user.id, 'case.court.sanction_failed', claimedExecution);
       COURT_EXECUTION_LOCKS.delete(lockKey);
-      await interaction.reply({ content: '❌ The member is not currently available in this server, so this action cannot be executed from Case Management.', flags: 64 }); return true;
+      await interaction.editReply({ content: '❌ The member is not currently available in this server, so this action cannot be executed from Case Management.' }); return true;
     }
     try {
       let linkedCaseId = null;
