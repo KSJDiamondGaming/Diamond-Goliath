@@ -2,6 +2,12 @@
 
 set -eu
 
+# This hook is for the local DEV workstation only. GitHub Actions/CI commits must
+# never start the local bidirectional sync logic or race the remote branch.
+if [ "${GITHUB_ACTIONS:-}" = "true" ] || [ "${CI:-}" = "true" ]; then
+  exit 0
+fi
+
 BRANCH="$(git branch --show-current 2>/dev/null || true)"
 if [ "$BRANCH" != "dev" ]; then
   exit 0
