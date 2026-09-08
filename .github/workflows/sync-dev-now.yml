@@ -31,15 +31,20 @@ jobs:
           latest_line() {
             npm view "$1" version --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const v=JSON.parse(s);console.log(Array.isArray(v)?v[v.length-1]:v)})"
           }
-          EXPRESS="$(latest_line 'express@4')"
-          DISCORD="$(latest_line 'discord.js@14')"
-          UNDICI="$(latest_line 'undici@6')"
-          SHARP="$(latest_line 'sharp@0.35')"
+          export EXPRESS="$(latest_line 'express@4')"
+          export DISCORD="$(latest_line 'discord.js@14')"
+          export UNDICI="$(latest_line 'undici@6')"
+          export SHARP="$(latest_line 'sharp@0.35')"
           echo "Selected express=$EXPRESS discord.js=$DISCORD undici=$UNDICI sharp=$SHARP"
-          npm pkg set "dependencies.express=^$EXPRESS"
-          npm pkg set "dependencies.discord.js=^$DISCORD"
-          npm pkg set "dependencies.sharp=^$SHARP"
-          npm pkg set "overrides.undici=$UNDICI"
+          node - <<'NODE'
+          const fs = require('fs');
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          pkg.dependencies.express = `^${process.env.EXPRESS}`;
+          pkg.dependencies['discord.js'] = `^${process.env.DISCORD}`;
+          pkg.dependencies.sharp = `^${process.env.SHARP}`;
+          pkg.overrides = { ...(pkg.overrides || {}), undici: process.env.UNDICI };
+          fs.writeFileSync('package.json', `${JSON.stringify(pkg, null, 2)}\n`);
+          NODE
           npm install --package-lock-only --ignore-scripts
 
       - name: Validate upgraded dependency set
