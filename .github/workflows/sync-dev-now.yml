@@ -1,4 +1,4 @@
-name: Dependency Hardening
+name: Dependency Upgrade Validation
 
 on:
   push:
@@ -10,7 +10,7 @@ permissions:
   contents: write
 
 jobs:
-  harden:
+  validate-upgrades:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -24,55 +24,65 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Audit and apply non-breaking lockfile remediation
+      - name: Select newest compatible dependency lines
+        shell: bash
+        run: |
+          set -euo pipefail
+          latest_line() {
+            npm view "$1" version --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const v=JSON.parse(s);console.log(Array.isArray(v)?v[v.length-1]:v)})"
+          }
+          EXPRESS="$(latest_line 'express@4')"
+          DISCORD="$(latest_line 'discord.js@14')"
+          UNDICI="$(latest_line 'undici@6')"
+          SHARP="$(latest_line 'sharp@0.35')"
+          echo "Selected express=$EXPRESS discord.js=$DISCORD undici=$UNDICI sharp=$SHARP"
+          npm pkg set "dependencies.express=^$EXPRESS"
+          npm pkg set "dependencies.discord.js=^$DISCORD"
+          npm pkg set "dependencies.sharp=^$SHARP"
+          npm pkg set "overrides.undici=$UNDICI"
+          npm install --package-lock-only --ignore-scripts
+
+      - name: Validate upgraded dependency set
         shell: bash
         run: |
           set -euo pipefail
           npm ci
-          npm audit --json > /tmp/audit-before.json || true
           node - <<'NODE'
-          const fs = require('fs');
-          const data = JSON.parse(fs.readFileSync('/tmp/audit-before.json', 'utf8'));
-          console.log('BEFORE', JSON.stringify(data.metadata?.vulnerabilities || {}));
-          for (const [name, item] of Object.entries(data.vulnerabilities || {})) {
-            console.log(`VULN ${name} severity=${item.severity} direct=${Boolean(item.isDirect)} fix=${JSON.stringify(item.fixAvailable)}`);
-          }
+          const sharp = require('sharp');
+          (async () => {
+            const base = await sharp({ create: { width: 32, height: 32, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
+              .png().resize(16, 16).toBuffer();
+            const meta = await sharp(base).metadata();
+            if (meta.width !== 16 || meta.height !== 16 || meta.format !== 'png') throw new Error('Sharp smoke test failed');
+            console.log(`Sharp smoke test OK: ${meta.width}x${meta.height} ${meta.format}`);
+          })().catch((error) => { console.error(error); process.exit(1); });
           NODE
-
-          npm audit fix --package-lock-only --ignore-scripts || true
-          npm ci
+          node -e "const d=require('discord.js'); if(!d.Client||!d.EmbedBuilder||!d.ActionRowBuilder) process.exit(1); console.log('discord.js smoke test OK')"
+          node -e "const express=require('express'); const app=express(); app.get('/health',(req,res)=>res.json({ok:true})); if(typeof app.listen!=='function') process.exit(1); console.log('Express smoke test OK')"
           npm run doctor
-          npm audit --json > /tmp/audit-after.json || true
-
+          npm audit --json > /tmp/audit-final.json || true
           node - <<'NODE'
           const fs = require('fs');
-          const before = JSON.parse(fs.readFileSync('/tmp/audit-before.json', 'utf8'));
-          const after = JSON.parse(fs.readFileSync('/tmp/audit-after.json', 'utf8'));
-          const b = before.metadata?.vulnerabilities || {};
-          const a = after.metadata?.vulnerabilities || {};
-          const total = (x) => Number(x.total || 0);
-          const highish = (x) => Number(x.high || 0) + Number(x.critical || 0);
-          console.log('AFTER', JSON.stringify(a));
-          for (const [name, item] of Object.entries(after.vulnerabilities || {})) {
-            console.log(`REMAINING ${name} severity=${item.severity} direct=${Boolean(item.isDirect)} fix=${JSON.stringify(item.fixAvailable)}`);
-          }
-          if (total(a) > total(b) || highish(a) > highish(b)) {
-            console.error('Safe remediation made the audit worse; refusing to commit.');
+          const data = JSON.parse(fs.readFileSync('/tmp/audit-final.json', 'utf8'));
+          const v = data.metadata?.vulnerabilities || {};
+          console.log('FINAL_AUDIT', JSON.stringify(v));
+          for (const [name, item] of Object.entries(data.vulnerabilities || {})) console.log(`REMAINING ${name} severity=${item.severity} fix=${JSON.stringify(item.fixAvailable)}`);
+          if (Number(v.high || 0) || Number(v.critical || 0)) {
+            console.error('High/critical vulnerabilities remain; refusing to commit this dependency set.');
             process.exit(1);
           }
-          console.log(`AUDIT_DELTA total ${total(b)} -> ${total(a)}, high+critical ${highish(b)} -> ${highish(a)}`);
           NODE
 
-      - name: Commit validated safe dependency updates
+      - name: Commit validated dependency upgrades
         shell: bash
         run: |
           set -euo pipefail
           git config user.name "Goliath Dependency Hardening"
           git config user.email "goliath-dependency-hardening@users.noreply.github.com"
-          git add package-lock.json
+          git add package.json package-lock.json
           if git diff --cached --quiet; then
-            echo "No safe lockfile remediation available."
+            echo "No dependency manifest changes required."
             exit 0
           fi
-          git commit -m "chore(deps): apply safe audit remediation"
+          git commit -m "chore(deps): upgrade vulnerable runtime dependencies"
           git push origin HEAD:dev
