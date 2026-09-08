@@ -1,4 +1,4 @@
-name: Express 5 Validation
+name: Express 5 Security Validation
 
 on:
   push:
@@ -24,7 +24,7 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Apply Express 5 compatibility patch in validation worktree
+      - name: Apply Express 5 and safe audit remediation
         shell: bash
         run: |
           set -euo pipefail
@@ -44,13 +44,24 @@ jobs:
           fs.writeFileSync(serverPath, source.replace(oldLine, newLine));
           NODE
           npm install --package-lock-only --ignore-scripts
+          npm audit fix --package-lock-only --ignore-scripts || true
 
-      - name: Validate Express 5 application compatibility
+      - name: Validate zero-vulnerability dependency set
         shell: bash
         run: |
           set -euo pipefail
           npm ci
           node -e "const express=require('express'); const app=express(); app.get('/health',(req,res)=>res.json({ok:true})); app.use((req,res,next)=>req.method==='GET'?res.send('fallback'):next()); if(typeof app.listen!=='function') process.exit(1); console.log('Express 5 routing smoke test OK')"
+          node - <<'NODE'
+          const sharp = require('sharp');
+          (async () => {
+            const base = await sharp({ create: { width: 32, height: 32, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } }).png().resize(16, 16).toBuffer();
+            const meta = await sharp(base).metadata();
+            if (meta.width !== 16 || meta.height !== 16 || meta.format !== 'png') throw new Error('Sharp smoke test failed');
+            console.log('Sharp smoke test OK');
+          })().catch((error) => { console.error(error); process.exit(1); });
+          NODE
+          node -e "const d=require('discord.js'); if(!d.Client||!d.EmbedBuilder||!d.ActionRowBuilder) process.exit(1); console.log('discord.js smoke test OK')"
           npm run doctor
           npm run build
           npm audit --json > /tmp/audit-final.json || true
@@ -59,11 +70,8 @@ jobs:
           const data = JSON.parse(fs.readFileSync('/tmp/audit-final.json', 'utf8'));
           const v = data.metadata?.vulnerabilities || {};
           console.log('FINAL_AUDIT', JSON.stringify(v));
-          for (const [name, item] of Object.entries(data.vulnerabilities || {})) console.log(`REMAINING ${name} severity=${item.severity} fix=${JSON.stringify(item.fixAvailable)}`);
-          if (Number(v.total || 0) !== 0) {
-            console.error('Vulnerabilities remain after Express 5 validation; refusing to commit.');
-            process.exit(1);
-          }
+          for (const [name, item] of Object.entries(data.vulnerabilities || {})) console.log(`REMAINING ${name} severity=${item.severity} range=${item.range} fix=${JSON.stringify(item.fixAvailable)}`);
+          if (Number(v.total || 0) !== 0) process.exit(1);
           NODE
 
       - name: Commit validated Express 5 migration
@@ -73,9 +81,5 @@ jobs:
           git config user.name "Goliath Dependency Hardening"
           git config user.email "goliath-dependency-hardening@users.noreply.github.com"
           git add package.json package-lock.json server.js
-          if git diff --cached --quiet; then
-            echo "No Express migration changes required."
-            exit 0
-          fi
-          git commit -m "chore(deps): migrate dashboard server to Express 5"
+          git commit -m "chore(deps): complete zero-audit runtime upgrade"
           git push origin HEAD:dev
