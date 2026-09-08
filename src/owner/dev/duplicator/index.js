@@ -258,9 +258,9 @@ if (Role?.prototype?.setPosition && !Role.prototype[ROLE_ORDER_PATCH_KEY]) {
 }
 
 // Rebuild source overwrites without replacing a child channel's inherited category
-// permissions with the temporary bot member. Apply mapped role/member targets explicitly,
-// @everyone last, remove extras only after successful upserts, and always clean temporary
-// bot access even when a single target fails.
+// permissions with the temporary bot member. The destination bot member is always treated
+// as protected control-plane state: source snapshots may never replace/deny that member,
+// including snapshots received through another Goliath environment's bridge.
 if (PermissionOverwriteManager?.prototype?.set && !PermissionOverwriteManager.prototype[OVERWRITE_PATCH_KEY]) {
   const originalSet = PermissionOverwriteManager.prototype.set;
   Object.defineProperty(PermissionOverwriteManager.prototype, OVERWRITE_PATCH_KEY, { value: true });
@@ -270,13 +270,20 @@ if (PermissionOverwriteManager?.prototype?.set && !PermissionOverwriteManager.pr
     const isDuplicatorTransfer = reasonText.startsWith('Goliath duplicator: least-privilege channel/category permissions') || reasonText.startsWith('Goliath duplicator: exact channel/category permissions');
     if (!isDuplicatorTransfer || !channel?.guild) return originalSet.call(this, overwrites, reason);
 
-    const expected = Array.isArray(overwrites) ? [...overwrites] : [...(overwrites || [])];
     const guild = channel.guild;
     const botOverwrite = temporaryBotOverwrite(guild);
     const botId = guild.client.user?.id;
-    const sourceHadBotMemberOverwrite = Boolean(
-      botId && expected.some((item) => String(item.id) === String(botId) && Number(item.type) === 1),
-    );
+    if (!botId || !botOverwrite) {
+      const error = new Error(`Destination control-plane protection unavailable on ${channel.name}: Goliath lacks the base permissions needed to retain channel access.`);
+      error.code = 'DUPLICATOR_CONTROL_PLANE_UNAVAILABLE';
+      throw error;
+    }
+
+    // Never trust a portable snapshot to define the destination bot member's ACL. This is
+    // deliberately enforced here as well as at snapshot time because remote bridge snapshots
+    // are produced inside another process/environment.
+    const expected = (Array.isArray(overwrites) ? [...overwrites] : [...(overwrites || [])])
+      .filter((item) => !(Number(item.type) === 1 && String(item.id) === String(botId)));
     const expectedIds = new Set(expected.map((item) => String(item.id)));
     const failures = [];
 
@@ -288,69 +295,62 @@ if (PermissionOverwriteManager?.prototype?.set && !PermissionOverwriteManager.pr
       return this.edit(item.id, options, targetReason);
     };
 
-    try {
-      if (botOverwrite && !sourceHadBotMemberOverwrite) {
-        await upsertExplicit(botOverwrite, 'Goliath duplicator: temporary transfer access');
+    // Establish destination control access before any restrictive source overwrite is applied.
+    await upsertExplicit(botOverwrite, 'Goliath duplicator: establish destination control-plane access');
+
+    const ordered = [...expected].sort((a, b) => {
+      const aEveryone = String(a.id) === String(guild.id);
+      const bEveryone = String(b.id) === String(guild.id);
+      if (aEveryone !== bEveryone) return aEveryone ? 1 : -1;
+      return Number(a.type) - Number(b.type);
+    });
+
+    for (const item of ordered) {
+      try {
+        await upsertExplicit(item, `Goliath duplicator: mapped overwrite ${item.id}`);
+      } catch (error) {
+        failures.push({ id: String(item.id), code: Number(error?.code) || null, message: error?.message || String(error) });
       }
+    }
 
-      const ordered = [...expected].sort((a, b) => {
-        const aEveryone = String(a.id) === String(guild.id);
-        const bEveryone = String(b.id) === String(guild.id);
-        if (aEveryone !== bEveryone) return aEveryone ? 1 : -1;
-        return Number(a.type) - Number(b.type);
-      });
-
-      for (const item of ordered) {
+    const refreshed = await guild.channels.fetch(channel.id).catch(() => null);
+    const cache = refreshed?.permissionOverwrites?.cache || channel.permissionOverwrites?.cache;
+    if (cache) {
+      for (const overwrite of cache.values()) {
+        const id = String(overwrite.id);
+        if (expectedIds.has(id) || id === String(botId)) continue;
         try {
-          await upsertExplicit(item, `Goliath duplicator: mapped overwrite ${item.id}`);
+          await channel.permissionOverwrites.delete(id, 'Goliath duplicator: remove non-source overwrite');
         } catch (error) {
-          failures.push({
-            id: String(item.id),
-            code: Number(error?.code) || null,
-            message: error?.message || String(error),
-          });
-        }
-      }
-
-      const refreshed = await guild.channels.fetch(channel.id).catch(() => null);
-      const cache = refreshed?.permissionOverwrites?.cache || channel.permissionOverwrites?.cache;
-      if (cache) {
-        for (const overwrite of cache.values()) {
-          const id = String(overwrite.id);
-          if (expectedIds.has(id)) continue;
-          if (botId && id === String(botId) && !sourceHadBotMemberOverwrite) continue;
-          try {
-            await channel.permissionOverwrites.delete(id, 'Goliath duplicator: remove non-source overwrite');
-          } catch (error) {
-            failures.push({
-              id,
-              code: Number(error?.code) || null,
-              message: `Cleanup failed: ${error?.message || String(error)}`,
-            });
-          }
-        }
-      }
-
-      if (failures.length) {
-        const details = failures
-          .slice(0, 8)
-          .map((item) => `${item.id}${item.code ? ` [${item.code}]` : ''}: ${item.message}`)
-          .join('; ');
-        const error = new Error(`Permission targets failed on ${channel.name}: ${details}`);
-        error.code = failures.find((item) => item.code)?.code || 'DUPLICATOR_PERMISSION_TARGETS';
-        throw error;
-      }
-
-      return channel.permissionOverwrites;
-    } finally {
-      if (botId && botOverwrite && !sourceHadBotMemberOverwrite) {
-        try {
-          await upsertExplicit(botOverwrite, 'Goliath duplicator: retain destination control-plane access');
-        } catch (error) {
-          console.warn(`[Duplicator] Could not retain control-plane access for ${channel.name}: ${error.message}`);
+          failures.push({ id, code: Number(error?.code) || null, message: `Cleanup failed: ${error?.message || String(error)}` });
         }
       }
     }
+
+    // Re-assert the control-plane overwrite after all source ACLs, then verify effective
+    // permissions. A copy is not allowed to report permission success while Goliath is locked out.
+    try {
+      await upsertExplicit(botOverwrite, 'Goliath duplicator: retain destination control-plane access');
+      const verified = await guild.channels.fetch(channel.id).catch(() => null);
+      const me = guild.members.me;
+      const effective = verified?.permissionsFor?.(me);
+      const canView = Boolean(effective?.has(PermissionFlagsBits.ViewChannel));
+      const canManage = Boolean(effective?.has(PermissionFlagsBits.ManageChannels));
+      if (!verified || !canView || !canManage) {
+        throw new Error(`effective access verification failed (ViewChannel=${canView}, ManageChannels=${canManage})`);
+      }
+    } catch (error) {
+      failures.push({ id: String(botId), code: Number(error?.code) || null, message: `Destination control-plane verification failed: ${error?.message || String(error)}` });
+    }
+
+    if (failures.length) {
+      const details = failures.slice(0, 8).map((item) => `${item.id}${item.code ? ` [${item.code}]` : ''}: ${item.message}`).join('; ');
+      const error = new Error(`Permission targets failed on ${channel.name}: ${details}`);
+      error.code = failures.find((item) => item.code)?.code || 'DUPLICATOR_PERMISSION_TARGETS';
+      throw error;
+    }
+
+    return channel.permissionOverwrites;
   };
 }
 
