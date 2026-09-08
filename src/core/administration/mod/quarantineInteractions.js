@@ -1,7 +1,7 @@
 'use strict';
 
 const Discord = require('discord.js');
-const { safeReply } = require('../../../core/ui/interactionResponse');
+const { safeReply, safeEditReply } = require('../../../core/ui/interactionResponse');
 const {
   requireModeratableTarget,
   recordModerationSystemEvent,
@@ -174,6 +174,11 @@ async function submitQuarantine(interaction, targetId, requestedMode, legacy = f
   const reason = fieldValue(interaction, 'reason');
   if (!reason) return safeReply(interaction, { content: '❌ An investigation reason is required.', flags: 64 });
 
+  // Isolation performs several Discord API writes and can exceed the 3-second modal deadline.
+  if (!interaction.deferred && !interaction.replied) {
+    await interaction.deferReply({ flags: Discord.MessageFlags.Ephemeral });
+  }
+
   const result = await quarantineMember(interaction.guild, target, {
     reason,
     quarantinedBy: interaction.user.id,
@@ -191,7 +196,7 @@ async function submitQuarantine(interaction, targetId, requestedMode, legacy = f
       after: result,
       metadata: { containmentMode: mode, legacyEntryPoint: legacy },
     });
-    return safeReply(interaction, {
+    return safeEditReply(interaction, {
       content: `❌ Failed to investigate **${target.user.tag}**: ${result?.error || result?.reason || 'Unknown error'}`,
       flags: 64,
     });
@@ -250,7 +255,7 @@ async function submitQuarantine(interaction, targetId, requestedMode, legacy = f
     ? `🧪 Investigation dry-run completed for **${target.user.tag}**.`
     : `🔒 **${target.user.tag}** is now under **Investigation Isolation**.${result.interviewChannelId ? ` • Interview room: <#${result.interviewChannelId}>` : ''}${modCase?.caseId ? ` • Case **#${modCase.caseId}**` : ''}`;
 
-  await safeReply(interaction, { content, flags: 64 });
+  await safeEditReply(interaction, { content, flags: 64 });
   await refreshDashboard(Discord, interaction, target, { view: 'actions' });
   return true;
 }
