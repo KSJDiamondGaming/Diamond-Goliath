@@ -848,6 +848,8 @@ async function handleModInteraction(i) {
       || quarantineId.startsWith('mod_submit_quarantine_investigation:')
       || quarantineId.startsWith('mod_submit_quarantine_security:')
       || quarantineId.startsWith('mod_submit_quarantine:')
+      || quarantineId.startsWith('mod_invroom_note:')
+      || quarantineId.startsWith('mod_invroom_note_submit:')
     ) {
       const handledQuarantine = await quarantineInteractions.handleQuarantineInteraction(i);
       if (handledQuarantine) return true;

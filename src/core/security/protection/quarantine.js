@@ -1,6 +1,6 @@
 'use strict';
 
-const { ChannelType, PermissionFlagsBits } = require('discord.js');
+const { ChannelType, PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const guildManager = require('../../guild/guildManager');
 const { shouldBlockOwnerDestructiveAction } = require('../../../owner/dev/DevOverrideManager');
 const { canManageTargetMember } = require('./core');
@@ -451,9 +451,10 @@ async function verifyMemberContainment(guild, member, allowedChannelIds = []) {
 
 async function createInvestigationRoom(guild, member, quarantineRole, options = {}) {
   const category = await ensureInvestigationCategory(guild, options);
-  const suffix = String(member.id).slice(-6);
+  const suffix = String(member.id).slice(-4);
+  const subjectName = cleanChannelName(member.displayName || member.user?.globalName || member.user?.username || 'member');
   const channel = await guild.channels.create({
-    name: `investigation-${cleanChannelName(member.user?.username || member.displayName)}-${suffix}`.slice(0, 100),
+    name: `investigation-${subjectName}-${suffix}`.slice(0, 100),
     type: ChannelType.GuildText,
     parent: category.id,
     topic: `Goliath investigation isolation • Member ${member.id} • ${String(options.reason || 'No reason provided').slice(0, 700)}`,
@@ -461,17 +462,35 @@ async function createInvestigationRoom(guild, member, quarantineRole, options = 
     reason: `Goliath investigation isolation for ${member.user?.tag || member.id}`,
   });
 
+  const leadId = options.quarantinedBy && /^\d+$/.test(String(options.quarantinedBy)) ? String(options.quarantinedBy) : null;
+  const intro = new EmbedBuilder()
+    .setColor(0x5865F2)
+    .setTitle('🔎 Private Investigation Room')
+    .setDescription([
+      `Hi ${member}. This private room has been opened while the moderation team reviews a concern involving your account.`,
+      '',
+      '**This is not a final decision or punishment.** You can continue speaking with the investigating staff here while the review is active.',
+    ].join('\n'))
+    .addFields(
+      { name: '📋 Why this room was opened', value: String(options.reason || 'No reason provided').slice(0, 1024), inline: false },
+      { name: '🧭 What happens next', value: '• Staff will review the available information.\n• You may provide context or ask questions in this room.\n• You will be told when the investigation is concluded or moved to the next stage.', inline: false },
+      { name: '👤 Lead investigator', value: leadId ? `<@${leadId}>` : 'An authorised member of the moderation team', inline: true },
+      { name: '💬 Your access', value: 'You can read and reply in this room while the investigation is active.', inline: true },
+    )
+    .setFooter({ text: 'Goliath • Private moderation review' })
+    .setTimestamp();
+
+  const controls = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`mod_dashboard:${member.id}:cases`).setLabel('Case File').setEmoji('📁').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId(`mod_dashboard:${member.id}:intelligence`).setLabel('Intelligence').setEmoji('🧠').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId(`mod_invroom_note:${member.id}`).setLabel('Add Staff Note').setEmoji('📝').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId(`mod_remove_quarantine:${member.id}`).setLabel('Clear Investigation').setEmoji('🔓').setStyle(ButtonStyle.Success),
+  );
+
   await channel.send({
-    content: [
-      `🔒 **Investigation Isolation** • ${member}`,
-      '',
-      'Your normal server access has been temporarily isolated while staff review this matter.',
-      'You can use **this private room only** to speak with authorised staff during the investigation.',
-      '',
-      `**Reason:** ${String(options.reason || 'No reason provided').slice(0, 1000)}`,
-      '',
-      'This is an investigation hold, not a full Security Isolation. Please keep discussion relevant to the review.',
-    ].join('\n'),
+    content: `${member}`,
+    embeds: [intro],
+    components: [controls],
     allowedMentions: { users: [member.id], roles: [], repliedUser: false },
   }).catch((error) => console.warn(`[QuarantineSystem] Failed to send investigation room intro in ${guild.id}:`, error.message));
 

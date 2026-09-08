@@ -260,6 +260,38 @@ async function submitQuarantine(interaction, targetId, requestedMode, legacy = f
   return true;
 }
 
+function canUseInvestigationRoomControls(interaction, snapshot) {
+  if (!interaction?.guild || !interaction?.user?.id || !snapshot) return false;
+  return String(interaction.guild.ownerId || '') === String(interaction.user.id)
+    || String(snapshot.quarantinedBy || '') === String(interaction.user.id);
+}
+
+async function openInvestigationNoteModal(interaction, targetId) {
+  const snapshot = currentSnapshot(interaction, targetId);
+  if (!snapshot) return safeReply(interaction, { content: '⚠️ This investigation is no longer active.', flags: 64 });
+  if (!canUseInvestigationRoomControls(interaction, snapshot)) return safeReply(interaction, { content: '❌ Only the lead investigator or server owner can use this room control.', flags: 64 });
+  const modal = new Discord.ModalBuilder().setCustomId(`mod_invroom_note_submit:${targetId}`).setTitle('Add Investigation Note').addComponents(
+    new Discord.ActionRowBuilder().addComponents(
+      new Discord.TextInputBuilder().setCustomId('note').setLabel('Staff-only note').setStyle(Discord.TextInputStyle.Paragraph).setRequired(true).setMinLength(2).setMaxLength(1000).setPlaceholder('Record an observation, update, evidence lead or next step.')
+    )
+  );
+  await interaction.showModal(modal);
+  return true;
+}
+
+async function submitInvestigationRoomNote(interaction, targetId) {
+  const snapshot = currentSnapshot(interaction, targetId);
+  if (!snapshot) return safeReply(interaction, { content: '⚠️ This investigation is no longer active.', flags: 64 });
+  if (!canUseInvestigationRoomControls(interaction, snapshot)) return safeReply(interaction, { content: '❌ Only the lead investigator or server owner can add room notes.', flags: 64 });
+  const note = fieldValue(interaction, 'note').slice(0, 1000);
+  if (!note) return safeReply(interaction, { content: '❌ The note cannot be empty.', flags: 64 });
+  if (snapshot.caseId) {
+    recordCaseAudit({ guildId: interaction.guild.id, caseId: snapshot.caseId, actorId: interaction.user.id, event: 'case.investigation.room_note_added', before: null, after: { note }, metadata: { targetId: String(targetId), interviewChannelId: snapshot.interviewChannelId || null, staffOnly: true } });
+  }
+  recordModerationSystemEvent({ interaction, event: 'moderation.investigation.room_note_added', action: 'investigation_note', targetId: String(targetId), after: { note }, metadata: { caseId: snapshot.caseId || null, interviewChannelId: snapshot.interviewChannelId || null } });
+  return safeReply(interaction, { content: `✅ Staff note added${snapshot.caseId ? ` to **Case #${snapshot.caseId}**` : ''}.`, flags: 64 });
+}
+
 async function removeQuarantine(interaction, targetId) {
   const target = await resolveTarget(interaction, targetId, 'remove_quarantine');
   if (!target) return true;
@@ -355,10 +387,12 @@ async function handleQuarantineInteraction(interaction) {
     if (id.startsWith('mod_quarantine_investigation:')) return openInvestigationModal(interaction, targetIdFrom(id));
     if (id.startsWith('mod_quarantine_security:')) return securityMovedToAdmin(interaction, targetIdFrom(id), false);
     if (id.startsWith('mod_remove_quarantine:')) return removeQuarantine(interaction, targetIdFrom(id));
+    if (id.startsWith('mod_invroom_note:')) return openInvestigationNoteModal(interaction, targetIdFrom(id));
     return false;
   }
 
   if (interaction.isModalSubmit?.()) {
+    if (id.startsWith('mod_invroom_note_submit:')) return submitInvestigationRoomNote(interaction, targetIdFrom(id));
     if (id.startsWith('mod_submit_quarantine_investigation:')) {
       return submitQuarantine(interaction, targetIdFrom(id), QUARANTINE_MODES.INVESTIGATION, false);
     }
