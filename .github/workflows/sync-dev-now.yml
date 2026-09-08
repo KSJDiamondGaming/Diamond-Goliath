@@ -38,15 +38,13 @@ jobs:
                   raise SystemExit(f'{label}: expected exactly 1 match, found {count}')
               return text.replace(old, new, 1)
 
-          def region(text, start, end, replacement, label):
-              a = text.find(start)
+          def bounded(text, start, end, replacement, label, after=0):
+              a = text.find(start, after)
               if a < 0:
                   raise SystemExit(f'{label}: start marker not found')
               b = text.find(end, a)
               if b < 0:
                   raise SystemExit(f'{label}: end marker not found')
-              if text.find(start, a + 1) >= 0 and text.find(start, a + 1) < b:
-                  raise SystemExit(f'{label}: ambiguous start marker')
               return text[:a] + replacement + text[b:]
 
           cases_path = Path('src/core/administration/mod/cases.js')
@@ -102,7 +100,7 @@ jobs:
           }
 
           """
-          text = region(text, failure_start, failure_end, failure_func, 'reversal failure ownership')
+          text = bounded(text, failure_start, failure_end, failure_func, 'reversal failure ownership')
 
           old = """async function applyApprovedCourtAppealRemedy(interaction, modCase, fetchTarget) {
             const guild = interaction.guild;
@@ -159,7 +157,7 @@ jobs:
           }
 
           """
-          text = region(text, noexec_start, noexec_end, noexec, 'no-execution race protection')
+          text = bounded(text, noexec_start, noexec_end, noexec, 'no-execution race protection')
 
           final_start = '  const current = getCaseById(guild.id, modCase.caseId) || modCase;'
           final_end = '\n  return remedy;\n}\n\nasync function applyApprovedAppealRemedy'
@@ -200,12 +198,10 @@ jobs:
             recordCaseAudit({ guildId: guild.id, caseId: modCase.caseId, actorId, event: reversalSucceeded ? 'case.court.appeal_remedy_applied' : 'case.court.appeal_remedy_failed', before: currentExecution || execution, after: metadata.court.sanctionExecution, metadata: { linkedCaseId, remedy, operationId: expectedOperationId } });
           """
           pos = text.find(noexec_end)
-          if pos < 0:
-              raise SystemExit('fresh reversal finalization: target marker not found')
           a = text.find(final_start, pos)
           b = text.find(final_end, a)
-          if a < 0 or b < 0:
-              raise SystemExit('fresh reversal finalization: final block markers not found')
+          if pos < 0 or a < 0 or b < 0:
+              raise SystemExit('fresh reversal finalization: block markers not found')
           text = text[:a] + final_block + text[b:]
 
           text = once(text,
@@ -213,29 +209,28 @@ jobs:
               "  if (appeal.status === 'approved' && ['ban', 'kick'].includes(effectiveAppealAction(modCase)) && appeal.remedy?.ok === true) invite = await createRejoinInvite(interaction.guild, modCase.caseId);",
               'Court rejoin invite action')
 
-          retry_old = """    } catch (error) {
-              remedy = { attempted: true, action: String(claimedExecution.action || court.decision?.action || 'court'), ok: false, detail: String(error?.message || error || 'Appeal remedy retry failed.').slice(0, 300) };
-              const failedCase = getCaseById(guildId, caseId) || claimed;
-              const failedCourt = failedCase.metadata?.court || court;
-              updateCaseMetadata(guildId, caseId, { ...(failedCase.metadata || {}), court: { ...failedCourt, sanctionExecution: { ...(failedCourt.sanctionExecution || claimedExecution), status: 'reversal_failed', reversalOperationId: operationId, reversalAttemptedBy: actorId, reversalAttemptedAt: new Date().toISOString(), reversalRemedy: remedy } } });
-              recordCaseAudit({ guildId, caseId, actorId, event: 'case.court.appeal_remedy_retry_failed', before: claimedExecution, after: remedy, metadata: { appealId, operationId } });
-            }
-          """
+          retry_fn = text.find('async function retryApprovedCourtAppealRemedy(')
+          retry_start = "    } catch (error) {\n      remedy = { attempted: true, action: String(claimedExecution.action"
+          retry_end = '\n\n    modCase = getCaseById(guildId, caseId) || claimed;'
+          a = text.find(retry_start, retry_fn)
+          b = text.find(retry_end, a)
+          if retry_fn < 0 or a < 0 or b < 0:
+              raise SystemExit('retry failure ownership: block markers not found')
           retry_new = """    } catch (error) {
               const failed = persistCourtAppealReversalFailure(interaction, claimed, error, operationId);
               remedy = failed.remedy;
               recordCaseAudit({ guildId, caseId, actorId, event: 'case.court.appeal_remedy_retry_failed', before: claimedExecution, after: remedy, metadata: { appealId, operationId, superseded: Boolean(failed.superseded) } });
             }
           """
-          text = once(text, retry_old, retry_new, 'retry failure ownership')
+          text = text[:a] + retry_new + text[b:]
 
-          history_old = """  const components = [new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId(`mod_case_appeal_history:${modCase.caseId}:${Math.max(0, page - 1)}`).setLabel('◀ Previous').setStyle(ButtonStyle.Secondary).setDisabled(page <= 0),
-            new ButtonBuilder().setCustomId(`mod_case_appeal_history:${modCase.caseId}:${Math.min(totalPages - 1, page + 1)}`).setLabel('Next ▶').setStyle(ButtonStyle.Secondary).setDisabled(page >= totalPages - 1),
-            new ButtonBuilder().setCustomId(`mod_case_appeal_open:${modCase.caseId}:${pending?.id || 'none'}`).setLabel('Open Pending').setStyle(ButtonStyle.Primary).setDisabled(!pending),
-            new ButtonBuilder().setCustomId(`mod_search_open:${modCase.caseId}`).setLabel('← Case Detail').setStyle(ButtonStyle.Secondary)
-          )];
-          """
+          history_fn = text.find('function buildAppealHistoryEmbed(')
+          history_start = '  const components = [new ActionRowBuilder().addComponents('
+          history_end = '\n  return { embeds: [embed], components };\n}\nfunction buildAppealDetailPayload'
+          a = text.find(history_start, history_fn)
+          b = text.find(history_end, a)
+          if history_fn < 0 or a < 0 or b < 0:
+              raise SystemExit('appeal history Back row: block markers not found')
           history_new = """  const components = [
             new ActionRowBuilder().addComponents(
               new ButtonBuilder().setCustomId(`mod_case_appeal_history:${modCase.caseId}:${Math.max(0, page - 1)}`).setLabel('◀ Previous').setStyle(ButtonStyle.Secondary).setDisabled(page <= 0),
@@ -247,15 +242,16 @@ jobs:
             ),
           ];
           """
-          text = once(text, history_old, history_new, 'appeal history Back row')
+          text = text[:a] + history_new + text[b:]
 
-          detail_start = '  const components = [new ActionRowBuilder().addComponents(\n    new ButtonBuilder().setCustomId(`mod_case_appeal_decide:'
-          detail_end = '  return { embeds: [embed], components };\n}\nfunction buildAppealQueuePayload'
-          a = text.find(detail_start)
+          detail_fn = text.find('function buildAppealDetailPayload(')
+          detail_start = '  const components = [new ActionRowBuilder().addComponents('
+          detail_end = '\n  return { embeds: [embed], components };\n}\nfunction buildAppealQueuePayload'
+          a = text.find(detail_start, detail_fn)
           b = text.find(detail_end, a)
-          if a < 0 or b < 0:
-              raise SystemExit('appeal detail Back row markers not found')
-          detail_block = """  const components = [
+          if detail_fn < 0 or a < 0 or b < 0:
+              raise SystemExit('appeal detail Back row: block markers not found')
+          detail_new = """  const components = [
             new ActionRowBuilder().addComponents(
               new ButtonBuilder().setCustomId(`mod_case_appeal_decide:${modCase.caseId}:${appeal.id}:approved`).setLabel('✅ Approve').setStyle(ButtonStyle.Success).setDisabled(appeal.status !== 'pending'),
               new ButtonBuilder().setCustomId(`mod_case_appeal_decide:${modCase.caseId}:${appeal.id}:denied`).setLabel('❌ Deny').setStyle(ButtonStyle.Danger).setDisabled(appeal.status !== 'pending'),
@@ -269,7 +265,7 @@ jobs:
             ),
           ];
           """
-          text = text[:a] + detail_block + text[b:]
+          text = text[:a] + detail_new + text[b:]
 
           queue_old = """  rows.push(new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId('mod_dashboard:none:analytics').setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary),
@@ -290,19 +286,8 @@ jobs:
 
           court_path = Path('src/core/administration/mod/caseCourt.js')
           text = court_path.read_text()
-          nav_old = """function caseManagementNavigationRow(interaction, targetId) {
-            const items = [button(`mod_dashboard:${targetId}:actions`, 'Back', '⬅️')];
-            if (canUseModAction(interaction.member, interaction.guild, 'export_cases', interaction)) items.push(button(`mod_export_cases:${targetId}`, 'Export', '📤'));
-            return row(...items);
-          }
-          function caseFileBackRow(caseId) { return row(button(`mod_court_file:${caseId}`, 'Back', '⬅️')); }
-          function canDeleteCourt(interaction) { return canUseModAction(interaction.member, interaction.guild, 'court_delete', interaction); }
-          function caseFileNavigationRow(interaction, modCase) {
-            const items = [button(`mod_court_back:${modCase.userId}`, 'Back', '⬅️')];
-            if (canDeleteCourt(interaction)) items.push(button(`mod_court_delete:${modCase.caseId}`, 'Delete Case', '🗑️', ButtonStyle.Danger));
-            return row(...items);
-          }
-          """
+          nav_start = 'function caseManagementNavigationRow(interaction, targetId) {'
+          nav_end = 'function auditRows(guildId, caseId, limit = 25) {'
           nav_new = """function caseManagementNavigationRow(interaction, targetId) {
             return row(button(`mod_dashboard:${targetId}:actions`, 'Back', '⬅️'));
           }
@@ -312,7 +297,7 @@ jobs:
             return row(button(`mod_court_back:${modCase.userId}`, 'Back', '⬅️'));
           }
           """
-          text = once(text, nav_old, nav_new, 'Court Back-only navigation helpers')
+          text = bounded(text, nav_start, nav_end, nav_new, 'Court Back-only navigation helpers')
 
           dash_old = """    components.push(row(
               button(`mod_court_new:${target.id}`, 'New Case', '➕', ButtonStyle.Primary, !canManageCourt(interaction)),
