@@ -203,7 +203,7 @@ function createCase({ guildId, userId, moderatorId, action, reason, metadata = {
   return created;
 }
 function getCaseById(guildId, caseId) { return mapCase(db.prepare('SELECT * FROM cases WHERE guild_id = ? AND case_id = ?').get(guildId, Number(caseId))); }
-function courtOperationTimestamp(execution, mode) {
+function proceedingOperationTimestamp(execution, mode) {
   if (!execution || typeof execution !== 'object') return 0;
   const value = mode === 'reversal'
     ? (execution.reversalClaimedAt || execution.reversalAttemptedAt || execution.startedAt || execution.claimedAt)
@@ -211,7 +211,7 @@ function courtOperationTimestamp(execution, mode) {
   const timestamp = new Date(value || 0).getTime();
   return Number.isFinite(timestamp) ? timestamp : 0;
 }
-function claimCourtOperationAtomic(guildId, caseId, { mode = 'execution', claim, staleMs = 5 * 60 * 1000 } = {}) {
+function claimProceedingOperationAtomic(guildId, caseId, { mode = 'execution', claim, staleMs = 5 * 60 * 1000 } = {}) {
   const normalizedGuildId = String(guildId || '').trim();
   const normalizedCaseId = Number(caseId);
   if (!normalizedGuildId || !Number.isInteger(normalizedCaseId) || normalizedCaseId <= 0 || !claim || typeof claim !== 'object') {
@@ -221,11 +221,11 @@ function claimCourtOperationAtomic(guildId, caseId, { mode = 'execution', claim,
     const row = db.prepare('SELECT * FROM cases WHERE guild_id = ? AND case_id = ?').get(normalizedGuildId, normalizedCaseId);
     if (!row) return { ok: false, reason: 'missing' };
     const metadata = parseMetadata(row.metadata);
-    const court = metadata.court && typeof metadata.court === 'object' ? metadata.court : null;
-    if (!court) return { ok: false, reason: 'not_court' };
-    const current = court.sanctionExecution && typeof court.sanctionExecution === 'object' ? court.sanctionExecution : null;
+    const proceeding = metadata.proceeding && typeof metadata.proceeding === 'object' ? metadata.proceeding : null;
+    if (!proceeding) return { ok: false, reason: 'not_proceeding' };
+    const current = proceeding.sanctionExecution && typeof proceeding.sanctionExecution === 'object' ? proceeding.sanctionExecution : null;
     const status = String(current?.status || '');
-    const timestamp = courtOperationTimestamp(current, mode);
+    const timestamp = proceedingOperationTimestamp(current, mode);
     const stale = !timestamp || Date.now() - timestamp > Math.max(1000, Number(staleMs) || 0);
 
     if (mode === 'execution') {
@@ -240,7 +240,7 @@ function claimCourtOperationAtomic(guildId, caseId, { mode = 'execution', claim,
       return { ok: false, reason: 'invalid_mode', current };
     }
 
-    const nextMetadata = { ...metadata, court: { ...court, sanctionExecution: claim } };
+    const nextMetadata = { ...metadata, proceeding: { ...proceeding, sanctionExecution: claim } };
     const updatedAt = now();
     const result = db.prepare('UPDATE cases SET metadata = ?, updated_at = ? WHERE guild_id = ? AND case_id = ?')
       .run(JSON.stringify(nextMetadata), updatedAt, normalizedGuildId, normalizedCaseId);
@@ -724,7 +724,7 @@ async function sendModLog(payload = {}) {
 }
 
 module.exports = {
-  claimCourtOperationAtomic,
+  claimProceedingOperationAtomic,
   db,
   EVENTS,
   emit,

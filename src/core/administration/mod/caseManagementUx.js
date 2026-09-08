@@ -2,7 +2,7 @@
 
 const { MessageFlags } = require('discord.js');
 const panel = require('./panel');
-const caseCourt = require('./caseCourt');
+const caseProceeding = require('./caseProceeding');
 const storage = require('./storage');
 const { canUseModAction } = require('./permissions');
 
@@ -44,9 +44,9 @@ else {
 
   function caseDisplayTitle(modCase, fallbackMemberName = null) {
     if (!modCase) return null;
-    const court = modCase.metadata?.court || {};
-    const base = String(court.title || court.allegations || modCase.reason || 'Untitled Case').replace(/\s+/g, ' ').trim();
-    const memberName = String(fallbackMemberName || court.subjectName || modCase.userId || 'Unknown Member');
+    const proceeding = modCase.metadata?.proceeding || {};
+    const base = String(proceeding.title || proceeding.allegations || modCase.reason || 'Untitled Case').replace(/\s+/g, ' ').trim();
+    const memberName = String(fallbackMemberName || proceeding.subjectName || modCase.userId || 'Unknown Member');
     return buildDisplayTitle(modCase.caseId, memberName, base, modCase.userId);
   }
 
@@ -92,7 +92,7 @@ else {
     const caseIdMatch = title.match(/(?:Case\s*#|•\s*#)(\d+)/i);
     if (caseIdMatch) {
       const modCase = getCase(guildId, caseIdMatch[1]);
-      const display = caseDisplayTitle(modCase, liveSubjectName(interaction, modCase?.userId, modCase?.metadata?.court?.subjectName));
+      const display = caseDisplayTitle(modCase, liveSubjectName(interaction, modCase?.userId, modCase?.metadata?.proceeding?.subjectName));
       if (display && (title.startsWith('📂') || title.includes('Case #'))) {
         const icon = title.startsWith('📂') ? '📂 ' : title.startsWith('⚖️') ? '⚖️ ' : title.startsWith('👁️') ? '👁️ ' : '';
         if (title.startsWith('📂')) applyEmbedTitle(embed, `${icon}${display}`);
@@ -107,13 +107,13 @@ else {
         const targetId = description.match(/`(\d{15,25})`/)?.[1];
         if (targetId) {
           let cases = [];
-          try { cases = (storage.getCasesForUser(guildId, targetId) || []).filter(caseCourt.caseIsCourt).slice(0, 5); } catch {}
+          try { cases = (storage.getCasesForUser(guildId, targetId) || []).filter(caseProceeding.caseIsProceeding).slice(0, 5); } catch {}
           if (cases.length) {
             const value = cases.map((entry) => {
-              const court = caseCourt.parseCourt(entry);
-              const display = caseDisplayTitle(entry, liveSubjectName(interaction, targetId, entry?.metadata?.court?.subjectName));
-              const stage = court.stage === 'review' ? '⚖️ Awaiting Review' : court.stage === 'published' ? '📜 Published' : court.stage === 'closed' ? '🔒 Closed' : court.stage === 'decided' ? '👨‍⚖️ Decision Recorded' : '🔎 Under Investigation';
-              const severity = ['Low', 'Medium', 'High', 'Severe', 'Critical'][Math.max(0, Math.min(4, Number(court.severity || 1) - 1))];
+              const proceeding = caseProceeding.parseProceeding(entry);
+              const display = caseDisplayTitle(entry, liveSubjectName(interaction, targetId, entry?.metadata?.proceeding?.subjectName));
+              const stage = proceeding.stage === 'review' ? '⚖️ Awaiting Review' : proceeding.stage === 'published' ? '📜 Published' : proceeding.stage === 'closed' ? '🔒 Closed' : proceeding.stage === 'decided' ? '👨‍⚖️ Decision Recorded' : '🔎 Under Investigation';
+              const severity = ['Low', 'Medium', 'High', 'Severe', 'Critical'][Math.max(0, Math.min(4, Number(proceeding.severity || 1) - 1))];
               return `**${display}**\n${stage} • Severity **${severity}**`;
             }).join('\n\n').slice(0, 1024);
             if (typeof embed.spliceFields === 'function') embed.spliceFields(recentIndex, 1, { ...fields[recentIndex], value });
@@ -124,8 +124,8 @@ else {
     }
   }
 
-  function courtStageText(stage) {
-    if (typeof caseCourt.stageText === 'function') return caseCourt.stageText(stage);
+  function proceedingStageText(stage) {
+    if (typeof caseProceeding.stageText === 'function') return caseProceeding.stageText(stage);
     return ({
       investigation: '🔎 Under Investigation',
       review: '⚖️ Awaiting Review',
@@ -135,8 +135,8 @@ else {
     })[String(stage || 'investigation')] || '🔎 Under Investigation';
   }
 
-  function courtSeverityText(value) {
-    if (typeof caseCourt.severityText === 'function') return caseCourt.severityText(value);
+  function proceedingSeverityText(value) {
+    if (typeof caseProceeding.severityText === 'function') return caseProceeding.severityText(value);
     const index = Math.max(0, Math.min(4, Number(value || 1) - 1));
     return ['Low', 'Medium', 'High', 'Severe', 'Critical'][index];
   }
@@ -150,7 +150,7 @@ else {
       for (const component of items) {
         const data = component?.data || component;
         const customId = data?.custom_id || data?.customId;
-        if (!String(customId || '').startsWith('mod_court_open:')) continue;
+        if (!String(customId || '').startsWith('mod_proceeding_open:')) continue;
         const targetId = String(customId).split(':')[1] || '';
         const options = component?.options || data?.options;
         if (!Array.isArray(options)) continue;
@@ -158,12 +158,12 @@ else {
           const optionData = option?.data || option;
           const modCase = getCase(guildId, optionData?.value);
           if (!modCase) continue;
-          const court = modCase.metadata?.court || {};
-          const memberName = liveSubjectName(interaction, targetId || modCase.userId, court.subjectName);
-          const caseTitle = String(court.title || court.allegations || modCase.reason || 'Untitled Case').replace(/\s+/g, ' ').trim();
+          const proceeding = modCase.metadata?.proceeding || {};
+          const memberName = liveSubjectName(interaction, targetId || modCase.userId, proceeding.subjectName);
+          const caseTitle = String(proceeding.title || proceeding.allegations || modCase.reason || 'Untitled Case').replace(/\s+/g, ' ').trim();
           const label = buildDisplayTitle(modCase.caseId, memberName, caseTitle, targetId || modCase.userId).slice(0, 100);
-          const stage = courtStageText(court.stage || 'investigation').replace(/^\S+\s/, '');
-          const severity = courtSeverityText(court.severity || 1);
+          const stage = proceedingStageText(proceeding.stage || 'investigation').replace(/^\S+\s/, '');
+          const severity = proceedingSeverityText(proceeding.severity || 1);
           const description = `Case #${modCase.caseId} • ${stage} • Severity ${severity}`.slice(0, 100);
           if (option?.data) { option.data.label = label; option.data.description = description; }
           else { option.label = label; option.description = description; }
@@ -217,28 +217,28 @@ else {
     wrapPanelMethod(method);
   }
 
-  for (const method of ['buildCourtDashboard', 'buildCaseFile', 'buildUserPublishedCasesPanel']) {
-    const original = caseCourt[method];
+  for (const method of ['buildProceedingDashboard', 'buildCaseFile', 'buildUserPublishedCasesPanel']) {
+    const original = caseProceeding[method];
     if (typeof original !== 'function') continue;
-    caseCourt[method] = function caseManagementBuildWrapper(interaction, ...args) {
+    caseProceeding[method] = function caseManagementBuildWrapper(interaction, ...args) {
       return decorateCasePayload(original.call(this, interaction, ...args), interaction);
     };
   }
 
-  const originalCourtInteraction = caseCourt.handleCourtInteraction;
-  if (typeof originalCourtInteraction === 'function') {
-    caseCourt.handleCourtInteraction = async function caseManagementCourtInteraction(interaction, ...args) {
+  const originalProceedingInteraction = caseProceeding.handleProceedingInteraction;
+  if (typeof originalProceedingInteraction === 'function') {
+    caseProceeding.handleProceedingInteraction = async function caseManagementProceedingInteraction(interaction, ...args) {
       const restore = wrapInteractionOutput(interaction);
-      try { return await originalCourtInteraction.call(this, interaction, ...args); }
+      try { return await originalProceedingInteraction.call(this, interaction, ...args); }
       finally { restore(); }
     };
   }
 
-  const originalCourtModal = caseCourt.handleCourtModal;
-  caseCourt.handleCourtModal = async function caseManagementCourtModal(interaction, ...args) {
+  const originalProceedingModal = caseProceeding.handleProceedingModal;
+  caseProceeding.handleProceedingModal = async function caseManagementProceedingModal(interaction, ...args) {
     const id = String(interaction?.customId || '');
     if (id.startsWith('mod_case_new_submit_v2:') && interaction.isModalSubmit?.()) {
-      if (!canUseModAction(interaction.member, interaction.guild, 'court_manage', interaction)) {
+      if (!canUseModAction(interaction.member, interaction.guild, 'proceeding_manage', interaction)) {
         await interaction.reply({ content: '❌ Case-management authority is required to open a case.', flags: MessageFlags.Ephemeral });
         return true;
       }
@@ -263,10 +263,10 @@ else {
         guildId: interaction.guildId,
         userId: targetId,
         moderatorId: interaction.user.id,
-        action: caseCourt.COURT_ACTION,
+        action: caseProceeding.PROCEEDING_ACTION,
         reason: allegations,
         metadata: {
-          court: {
+          proceeding: {
             stage: 'investigation',
             severity,
             title: shortTitle,
@@ -295,8 +295,8 @@ else {
       const displayTitle = buildDisplayTitle(created.caseId, memberName, shortTitle, targetId);
       const metadata = {
         ...(created.metadata || {}),
-        court: {
-          ...(created.metadata?.court || {}),
+        proceeding: {
+          ...(created.metadata?.proceeding || {}),
           title: shortTitle,
           displayTitle,
           subjectName: memberName,
@@ -310,21 +310,21 @@ else {
         caseId: created.caseId,
         actorId: interaction.user.id,
         event: 'case.management.identity_assigned',
-        before: created.metadata?.court || null,
-        after: metadata.court,
+        before: created.metadata?.proceeding || null,
+        after: metadata.proceeding,
         metadata: { generatedDisplayTitle: true, subjectId: targetId },
       });
       const updated = storage.getCaseById(interaction.guildId, created.caseId) || created;
       storage.emitCaseUpdated(interaction.guildId, updated);
 
-      const payload = decorateCasePayload(caseCourt.buildCaseFile(interaction, updated), interaction);
+      const payload = decorateCasePayload(caseProceeding.buildCaseFile(interaction, updated), interaction);
       if (interaction.deferred || interaction.replied) await interaction.editReply(payload);
       else await interaction.update(payload);
       return true;
     }
 
     const restore = wrapInteractionOutput(interaction);
-    try { return await originalCourtModal.call(this, interaction, ...args); }
+    try { return await originalProceedingModal.call(this, interaction, ...args); }
     finally { restore(); }
   };
 

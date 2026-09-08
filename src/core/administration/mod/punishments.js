@@ -139,7 +139,7 @@ async function executeEnginePunishment(interaction, target, action, reason, meta
     ...(action === 'timeout' ? { duration: metadata.durationRaw } : {}),
     ...(action === 'ban' ? { deleteDays: metadata.deleteDays } : {}),
     ...(metadata.bulkBatchId ? { bulk: true, bulkBatchId: metadata.bulkBatchId } : {}),
-    ...(metadata.sourceCourtCaseId ? { sourceCourtCaseId: Number(metadata.sourceCourtCaseId), courtOrdered: Boolean(metadata.courtOrdered) } : {}),
+    ...(metadata.sourceProceedingCaseId ? { sourceProceedingCaseId: Number(metadata.sourceProceedingCaseId), proceedingOrdered: Boolean(metadata.proceedingOrdered) } : {}),
     punishmentReport: report,
   };
   const modCase = createModerationCase(interaction, targetId, config.caseAction, reason, caseMetadata);
