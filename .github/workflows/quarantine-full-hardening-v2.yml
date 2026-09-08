@@ -1,0 +1,75 @@
+name: Validate Quarantine Lifecycle Hardening
+on:
+  push:
+    branches: [dev]
+    paths:
+      - '.github/workflows/quarantine-full-hardening-v2.yml'
+permissions:
+  contents: write
+jobs:
+  harden:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: dev
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Apply hardening
+        run: python3 .github/quarantine-full-hardening-v2.py
+      - name: Syntax and import validation
+        run: |
+          node --check src/core/security/protection/quarantine.js
+          node --check src/core/administration/mod/quarantineInteractions.js
+          node --check src/core/administration/admin/command.js
+          node --check src/core/administration/mod/caseCourt.js
+          node --check src/core/administration/mod/cases.js
+          node -e "require('./src/core/security/protection/quarantine')"
+          node -e "require('./src/core/administration/mod/quarantineInteractions')"
+          node -e "require('./src/core/administration/admin/command')"
+          node -e "require('./src/core/administration/mod/caseCourt')"
+          node -e "require('./src/core/administration/mod/cases')"
+      - name: Targeted lifecycle invariants
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const q = fs.readFileSync('src/core/security/protection/quarantine.js', 'utf8');
+          const mod = fs.readFileSync('src/core/administration/mod/quarantineInteractions.js', 'utf8');
+          const admin = fs.readFileSync('src/core/administration/admin/command.js', 'utf8');
+          const court = fs.readFileSync('src/core/administration/mod/caseCourt.js', 'utf8');
+          const cases = fs.readFileSync('src/core/administration/mod/cases.js', 'utf8');
+          const checks = [
+            [q.includes('verifyMemberContainment'), 'containment verification'],
+            [q.includes('recontainMemberViewAllows'), 'fail-closed release'],
+            [q.includes('rollbackMemberAllowsOnFailure'), 'transactional preflight rollback'],
+            [q.includes('Automatic quarantine expiry during enforcement'), 'present-member expiry restoration'],
+            [q.includes('expired absent member'), 'absent-member overwrite restoration'],
+            [!q.includes('failed, isolation };'), 'startup recovery undefined variable removed'],
+            [mod.includes('safeEditReply') && mod.includes('Investigation Isolation cleared by'), 'manual clear acknowledgement'],
+            [admin.includes('deferReply({ flags: 64 })') && admin.includes('Full Security Isolation failed'), 'admin security acknowledgement'],
+            [court.includes("if (key === 'mod_court_execute_submit')") && court.includes('deferReply({ flags: 64 })'), 'court execution acknowledgement'],
+            [cases.includes('safeEditReply') && cases.includes('retryApprovedCourtAppealRemedy'), 'appeal remedy acknowledgement'],
+          ];
+          const failed = checks.filter(([ok]) => !ok).map(([,name]) => name);
+          if (failed.length) { console.error(failed); process.exit(1); }
+          console.log('Targeted lifecycle invariants passed.');
+          NODE
+      - name: Remove patcher locally before Doctor
+        run: rm .github/quarantine-full-hardening-v2.py
+      - name: Full Doctor
+        run: npm run doctor
+      - name: Commit source changes only
+        run: |
+          git config user.name github-actions
+          git config user.email actions@github.com
+          git add src/core/security/protection/quarantine.js \
+                  src/core/administration/mod/quarantineInteractions.js \
+                  src/core/administration/admin/command.js \
+                  src/core/administration/mod/caseCourt.js \
+                  src/core/administration/mod/cases.js
+          git commit -m "fix(security): harden quarantine lifecycle end to end"
+          git push origin dev
