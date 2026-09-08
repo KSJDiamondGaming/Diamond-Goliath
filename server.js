@@ -190,7 +190,12 @@ for (const [base, router] of mounts) app.use(base, router);
 const dashboardDist = path.join(process.cwd(), 'dist');
 if (fs.existsSync(dashboardDist)) {
   app.use(express.static(dashboardDist));
-  app.get('*', (req, res) => req.path.startsWith('/api/') ? res.status(404).json({ error: 'Not found' }) : res.sendFile(path.join(dashboardDist, 'index.html')));
+  app.use((req, res, next) => {
+    if (req.method !== 'GET') return next();
+    return req.path.startsWith('/api/')
+      ? res.status(404).json({ error: 'Not found' })
+      : res.sendFile(path.join(dashboardDist, 'index.html'));
+  });
 }
 
 safeLoad('commands', () => commandHandler.loadCommands(client));
