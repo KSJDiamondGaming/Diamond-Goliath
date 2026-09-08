@@ -52,10 +52,16 @@ function overwriteOptions(item) {
   return options;
 }
 
+function isSourceControlPlaneRole(role, botRoleIds) {
+  if (!role || !botRoleIds?.has?.(role.id)) return false;
+  return /(^|\W)(?:goliath|operations)($|\W)/i.test(String(role.name || ''));
+}
+
 // Snapshot correction for local-source copies. Bot/operator ACLs are runtime control-plane
 // permissions, not portable server content. Carrying them to another environment can deny
 // the destination Goliath its own ManageChannels/ManageRoles access and strand copied
-// channels. Remap the bot role as a dependency, but omit source-bot role/member overwrites.
+// channels. Goliath/Operations roles assigned to the source bot are control-plane roles:
+// never copy their base permissions and never carry their channel overwrites.
 if (!core[SNAPSHOT_PATCH_KEY]) {
   const originalSnapshot = core.snapshot.bind(core);
   Object.defineProperty(core, SNAPSHOT_PATCH_KEY, { value: true });
@@ -67,14 +73,13 @@ if (!core[SNAPSHOT_PATCH_KEY]) {
     const pseudoManaged = [];
 
     snap.roles = (snap.roles || []).filter((role) => {
-      const isBotAssigned = botRoleIds.has(role.id);
-      const looksLikeGoliath = /(^|\W)goliath($|\W)/i.test(String(role.name || ''));
-      if (!isBotAssigned || !looksLikeGoliath) return true;
+      if (!isSourceControlPlaneRole(role, botRoleIds)) return true;
       pseudoManaged.push({
         ...role,
         managed: true,
         tags: { botId: sourceBotId, integrationId: null, subscriptionListingId: null },
         remapOnly: true,
+        controlPlane: true,
       });
       return false;
     });
