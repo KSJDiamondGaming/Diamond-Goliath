@@ -939,6 +939,8 @@ function buildUserPublishedCasesPanel(interaction) {
 
 module.exports = {
   COURT_ACTION,
+  stageText,
+  severityText,
   parseCourt,
   caseIsCourt,
   getCourtCases,

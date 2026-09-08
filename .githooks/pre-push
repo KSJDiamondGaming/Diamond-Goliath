@@ -2,19 +2,18 @@
 
 set -eu
 
-SYNC_SHA=""
-while read -r local_ref local_sha remote_ref remote_sha; do
-  if [ "$local_ref" = "refs/heads/dev" ] && [ "$remote_ref" = "refs/heads/dev" ]; then
-    SYNC_SHA="$local_sha"
-  fi
-done
-
-if [ -n "$SYNC_SHA" ] && [ "$SYNC_SHA" != "0000000000000000000000000000000000000000" ]; then
-  echo "🔄 Goliath pre-push: aligning local beta and production refs to dev..."
-  git update-ref refs/heads/beta "$SYNC_SHA"
-  git update-ref refs/heads/production "$SYNC_SHA"
-  echo "✅ Local dev/beta/production now point to $SYNC_SHA"
+# CI already performs the full repository validation. Do not run workstation
+# pre-push hooks inside GitHub Actions, where they can interfere with workflow
+# commits or create unnecessary duplicate validation.
+if [ "${GITHUB_ACTIONS:-}" = "true" ] || [ "${CI:-}" = "true" ]; then
+  exit 0
 fi
+
+# DEV pushes stay scoped to DEV. BETA and PRODUCTION are promoted only by the
+# manually triggered Sync Goliath Environments workflow.
+while read -r local_ref local_sha remote_ref remote_sha; do
+  :
+done
 
 echo "🔎 Goliath pre-push: checking backend JavaScript syntax..."
 npm run syntax

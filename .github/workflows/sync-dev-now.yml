@@ -1,0 +1,173 @@
+name: Sync Goliath
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: sync-dev-now
+  cancel-in-progress: false
+
+jobs:
+  align-dev:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check GitHub DEV and VPS DEV alignment
+        id: alignment
+        continue-on-error: true
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          port: 22
+          timeout: 60s
+          command_timeout: 5m
+          script: |
+            set -euo pipefail
+            APP_DIR="/home/goliath/dev"
+            PM2_NAME="goliath-dev"
+
+            [ -d "$APP_DIR/.git" ] || { echo "❌ Missing DEV checkout: $APP_DIR"; exit 1; }
+            cd "$APP_DIR"
+
+            git fetch --no-tags origin dev
+            GITHUB_SHA="$(git rev-parse origin/dev)"
+            VPS_SHA="$(git rev-parse HEAD)"
+            PID="$(pm2 pid "$PM2_NAME" 2>/dev/null | tail -n 1 | tr -d '[:space:]')"
+            PROCESS_CWD=""
+            if [ -n "$PID" ] && [ "$PID" != "0" ]; then
+              PROCESS_CWD="$(readlink -f "/proc/$PID/cwd" 2>/dev/null || true)"
+            fi
+
+            echo "GitHub DEV: $GITHUB_SHA"
+            echo "VPS DEV:    $VPS_SHA"
+            echo "PM2 PID:    ${PID:-not-running}"
+            echo "PM2 CWD:    ${PROCESS_CWD:-unavailable}"
+
+            [ "$VPS_SHA" = "$GITHUB_SHA" ] || { echo "⚠️ VPS DEV commit is behind or different."; exit 10; }
+            [ -n "$PID" ] && [ "$PID" != "0" ] || { echo "⚠️ $PM2_NAME is not running."; exit 11; }
+            [ "$PROCESS_CWD" = "$APP_DIR" ] || { echo "⚠️ PM2 cwd mismatch."; exit 12; }
+
+            echo "✅ DEV already aligned. No repair required."
+
+      - name: Record current Deploy Goliath workflow run
+        id: before
+        if: steps.alignment.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          BEFORE_ID="$(gh api "/repos/${GITHUB_REPOSITORY}/actions/workflows/deploy-dev.yml/runs?event=workflow_dispatch&branch=dev&per_page=1" --jq '.workflow_runs[0].id // 0')"
+          echo "run_id=$BEFORE_ID" >> "$GITHUB_OUTPUT"
+          echo "Previous manual DEV deploy run: $BEFORE_ID"
+
+      - name: Repair DEV by dispatching Deploy Goliath
+        if: steps.alignment.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail-with-body -L -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/deploy-dev.yml/dispatches" \
+            -d '{"ref":"dev","inputs":{"environment":"dev"}}'
+          echo "🔧 DEV repair deployment dispatched."
+
+      - name: Wait for DEV repair deployment
+        if: steps.alignment.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BEFORE_ID: ${{ steps.before.outputs.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          RUN_ID=""
+          for attempt in $(seq 1 60); do
+            RUN_ID="$(gh api "/repos/${GITHUB_REPOSITORY}/actions/workflows/deploy-dev.yml/runs?event=workflow_dispatch&branch=dev&per_page=10" \
+              --jq "[.workflow_runs[] | select(.id > ${BEFORE_ID:-0})][0].id // empty")"
+            if [ -n "$RUN_ID" ]; then break; fi
+            sleep 5
+          done
+
+          [ -n "$RUN_ID" ] || { echo "❌ Could not locate the dispatched DEV repair run."; exit 1; }
+          echo "Watching Deploy Goliath run $RUN_ID"
+          echo "https://github.com/${GITHUB_REPOSITORY}/actions/runs/$RUN_ID"
+
+          for attempt in $(seq 1 240); do
+            STATUS="$(gh api "/repos/${GITHUB_REPOSITORY}/actions/runs/$RUN_ID" --jq '.status')"
+            CONCLUSION="$(gh api "/repos/${GITHUB_REPOSITORY}/actions/runs/$RUN_ID" --jq '.conclusion // ""')"
+            echo "Deploy status: $STATUS ${CONCLUSION:+($CONCLUSION)}"
+
+            if [ "$STATUS" = "completed" ]; then
+              [ "$CONCLUSION" = "success" ] || { echo "❌ DEV repair deployment finished with: $CONCLUSION"; exit 1; }
+              echo "✅ DEV repair deployment succeeded."
+              exit 0
+            fi
+            sleep 10
+          done
+
+          echo "❌ Timed out waiting for DEV repair deployment."
+          exit 1
+
+      - name: Final DEV alignment verification
+        if: always() && (steps.alignment.outcome == 'success' || !cancelled())
+        id: final_verify
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          port: 22
+          timeout: 60s
+          command_timeout: 5m
+          script: |
+            set -euo pipefail
+            APP_DIR="/home/goliath/dev"
+            PM2_NAME="goliath-dev"
+
+            [ -d "$APP_DIR/.git" ] || { echo "❌ Missing DEV checkout: $APP_DIR"; exit 1; }
+            cd "$APP_DIR"
+
+            git fetch --no-tags origin dev
+            GITHUB_SHA="$(git rev-parse origin/dev)"
+            VPS_SHA="$(git rev-parse HEAD)"
+            PID="$(pm2 pid "$PM2_NAME" 2>/dev/null | tail -n 1 | tr -d '[:space:]')"
+            [ -n "$PID" ] && [ "$PID" != "0" ] || { echo "❌ $PM2_NAME is not running."; exit 1; }
+            PROCESS_CWD="$(readlink -f "/proc/$PID/cwd")"
+
+            echo "GitHub DEV: $GITHUB_SHA"
+            echo "VPS DEV:    $VPS_SHA"
+            echo "PM2 PID:    $PID"
+            echo "PM2 CWD:    $PROCESS_CWD"
+
+            [ "$VPS_SHA" = "$GITHUB_SHA" ] || { echo "❌ DEV commit mismatch remains after repair."; exit 1; }
+            [ "$PROCESS_CWD" = "$APP_DIR" ] || { echo "❌ PM2 cwd mismatch remains after repair."; exit 1; }
+
+            echo "✅ DEV aligned: GitHub DEV = VPS DEV and $PM2_NAME is running from $APP_DIR"
+
+      - name: Write summary
+        if: always()
+        shell: bash
+        run: |
+          if [ "${{ steps.alignment.outcome }}" = "success" ] && [ "${{ steps.final_verify.outcome }}" = "success" ]; then
+            echo "## ✅ DEV aligned" >> "$GITHUB_STEP_SUMMARY"
+            echo "GitHub DEV and VPS DEV were already aligned and PM2 was healthy; no repair deployment was required." >> "$GITHUB_STEP_SUMMARY"
+          elif [ "${{ steps.final_verify.outcome }}" = "success" ]; then
+            echo "## 🔧 DEV repaired and aligned" >> "$GITHUB_STEP_SUMMARY"
+            echo "A mismatch or unhealthy PM2 state was detected. Deploy Goliath repaired DEV and the final verification passed." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "## ❌ DEV alignment still requires attention" >> "$GITHUB_STEP_SUMMARY"
+            echo "A repair was attempted or the final verification could not prove GitHub DEV, VPS DEV and PM2 are aligned." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Local Windows DEV remains handled by the workstation DEV watcher when the PC is online." >> "$GITHUB_STEP_SUMMARY"

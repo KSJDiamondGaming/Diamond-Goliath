@@ -38,7 +38,19 @@ async function reevaluateMember(member, trigger = 'member_update', { force = fal
     metadata: { trigger, changes: result.change.reasons },
   });
 
-  if (!deliver) return { success: true, changed: true, delivered: false, result };
+  const initialBaseline = !result.before;
+  const silentInitialClear = initialBaseline && result.after?.decision === 'clear';
+  if (!deliver || silentInitialClear) {
+    return {
+      success: true,
+      changed: true,
+      delivered: false,
+      baselineStored: initialBaseline,
+      reason: silentInitialClear ? 'initial_clear_baseline_silent' : undefined,
+      result,
+    };
+  }
+
   const channel = await joinIntelligence.resolveOutputChannel(member);
   if (!channel?.send) return { success: true, changed: true, delivered: false, reason: 'missing_output_channel', result };
 
@@ -50,6 +62,8 @@ async function reevaluateMember(member, trigger = 'member_update', { force = fal
 async function sweepClient(client) {
   let checked = 0;
   let changed = 0;
+  let delivered = 0;
+  let silentBaselines = 0;
   let failures = 0;
 
   for (const guild of client?.guilds?.cache?.values?.() || []) {
@@ -62,6 +76,8 @@ async function sweepClient(client) {
       try {
         const result = await reevaluateMember(member, 'periodic_sweep', { force: true, deliver: true });
         if (result?.changed) changed += 1;
+        if (result?.delivered) delivered += 1;
+        if (result?.reason === 'initial_clear_baseline_silent') silentBaselines += 1;
       } catch (error) {
         failures += 1;
         console.warn(`[Continuous Intelligence] ${guild.id}/${member.id}:`, error?.message || error);
@@ -69,7 +85,7 @@ async function sweepClient(client) {
     }
   }
 
-  return { checked, changed, failures };
+  return { checked, changed, delivered, silentBaselines, failures };
 }
 
 function getSweepIntervalMs(client) {

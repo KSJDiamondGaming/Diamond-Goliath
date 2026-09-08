@@ -51,7 +51,7 @@ if (localSha === remoteSha) {
 
   if (remoteIsAncestor) {
     console.log('⬆️ Local DEV is ahead of GitHub DEV. Pushing DEV...');
-    if (!git(['push', 'origin', 'dev']).ok) fail('DEV push failed. No local refs were changed.');
+    if (!git(['push', 'origin', 'dev']).ok) fail('DEV push failed.');
   } else if (localIsAncestor) {
     console.log('⬇️ GitHub DEV is ahead of local DEV. Fast-forwarding local DEV...');
     if (!git(['merge', '--ff-only', 'origin/dev']).ok) fail('Fast-forward failed.');
@@ -70,17 +70,11 @@ if (localSha !== remoteSha) {
 
 if (localSha !== remoteSha) fail(`Local DEV (${localSha}) still does not match GitHub DEV (${remoteSha}).`);
 
-console.log('🔄 Aligning local beta and production refs to DEV...');
-if (!git(['update-ref', 'refs/heads/beta', localSha]).ok) fail('Could not align local beta ref.');
-if (!git(['update-ref', 'refs/heads/production', localSha]).ok) fail('Could not align local production ref.');
-
 const treeSha = output(['rev-parse', 'HEAD^{tree}']);
 console.log('');
 console.log('✅ DEV sync complete');
-console.log(`   Local DEV:       ${localSha}`);
-console.log(`   GitHub DEV:      ${remoteSha}`);
-console.log(`   Local BETA ref:  ${output(['rev-parse', 'beta'])}`);
-console.log(`   Local PROD ref:  ${output(['rev-parse', 'production'])}`);
-console.log(`   Tracked tree:    ${treeSha}`);
+console.log(`   Local DEV:    ${localSha}`);
+console.log(`   GitHub DEV:   ${remoteSha}`);
+console.log(`   Tracked tree: ${treeSha}`);
 console.log('');
-console.log('GitHub Actions will deploy this DEV commit to VPS DEV, then promote the validated source to BETA and PRODUCTION.');
+console.log('GitHub Actions will deploy DEV to VPS DEV automatically. BETA and PRODUCTION remain unchanged until Sync Goliath Environments is run manually.');

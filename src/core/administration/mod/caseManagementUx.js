@@ -124,6 +124,23 @@ else {
     }
   }
 
+  function courtStageText(stage) {
+    if (typeof caseCourt.stageText === 'function') return caseCourt.stageText(stage);
+    return ({
+      investigation: '🔎 Under Investigation',
+      review: '⚖️ Awaiting Review',
+      decided: '👨‍⚖️ Decision Recorded',
+      published: '📜 Published',
+      closed: '🔒 Closed',
+    })[String(stage || 'investigation')] || '🔎 Under Investigation';
+  }
+
+  function courtSeverityText(value) {
+    if (typeof caseCourt.severityText === 'function') return caseCourt.severityText(value);
+    const index = Math.max(0, Math.min(4, Number(value || 1) - 1));
+    return ['Low', 'Medium', 'High', 'Severe', 'Critical'][index];
+  }
+
   function decorateComponents(components, interaction) {
     if (!Array.isArray(components)) return components;
     const guildId = interaction?.guildId || interaction?.guild?.id;
@@ -145,8 +162,8 @@ else {
           const memberName = liveSubjectName(interaction, targetId || modCase.userId, court.subjectName);
           const caseTitle = String(court.title || court.allegations || modCase.reason || 'Untitled Case').replace(/\s+/g, ' ').trim();
           const label = buildDisplayTitle(modCase.caseId, memberName, caseTitle, targetId || modCase.userId).slice(0, 100);
-          const stage = caseCourt.stageText(court.stage || 'investigation').replace(/^\S+\s/, '');
-          const severity = caseCourt.severityText(court.severity || 1);
+          const stage = courtStageText(court.stage || 'investigation').replace(/^\S+\s/, '');
+          const severity = courtSeverityText(court.severity || 1);
           const description = `Case #${modCase.caseId} • ${stage} • Severity ${severity}`.slice(0, 100);
           if (option?.data) { option.data.label = label; option.data.description = description; }
           else { option.label = label; option.description = description; }
