@@ -1,0 +1,16 @@
+#!/bin/sh
+
+set -eu
+
+BRANCH="$(git branch --show-current 2>/dev/null || true)"
+if [ "$BRANCH" != "dev" ]; then
+  exit 0
+fi
+
+if [ -n "$(git status --porcelain)" ]; then
+  echo "⏸️ Goliath DEV auto-sync: working tree still has uncommitted changes; background watcher will retry when clean."
+  exit 0
+fi
+
+echo "🔄 Goliath DEV auto-sync: synchronising committed DEV change..."
+node src/core/devSync.js
