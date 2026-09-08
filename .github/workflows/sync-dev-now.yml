@@ -1,4 +1,4 @@
-name: Dependency Upgrade Validation
+name: Express 5 Validation
 
 on:
   push:
@@ -10,7 +10,7 @@ permissions:
   contents: write
 
 jobs:
-  validate-upgrades:
+  validate-express5:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -24,47 +24,35 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Select newest compatible dependency lines
+      - name: Apply Express 5 compatibility patch in validation worktree
         shell: bash
         run: |
           set -euo pipefail
-          latest_line() {
-            npm view "$1" version --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const v=JSON.parse(s);console.log(Array.isArray(v)?v[v.length-1]:v)})"
-          }
-          export EXPRESS="$(latest_line 'express@4')"
-          export DISCORD="$(latest_line 'discord.js@14')"
-          export UNDICI="$(latest_line 'undici@6')"
-          export SHARP="$(latest_line 'sharp@0.35')"
-          echo "Selected express=$EXPRESS discord.js=$DISCORD undici=$UNDICI sharp=$SHARP"
+          export EXPRESS="$(npm view express@5 version --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const v=JSON.parse(s);console.log(Array.isArray(v)?v[v.length-1]:v)})")"
+          echo "Selected express=$EXPRESS"
           node - <<'NODE'
           const fs = require('fs');
           const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
           pkg.dependencies.express = `^${process.env.EXPRESS}`;
-          pkg.dependencies['discord.js'] = `^${process.env.DISCORD}`;
-          pkg.dependencies.sharp = `^${process.env.SHARP}`;
-          pkg.overrides = { ...(pkg.overrides || {}), undici: process.env.UNDICI };
           fs.writeFileSync('package.json', `${JSON.stringify(pkg, null, 2)}\n`);
+
+          const serverPath = 'server.js';
+          const source = fs.readFileSync(serverPath, 'utf8');
+          const oldLine = "  app.get('*', (req, res) => req.path.startsWith('/api/') ? res.status(404).json({ error: 'Not found' }) : res.sendFile(path.join(dashboardDist, 'index.html')));";
+          const newLine = "  app.use((req, res, next) => {\n    if (req.method !== 'GET') return next();\n    return req.path.startsWith('/api/')\n      ? res.status(404).json({ error: 'Not found' })\n      : res.sendFile(path.join(dashboardDist, 'index.html'));\n  });";
+          if (!source.includes(oldLine)) throw new Error('Expected SPA fallback route not found');
+          fs.writeFileSync(serverPath, source.replace(oldLine, newLine));
           NODE
           npm install --package-lock-only --ignore-scripts
 
-      - name: Validate upgraded dependency set
+      - name: Validate Express 5 application compatibility
         shell: bash
         run: |
           set -euo pipefail
           npm ci
-          node - <<'NODE'
-          const sharp = require('sharp');
-          (async () => {
-            const base = await sharp({ create: { width: 32, height: 32, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
-              .png().resize(16, 16).toBuffer();
-            const meta = await sharp(base).metadata();
-            if (meta.width !== 16 || meta.height !== 16 || meta.format !== 'png') throw new Error('Sharp smoke test failed');
-            console.log(`Sharp smoke test OK: ${meta.width}x${meta.height} ${meta.format}`);
-          })().catch((error) => { console.error(error); process.exit(1); });
-          NODE
-          node -e "const d=require('discord.js'); if(!d.Client||!d.EmbedBuilder||!d.ActionRowBuilder) process.exit(1); console.log('discord.js smoke test OK')"
-          node -e "const express=require('express'); const app=express(); app.get('/health',(req,res)=>res.json({ok:true})); if(typeof app.listen!=='function') process.exit(1); console.log('Express smoke test OK')"
+          node -e "const express=require('express'); const app=express(); app.get('/health',(req,res)=>res.json({ok:true})); app.use((req,res,next)=>req.method==='GET'?res.send('fallback'):next()); if(typeof app.listen!=='function') process.exit(1); console.log('Express 5 routing smoke test OK')"
           npm run doctor
+          npm run build
           npm audit --json > /tmp/audit-final.json || true
           node - <<'NODE'
           const fs = require('fs');
@@ -72,22 +60,22 @@ jobs:
           const v = data.metadata?.vulnerabilities || {};
           console.log('FINAL_AUDIT', JSON.stringify(v));
           for (const [name, item] of Object.entries(data.vulnerabilities || {})) console.log(`REMAINING ${name} severity=${item.severity} fix=${JSON.stringify(item.fixAvailable)}`);
-          if (Number(v.high || 0) || Number(v.critical || 0)) {
-            console.error('High/critical vulnerabilities remain; refusing to commit this dependency set.');
+          if (Number(v.total || 0) !== 0) {
+            console.error('Vulnerabilities remain after Express 5 validation; refusing to commit.');
             process.exit(1);
           }
           NODE
 
-      - name: Commit validated dependency upgrades
+      - name: Commit validated Express 5 migration
         shell: bash
         run: |
           set -euo pipefail
           git config user.name "Goliath Dependency Hardening"
           git config user.email "goliath-dependency-hardening@users.noreply.github.com"
-          git add package.json package-lock.json
+          git add package.json package-lock.json server.js
           if git diff --cached --quiet; then
-            echo "No dependency manifest changes required."
+            echo "No Express migration changes required."
             exit 0
           fi
-          git commit -m "chore(deps): upgrade vulnerable runtime dependencies"
+          git commit -m "chore(deps): migrate dashboard server to Express 5"
           git push origin HEAD:dev
