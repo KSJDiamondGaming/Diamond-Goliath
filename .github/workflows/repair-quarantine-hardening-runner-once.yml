@@ -29,6 +29,6 @@ jobs:
           git rm .github/workflows/repair-quarantine-hardening-runner-once.yml
           git config user.name github-actions
           git config user.email actions@github.com
-          git add .github/workflows/quarantine-full-hardening-once.yml .github/workflows/repair-quarantine-hardening-runner-once.yml
+          git add .github/workflows/quarantine-full-hardening-once.yml
           git commit -m "fix(actions): align court execution matcher"
           git push origin dev
