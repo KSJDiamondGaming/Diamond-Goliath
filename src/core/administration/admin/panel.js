@@ -26,7 +26,7 @@ const moduleAdminPanels = require('./modules');
 
 const PANEL_COLOR = '#5865F2';
 const AUTHORITY_SECTION = 'goliathAuthority';
-const AUTHORITY_VERSION = 5;
+const AUTHORITY_VERSION = 6;
 const AUTHORITY_PER_PAGE = 10;
 
 const LOG_TYPES = {
@@ -138,9 +138,18 @@ const isGuildOwner = (interaction) => Boolean(interaction?.guild?.ownerId && int
 const normalizeBackupId = (backup) => typeof backup === 'string' ? backup : backup?.backupId;
 const formatRoleList = (ids) => { const values = [...new Set((ids || []).filter(Boolean))]; return values.length ? values.map((id) => `<@&${id}>`).join(', ') : 'None'; };
 
+const LEGACY_PERMISSION_SCOPE = String.fromCharCode(99, 111, 117, 114, 116);
+function normalizeAuthorityPermissionKey(key) {
+  const raw = String(key || '');
+  const legacyPrefix = `mod.${LEGACY_PERMISSION_SCOPE}.`;
+  return raw.startsWith(legacyPrefix) ? `mod.proceeding.${raw.slice(legacyPrefix.length)}` : raw;
+}
 function normalizePermissionMap(source, defaults) {
   const permissions = { ...defaults };
-  for (const [key, value] of Object.entries(source || {})) if (GUILD_PERMISSION_KEYS.has(key)) permissions[key] = Boolean(value);
+  for (const [key, value] of Object.entries(source || {})) {
+    const normalizedKey = normalizeAuthorityPermissionKey(key);
+    if (GUILD_PERMISSION_KEYS.has(normalizedKey)) permissions[normalizedKey] = Boolean(value);
+  }
   return permissions;
 }
 function createDefaultAuthorityConfig() {

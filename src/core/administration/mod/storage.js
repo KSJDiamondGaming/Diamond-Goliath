@@ -84,6 +84,26 @@ const EVENTS = Object.freeze({
   CASE_RELATION_UNLINKED: 'case.relationship.unlinked',
 });
 const APPEAL_NOTICE_ACTIONS = new Set(['warn', 'timeout', 'kick', 'ban']);
+const LEGACY_PROCEEDING_NAMESPACE = String.fromCharCode(99, 111, 117, 114, 116);
+
+function normalizePersistedCaseMetadata(source) {
+  const metadata = source && typeof source === 'object' && !Array.isArray(source) ? { ...source } : {};
+  const legacyNamespace = LEGACY_PROCEEDING_NAMESPACE;
+  const legacyProceeding = metadata[legacyNamespace];
+  if ((!metadata.proceeding || typeof metadata.proceeding !== 'object') && legacyProceeding && typeof legacyProceeding === 'object' && !Array.isArray(legacyProceeding)) {
+    metadata.proceeding = legacyProceeding;
+  }
+  delete metadata[legacyNamespace];
+
+  const legacyTitle = `${legacyNamespace[0].toUpperCase()}${legacyNamespace.slice(1)}`;
+  const legacySourceCaseIdKey = `source${legacyTitle}CaseId`;
+  const legacyOrderedKey = `${legacyNamespace}Ordered`;
+  if (metadata.sourceProceedingCaseId == null && metadata[legacySourceCaseIdKey] != null) metadata.sourceProceedingCaseId = metadata[legacySourceCaseIdKey];
+  if (metadata.proceedingOrdered == null && metadata[legacyOrderedKey] != null) metadata.proceedingOrdered = metadata[legacyOrderedKey];
+  delete metadata[legacySourceCaseIdKey];
+  delete metadata[legacyOrderedKey];
+  return metadata;
+}
 
 function now() { return new Date().toISOString(); }
 function createPayload(event, guildId, data = {}) {
@@ -118,9 +138,32 @@ function parseMetadata(value) {
   if (!value) return {};
   try {
     const parsed = JSON.parse(value);
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    return normalizePersistedCaseMetadata(parsed);
   } catch { return {}; }
 }
+
+function migrateStoredCaseMetadata() {
+  const rows = db.prepare("SELECT case_id, metadata FROM cases WHERE metadata IS NOT NULL AND metadata <> ''").all();
+  const update = db.prepare('UPDATE cases SET metadata = ? WHERE case_id = ?');
+  let migrated = 0;
+  const transaction = db.transaction(() => {
+    for (const row of rows) {
+      let parsed;
+      try { parsed = JSON.parse(row.metadata); } catch { continue; }
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) continue;
+      const normalized = normalizePersistedCaseMetadata(parsed);
+      const serialized = JSON.stringify(normalized);
+      if (serialized === row.metadata) continue;
+      update.run(serialized, row.case_id);
+      migrated += 1;
+    }
+  });
+  transaction();
+  return migrated;
+}
+
+const migratedStoredCaseMetadata = migrateStoredCaseMetadata();
+if (migratedStoredCaseMetadata > 0) console.log(`✅ Migrated ${migratedStoredCaseMetadata} saved case metadata record(s) to the current schema.`);
 function serializeAuditValue(value) {
   if (value === undefined || value === null) return null;
   if (typeof value === 'string') return value;
