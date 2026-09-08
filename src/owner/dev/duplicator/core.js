@@ -252,7 +252,8 @@ function saveTemplates(guildId, value, guildOrMeta = {}) { guildManager.updateGu
 function templates(guildId, guildOrMeta = {}) { const stored = readTemplates(guildId); return Object.keys(stored).length ? stored : saveTemplates(guildId, JSON.parse(JSON.stringify(DEFAULT_TEMPLATES)), guildOrMeta); }
 function templateList(guildId) { return Object.entries(templates(guildId)).filter(([, t]) => t?.snapshot).map(([id, t]) => ({ id, ...t })).sort((a, b) => String(a.meta?.name || a.id).localeCompare(String(b.meta?.name || b.id))); }
 
-function existingRole(guild, name) { return guild.roles.cache.find((r) => !r.managed && r.id !== guild.id && r.name.toLowerCase() === String(name).toLowerCase()); }
+function sameNameRoles(guild, name) { return [...guild.roles.cache.values()].filter((r) => !r.managed && r.id !== guild.id && r.name.toLowerCase() === String(name).toLowerCase()); }
+function existingRole(guild, name) { const matches = sameNameRoles(guild, name); return matches.length === 1 ? matches[0] : null; }
 function duplicatorCreateChannelType(guild, type) {
   const numeric = Number(type);
   const supported = new Set([ChannelType.GuildText, ChannelType.GuildVoice, ChannelType.GuildCategory, ChannelType.GuildAnnouncement, ChannelType.GuildStageVoice, ChannelType.GuildForum, ChannelType.GuildMedia]);
@@ -354,25 +355,25 @@ async function exactPermissionPreflight(guild, snap, conflictMode) {
   const sourceManaged = new Map((snap.managedRoles || []).map((role) => [String(role.id), role]));
   const botHighest = guild.members.me?.roles?.highest?.position ?? 0;
   for (const sourceRole of snap.roles || []) {
-    const sameName = [...guild.roles.cache.values()].filter((role) => !role.managed && role.id !== guild.id && role.name.toLowerCase() === String(sourceRole.name || '').toLowerCase());
-    if (conflictMode === 'skip' && sameName.length > 1) issues.push('Role mapping is ambiguous for ' + sourceRole.name + ': ' + sameName.length + ' destination roles have that name.');
+    const sameName = sameNameRoles(guild, sourceRole.name);
+    if (conflictMode === 'skip' && sameName.length > 1) issues.push('Role ' + sourceRole.name + ' has ' + sameName.length + ' same-name destination roles. Goliath refuses to guess or create another duplicate; resolve the duplicate roles first.');
     const found = sameName.length === 1 ? sameName[0] : null;
-    if (found && conflictMode === 'skip' && found.permissions.bitfield !== BigInt(sourceRole.permissions || 0) && (!found.editable || found.position >= botHighest)) issues.push('Existing role ' + found.name + ' has different base permissions and is not editable below Goliath.');
+    if (found && conflictMode === 'skip' && found.permissions.bitfield !== BigInt(sourceRole.permissions || 0) && (!found.editable || found.position >= botHighest)) issues.push('Role ' + found.name + ' already exists but cannot be safely merged because it is at/above Goliath or otherwise not editable. Goliath refuses to create a duplicate role; move Goliath above it or align the existing role manually.');
   }
   for (const sourceId of roleRefs) {
     const managedSource = sourceManaged.get(sourceId);
     if (managedSource) {
       const target = resolveManagedRoleTarget(guild, snap, managedSource);
       if (!target) issues.push('Managed permission role ' + managedSource.name + ' has no matching bot/operator role in the destination.');
-      else if (target.position >= botHighest) issues.push('Permission role ' + target.name + ' is at/above Goliath and Discord will reject that overwrite. Add/map a lower Goliath operator role or move Goliath above it.');
+      else if (target.position >= botHighest) issues.push('Managed/operator permission role ' + target.name + ' is at/above Goliath. Exact overwrite reproduction is impossible while preserving hierarchy, so Goliath refuses the transfer instead of duplicating or moving the role.');
       continue;
     }
     const normalSource = sourceNormal.get(sourceId);
     if (!normalSource) { issues.push('Source permission role ' + sourceId + ' is not present in the role snapshot.'); continue; }
-    const sameName = [...guild.roles.cache.values()].filter((role) => !role.managed && role.id !== guild.id && role.name.toLowerCase() === String(normalSource.name || '').toLowerCase());
-    if (sameName.length > 1 && conflictMode === 'skip') { issues.push('Permission role mapping is ambiguous for ' + normalSource.name + '.'); continue; }
+    const sameName = sameNameRoles(guild, normalSource.name);
+    if (sameName.length > 1 && conflictMode === 'skip') { issues.push('Permission role ' + normalSource.name + ' has multiple same-name destination roles. Goliath refuses to guess or add another duplicate.'); continue; }
     const target = sameName.length === 1 ? sameName[0] : null;
-    if (target && target.position >= botHighest) issues.push('Permission role ' + target.name + ' is at/above Goliath and cannot be edited in channel overwrites.');
+    if (target && target.position >= botHighest) issues.push('Permission role ' + target.name + ' is at/above Goliath. Exact overwrite reproduction is impossible while preserving hierarchy, so Goliath refuses the transfer instead of duplicating or moving the role.');
   }
   for (const memberId of memberRefs) {
     const member = guild.members.cache.get(memberId) || await guild.members.fetch(memberId).catch(() => null);
@@ -464,7 +465,9 @@ async function applyRoles(guild, snap, maps, log, conflictMode) {
       };
       if (found && conflictMode === 'skip') {
         let verified = await guild.roles.fetch(found.id).catch(() => found);
-        if (verified.permissions.bitfield !== requested) {
+        const originalPosition = verified.position;
+        const neededMerge = verified.permissions.bitfield !== requested;
+        if (neededMerge) {
           if (!verified.editable || verified.position >= botHighest) throw new Error('Existing role ' + role.name + ' cannot be repaired to exact permissions because it is at/above Goliath.');
           try {
             await verified.setPermissions(requested, 'Goliath duplicator: exact role permission repair');
@@ -476,7 +479,10 @@ async function applyRoles(guild, snap, maps, log, conflictMode) {
           verified = await guild.roles.fetch(found.id).catch(() => null);
         }
         if (!verified || verified.permissions.bitfield !== requested) throw new Error('Existing role permission verification mismatch for ' + role.name);
-        maps.roles.set(role.id, verified.id); log.skipped.push('Role exists/reused with all permission bits Goliath can safely apply: ' + role.name); continue;
+        maps.roles.set(role.id, verified.id);
+        if (neededMerge) log.notes.push('Merged source role into existing destination role without creating a duplicate: ' + role.name + '. Destination hierarchy position preserved at ' + originalPosition + '.');
+        else log.skipped.push('Role exists and already matches exactly; reused without duplication: ' + role.name);
+        continue;
       }
       if (found && conflictMode === 'replace') {
         if (found.editable && found.position < botHighest) { await found.delete('Goliath duplicator: replace role'); log.deleted.roles += 1; }
