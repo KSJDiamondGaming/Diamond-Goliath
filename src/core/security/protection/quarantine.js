@@ -184,17 +184,12 @@ async function ensureQuarantineRole(guild, options = {}) {
 }
 
 function quarantineDenyOverwrite() {
+  // VIEW_CHANNEL is the containment boundary. Discord implicitly blocks the rest
+  // of a channel once VIEW_CHANNEL is denied, and the API refuses overwrite bits
+  // the bot itself does not possess. Keeping this minimal avoids false 50013
+  // Missing Permissions failures while preserving complete isolation.
   return {
     ViewChannel: false,
-    SendMessages: false,
-    SendMessagesInThreads: false,
-    CreatePublicThreads: false,
-    CreatePrivateThreads: false,
-    AddReactions: false,
-    UseApplicationCommands: false,
-    Connect: false,
-    Speak: false,
-    Stream: false,
   };
 }
 
@@ -203,9 +198,6 @@ function investigationMemberOverwrite() {
     ViewChannel: true,
     SendMessages: true,
     ReadMessageHistory: true,
-    AttachFiles: true,
-    EmbedLinks: true,
-    AddReactions: true,
   };
 }
 
@@ -214,9 +206,6 @@ function investigationStaffOverwrite() {
     ViewChannel: true,
     SendMessages: true,
     ReadMessageHistory: true,
-    AttachFiles: true,
-    EmbedLinks: true,
-    ManageMessages: true,
   };
 }
 
@@ -239,11 +228,46 @@ async function syncQuarantineIsolation(guild, options = {}) {
 
   const channels = await guild.channels.fetch().catch(() => guild.channels.cache);
   let updated = 0;
+  let skipped = 0;
   let failed = 0;
   const failures = [];
 
   for (const [, channel] of channels || []) {
     if (!channel?.permissionOverwrites?.edit || channel.isThread?.()) continue;
+
+    // If the quarantine role already cannot view this channel, there is nothing
+    // to change and therefore nothing for Discord to reject. This is common for
+    // private staff/category channels.
+    const rolePermissions = channel.permissionsFor?.(role);
+    if (!rolePermissions?.has(PermissionFlagsBits.ViewChannel)) {
+      skipped += 1;
+      continue;
+    }
+
+    // Editing permission overwrites requires MANAGE_ROLES in the target channel.
+    // The Discord API also only permits allow/deny bits the bot has in the guild
+    // or parent channel. We only deny VIEW_CHANNEL, so require exactly those two
+    // effective capabilities instead of blindly attempting every channel.
+    const botPermissions = channel.permissionsFor?.(botMember);
+    if (!botPermissions?.has(PermissionFlagsBits.ManageRoles)) {
+      failed += 1;
+      failures.push({
+        channelId: channel.id,
+        channelName: channel.name || null,
+        error: 'Goliath lacks Manage Roles in this channel.',
+      });
+      continue;
+    }
+    if (!botPermissions?.has(PermissionFlagsBits.ViewChannel)) {
+      failed += 1;
+      failures.push({
+        channelId: channel.id,
+        channelName: channel.name || null,
+        error: 'Goliath cannot deny View Channel here because it does not possess View Channel in this channel/parent.',
+      });
+      continue;
+    }
+
     try {
       await channel.permissionOverwrites.edit(
         role.id,
@@ -274,11 +298,12 @@ async function syncQuarantineIsolation(guild, options = {}) {
       roleId: role.id,
       roleName: role.name,
       updated,
+      skipped,
       failed,
       failures,
     };
   }
-  return { success: true, roleId: role.id, roleName: role.name, updated, failed: 0, failures };
+  return { success: true, roleId: role.id, roleName: role.name, updated, skipped, failed: 0, failures };
 }
 
 function getInvestigationStaffRoleIds(guild, options = {}) {
@@ -302,6 +327,8 @@ async function ensureInvestigationCategory(guild, options = {}) {
   if (!guild) throw new Error('Missing guild.');
   const state = getQuarantineState(guild.id);
   const categoryName = cleanCategoryName(options.categoryName || state.investigationCategoryName);
+  const botMember = guild.members?.me || await guild.members.fetchMe().catch(() => null);
+  if (!botMember) throw new Error('Goliath guild member is unavailable.');
   let category = state.investigationCategoryId ? guild.channels.cache.get(String(state.investigationCategoryId)) : null;
   if (!category || category.type !== ChannelType.GuildCategory) {
     category = guild.channels.cache.find((channel) => channel.type === ChannelType.GuildCategory && channel.name === categoryName) || null;
@@ -312,10 +339,19 @@ async function ensureInvestigationCategory(guild, options = {}) {
       type: ChannelType.GuildCategory,
       permissionOverwrites: [
         { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
+        { id: botMember.id, allow: [PermissionFlagsBits.ViewChannel] },
       ],
       reason: 'Goliath investigation isolation category',
     });
   }
+  // Existing categories may pre-date the bot visibility overwrite. Ensure Goliath
+  // can always see the private investigation category it owns.
+  await category.permissionOverwrites.edit(
+    botMember.id,
+    { ViewChannel: true },
+    { reason: 'Ensure Goliath access to investigation category' }
+  );
+
   if (state.investigationCategoryId !== category.id || state.investigationCategoryName !== category.name) {
     saveQuarantineState(guild, {
       ...state,
@@ -331,7 +367,7 @@ async function buildInvestigationRoomOverwrites(guild, member, quarantineRole, o
   if (!botMember) throw new Error('Goliath guild member is unavailable.');
   const overwrites = [
     { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
-    { id: quarantineRole.id, deny: Object.entries(quarantineDenyOverwrite()).filter(([, value]) => value === false).map(([name]) => PermissionFlagsBits[name]).filter(Boolean) },
+    { id: quarantineRole.id, deny: [PermissionFlagsBits.ViewChannel] },
     { id: member.id, allow: Object.entries(investigationMemberOverwrite()).filter(([, value]) => value === true).map(([name]) => PermissionFlagsBits[name]).filter(Boolean) },
     {
       id: botMember.id,
@@ -339,8 +375,6 @@ async function buildInvestigationRoomOverwrites(guild, member, quarantineRole, o
         PermissionFlagsBits.ViewChannel,
         PermissionFlagsBits.SendMessages,
         PermissionFlagsBits.ReadMessageHistory,
-        PermissionFlagsBits.ManageChannels,
-        PermissionFlagsBits.ManageMessages,
       ],
     },
   ];
@@ -348,7 +382,7 @@ async function buildInvestigationRoomOverwrites(guild, member, quarantineRole, o
   if (guild.ownerId && guild.ownerId !== member.id && guild.ownerId !== botMember.id) {
     overwrites.push({
       id: guild.ownerId,
-      allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.ManageMessages],
+      allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory],
     });
   }
 
