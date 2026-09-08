@@ -23,7 +23,10 @@ function normalizeClientUrlEnvironment() {
 
 function applyModePublicClientOrigin(requestedMode) {
   if (requestedMode !== 'DEV') return;
-  process.env.CLIENT_URL = 'https://dev.goliath.ksjdigital.co.uk';
+  // DEV nginx currently canonicalises unknown SPA paths to /overview.
+  // Enter member-only deep links through the root hash so the static server
+  // always serves index.html; main.jsx then recovers the appeal reference.
+  process.env.CLIENT_URL = 'https://dev.goliath.ksjdigital.co.uk/#';
 }
 
 function loadEnvironment(mode = process.env.BOT_MODE) {
