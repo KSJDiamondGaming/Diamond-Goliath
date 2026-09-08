@@ -18,6 +18,7 @@ const { openCaseTool, handleCaseAction, submitCaseModal, handleExternalAppealInt
 const { openCaseSearch, handleCaseSearchAction, handleCaseSearchSelect, handleCaseSearchModal } = require('./caseSearch');
 const memberIntelligence = require('./intelligence');
 const caseCourt = require('./caseCourt');
+const quarantineInteractions = require('./quarantineInteractions');
 const { quarantineMember, restoreQuarantinedMember, getQuarantineState } = require('../../security/protection/quarantine');
 const {
   renderDashboard,
@@ -31,7 +32,7 @@ const {
 
 const PUNISHMENT_ACTIONS = new Set(['timeout', 'kick', 'ban']);
 const BULK_ACTIONS = new Set(['warn', 'timeout', 'kick', 'ban']);
-const OPEN_ACTIONS = new Set(['warn', 'quarantine', ...PUNISHMENT_ACTIONS]);
+const OPEN_ACTIONS = new Set(['warn', ...PUNISHMENT_ACTIONS]);
 const CONFIRM_LOCKS = new Set();
 function isModCustomId(customId) { const id = String(customId || ''); return id.startsWith('mod_') || id.startsWith('mod:'); }
 function isExternalAppealCustomId(customId) { const id = String(customId || ''); return id === 'mod_appeal_lookup' || id === 'mod_appeal_lookup_submit' || id.startsWith('mod_appeal_external:') || id.startsWith('mod_appeal_external_submit:'); }
@@ -838,6 +839,19 @@ async function handleModInteraction(i) {
   if (!i?.customId || !isModCustomId(i.customId)) return false;
   if (i.customId.startsWith('nav|')) return false;
   try {
+    const quarantineId = String(i.customId || '');
+    if (
+      quarantineId.startsWith('mod_open_quarantine:')
+      || quarantineId.startsWith('mod_quarantine_investigation:')
+      || quarantineId.startsWith('mod_quarantine_security:')
+      || quarantineId.startsWith('mod_remove_quarantine:')
+      || quarantineId.startsWith('mod_submit_quarantine_investigation:')
+      || quarantineId.startsWith('mod_submit_quarantine_security:')
+      || quarantineId.startsWith('mod_submit_quarantine:')
+    ) {
+      const handledQuarantine = await quarantineInteractions.handleQuarantineInteraction(i);
+      if (handledQuarantine) return true;
+    }
     if (isExternalAppealCustomId(i.customId)) return await handleExternalAppealInteraction(i);
     if (i.isModalSubmit?.()) return await routeModModal(i);
     const handled = await routeButtonsAndSelects(i);
