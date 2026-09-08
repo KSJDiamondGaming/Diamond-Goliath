@@ -2,10 +2,12 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { PermissionFlagsBits } = require('discord.js');
 const {
   normalizeRecord,
   normaliseRequiredAction,
   createdObjectCount,
+  hasManageChannels,
 } = require('../../src/owner/dev/duplicator/hardening');
 
 test('bulk-delete guidance never asks for Administrator', () => {
@@ -56,4 +58,16 @@ test('undone selective copy is safe to clear from history', () => {
     transferObjects: { createdChannelIds: ['1'] },
   });
   assert.equal(record.safeToClearHistory, true);
+});
+
+test('Manage Channels is sufficient for the hidden-channel delete fallback', () => {
+  const me = { id: 'bot' };
+  const channel = {
+    guild: { members: { me } },
+    permissionsFor(member) {
+      assert.equal(member, me);
+      return { has(bit) { return bit === PermissionFlagsBits.ManageChannels; } };
+    },
+  };
+  assert.equal(hasManageChannels(channel), true);
 });
