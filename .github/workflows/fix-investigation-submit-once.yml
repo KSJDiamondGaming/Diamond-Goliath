@@ -18,11 +18,21 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: '22'
-      - run: npm ci
+      - name: Install dependencies
+        run: |
+          npm ci
       - name: Apply fix
-        run: node scripts/fix-investigation-submit-once.js
+        run: |
+          node scripts/fix-investigation-submit-once.js
       - name: Validate fix
-        run: node --check src/core/administration/mod/quarantineInteractions.js && npm run doctor
+        run: |
+          node --check src/core/administration/mod/quarantineInteractions.js
+          npm run doctor
       - name: Commit fix
-        run: git config user.name github-actions && git config user.email actions@github.com && git rm .github/workflows/fix-investigation-submit-once.yml scripts/fix-investigation-submit-once.js && git add src/core/administration/mod/quarantineInteractions.js && git commit -m "fix(mod): acknowledge investigation modal before isolation work" && git push origin HEAD:dev
-# staged patch is now present
+        run: |
+          git config user.name github-actions
+          git config user.email actions@github.com
+          git rm .github/workflows/fix-investigation-submit-once.yml scripts/fix-investigation-submit-once.js
+          git add src/core/administration/mod/quarantineInteractions.js
+          git commit -m 'fix(mod): acknowledge investigation modal before isolation work'
+          git push origin HEAD:dev
