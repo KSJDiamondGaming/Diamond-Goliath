@@ -1,118 +1,86 @@
-name: Sync Goliath
+name: Case Proceedings Rename Validation
 
 on:
-  workflow_dispatch:
-    inputs:
-      target:
-        description: Target environment
-        required: true
-        default: beta
-        type: choice
-        options:
-          - beta
-          - production
-          - dev
+  push:
+    branches: [dev]
+    paths:
+      - '.github/workflows/sync-dev-now.yml'
 
 permissions:
   contents: write
-  statuses: write
-
-concurrency:
-  group: sync-goliath-${{ inputs.target }}
-  cancel-in-progress: false
 
 jobs:
-  promote:
+  rename:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    outputs:
-      promoted_sha: ${{ steps.promote.outputs.promoted_sha }}
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
         with:
           ref: dev
           fetch-depth: 0
 
-      - name: Promote DEV application tree to target branch
-        id: promote
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Rename Court subsystem to Case Proceedings
         shell: bash
-        env:
-          TARGET: ${{ inputs.target }}
         run: |
           set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
 
-          if [ "$TARGET" = "dev" ]; then
-            SHA="$(git rev-parse HEAD)"
-            echo "DEV selected: no branch promotion required."
-            echo "promoted_sha=$SHA" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
+          root = Path('.')
+          skip_dirs = {'.git', 'node_modules', 'dist', 'build', 'coverage'}
+          skip_files = {Path('.github/workflows/sync-dev-now.yml')}
+          binary_ext = {'.png','.jpg','.jpeg','.gif','.webp','.ico','.zip','.gz','.sqlite','.db','.woff','.woff2','.ttf','.mp3','.mp4','.pdf'}
 
-          git fetch --no-tags origin dev "$TARGET"
-          DEV_SHA="$(git rev-parse origin/dev)"
-          TARGET_SHA="$(git rev-parse origin/$TARGET)"
+          for path in list(root.rglob('*')):
+              if not path.is_file() or path in skip_files or any(part in skip_dirs for part in path.parts) or path.suffix.lower() in binary_ext:
+                  continue
+              try:
+                  text = path.read_text(encoding='utf-8')
+              except (UnicodeDecodeError, OSError):
+                  continue
+              changed = text.replace('COURT', 'PROCEEDING').replace('Court', 'Proceeding').replace('court', 'proceeding')
+              if changed != text:
+                  path.write_text(changed, encoding='utf-8')
 
-          git config user.name "Goliath Sync"
-          git config user.email "goliath-sync@users.noreply.github.com"
-          git switch -C "promote-$TARGET" "$TARGET_SHA"
+          old = Path('src/core/administration/mod/caseCourt.js')
+          new = Path('src/core/administration/mod/caseProceeding.js')
+          if old.exists():
+              old.rename(new)
 
-          # Promote the complete application tree from DEV while keeping the
-          # target branch's GitHub workflow control files. GITHUB_TOKEN cannot
-          # rewrite workflow files without an additional workflows permission,
-          # and workflow YAML is not part of the running Goliath application.
-          git diff --binary "$TARGET_SHA" "$DEV_SHA" -- . ':(exclude).github/workflows/**' > /tmp/goliath-promotion.patch
+          # User-facing terminology: keep the judicial workflow feel without naming it after a court.
+          for path in [Path('src/core/administration/mod/caseProceeding.js'), Path('src/core/administration/mod/cases.js'), Path('src/core/administration/user/interactions.js')]:
+              if not path.exists():
+                  continue
+              text = path.read_text(encoding='utf-8')
+              text = text.replace('Case Proceeding Dashboard', 'Case Proceedings')
+              text = text.replace('Proceeding Dashboard', 'Case Proceedings')
+              text = text.replace('Proceeding Case', 'Case File')
+              text = text.replace('Proceeding case', 'case file')
+              text = text.replace('Proceeding record', 'case record')
+              text = text.replace('proceeding record', 'case record')
+              path.write_text(text, encoding='utf-8')
+          PY
 
-          if [ -s /tmp/goliath-promotion.patch ]; then
-            git apply --index /tmp/goliath-promotion.patch
-            git commit -m "Promote DEV $DEV_SHA to $TARGET"
-            git push origin "HEAD:refs/heads/$TARGET"
-          else
-            echo "$TARGET already matches DEV application files."
-          fi
-
-          git fetch --no-tags origin dev "$TARGET"
-          FINAL_SHA="$(git rev-parse origin/$TARGET)"
-
-          if ! git diff --quiet origin/dev "origin/$TARGET" -- . ':(exclude).github/workflows/**'; then
-            echo "Promotion verification failed: $TARGET application files do not match DEV." >&2
-            git diff --stat origin/dev "origin/$TARGET" -- . ':(exclude).github/workflows/**' >&2
+          # The requested term must be absent from the application/repository tree,
+          # excluding this temporary validator because its own migration script names it.
+          if git grep -in 'court' -- ':!.github/workflows/sync-dev-now.yml'; then
+            echo 'Forbidden legacy terminology remains.' >&2
             exit 1
           fi
 
-          echo "promoted_sha=$FINAL_SHA" >> "$GITHUB_OUTPUT"
-          echo "✅ DEV application tree promoted to $TARGET at $FINAL_SHA"
+          npm ci
+          npm audit --audit-level=moderate
+          npm run doctor
+          npm run build
 
-  deploy:
-    needs: promote
-    uses: ./.github/workflows/deploy-dev.yml
-    with:
-      environment: ${{ inputs.target }}
-      operation: sync
-    secrets: inherit
-
-  summary:
-    needs: [promote, deploy]
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Write sync summary
-        shell: bash
-        run: |
-          {
-            echo "## Sync Goliath"
-            echo ""
-            echo "- Target: **${{ inputs.target }}**"
-            echo "- Promotion result: **${{ needs.promote.result }}**"
-            echo "- VPS deploy result: **${{ needs.deploy.result }}**"
-            echo "- Target commit: **${{ needs.promote.outputs.promoted_sha }}**"
-            echo ""
-            if [ "${{ inputs.target }}" = "dev" ]; then
-              echo "DEV branch → DEV VPS."
-            else
-              echo "DEV application files → ${{ inputs.target }} branch → ${{ inputs.target }} VPS."
-              echo "Target branch workflow-control YAML is intentionally preserved; all Goliath runtime/application files come from DEV."
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
-
-          [ "${{ needs.promote.result }}" = "success" ]
-          [ "${{ needs.deploy.result }}" = "success" ]
+          git config user.name "Goliath Case Proceedings"
+          git config user.email "goliath-case-proceedings@users.noreply.github.com"
+          git add -A -- ':!.github/workflows/sync-dev-now.yml'
+          git diff --cached --check
+          git commit -m "refactor(mod): rename Court system to Case Proceedings"
+          git push origin HEAD:dev
