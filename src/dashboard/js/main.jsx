@@ -6,7 +6,15 @@ import App from './App';
 import Appeals from './pages/moderation/Appeals';
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
-const pathname = window.location.pathname.replace(/\/+$/, '') || '/';
+let pathname = window.location.pathname.replace(/\/+$/, '') || '/';
+const isAppealsRoute = pathname === '/appeals' || pathname.endsWith('/appeals');
+
+if (isAppealsRoute && pathname !== '/appeals') {
+  const canonical = `/appeals${window.location.search || ''}${window.location.hash || ''}`;
+  window.history.replaceState({}, '', canonical);
+  pathname = '/appeals';
+}
+
 const RootComponent = pathname === '/appeals' ? Appeals : App;
 
 root.render(
