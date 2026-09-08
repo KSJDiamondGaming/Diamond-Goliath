@@ -1,85 +1,118 @@
-name: Express 5 Security Validation
+name: Sync Goliath
 
 on:
-  push:
-    branches: [dev]
-    paths:
-      - '.github/workflows/sync-dev-now.yml'
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Target environment
+        required: true
+        default: beta
+        type: choice
+        options:
+          - beta
+          - production
+          - dev
 
 permissions:
   contents: write
+  statuses: write
+
+concurrency:
+  group: sync-goliath-${{ inputs.target }}
+  cancel-in-progress: false
 
 jobs:
-  validate-express5:
+  promote:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
+    outputs:
+      promoted_sha: ${{ steps.promote.outputs.promoted_sha }}
     steps:
       - uses: actions/checkout@v5
         with:
           ref: dev
           fetch-depth: 0
 
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Apply Express 5 and safe audit remediation
+      - name: Promote DEV application tree to target branch
+        id: promote
         shell: bash
+        env:
+          TARGET: ${{ inputs.target }}
         run: |
           set -euo pipefail
-          export EXPRESS="$(npm view express@5 version --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const v=JSON.parse(s);console.log(Array.isArray(v)?v[v.length-1]:v)})")"
-          echo "Selected express=$EXPRESS"
-          node - <<'NODE'
-          const fs = require('fs');
-          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-          pkg.dependencies.express = `^${process.env.EXPRESS}`;
-          fs.writeFileSync('package.json', `${JSON.stringify(pkg, null, 2)}\n`);
 
-          const serverPath = 'server.js';
-          const source = fs.readFileSync(serverPath, 'utf8');
-          const oldLine = "  app.get('*', (req, res) => req.path.startsWith('/api/') ? res.status(404).json({ error: 'Not found' }) : res.sendFile(path.join(dashboardDist, 'index.html')));";
-          const newLine = "  app.use((req, res, next) => {\n    if (req.method !== 'GET') return next();\n    return req.path.startsWith('/api/')\n      ? res.status(404).json({ error: 'Not found' })\n      : res.sendFile(path.join(dashboardDist, 'index.html'));\n  });";
-          if (!source.includes(oldLine)) throw new Error('Expected SPA fallback route not found');
-          fs.writeFileSync(serverPath, source.replace(oldLine, newLine));
-          NODE
-          npm install --package-lock-only --ignore-scripts
-          npm audit fix --package-lock-only --ignore-scripts || true
+          if [ "$TARGET" = "dev" ]; then
+            SHA="$(git rev-parse HEAD)"
+            echo "DEV selected: no branch promotion required."
+            echo "promoted_sha=$SHA" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
-      - name: Validate zero-vulnerability dependency set
+          git fetch --no-tags origin dev "$TARGET"
+          DEV_SHA="$(git rev-parse origin/dev)"
+          TARGET_SHA="$(git rev-parse origin/$TARGET)"
+
+          git config user.name "Goliath Sync"
+          git config user.email "goliath-sync@users.noreply.github.com"
+          git switch -C "promote-$TARGET" "$TARGET_SHA"
+
+          # Promote the complete application tree from DEV while keeping the
+          # target branch's GitHub workflow control files. GITHUB_TOKEN cannot
+          # rewrite workflow files without an additional workflows permission,
+          # and workflow YAML is not part of the running Goliath application.
+          git diff --binary "$TARGET_SHA" "$DEV_SHA" -- . ':(exclude).github/workflows/**' > /tmp/goliath-promotion.patch
+
+          if [ -s /tmp/goliath-promotion.patch ]; then
+            git apply --index /tmp/goliath-promotion.patch
+            git commit -m "Promote DEV $DEV_SHA to $TARGET"
+            git push origin "HEAD:refs/heads/$TARGET"
+          else
+            echo "$TARGET already matches DEV application files."
+          fi
+
+          git fetch --no-tags origin dev "$TARGET"
+          FINAL_SHA="$(git rev-parse origin/$TARGET)"
+
+          if ! git diff --quiet origin/dev "origin/$TARGET" -- . ':(exclude).github/workflows/**'; then
+            echo "Promotion verification failed: $TARGET application files do not match DEV." >&2
+            git diff --stat origin/dev "origin/$TARGET" -- . ':(exclude).github/workflows/**' >&2
+            exit 1
+          fi
+
+          echo "promoted_sha=$FINAL_SHA" >> "$GITHUB_OUTPUT"
+          echo "✅ DEV application tree promoted to $TARGET at $FINAL_SHA"
+
+  deploy:
+    needs: promote
+    uses: ./.github/workflows/deploy-dev.yml
+    with:
+      environment: ${{ inputs.target }}
+      operation: sync
+    secrets: inherit
+
+  summary:
+    needs: [promote, deploy]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Write sync summary
         shell: bash
         run: |
-          set -euo pipefail
-          npm ci
-          node -e "const express=require('express'); const app=express(); app.get('/health',(req,res)=>res.json({ok:true})); app.use((req,res,next)=>req.method==='GET'?res.send('fallback'):next()); if(typeof app.listen!=='function') process.exit(1); console.log('Express 5 routing smoke test OK')"
-          node - <<'NODE'
-          const sharp = require('sharp');
-          (async () => {
-            const base = await sharp({ create: { width: 32, height: 32, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } }).png().resize(16, 16).toBuffer();
-            const meta = await sharp(base).metadata();
-            if (meta.width !== 16 || meta.height !== 16 || meta.format !== 'png') throw new Error('Sharp smoke test failed');
-            console.log('Sharp smoke test OK');
-          })().catch((error) => { console.error(error); process.exit(1); });
-          NODE
-          node -e "const d=require('discord.js'); if(!d.Client||!d.EmbedBuilder||!d.ActionRowBuilder) process.exit(1); console.log('discord.js smoke test OK')"
-          npm run doctor
-          npm run build
-          npm audit --json > /tmp/audit-final.json || true
-          node - <<'NODE'
-          const fs = require('fs');
-          const data = JSON.parse(fs.readFileSync('/tmp/audit-final.json', 'utf8'));
-          const v = data.metadata?.vulnerabilities || {};
-          console.log('FINAL_AUDIT', JSON.stringify(v));
-          for (const [name, item] of Object.entries(data.vulnerabilities || {})) console.log(`REMAINING ${name} severity=${item.severity} range=${item.range} fix=${JSON.stringify(item.fixAvailable)}`);
-          if (Number(v.total || 0) !== 0) process.exit(1);
-          NODE
+          {
+            echo "## Sync Goliath"
+            echo ""
+            echo "- Target: **${{ inputs.target }}**"
+            echo "- Promotion result: **${{ needs.promote.result }}**"
+            echo "- VPS deploy result: **${{ needs.deploy.result }}**"
+            echo "- Target commit: **${{ needs.promote.outputs.promoted_sha }}**"
+            echo ""
+            if [ "${{ inputs.target }}" = "dev" ]; then
+              echo "DEV branch → DEV VPS."
+            else
+              echo "DEV application files → ${{ inputs.target }} branch → ${{ inputs.target }} VPS."
+              echo "Target branch workflow-control YAML is intentionally preserved; all Goliath runtime/application files come from DEV."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Commit validated Express 5 migration
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name "Goliath Dependency Hardening"
-          git config user.email "goliath-dependency-hardening@users.noreply.github.com"
-          git add package.json package-lock.json server.js
-          git commit -m "chore(deps): complete zero-audit runtime upgrade"
-          git push origin HEAD:dev
+          [ "${{ needs.promote.result }}" = "success" ]
+          [ "${{ needs.deploy.result }}" = "success" ]
