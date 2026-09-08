@@ -1,0 +1,48 @@
+name: Duplicator Role Merge Policy Once
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - 'scripts/duplicator-role-merge-policy-once.js'
+      - '.github/workflows/duplicator-role-merge-policy-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: dev
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Apply merge-or-refuse role policy
+        run: node scripts/duplicator-role-merge-policy-once.js
+      - name: Validate Duplicator
+        run: |
+          set -euo pipefail
+          node --check src/owner/dev/duplicator/core.js
+          node --test test/verification/duplicatorRoleMergePolicy.test.js
+          npm run syntax
+          npm run imports
+          npm run contracts
+      - name: Commit hardened Duplicator
+        run: |
+          set -euo pipefail
+          git config user.name github-actions
+          git config user.email actions@github.com
+          git add src/owner/dev/duplicator/core.js test/verification/duplicatorRoleMergePolicy.test.js
+          if git diff --cached --quiet; then
+            echo 'No Duplicator changes to commit'
+            exit 0
+          fi
+          git commit -m 'fix(duplicator): merge or refuse same-name role conflicts'
+          git push origin HEAD:dev
