@@ -320,10 +320,16 @@ async function syncQuarantineIsolation(guild, options = {}) {
 
   if (failed) {
     const firstError = failures[0]?.error || null;
-    console.warn(`[QuarantineSystem] Isolation sync incomplete in ${guild.id}: ${failed} channel(s) failed.${firstError ? ` First error: ${firstError}` : ''}`);
+    let memberAccessRollback = { restored: [], failed: [] };
+    if (targetMemberId && memberViewAllowRestores.length && options.rollbackMemberAllowsOnFailure !== false) {
+      memberAccessRollback = await restoreMemberViewAllows(guild, targetMemberId, memberViewAllowRestores, {
+        reason: 'Rolling back failed quarantine preflight',
+      });
+    }
+    console.warn(`[QuarantineSystem] Isolation sync incomplete in ${guild.id}: ${failed} channel(s) failed.${firstError ? ` First error: ${firstError}` : ''}${memberAccessRollback.failed.length ? ` Rollback failures: ${memberAccessRollback.failed.length}.` : ''}`);
     return {
       success: false,
-      reason: `${failed} channel(s) failed${firstError ? `; first error: ${firstError}` : ''}`,
+      reason: `${failed} channel(s) failed${firstError ? `; first error: ${firstError}` : ''}${memberAccessRollback.failed.length ? `; ${memberAccessRollback.failed.length} member-access rollback(s) also failed` : ''}`,
       roleId: role.id,
       roleName: role.name,
       updated,
@@ -331,6 +337,7 @@ async function syncQuarantineIsolation(guild, options = {}) {
       failed,
       failures,
       memberViewAllowRestores,
+      memberAccessRollback,
     };
   }
   return { success: true, roleId: role.id, roleName: role.name, updated, skipped, failed: 0, failures, memberViewAllowRestores };
@@ -424,6 +431,22 @@ async function buildInvestigationRoomOverwrites(guild, member, quarantineRole, o
     });
   }
   return overwrites.slice(0, 95);
+}
+
+async function verifyMemberContainment(guild, member, allowedChannelIds = []) {
+  const allowed = new Set((allowedChannelIds || []).filter(Boolean).map(String));
+  const channels = await guild.channels.fetch().catch(() => guild.channels.cache);
+  const leaks = [];
+  for (const [, channel] of channels || []) {
+    if (!channel || channel.type === ChannelType.GuildCategory || channel.isThread?.()) continue;
+    if (allowed.has(String(channel.id))) continue;
+    const permissions = channel.permissionsFor?.(member);
+    if (permissions?.has(PermissionFlagsBits.ViewChannel)) {
+      leaks.push({ channelId: channel.id, channelName: channel.name || null });
+      if (leaks.length >= 25) break;
+    }
+  }
+  return { success: leaks.length === 0, leaks };
 }
 
 async function createInvestigationRoom(guild, member, quarantineRole, options = {}) {
@@ -561,9 +584,13 @@ async function quarantineMember(guild, member, options = {}) {
 
   let interviewRoom = null;
   let snapshotRoles = [];
+  let snapshotCaptured = false;
+  let isolation = null;
+  let quarantineRole = null;
+  let rolesReplaced = false;
   try {
-    const role = await ensureQuarantineRole(guild, options);
-    const isolation = await syncQuarantineIsolation(guild, { ...options, role, targetMemberId: member.id });
+    quarantineRole = await ensureQuarantineRole(guild, options);
+    isolation = await syncQuarantineIsolation(guild, { ...options, role: quarantineRole, targetMemberId: member.id });
     if (!isolation.success) {
       return {
         success: false,
@@ -574,27 +601,33 @@ async function quarantineMember(guild, member, options = {}) {
     }
 
     snapshotRoles = member.roles.cache
-      .filter((entry) => entry.id !== guild.id && entry.id !== role.id)
+      .filter((entry) => entry.id !== guild.id && entry.id !== quarantineRole.id)
       .map((entry) => entry.id);
+    snapshotCaptured = true;
 
     if (mode === QUARANTINE_MODES.INVESTIGATION) {
       try {
-        interviewRoom = await createInvestigationRoom(guild, member, role, options);
+        interviewRoom = await createInvestigationRoom(guild, member, quarantineRole, options);
       } catch (error) {
-        return { success: false, mode, reason: `Investigation room could not be created: ${error.message}` };
+        throw new Error(`Investigation room could not be created: ${error.message}`);
       }
     }
 
-    try {
-      await member.roles.set([role.id], options.reason || 'Goliath quarantine applied.');
-    } catch (error) {
-      if (interviewRoom) await interviewRoom.delete('Rolling back failed investigation isolation').catch(() => null);
-      throw error;
+    await member.roles.set([quarantineRole.id], options.reason || 'Goliath quarantine applied.');
+    rolesReplaced = true;
+
+    const verification = await verifyMemberContainment(
+      guild,
+      member,
+      mode === QUARANTINE_MODES.INVESTIGATION && interviewRoom ? [interviewRoom.id] : [],
+    );
+    if (!verification.success) {
+      throw new Error(`Containment verification failed: ${verification.leaks.length} channel(s) remain visible (${verification.leaks.slice(0, 3).map((entry) => entry.channelName || entry.channelId).join(', ')}).`);
     }
 
     const state = getQuarantineState(guild.id);
-    state.roleId = role.id;
-    state.roleName = role.name;
+    state.roleId = quarantineRole.id;
+    state.roleName = quarantineRole.name;
     state.users[member.id] = {
       memberId: member.id,
       memberTag: member.user?.tag || null,
@@ -609,17 +642,26 @@ async function quarantineMember(guild, member, options = {}) {
       interviewChannelId: interviewRoom?.id || null,
       expiresAt: options.durationMs && Number(options.durationMs) > 0 ? Date.now() + Number(options.durationMs) : null,
     };
-    try {
-      saveQuarantineState(guild, state);
-    } catch (error) {
-      await member.roles.set(snapshotRoles, 'Rolling back failed quarantine state persistence').catch(() => null);
-      if (interviewRoom) await interviewRoom.delete('Rolling back failed investigation state persistence').catch(() => null);
-      throw error;
-    }
+    saveQuarantineState(guild, state);
     emitCurrentQuarantineState(guild, 'member_quarantined', { memberId: member.id, mode, interviewChannelId: interviewRoom?.id || null });
-    return { success: true, mode, roleId: role.id, interviewChannelId: interviewRoom?.id || null, snapshotRoles, isolation };
+    return { success: true, mode, roleId: quarantineRole.id, interviewChannelId: interviewRoom?.id || null, snapshotRoles, isolation, verification };
   } catch (error) {
-    return { success: false, mode, error: error.message };
+    const rollback = { roles: null, memberAccess: null, roomDeleted: false };
+    if (snapshotCaptured && quarantineRole) {
+      const manageable = await getRestorableRoleIds(guild, snapshotRoles, quarantineRole.id);
+      rollback.roles = await member.roles.set(manageable.restored, 'Rolling back failed quarantine transaction')
+        .then(() => ({ success: true, restored: manageable.restored, skipped: manageable.skipped }))
+        .catch((roleError) => ({ success: false, error: String(roleError?.message || roleError), skipped: manageable.skipped }));
+    }
+    if (interviewRoom) {
+      rollback.roomDeleted = await interviewRoom.delete('Rolling back failed investigation isolation').then(() => true).catch(() => false);
+    }
+    if (isolation?.memberViewAllowRestores?.length) {
+      rollback.memberAccess = await restoreMemberViewAllows(guild, member.id, isolation.memberViewAllowRestores, {
+        reason: 'Rolling back failed quarantine transaction',
+      });
+    }
+    return { success: false, mode, error: error.message, rollback };
   }
 }
 
@@ -679,6 +721,27 @@ async function restoreMemberViewAllows(guild, memberId, channelIds = [], options
   return { restored, failed };
 }
 
+async function recontainMemberViewAllows(guild, memberId, channelIds = [], options = {}) {
+  const contained = [];
+  const failed = [];
+  for (const channelId of [...new Set((channelIds || []).map(String))]) {
+    let channel = guild.channels.cache.get(channelId);
+    if (!channel) channel = await guild.channels.fetch(channelId).catch(() => null);
+    if (!channel?.permissionOverwrites?.edit) continue;
+    try {
+      await channel.permissionOverwrites.edit(
+        String(memberId),
+        { ViewChannel: false },
+        { reason: options.reason || 'Re-containing member after failed quarantine release' },
+      );
+      contained.push(channelId);
+    } catch (error) {
+      failed.push({ channelId, error: String(error?.message || error).slice(0, 250) });
+    }
+  }
+  return { contained, failed };
+}
+
 async function archiveInvestigationRoom(guild, snapshot, options = {}) {
   const channelId = snapshot?.interviewChannelId || snapshot?.previousInterviewChannelId || null;
   if (!channelId) return { success: true, archived: false, reason: 'No investigation room.' };
@@ -735,9 +798,27 @@ async function restoreQuarantinedMember(guild, member, options = {}) {
     await member.roles.set(roles.restored, options.reason || 'Restoring quarantined member');
     const memberAccess = await restoreMemberViewAllows(guild, member.id, snapshot.memberViewAllowRestores, options);
     if (memberAccess.failed.length) {
-      return { success: false, mode, reason: 'Member roles were restored but one or more pre-quarantine channel allows could not be restored.', memberAccess };
+      const recontained = await recontainMemberViewAllows(guild, member.id, memberAccess.restored, {
+        reason: 'Rollback after incomplete quarantine release',
+      });
+      let quarantineRole = quarantineRoleId ? guild.roles.cache.get(String(quarantineRoleId)) : null;
+      if (!quarantineRole?.editable) quarantineRole = await ensureQuarantineRole(guild, options).catch(() => null);
+      const roleRollback = quarantineRole
+        ? await member.roles.set([quarantineRole.id], 'Rollback after incomplete quarantine release').then(() => ({ success: true })).catch((error) => ({ success: false, error: String(error?.message || error) }))
+        : { success: false, error: 'Quarantine role was unavailable for rollback.' };
+      const rollbackVerification = quarantineRole
+        ? await verifyMemberContainment(guild, member, mode === QUARANTINE_MODES.INVESTIGATION && snapshot.interviewChannelId ? [snapshot.interviewChannelId] : [])
+        : { success: false, leaks: [] };
+      return {
+        success: false,
+        mode,
+        reason: 'Pre-quarantine channel access could not be fully restored. Goliath re-contained the member and kept the quarantine snapshot for a safe retry.',
+        memberAccess,
+        rollback: { recontained, roleRollback, verification: rollbackVerification },
+      };
     }
-    const archive = mode === QUARANTINE_MODES.INVESTIGATION
+    const shouldArchive = Boolean(snapshot.interviewChannelId || snapshot.previousInterviewChannelId);
+    const archive = shouldArchive
       ? await archiveInvestigationRoom(guild, snapshot, options)
       : { success: true, archived: false };
     const latest = getQuarantineState(guild.id);
@@ -759,13 +840,26 @@ async function restoreQuarantinedMember(guild, member, options = {}) {
 
 async function clearExpiredAbsentMember(guild, userId, state) {
   const snapshot = state.users?.[userId];
-  if (snapshot && getQuarantineMode(snapshot) === QUARANTINE_MODES.INVESTIGATION) {
-    await archiveInvestigationRoom(guild, snapshot, { reason: 'Automatic investigation quarantine expiry while member absent', system: true });
+  if (!snapshot) return { success: true, cleared: false, reason: 'No quarantine snapshot.' };
+  const memberAccess = await restoreMemberViewAllows(guild, userId, snapshot.memberViewAllowRestores, {
+    reason: 'Restoring pre-quarantine channel access for expired absent member',
+    system: true,
+  });
+  if (memberAccess.failed.length) {
+    return { success: false, cleared: false, reason: 'Could not restore all persistent member channel overwrites; snapshot retained for retry.', memberAccess };
+  }
+  const shouldArchive = Boolean(snapshot.interviewChannelId || snapshot.previousInterviewChannelId);
+  const archive = shouldArchive
+    ? await archiveInvestigationRoom(guild, snapshot, { reason: 'Automatic quarantine expiry while member absent', system: true })
+    : { success: true, archived: false };
+  if (archive?.success === false) {
+    return { success: false, cleared: false, reason: 'Could not archive the investigation room; snapshot retained for retry.', memberAccess, archive };
   }
   const latest = getQuarantineState(guild.id);
   delete latest.users[userId];
   saveQuarantineState(guild, latest);
-  emitCurrentQuarantineState(guild, 'member_quarantine_expired_absent', { memberId: userId, mode: snapshot ? getQuarantineMode(snapshot) : null });
+  emitCurrentQuarantineState(guild, 'member_quarantine_expired_absent', { memberId: userId, mode: getQuarantineMode(snapshot) });
+  return { success: true, cleared: true, memberAccess, archive };
 }
 
 async function restoreExpiredQuarantines(client) {
@@ -780,8 +874,9 @@ async function restoreExpiredQuarantines(client) {
         result.checked += 1;
         const member = await guild.members.fetch(userId).catch(() => null);
         if (!member) {
-          await clearExpiredAbsentMember(guild, userId, state);
-          result.clearedAbsent += 1;
+          const cleared = await clearExpiredAbsentMember(guild, userId, state);
+          if (cleared.success) result.clearedAbsent += 1;
+          else result.failed += 1;
           state = getQuarantineState(guild.id);
           continue;
         }
@@ -808,21 +903,29 @@ async function enforceQuarantineOnMember(member, options = {}) {
   const mode = getQuarantineMode(snapshot);
 
   if (snapshot.expiresAt && Date.now() >= Number(snapshot.expiresAt)) {
-    await clearExpiredAbsentMember(guild, member.id, state);
-    return { success: true, mode, expired: true, executed: false };
+    const restored = await restoreQuarantinedMember(guild, member, { reason: 'Automatic quarantine expiry during enforcement', system: true });
+    return restored.success
+      ? { ...restored, expired: true, executed: false }
+      : { ...restored, expired: true, executed: false, success: false };
   }
 
   try {
     const role = await ensureQuarantineRole(guild, options);
-    const isolation = await syncQuarantineIsolation(guild, { ...options, role, targetMemberId: member.id });
+    const isolation = await syncQuarantineIsolation(guild, { ...options, role, targetMemberId: member.id, rollbackMemberAllowsOnFailure: false });
     if (!isolation.success) return { success: false, mode, reason: 'Quarantine isolation sync failed.', isolation };
     let interviewRoom = null;
     if (mode === QUARANTINE_MODES.INVESTIGATION) {
       interviewRoom = await ensureInvestigationRoomForSnapshot(guild, member, role, snapshot, options);
     }
     await member.roles.set([role.id], `Reapplying active Goliath ${mode} quarantine`);
+    const verification = await verifyMemberContainment(
+      guild,
+      member,
+      mode === QUARANTINE_MODES.INVESTIGATION && interviewRoom ? [interviewRoom.id] : [],
+    );
+    if (!verification.success) return { success: false, mode, reason: 'Effective containment verification failed.', isolation, verification };
     emitCurrentQuarantineState(guild, 'member_quarantine_reapplied', { memberId: member.id, mode, interviewChannelId: interviewRoom?.id || null });
-    return { success: true, mode, roleId: role.id, interviewChannelId: interviewRoom?.id || null, isolation };
+    return { success: true, mode, roleId: role.id, interviewChannelId: interviewRoom?.id || null, isolation, verification };
   } catch (error) {
     return { success: false, mode, error: error.message };
   }
@@ -853,8 +956,9 @@ async function recoverGuildQuarantine(guild) {
         else failed += 1;
       } else {
         const latest = getQuarantineState(guild.id);
-        await clearExpiredAbsentMember(guild, userId, latest);
-        restored += 1;
+        const cleared = await clearExpiredAbsentMember(guild, userId, latest);
+        if (cleared.success) restored += 1;
+        else failed += 1;
       }
       continue;
     }
@@ -864,7 +968,7 @@ async function recoverGuildQuarantine(guild) {
     else failed += 1;
   }
 
-  return { success: failed === 0, active: entries.length, reapplied, restored, failed, isolation };
+  return { success: failed === 0, active: entries.length, reapplied, restored, failed };
 }
 
 async function recoverQuarantines(client) {

@@ -284,6 +284,10 @@ async function removeQuarantine(interaction, targetId) {
     });
   }
 
+  if (!interaction.deferred && !interaction.replied) {
+    await interaction.deferReply({ flags: Discord.MessageFlags.Ephemeral });
+  }
+
   const result = await restoreQuarantinedMember(interaction.guild, target, {
     reason: `Investigation Isolation cleared by ${interaction.user?.tag || interaction.user?.id || 'staff'}`,
     restoredBy: interaction.user.id,
@@ -300,7 +304,7 @@ async function removeQuarantine(interaction, targetId) {
   });
 
   if (!result.success) {
-    return safeReply(interaction, {
+    return safeEditReply(interaction, {
       content: `❌ Failed to clear Investigation Isolation from **${target.user.tag}**: ${result.error || result.reason || 'Unknown error'}`,
       flags: 64,
     });
@@ -334,7 +338,7 @@ async function removeQuarantine(interaction, targetId) {
   const archiveText = result.archive?.archived && result.archive?.channelId
     ? ` • Interview room archived: <#${result.archive.channelId}>`
     : '';
-  await safeReply(interaction, {
+  await safeEditReply(interaction, {
     content: `🔓 **Investigation cleared** for **${target.user.tag}** • restored **${result.restoredRoles || 0}** role(s)${archiveText}.`,
     flags: 64,
   });

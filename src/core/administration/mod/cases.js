@@ -26,7 +26,7 @@ const {
 } = require('./storage');
 const { COLORS, EMOJIS } = require('../../ui/uiConfig');
 const { createEmbed } = require('../../ui/embeds');
-const { safeReply, ephemeralError } = require('../../../core/ui/interactionResponse');
+const { safeReply, safeEditReply, ephemeralError } = require('../../../core/ui/interactionResponse');
 const { canUseModAction } = require('./permissions');
 const { restoreQuarantinedMember } = require('../../security/protection/quarantine');
 
@@ -801,9 +801,10 @@ async function handleCaseAction(interaction, { fetchTarget, createConfirmation }
   if (id.startsWith('mod_case_appeal_retry_remedy:')) {
     if (!canUseModAction(interaction.member, interaction.guild, 'edit_case')) return safeReply(interaction, ephemeralError('No permission to retry appeal remedies.'));
     const [, caseIdRaw, appealId] = id.split(':');
+    if (!interaction.deferred && !interaction.replied) await interaction.deferReply({ flags: 64 });
     const result = await retryApprovedCourtAppealRemedy(interaction, Number(caseIdRaw), appealId, fetchTarget);
-    if (!result.ok) return safeReply(interaction, ephemeralError(result.error || 'Failed to retry appeal remedy.'));
-    return safeReply(interaction, { ...buildAppealDetailPayload(result.case, result.appeal), flags: 64 });
+    if (!result.ok) return safeEditReply(interaction, ephemeralError(result.error || 'Failed to retry appeal remedy.'));
+    return safeEditReply(interaction, { ...buildAppealDetailPayload(result.case, result.appeal), flags: 64 });
   }
   if (id.startsWith('mod_case_appeal_decide:')) {
     if (!canUseModAction(interaction.member, interaction.guild, 'edit_case')) return safeReply(interaction, ephemeralError('No permission to decide appeals.'));
@@ -873,9 +874,10 @@ async function submitCaseModal(interaction, { fetchTarget, refreshCasesDashboard
   if (id.startsWith('mod_submit_case_appeal_decision:')) {
     if (!canUseModAction(interaction.member, interaction.guild, 'edit_case')) return safeReply(interaction, ephemeralError('No permission to decide appeals.'));
     const [, caseIdRaw, appealId, decision] = id.split(':');
+    if (!interaction.deferred && !interaction.replied) await interaction.deferReply({ flags: 64 });
     const result = await resolveAppeal(interaction, Number(caseIdRaw), appealId, decision, interaction.fields.getTextInputValue('review_note'), fetchTarget);
-    if (!result.ok) return safeReply(interaction, ephemeralError(result.error || 'Failed to decide appeal.'));
-    return safeReply(interaction, { ...buildAppealDetailPayload(result.case, result.appeal), flags: 64 });
+    if (!result.ok) return safeEditReply(interaction, ephemeralError(result.error || 'Failed to decide appeal.'));
+    return safeEditReply(interaction, { ...buildAppealDetailPayload(result.case, result.appeal), flags: 64 });
   }
   if (id.startsWith('mod_submit_case_appeal:')) {
     if (!canUseModAction(interaction.member, interaction.guild, 'view_case_detail')) return safeReply(interaction, ephemeralError('No permission to record appeals.'));
