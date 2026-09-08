@@ -880,18 +880,18 @@ async function handleCourtModal(interaction) {
           metadata.durationMs = durationMs;
         }
         if (action === 'ban') metadata.deleteDays = deleteDays;
-        const result = await executeEnginePunishment(interaction, target, action, reason, metadata, { logAction: `Court ${action}` });
+        const result = await executeEnginePunishment(interaction, target, action, reason, metadata, { logAction: `Court ${action}`, targetId: modCase.userId });
         linkedCaseId = result?.modCase?.caseId || null;
         resultSummary = `${action} applied successfully.`;
       }
-      const sanctionExecution = { status: 'executed', action, executedBy: interaction.user.id, executedAt: now(), startedAt: executionStarted, linkedCaseId, note: note || null, result: resultSummary };
+      const sanctionExecution = { ...claimedExecution, status: 'executed', action, executedBy: interaction.user.id, executedAt: now(), startedAt: executionStarted, linkedCaseId, note: note || null, result: resultSummary, error: null };
       const next = { ...court, sanctionExecution, linkedCases: linkedCaseId ? [...new Set([...court.linkedCases, linkedCaseId])] : court.linkedCases };
       const updated = saveCourt(interaction.guildId, caseId, next, interaction.user.id, 'case.court.sanction_executed', court);
       COURT_EXECUTION_LOCKS.delete(lockKey);
       await updateCaseMessage(interaction, updated);
       return true;
     } catch (error) {
-      const sanctionExecution = { status: 'failed', action, executedBy: interaction.user.id, executedAt: now(), startedAt: executionStarted, linkedCaseId: null, note: note || null, error: String(error?.message || error || 'Unknown sanction execution failure').slice(0, 500) };
+      const sanctionExecution = { ...claimedExecution, status: 'failed', action, executedBy: interaction.user.id, executedAt: now(), startedAt: executionStarted, linkedCaseId: null, note: note || null, error: String(error?.message || error || 'Unknown sanction execution failure').slice(0, 500) };
       const next = { ...court, sanctionExecution };
       const updated = saveCourt(interaction.guildId, caseId, next, interaction.user.id, 'case.court.sanction_failed', court);
       COURT_EXECUTION_LOCKS.delete(lockKey);
