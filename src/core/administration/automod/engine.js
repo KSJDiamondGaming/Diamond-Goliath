@@ -29,7 +29,8 @@ function getContext(input = {}) {
   const user = input.user || member?.user || message?.author || null;
   const guild = input.guild || member?.guild || message?.guild || null;
   const channel = input.channel || message?.channel || null;
-  return { message, member, user, guild, channel };
+  const targetId = String(input.targetId || member?.id || user?.id || '').trim() || null;
+  return { message, member, user, guild, channel, targetId };
 }
 
 function formatActionList(punishments = []) {
@@ -53,6 +54,7 @@ function resolveTimeoutDuration(durationMs, timeoutMinutes) {
 }
 
 function shouldBlockDestructiveAction(context, punishment) {
+  if (context.guild?.ownerId && context.targetId && String(context.guild.ownerId) === String(context.targetId)) return true;
   return shouldBlockOwnerDestructiveAction({
     guild: context.guild,
     member: context.member,
@@ -98,14 +100,20 @@ async function safeKick(member, reason) {
   }
 }
 
-async function safeBan(member, reason, deleteDays = 0) {
+async function safeBan(context, reason, deleteDays = 0) {
   try {
-    if (!member?.bannable) return false;
     const rawDeleteDays = Number(deleteDays);
     const safeDeleteDays = Number.isFinite(rawDeleteDays)
       ? Math.min(7, Math.max(0, Math.trunc(rawDeleteDays)))
       : 0;
-    await member.ban({ deleteMessageSeconds: safeDeleteDays * 24 * 60 * 60, reason });
+    const options = { deleteMessageSeconds: safeDeleteDays * 24 * 60 * 60, reason };
+    if (context.member) {
+      if (!context.member.bannable) return false;
+      await context.member.ban(options);
+      return true;
+    }
+    if (!context.guild || !/^\d{16,20}$/.test(String(context.targetId || ''))) return false;
+    await context.guild.members.ban(String(context.targetId), options);
     return true;
   } catch (error) {
     console.error('❌ Punishment engine ban failed:', error);
@@ -143,7 +151,7 @@ async function executePunishment(punishment, context, options) {
   if (punishment === 'warn') return context.message ? safeWarnChannel(context.message, options.reason) : true;
   if (punishment === 'timeout') return safeTimeout(context.member, options.timeoutDurationMs, options.actionReason);
   if (punishment === 'kick') return safeKick(context.member, options.actionReason);
-  if (punishment === 'ban') return safeBan(context.member, options.actionReason, options.deleteDays);
+  if (punishment === 'ban') return safeBan(context, options.actionReason, options.deleteDays);
   return false;
 }
 

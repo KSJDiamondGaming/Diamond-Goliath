@@ -118,26 +118,33 @@ async function createConfirmation(interaction, targetId, type, payload, message,
   return safeReply(interaction, { content: message, components: buildConfirmRow(buildConfirmCustomId(token, normalizedContext), buildCancelCustomId(targetId, normalizedContext)), flags: 64 });
 }
 function createModerationCase(interaction, targetId, action, reason, metadata = {}, extras = {}) { return createCase({ guildId: interaction.guild.id, userId: targetId, moderatorId: interaction.user.id, action, reason, metadata, actorId: interaction.user.id, ...extras }); }
-async function logAction(interaction, target, action, reason, caseId, metadata = {}) { return target ? sendModLog({ guild: interaction.guild, target, moderator: interaction.user, action, reason, caseId, metadata }) : null; }
+async function logAction(interaction, target, action, reason, caseId, metadata = {}, user = null) {
+  if (!target && !user) return null;
+  return sendModLog({ guild: interaction.guild, target: target || user, user: user || target?.user || null, moderator: interaction.user, action, reason, caseId, metadata });
+}
 
 async function executeEnginePunishment(interaction, target, action, reason, metadata = {}, options = {}) {
   const config = ENGINE_ACTIONS[action];
   if (!config) throw new Error(`Unknown punishment action: ${action}`);
+  const targetId = String(target?.id || options.targetId || metadata.targetId || '').trim();
+  if (!/^\d{16,20}$/.test(targetId)) throw new Error(`A valid target user ID is required to ${action} a user.`);
+  const targetUser = target?.user || await interaction.client?.users?.fetch(targetId).catch(() => null) || null;
+  if (!target && action !== 'ban') throw new Error(`A current guild member is required to ${action} a user.`);
   const engineOptions = { punishments: config.punishments, rule: config.rule, reason, moderator: interaction.user, source: 'moderation' };
   if (action === 'timeout') engineOptions.durationMs = metadata.durationMs;
   if (action === 'ban') engineOptions.deleteDays = metadata.deleteDays;
-  const report = await applyPunishmentEngine({ member: target, user: target.user, guild: interaction.guild }, engineOptions);
+  const report = await applyPunishmentEngine({ member: target, user: targetUser, targetId, guild: interaction.guild }, engineOptions);
   if (!Array.isArray(report?.applied) || !report.applied.includes(config.appliedKey)) throw new Error(`Failed to ${action} user. Failed: ${report?.failedText || 'unknown'}`);
   const caseMetadata = {
     ...(action === 'timeout' ? { duration: metadata.durationRaw } : {}),
     ...(action === 'ban' ? { deleteDays: metadata.deleteDays } : {}),
     ...(metadata.bulkBatchId ? { bulk: true, bulkBatchId: metadata.bulkBatchId } : {}),
-    ...(metadata.sourceCourtCaseId ? { sourceCourtCaseId: Number(metadata.sourceCourtCaseId), courtOrdered: Boolean(metadata.courtOrdered) } : {}),
+    ...(metadata.sourceProceedingCaseId ? { sourceProceedingCaseId: Number(metadata.sourceProceedingCaseId), proceedingOrdered: Boolean(metadata.proceedingOrdered) } : {}),
     punishmentReport: report,
   };
-  const modCase = createModerationCase(interaction, target.id, config.caseAction, reason, caseMetadata);
-  await logAction(interaction, target, options.logAction || config.logAction, reason, modCase.caseId, { ...caseMetadata, dmSent: report.dmSent });
-  return { target, modCase, report };
+  const modCase = createModerationCase(interaction, targetId, config.caseAction, reason, caseMetadata);
+  await logAction(interaction, target, options.logAction || config.logAction, reason, modCase.caseId, { ...caseMetadata, dmSent: report.dmSent }, targetUser);
+  return { target, targetUser, targetId, modCase, report };
 }
 async function submitTimeout(interaction, target) {
   const durationRaw = interaction.fields.getTextInputValue('duration').trim();

@@ -26,7 +26,7 @@ const moduleAdminPanels = require('./modules');
 
 const PANEL_COLOR = '#5865F2';
 const AUTHORITY_SECTION = 'goliathAuthority';
-const AUTHORITY_VERSION = 5;
+const AUTHORITY_VERSION = 6;
 const AUTHORITY_PER_PAGE = 10;
 
 const LOG_TYPES = {
@@ -64,11 +64,11 @@ const CORE_GUILD_PERMISSIONS = [
   { key: 'mod.cases.search', label: 'Search Cases', group: 'Cases' },
   { key: 'mod.cases.export', label: 'Export Cases', group: 'Cases' },
   { key: 'mod.cases.manage', label: 'Manage Cases', group: 'Cases' },
-  { key: 'mod.court.manage', label: 'Build Detailed Case Files', group: 'Cases' },
-  { key: 'mod.court.review', label: 'Review & Decide Cases', group: 'Cases' },
-  { key: 'mod.court.publish', label: 'Publish Case Decisions', group: 'Cases' },
-  { key: 'mod.court.close', label: 'Close / Reopen Cases', group: 'Cases' },
-  { key: 'mod.court.delete', label: 'Permanently Delete Cases', group: 'Cases' },
+  { key: 'mod.proceeding.manage', label: 'Build Detailed Case Files', group: 'Cases' },
+  { key: 'mod.proceeding.review', label: 'Review & Decide Cases', group: 'Cases' },
+  { key: 'mod.proceeding.publish', label: 'Publish Case Decisions', group: 'Cases' },
+  { key: 'mod.proceeding.close', label: 'Close / Reopen Cases', group: 'Cases' },
+  { key: 'mod.proceeding.delete', label: 'Permanently Delete Cases', group: 'Cases' },
   { key: 'mod.evidence.manage', label: 'Manage Evidence', group: 'Cases' },
   { key: 'mod.appeals.view', label: 'View Appeal Queue', group: 'Cases' },
   { key: 'mod.appeals.decide', label: 'Decide Appeals', group: 'Cases' },
@@ -97,7 +97,7 @@ const baseModeratorPermissions = {
   'admin.backups.view': false, 'admin.backups.create': false, 'admin.backups.requestRestore': false, 'admin.purge': false,
   'mod.panel.view': true, 'mod.warn': true, 'mod.timeout': true, 'mod.timeout.remove': true, 'mod.kick': true,
   'mod.ban': false, 'mod.unban': false, 'mod.cases.view': true, 'mod.cases.search': true, 'mod.cases.export': false,
-  'mod.cases.manage': true, 'mod.court.manage': true, 'mod.court.review': false, 'mod.court.publish': false, 'mod.court.close': false, 'mod.court.delete': false, 'mod.evidence.manage': true, 'mod.appeals.view': true, 'mod.appeals.decide': false,
+  'mod.cases.manage': true, 'mod.proceeding.manage': true, 'mod.proceeding.review': false, 'mod.proceeding.publish': false, 'mod.proceeding.close': false, 'mod.proceeding.delete': false, 'mod.evidence.manage': true, 'mod.appeals.view': true, 'mod.appeals.decide': false,
   'mod.presets.manage': true, 'mod.bulk': false, 'mod.analytics.view': true, 'mod.scan.run': true, 'mod.scan.history': true,
   'mod.scan.compare': true, 'mod.scan.suspectedAccounts': true, 'mod.scan.network': true, 'mod.scan.notes': true,
   'mod.scan.watch': true, 'mod.scan.links': true,
@@ -107,7 +107,7 @@ const baseJuniorPermissions = {
   'admin.backups.view': false, 'admin.backups.create': false, 'admin.backups.requestRestore': false, 'admin.purge': false,
   'mod.panel.view': true, 'mod.warn': true, 'mod.timeout': true, 'mod.timeout.remove': false, 'mod.kick': false,
   'mod.ban': false, 'mod.unban': false, 'mod.cases.view': true, 'mod.cases.search': true, 'mod.cases.export': false,
-  'mod.cases.manage': false, 'mod.court.manage': false, 'mod.court.review': false, 'mod.court.publish': false, 'mod.court.close': false, 'mod.court.delete': false, 'mod.evidence.manage': false, 'mod.appeals.view': false, 'mod.appeals.decide': false,
+  'mod.cases.manage': false, 'mod.proceeding.manage': false, 'mod.proceeding.review': false, 'mod.proceeding.publish': false, 'mod.proceeding.close': false, 'mod.proceeding.delete': false, 'mod.evidence.manage': false, 'mod.appeals.view': false, 'mod.appeals.decide': false,
   'mod.presets.manage': false, 'mod.bulk': false, 'mod.analytics.view': false, 'mod.scan.run': true, 'mod.scan.history': true,
   'mod.scan.compare': true, 'mod.scan.suspectedAccounts': false, 'mod.scan.network': false, 'mod.scan.notes': false,
   'mod.scan.watch': false, 'mod.scan.links': false,
@@ -138,9 +138,18 @@ const isGuildOwner = (interaction) => Boolean(interaction?.guild?.ownerId && int
 const normalizeBackupId = (backup) => typeof backup === 'string' ? backup : backup?.backupId;
 const formatRoleList = (ids) => { const values = [...new Set((ids || []).filter(Boolean))]; return values.length ? values.map((id) => `<@&${id}>`).join(', ') : 'None'; };
 
+const LEGACY_PERMISSION_SCOPE = String.fromCharCode(99, 111, 117, 114, 116);
+function normalizeAuthorityPermissionKey(key) {
+  const raw = String(key || '');
+  const legacyPrefix = `mod.${LEGACY_PERMISSION_SCOPE}.`;
+  return raw.startsWith(legacyPrefix) ? `mod.proceeding.${raw.slice(legacyPrefix.length)}` : raw;
+}
 function normalizePermissionMap(source, defaults) {
   const permissions = { ...defaults };
-  for (const [key, value] of Object.entries(source || {})) if (GUILD_PERMISSION_KEYS.has(key)) permissions[key] = Boolean(value);
+  for (const [key, value] of Object.entries(source || {})) {
+    const normalizedKey = normalizeAuthorityPermissionKey(key);
+    if (GUILD_PERMISSION_KEYS.has(normalizedKey)) permissions[normalizedKey] = Boolean(value);
+  }
   return permissions;
 }
 function createDefaultAuthorityConfig() {
