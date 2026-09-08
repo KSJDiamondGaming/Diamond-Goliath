@@ -1,11 +1,15 @@
 name: Improve Appeal DM Once
+
 on:
-  workflow_dispatch:
   push:
-    branches: [dev]
-    paths: ['.github/workflows/improve-appeal-dm-once.yml']
+    branches:
+      - dev
+    paths:
+      - '.github/workflows/improve-appeal-dm-once.yml'
+
 permissions:
   contents: write
+
 jobs:
   apply:
     runs-on: ubuntu-latest
@@ -16,62 +20,51 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v5
         with:
-          node-version: 22
+          node-version: '22'
           cache: npm
       - run: npm ci
-      - name: Upgrade appeal DM
+      - name: Patch appeal notice
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          p=Path('src/core/administration/mod/storage.js')
-          s=p.read_text()
-          old="""    const action = String(modCase.action || 'moderation action').toUpperCase();
-    const content = [
-      `⚖️ **Moderation notice from ${guild.name}**`,
-      `Action: **${action}** • Case **#${modCase.caseId}**`,
-      `Reason: ${String(modCase.reason || 'No reason provided').slice(0, 700)}`,
-      '',
-      'If you believe this action was incorrect, you can appeal it even if you are no longer in the server.',
-      `If this button is unavailable later, DM Goliath and use: \\`/mod appeal:${guild.id}:${modCase.caseId}\\``,
-    ].join('\\n');
-    await recipient.send({
-      content: content.slice(0, 1900),
-      components: [new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`mod_appeal_external:${guild.id}:${modCase.caseId}`).setLabel('⚖️ Appeal This Case').setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId('mod_appeal_lookup').setLabel('Appeal Another Case').setStyle(ButtonStyle.Secondary)
-      )],
-    });"""
-          new="""    const action = String(modCase.action || 'moderation action').toUpperCase();
+          node - <<'NODE'
+          const fs = require('fs');
+          const path = 'src/core/administration/mod/storage.js';
+          let s = fs.readFileSync(path, 'utf8');
+          const start = s.indexOf("    const action = String(modCase.action || 'moderation action').toUpperCase();", s.indexOf('async function sendCaseAppealNotice'));
+          const endMarker = "    sent = true;";
+          const end = s.indexOf(endMarker, start);
+          if (start < 0 || end < 0) throw new Error('Appeal notice block not found');
+          const beforeEnd = s.lastIndexOf('    });', end);
+          if (beforeEnd < start) throw new Error('Appeal send block end not found');
+          const replacement = `    const action = String(modCase.action || 'moderation action').toUpperCase();
     const reason = String(modCase.reason || 'No reason provided').slice(0, 900);
     const embed = new EmbedBuilder()
       .setColor('#5865F2')
       .setTitle('⚖️ Moderation Decision')
-      .setDescription(`A moderation action has been recorded for you in **${String(guild.name || 'this server').slice(0, 120)}**.\\n\\nYou can review the details below and appeal if you believe the decision should be reconsidered.`)
+      .setDescription(\`A moderation action has been recorded for you in **\${String(guild.name || 'this server').slice(0, 120)}**.\\n\\nYou can review the details below and appeal if you believe the decision should be reconsidered.\`)
       .addFields(
         { name: 'Action', value: action.slice(0, 1024), inline: true },
-        { name: 'Case', value: `#${modCase.caseId}`, inline: true },
+        { name: 'Case', value: \`#\${modCase.caseId}\`, inline: true },
         { name: 'Reason', value: reason || 'No reason provided', inline: false },
-        { name: 'Want to appeal?', value: 'Use **Appeal This Case** below. You can appeal even if you are no longer in the server.\\n\\nIf the button is unavailable, open your DM with **Goliath** and use `/appeal`. A web appeal option will also be available in the future.', inline: false },
+        { name: 'Want to appeal?', value: 'Use **Appeal This Case** below. You can appeal even if you are no longer in the server.\\n\\nIf the button is unavailable, open your DM with **Goliath** and use \\`/appeal\\`. A web appeal option will also be available in the future.', inline: false },
       )
-      .setFooter({ text: `Goliath • ${String(guild.name || 'Moderation').slice(0, 100)} • Case #${modCase.caseId}` })
+      .setFooter({ text: \`Goliath • \${String(guild.name || 'Moderation').slice(0, 100)} • Case #\${modCase.caseId}\` })
       .setTimestamp();
     await recipient.send({
       embeds: [embed],
       components: [new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`mod_appeal_external:${guild.id}:${modCase.caseId}`).setLabel('Appeal This Case').setEmoji('⚖️').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId(\`mod_appeal_external:\${guild.id}:\${modCase.caseId}\`).setLabel('Appeal This Case').setEmoji('⚖️').setStyle(ButtonStyle.Primary),
         new ButtonBuilder().setCustomId('mod_appeal_lookup').setLabel('Appeal Another Case').setStyle(ButtonStyle.Secondary)
       )],
-    });"""
-          if old not in s:
-              raise SystemExit('Appeal DM block not found; refusing blind patch')
-          p.write_text(s.replace(old,new,1))
-          PY
-      - name: Validate actual source
+    });`;
+          s = s.slice(0, start) + replacement + s.slice(beforeEnd + '    });'.length);
+          fs.writeFileSync(path, s);
+          NODE
+      - name: Validate source
         run: |
           node --check src/core/administration/mod/storage.js
           node -e "require('./src/core/administration/mod/storage')"
-          grep -q "open your DM with \*\*Goliath\*\* and use \`/appeal\`" src/core/administration/mod/storage.js
-          ! grep -q '/mod appeal:' src/core/administration/mod/storage.js
+          grep -Fq '/appeal' src/core/administration/mod/storage.js
+          if grep -Fq '/mod appeal:' src/core/administration/mod/storage.js; then exit 1; fi
       - name: Remove one-off workflow before Doctor
         run: rm -f .github/workflows/improve-appeal-dm-once.yml
       - name: Doctor
