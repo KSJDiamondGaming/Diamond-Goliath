@@ -132,16 +132,12 @@ function cleanExcerpt(value, max = 220) {
 }
 function staffBackRow(targetId) { return row(button(`mod_court_back:${targetId}`, 'Back', '⬅️')); }
 function caseManagementNavigationRow(interaction, targetId) {
-  const items = [button(`mod_dashboard:${targetId}:actions`, 'Back', '⬅️')];
-  if (canUseModAction(interaction.member, interaction.guild, 'export_cases', interaction)) items.push(button(`mod_export_cases:${targetId}`, 'Export', '📤'));
-  return row(...items);
+  return row(button(`mod_dashboard:${targetId}:actions`, 'Back', '⬅️'));
 }
 function caseFileBackRow(caseId) { return row(button(`mod_court_file:${caseId}`, 'Back', '⬅️')); }
 function canDeleteCourt(interaction) { return canUseModAction(interaction.member, interaction.guild, 'court_delete', interaction); }
 function caseFileNavigationRow(interaction, modCase) {
-  const items = [button(`mod_court_back:${modCase.userId}`, 'Back', '⬅️')];
-  if (canDeleteCourt(interaction)) items.push(button(`mod_court_delete:${modCase.caseId}`, 'Delete Case', '🗑️', ButtonStyle.Danger));
-  return row(...items);
+  return row(button(`mod_court_back:${modCase.userId}`, 'Back', '⬅️'));
 }
 function auditRows(guildId, caseId, limit = 25) {
   try { return db.prepare('SELECT actor_id, event, after_value, metadata, created_at FROM case_audit WHERE guild_id = ? AND case_id = ? ORDER BY audit_id DESC LIMIT ?').all(String(guildId), Number(caseId), Math.max(1, Math.min(50, Number(limit) || 25))); }
@@ -191,12 +187,14 @@ function buildCourtDashboard(interaction, target) {
           emoji: court.stage === 'published' ? '📜' : court.stage === 'review' ? '⚖️' : '📂',
         };
       }))));
-    components.push(row(
-      button(`mod_court_new:${target.id}`, 'New Case', '➕', ButtonStyle.Primary, !canManageCourt(interaction)),
-      button(`mod_court_review_queue:${target.id}`, 'Review Queue', '⚖️'),
-      button(`mod_court_published:${target.id}`, 'Published', '📜'),
-    ));
-    components.push(caseManagementNavigationRow(interaction, target.id));
+    const dashboardActions = [
+    button(`mod_court_new:${target.id}`, 'New Case', '➕', ButtonStyle.Primary, !canManageCourt(interaction)),
+    button(`mod_court_review_queue:${target.id}`, 'Review Queue', '⚖️'),
+    button(`mod_court_published:${target.id}`, 'Published', '📜'),
+  ];
+  if (canUseModAction(interaction.member, interaction.guild, 'export_cases', interaction)) dashboardActions.push(button(`mod_export_cases:${target.id}`, 'Export', '📤'));
+  components.push(row(...dashboardActions));
+  components.push(caseManagementNavigationRow(interaction, target.id));
   }
   return { embed, components };
 }
@@ -302,6 +300,7 @@ function buildCaseFile(interaction, modCase) {
   }
   if (appeals.length) controlButtons.push(button(`mod_case_appeal_history:${modCase.caseId}:0`, `Appeals (${appeals.length})`, '⚖️'));
   controlButtons.push(button('mod_case_appeal_queue:0', 'Appeals', '📥'));
+  if (canDeleteCourt(interaction)) controlButtons.push(button(`mod_court_delete:${modCase.caseId}`, 'Delete Case', '🗑️', ButtonStyle.Danger));
   controlButtons.push(button(isClosed ? `mod_court_reopen:${modCase.caseId}` : `mod_court_close:${modCase.caseId}`, isClosed ? 'Reopen' : 'Close', isClosed ? '🔓' : '🔒', ButtonStyle.Secondary, !canCloseCourt(interaction)));
 
   const components = [

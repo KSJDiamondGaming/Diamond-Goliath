@@ -1,227 +1,118 @@
-name: Case Court Consistency Hardening
+name: Sync Goliath
+
 on:
-  push:
-    branches: [dev]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Target environment
+        required: true
+        default: beta
+        type: choice
+        options:
+          - beta
+          - production
+          - dev
+
 permissions:
   contents: write
+  statuses: write
+
 concurrency:
-  group: case-court-consistency-hardening
+  group: sync-goliath-${{ inputs.target }}
   cancel-in-progress: false
+
 jobs:
-  harden:
-    if: github.actor != 'github-actions[bot]'
+  promote:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 15
+    outputs:
+      promoted_sha: ${{ steps.promote.outputs.promoted_sha }}
     steps:
       - uses: actions/checkout@v5
         with:
           ref: dev
           fetch-depth: 0
-      - name: Patch and validate Case Court
+
+      - name: Promote DEV application tree to target branch
+        id: promote
         shell: bash
+        env:
+          TARGET: ${{ inputs.target }}
         run: |
           set -euo pipefail
-          python - <<'PY'
-          from pathlib import Path
 
-          def one(t, old, new, label):
-              if t.count(old) != 1: raise SystemExit(f'{label}: match count {t.count(old)}')
-              return t.replace(old, new, 1)
-          def cut(t, start, end, repl, label, after=0):
-              a=t.find(start,after); b=t.find(end,a if a>=0 else 0)
-              if a<0 or b<0: raise SystemExit(f'{label}: markers missing')
-              return t[:a]+repl+t[b:]
+          if [ "$TARGET" = "dev" ]; then
+            SHA="$(git rev-parse HEAD)"
+            echo "DEV selected: no branch promotion required."
+            echo "promoted_sha=$SHA" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
-          p=Path('src/core/administration/mod/cases.js'); t=p.read_text()
-          marker='function claimCourtAppealRemedyForApproval(interaction, modCase) {'
-          helper="""function effectiveAppealAction(modCase = {}) {
-            const directAction = String(modCase.action || '').trim().toLowerCase();
-            if (directAction !== 'case') return directAction;
-            const court = modCase?.metadata?.court && typeof modCase.metadata.court === 'object' ? modCase.metadata.court : null;
-            return String(court?.sanctionExecution?.action || court?.decision?.action || directAction).trim().toLowerCase();
-          }
+          git fetch --no-tags origin dev "$TARGET"
+          DEV_SHA="$(git rev-parse origin/dev)"
+          TARGET_SHA="$(git rev-parse origin/$TARGET)"
 
-          """
-          if 'function effectiveAppealAction(' not in t: t=one(t,marker,helper+marker,'effective action')
+          git config user.name "Goliath Sync"
+          git config user.email "goliath-sync@users.noreply.github.com"
+          git switch -C "promote-$TARGET" "$TARGET_SHA"
 
-          failfn="""function persistCourtAppealReversalFailure(interaction, modCase, error, operationId = null) {
-            const guildId = interaction.guild.id;
-            const actorId = interaction.user?.id || null;
-            const current = getCaseById(guildId, modCase.caseId) || modCase;
-            const metadata = { ...(current.metadata || {}) };
-            const court = metadata.court && typeof metadata.court === 'object' ? metadata.court : {};
-            const execution = court.sanctionExecution && typeof court.sanctionExecution === 'object' ? court.sanctionExecution : null;
-            const remedyAction = String(execution?.action || court.decision?.action || 'court');
-            if (execution?.status === 'reversed') {
-              const remedy = { attempted: false, action: remedyAction, ok: true, detail: 'The sanction is already reversed; a late failure result was ignored.' };
-              recordCaseAudit({ guildId, caseId: modCase.caseId, actorId, event: 'case.court.appeal_remedy_failure_ignored', before: execution, after: execution, metadata: { operationId, reason: 'already_reversed' } });
-              return { case: current, remedy, superseded: true };
-            }
-            if (operationId && execution?.reversalOperationId && execution.reversalOperationId !== operationId) {
-              const remedy = { attempted: true, action: remedyAction, ok: false, detail: 'A newer reversal operation owns this case; the stale failure result was ignored.' };
-              recordCaseAudit({ guildId, caseId: modCase.caseId, actorId, event: 'case.court.appeal_remedy_failure_ignored', before: execution, after: execution, metadata: { operationId, currentOperationId: execution.reversalOperationId, reason: 'superseded' } });
-              return { case: current, remedy, superseded: true };
-            }
-            const remedy = { attempted: true, action: remedyAction, ok: false, detail: String(error?.message || error || 'Appeal remedy failed.').slice(0, 300) };
-            metadata.court = { ...court, sanctionExecution: execution ? { ...execution, status: 'reversal_failed', reversalOperationId: operationId || execution.reversalOperationId || null, reversalAttemptedBy: actorId, reversalAttemptedAt: new Date().toISOString(), reversalRemedy: remedy } : execution };
-            const updated = updateCaseMetadata(guildId, modCase.caseId, metadata) || current;
-            recordCaseAudit({ guildId, caseId: modCase.caseId, actorId, event: 'case.court.appeal_remedy_failed', before: execution, after: metadata.court.sanctionExecution, metadata: { operationId, remedy } });
-            return { case: updated, remedy };
-          }
+          # Promote the complete application tree from DEV while keeping the
+          # target branch's GitHub workflow control files. GITHUB_TOKEN cannot
+          # rewrite workflow files without an additional workflows permission,
+          # and workflow YAML is not part of the running Goliath application.
+          git diff --binary "$TARGET_SHA" "$DEV_SHA" -- . ':(exclude).github/workflows/**' > /tmp/goliath-promotion.patch
 
-          """
-          t=cut(t,'function persistCourtAppealReversalFailure(interaction, modCase, error, operationId = null) {','async function applyApprovedCourtAppealRemedy(interaction, modCase, fetchTarget) {',failfn,'failure ownership')
-          t=one(t,"""async function applyApprovedCourtAppealRemedy(interaction, modCase, fetchTarget) {
-            const guild = interaction.guild;
-            const actorId = interaction.user?.id || null;
-            const court = modCase.metadata?.court && typeof modCase.metadata.court === 'object' ? modCase.metadata.court : null;
-            const execution = court?.sanctionExecution && typeof court.sanctionExecution === 'object' ? court.sanctionExecution : null;
-          ""","""async function applyApprovedCourtAppealRemedy(interaction, modCase, fetchTarget) {
-            const guild = interaction.guild;
-            const actorId = interaction.user?.id || null;
-            const currentStart = getCaseById(guild.id, modCase.caseId) || modCase;
-            const court = currentStart.metadata?.court && typeof currentStart.metadata.court === 'object' ? currentStart.metadata.court : null;
-            const execution = court?.sanctionExecution && typeof court.sanctionExecution === 'object' ? court.sanctionExecution : null;
-          """,'fresh start')
+          if [ -s /tmp/goliath-promotion.patch ]; then
+            git apply --index /tmp/goliath-promotion.patch
+            git commit -m "Promote DEV $DEV_SHA to $TARGET"
+            git push origin "HEAD:refs/heads/$TARGET"
+          else
+            echo "$TARGET already matches DEV application files."
+          fi
 
-          noexec="""  if (!execution || execution.status === 'failed') {
-            remedy = { attempted: false, action, ok: true, detail: 'Appeal approved before any sanction was successfully executed; no physical undo was required.' };
-            const current = getCaseById(guild.id, modCase.caseId) || currentStart;
-            const metadata = { ...(current.metadata || {}) };
-            const currentCourt = metadata.court && typeof metadata.court === 'object' ? metadata.court : court;
-            const currentExecution = currentCourt?.sanctionExecution && typeof currentCourt.sanctionExecution === 'object' ? currentCourt.sanctionExecution : null;
-            if (currentExecution?.status === 'executed') {
-              const claim = claimCourtAppealRemedyForApproval(interaction, current);
-              if (!claim.ok) return { attempted: false, action, ok: false, detail: claim.error || 'The sanction state changed while the appeal was being approved.' };
-              return applyApprovedCourtAppealRemedy(interaction, claim.case || current, fetchTarget);
-            }
-            if (currentExecution && !['failed', 'reversed'].includes(currentExecution.status)) return { attempted: false, action, ok: false, detail: `The sanction state changed to ${currentExecution.status}; no false reversal was recorded.` };
-            if (currentExecution?.status === 'reversed') return { attempted: false, action, ok: true, detail: 'The sanction was already reversed; no further physical undo was required.' };
-            const reversedAt = new Date().toISOString();
-            metadata.court = { ...currentCourt, sanctionExecution: { ...(currentExecution || execution || { action }), status: 'reversed', action, reversedBy: actorId, reversedAt, reversalAttemptedBy: actorId, reversalAttemptedAt: reversedAt, reversalReason: reason, reversalRemedy: remedy }, appealOutcome: { status: 'approved', reviewedBy: actorId, reviewedAt: reversedAt, remedy } };
-            updateCaseMetadata(guild.id, modCase.caseId, metadata);
-            updateCaseStatus(guild.id, modCase.caseId, 'reversed', actorId);
-            recordCaseAudit({ guildId: guild.id, caseId: modCase.caseId, actorId, event: 'case.court.appeal_remedy_applied', before: currentExecution || execution, after: metadata.court.sanctionExecution, metadata: { linkedCaseId, remedy } });
-            return remedy;
-          }
+          git fetch --no-tags origin dev "$TARGET"
+          FINAL_SHA="$(git rev-parse origin/$TARGET)"
 
-          """
-          t=cut(t,"  if (!execution || execution.status === 'failed') {","  const target = typeof fetchTarget === 'function' ? await fetchTarget(guild, modCase.userId) : null;",noexec,'no-execution race')
+          if ! git diff --quiet origin/dev "origin/$TARGET" -- . ':(exclude).github/workflows/**'; then
+            echo "Promotion verification failed: $TARGET application files do not match DEV." >&2
+            git diff --stat origin/dev "origin/$TARGET" -- . ':(exclude).github/workflows/**' >&2
+            exit 1
+          fi
 
-          pos=t.find("  const target = typeof fetchTarget === 'function' ? await fetchTarget(guild, modCase.userId) : null;")
-          a=t.find('  const current = getCaseById(guild.id, modCase.caseId) || modCase;',pos)
-          end='\n  return remedy;\n}\n\nasync function applyApprovedAppealRemedy'
-          b=t.find(end,a)
-          if a<0 or b<0: raise SystemExit('finalizer markers missing')
-          final="""  const current = getCaseById(guild.id, modCase.caseId) || currentStart;
-            const metadata = { ...(current.metadata || {}) };
-            const currentCourt = metadata.court && typeof metadata.court === 'object' ? metadata.court : court;
-            const currentExecution = currentCourt?.sanctionExecution && typeof currentCourt.sanctionExecution === 'object' ? currentCourt.sanctionExecution : null;
-            const expectedOperationId = execution?.reversalOperationId || null;
-            if (currentExecution?.status === 'reversed') return { ...remedy, ok: true, detail: reversalSucceeded ? remedy.detail : 'The sanction is already reversed; a stale failure result was ignored.' };
-            if (expectedOperationId && currentExecution?.reversalOperationId && currentExecution.reversalOperationId !== expectedOperationId) {
-              const supersededRemedy = { ...remedy, ok: false, detail: `${String(remedy.detail || 'Appeal remedy completed.').slice(0, 220)} A newer reversal operation owns the case, so this stale result was not persisted.` };
-              recordCaseAudit({ guildId: guild.id, caseId: modCase.caseId, actorId, event: 'case.court.appeal_remedy_result_ignored', before: execution, after: currentExecution, metadata: { linkedCaseId, expectedOperationId, currentOperationId: currentExecution.reversalOperationId } });
-              return supersededRemedy;
-            }
-            metadata.court = { ...currentCourt, sanctionExecution: currentExecution ? { ...currentExecution, status: reversalSucceeded ? 'reversed' : 'reversal_failed', reversedBy: reversalSucceeded ? actorId : null, reversedAt: reversalSucceeded ? new Date().toISOString() : null, reversalAttemptedBy: actorId, reversalAttemptedAt: new Date().toISOString(), reversalReason: reason, reversalRemedy: remedy } : currentExecution, appealOutcome: { status: 'approved', reviewedBy: actorId, reviewedAt: new Date().toISOString(), remedy } };
-            updateCaseMetadata(guild.id, modCase.caseId, metadata);
-            if (reversalSucceeded) updateCaseStatus(guild.id, modCase.caseId, 'reversed', actorId);
-            recordCaseAudit({ guildId: guild.id, caseId: modCase.caseId, actorId, event: reversalSucceeded ? 'case.court.appeal_remedy_applied' : 'case.court.appeal_remedy_failed', before: currentExecution || execution, after: metadata.court.sanctionExecution, metadata: { linkedCaseId, remedy, operationId: expectedOperationId } });
-          """
-          t=t[:a]+final+t[b:]
-          t=one(t,"  if (appeal.status === 'approved' && ['ban', 'kick'].includes(modCase.action) && appeal.remedy?.ok) invite = await createRejoinInvite(interaction.guild, modCase.caseId);","  if (appeal.status === 'approved' && ['ban', 'kick'].includes(effectiveAppealAction(modCase)) && appeal.remedy?.ok === true) invite = await createRejoinInvite(interaction.guild, modCase.caseId);",'rejoin action')
+          echo "promoted_sha=$FINAL_SHA" >> "$GITHUB_OUTPUT"
+          echo "✅ DEV application tree promoted to $TARGET at $FINAL_SHA"
 
-          fn=t.find('async function retryApprovedCourtAppealRemedy(')
-          a=t.find('    } catch (error) {',fn); b=t.find('\n\n    modCase = getCaseById(guildId, caseId) || claimed;',a)
-          if a<0 or b<0: raise SystemExit('retry catch markers missing')
-          t=t[:a]+"""    } catch (error) {
-              const failed = persistCourtAppealReversalFailure(interaction, claimed, error, operationId);
-              remedy = failed.remedy;
-              recordCaseAudit({ guildId, caseId, actorId, event: 'case.court.appeal_remedy_retry_failed', before: claimedExecution, after: remedy, metadata: { appealId, operationId, superseded: Boolean(failed.superseded) } });
-            }
-          """+t[b:]
+  deploy:
+    needs: promote
+    uses: ./.github/workflows/deploy-dev.yml
+    with:
+      environment: ${{ inputs.target }}
+      operation: sync
+    secrets: inherit
 
-          fn=t.find('function buildAppealHistoryEmbed('); a=t.find('  const components = [new ActionRowBuilder().addComponents(',fn); b=t.find('\n  return { embeds: [embed], components };\n}\nfunction buildAppealDetailPayload',a)
-          if a<0 or b<0: raise SystemExit('history nav markers missing')
-          t=t[:a]+"""  const components = [
-            new ActionRowBuilder().addComponents(
-              new ButtonBuilder().setCustomId(`mod_case_appeal_history:${modCase.caseId}:${Math.max(0, page - 1)}`).setLabel('◀ Previous').setStyle(ButtonStyle.Secondary).setDisabled(page <= 0),
-              new ButtonBuilder().setCustomId(`mod_case_appeal_history:${modCase.caseId}:${Math.min(totalPages - 1, page + 1)}`).setLabel('Next ▶').setStyle(ButtonStyle.Secondary).setDisabled(page >= totalPages - 1),
-              new ButtonBuilder().setCustomId(`mod_case_appeal_open:${modCase.caseId}:${pending?.id || 'none'}`).setLabel('Open Pending').setStyle(ButtonStyle.Primary).setDisabled(!pending)
-            ),
-            new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`mod_search_open:${modCase.caseId}`).setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary)),
-          ];
-          """+t[b:]
-
-          fn=t.find('function buildAppealDetailPayload('); a=t.find('  const components = [new ActionRowBuilder().addComponents(',fn); b=t.find('\n  return { embeds: [embed], components };\n}\nfunction buildAppealQueuePayload',a)
-          if a<0 or b<0: raise SystemExit('detail nav markers missing')
-          t=t[:a]+"""  const components = [
-            new ActionRowBuilder().addComponents(
-              new ButtonBuilder().setCustomId(`mod_case_appeal_decide:${modCase.caseId}:${appeal.id}:approved`).setLabel('✅ Approve').setStyle(ButtonStyle.Success).setDisabled(appeal.status !== 'pending'),
-              new ButtonBuilder().setCustomId(`mod_case_appeal_decide:${modCase.caseId}:${appeal.id}:denied`).setLabel('❌ Deny').setStyle(ButtonStyle.Danger).setDisabled(appeal.status !== 'pending'),
-              new ButtonBuilder().setCustomId(`mod_case_appeal_retry_remedy:${modCase.caseId}:${appeal.id}`).setLabel(courtExecution?.status === 'reversing' && !appealRemedyIsStale(courtExecution) ? '⏳ Remedy Running' : '🔁 Retry Remedy').setStyle(ButtonStyle.Primary).setDisabled(!canRetryRemedy)
-            ),
-            new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`mod_search_open:${modCase.caseId}`).setLabel('Case Detail').setStyle(ButtonStyle.Secondary)),
-            new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`mod_case_appeal_history:${modCase.caseId}:0`).setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary)),
-          ];
-          """+t[b:]
-
-          fn=t.find('function buildAppealQueuePayload('); back=t.find("new ButtonBuilder().setCustomId('mod_dashboard:none:analytics').setLabel('⬅️ Back')",fn)
-          a=t.rfind('  rows.push(new ActionRowBuilder().addComponents(',fn,back); b=t.find('\n  return { embeds: [embed], components: rows };',back)
-          if a<0 or back<0 or b<0: raise SystemExit('queue nav markers missing')
-          t=t[:a]+"""  rows.push(new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId(`mod_case_appeal_queue_refresh:${activeToken}:${page}`).setLabel('🔄 Refresh').setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId(`mod_case_appeal_queue_filter:${activeToken}`).setLabel('🔎 Filter').setStyle(ButtonStyle.Secondary)
-          ));
-          rows.push(new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('mod_dashboard:none:analytics').setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary)
-          ));
-          """+t[b:]
-          p.write_text(t)
-
-          p=Path('src/core/administration/mod/caseCourt.js'); t=p.read_text()
-          t=cut(t,'function caseManagementNavigationRow(interaction, targetId) {','function auditRows(guildId, caseId, limit = 25) {',"""function caseManagementNavigationRow(interaction, targetId) {
-            return row(button(`mod_dashboard:${targetId}:actions`, 'Back', '⬅️'));
-          }
-          function caseFileBackRow(caseId) { return row(button(`mod_court_file:${caseId}`, 'Back', '⬅️')); }
-          function canDeleteCourt(interaction) { return canUseModAction(interaction.member, interaction.guild, 'court_delete', interaction); }
-          function caseFileNavigationRow(interaction, modCase) {
-            return row(button(`mod_court_back:${modCase.userId}`, 'Back', '⬅️'));
-          }
-          """,'court nav')
-
-          fn=t.find('function buildCourtDashboard('); a=t.find('    components.push(row(',fn); b=t.find('    components.push(caseManagementNavigationRow(interaction, target.id));',a)
-          if a<0 or b<0: raise SystemExit('dashboard controls markers missing')
-          b2=b+len('    components.push(caseManagementNavigationRow(interaction, target.id));')
-          t=t[:a]+"""    const dashboardActions = [
-              button(`mod_court_new:${target.id}`, 'New Case', '➕', ButtonStyle.Primary, !canManageCourt(interaction)),
-              button(`mod_court_review_queue:${target.id}`, 'Review Queue', '⚖️'),
-              button(`mod_court_published:${target.id}`, 'Published', '📜'),
-            ];
-            if (canUseModAction(interaction.member, interaction.guild, 'export_cases', interaction)) dashboardActions.push(button(`mod_export_cases:${target.id}`, 'Export', '📤'));
-            components.push(row(...dashboardActions));
-            components.push(caseManagementNavigationRow(interaction, target.id));"""+t[b2:]
-
-          fn=t.find('function buildCaseFile('); marker="  controlButtons.push(button('mod_case_appeal_queue:0', 'Appeals', '📥'));"
-          a=t.find(marker,fn)
-          if a<0: raise SystemExit('case controls marker missing')
-          insert=marker+"\n  if (canDeleteCourt(interaction)) controlButtons.push(button(`mod_court_delete:${modCase.caseId}`, 'Delete Case', '🗑️', ButtonStyle.Danger));"
-          t=t[:a]+insert+t[a+len(marker):]
-          p.write_text(t)
-          PY
-          node --check src/core/administration/mod/cases.js
-          node --check src/core/administration/mod/caseCourt.js
-          npm ci
-          npm run doctor
-      - name: Commit fixes and restore permanent workflow
+  summary:
+    needs: [promote, deploy]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Write sync summary
         shell: bash
         run: |
-          set -euo pipefail
-          git config user.name "Goliath Actions"
-          git config user.email "actions@users.noreply.github.com"
-          git show 7682feb6e249a7e5300aecb4a7c2d289aa883695:.github/workflows/sync-dev-now.yml > .github/workflows/sync-dev-now.yml
-          git add src/core/administration/mod/cases.js src/core/administration/mod/caseCourt.js .github/workflows/sync-dev-now.yml
-          git diff --cached --check
-          git commit -m "fix(mod): complete Case Court consistency hardening"
-          git push origin HEAD:dev
+          {
+            echo "## Sync Goliath"
+            echo ""
+            echo "- Target: **${{ inputs.target }}**"
+            echo "- Promotion result: **${{ needs.promote.result }}**"
+            echo "- VPS deploy result: **${{ needs.deploy.result }}**"
+            echo "- Target commit: **${{ needs.promote.outputs.promoted_sha }}**"
+            echo ""
+            if [ "${{ inputs.target }}" = "dev" ]; then
+              echo "DEV branch → DEV VPS."
+            else
+              echo "DEV application files → ${{ inputs.target }} branch → ${{ inputs.target }} VPS."
+              echo "Target branch workflow-control YAML is intentionally preserved; all Goliath runtime/application files come from DEV."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          [ "${{ needs.promote.result }}" = "success" ]
+          [ "${{ needs.deploy.result }}" = "success" ]

@@ -176,6 +176,13 @@ function appealRemedyIsStale(execution) {
   return !Number.isFinite(started) || Date.now() - started > APPEAL_REMEDY_STALE_MS;
 }
 
+function effectiveAppealAction(modCase = {}) {
+  const directAction = String(modCase.action || '').trim().toLowerCase();
+  if (directAction !== 'case') return directAction;
+  const court = modCase?.metadata?.court && typeof modCase.metadata.court === 'object' ? modCase.metadata.court : null;
+  return String(court?.sanctionExecution?.action || court?.decision?.action || directAction).trim().toLowerCase();
+}
+
 function claimCourtAppealRemedyForApproval(interaction, modCase) {
   const guildId = interaction.guild.id;
   const actorId = interaction.user?.id || null;
@@ -233,18 +240,19 @@ function persistCourtAppealReversalFailure(interaction, modCase, error, operatio
   const metadata = { ...(current.metadata || {}) };
   const court = metadata.court && typeof metadata.court === 'object' ? metadata.court : {};
   const execution = court.sanctionExecution && typeof court.sanctionExecution === 'object' ? court.sanctionExecution : null;
-  const remedy = { attempted: true, action: String(execution?.action || court.decision?.action || 'court'), ok: false, detail: String(error?.message || error || 'Appeal remedy failed.').slice(0, 300) };
-  metadata.court = {
-    ...court,
-    sanctionExecution: execution ? {
-      ...execution,
-      status: 'reversal_failed',
-      reversalOperationId: operationId || execution.reversalOperationId || null,
-      reversalAttemptedBy: actorId,
-      reversalAttemptedAt: new Date().toISOString(),
-      reversalRemedy: remedy,
-    } : execution,
-  };
+  const remedyAction = String(execution?.action || court.decision?.action || 'court');
+  if (execution?.status === 'reversed') {
+    const remedy = { attempted: false, action: remedyAction, ok: true, detail: 'The sanction is already reversed; a late failure result was ignored.' };
+    recordCaseAudit({ guildId, caseId: modCase.caseId, actorId, event: 'case.court.appeal_remedy_failure_ignored', before: execution, after: execution, metadata: { operationId, reason: 'already_reversed' } });
+    return { case: current, remedy, superseded: true };
+  }
+  if (operationId && execution?.reversalOperationId && execution.reversalOperationId !== operationId) {
+    const remedy = { attempted: true, action: remedyAction, ok: false, detail: 'A newer reversal operation owns this case; the stale failure result was ignored.' };
+    recordCaseAudit({ guildId, caseId: modCase.caseId, actorId, event: 'case.court.appeal_remedy_failure_ignored', before: execution, after: execution, metadata: { operationId, currentOperationId: execution.reversalOperationId, reason: 'superseded' } });
+    return { case: current, remedy, superseded: true };
+  }
+  const remedy = { attempted: true, action: remedyAction, ok: false, detail: String(error?.message || error || 'Appeal remedy failed.').slice(0, 300) };
+  metadata.court = { ...court, sanctionExecution: execution ? { ...execution, status: 'reversal_failed', reversalOperationId: operationId || execution.reversalOperationId || null, reversalAttemptedBy: actorId, reversalAttemptedAt: new Date().toISOString(), reversalRemedy: remedy } : execution };
   const updated = updateCaseMetadata(guildId, modCase.caseId, metadata) || current;
   recordCaseAudit({ guildId, caseId: modCase.caseId, actorId, event: 'case.court.appeal_remedy_failed', before: execution, after: metadata.court.sanctionExecution, metadata: { operationId, remedy } });
   return { case: updated, remedy };
@@ -253,7 +261,8 @@ function persistCourtAppealReversalFailure(interaction, modCase, error, operatio
 async function applyApprovedCourtAppealRemedy(interaction, modCase, fetchTarget) {
   const guild = interaction.guild;
   const actorId = interaction.user?.id || null;
-  const court = modCase.metadata?.court && typeof modCase.metadata.court === 'object' ? modCase.metadata.court : null;
+  const currentStart = getCaseById(guild.id, modCase.caseId) || modCase;
+  const court = currentStart.metadata?.court && typeof currentStart.metadata.court === 'object' ? currentStart.metadata.court : null;
   const execution = court?.sanctionExecution && typeof court.sanctionExecution === 'object' ? court.sanctionExecution : null;
   const action = String(execution?.action || court?.decision?.action || 'no_action').toLowerCase();
   const linkedCaseId = Number(execution?.linkedCaseId || 0) || null;
@@ -266,31 +275,25 @@ async function applyApprovedCourtAppealRemedy(interaction, modCase, fetchTarget)
 
   let remedy = { attempted: false, action, ok: true, detail: 'Published case decision reversed.' };
   if (!execution || execution.status === 'failed') {
-    remedy = { attempted: false, action, ok: true, detail: 'Appeal approved before any sanction was successfully executed; no physical undo was required.' };
-    const current = getCaseById(guild.id, modCase.caseId) || modCase;
-    const metadata = { ...(current.metadata || {}) };
-    const currentCourt = metadata.court && typeof metadata.court === 'object' ? metadata.court : court;
-    const reversedAt = new Date().toISOString();
-    metadata.court = {
-      ...currentCourt,
-      sanctionExecution: {
-        ...(execution || { action }),
-        status: 'reversed',
-        action,
-        reversedBy: actorId,
-        reversedAt,
-        reversalAttemptedBy: actorId,
-        reversalAttemptedAt: reversedAt,
-        reversalReason: reason,
-        reversalRemedy: remedy,
-      },
-      appealOutcome: { status: 'approved', reviewedBy: actorId, reviewedAt: reversedAt, remedy },
-    };
-    updateCaseMetadata(guild.id, modCase.caseId, metadata);
-    updateCaseStatus(guild.id, modCase.caseId, 'reversed', actorId);
-    recordCaseAudit({ guildId: guild.id, caseId: modCase.caseId, actorId, event: 'case.court.appeal_remedy_applied', before: execution, after: metadata.court.sanctionExecution, metadata: { linkedCaseId, remedy } });
-    return remedy;
+  remedy = { attempted: false, action, ok: true, detail: 'Appeal approved before any sanction was successfully executed; no physical undo was required.' };
+  const current = getCaseById(guild.id, modCase.caseId) || currentStart;
+  const metadata = { ...(current.metadata || {}) };
+  const currentCourt = metadata.court && typeof metadata.court === 'object' ? metadata.court : court;
+  const currentExecution = currentCourt?.sanctionExecution && typeof currentCourt.sanctionExecution === 'object' ? currentCourt.sanctionExecution : null;
+  if (currentExecution?.status === 'executed') {
+    const claim = claimCourtAppealRemedyForApproval(interaction, current);
+    if (!claim.ok) return { attempted: false, action, ok: false, detail: claim.error || 'The sanction state changed while the appeal was being approved.' };
+    return applyApprovedCourtAppealRemedy(interaction, claim.case || current, fetchTarget);
   }
+  if (currentExecution && !['failed', 'reversed'].includes(currentExecution.status)) return { attempted: false, action, ok: false, detail: `The sanction state changed to ${currentExecution.status}; no false reversal was recorded.` };
+  if (currentExecution?.status === 'reversed') return { attempted: false, action, ok: true, detail: 'The sanction was already reversed; no further physical undo was required.' };
+  const reversedAt = new Date().toISOString();
+  metadata.court = { ...currentCourt, sanctionExecution: { ...(currentExecution || execution || { action }), status: 'reversed', action, reversedBy: actorId, reversedAt, reversalAttemptedBy: actorId, reversalAttemptedAt: reversedAt, reversalReason: reason, reversalRemedy: remedy }, appealOutcome: { status: 'approved', reviewedBy: actorId, reviewedAt: reversedAt, remedy } };
+  updateCaseMetadata(guild.id, modCase.caseId, metadata);
+  updateCaseStatus(guild.id, modCase.caseId, 'reversed', actorId);
+  recordCaseAudit({ guildId: guild.id, caseId: modCase.caseId, actorId, event: 'case.court.appeal_remedy_applied', before: currentExecution || execution, after: metadata.court.sanctionExecution, metadata: { linkedCaseId, remedy } });
+  return remedy;
+}
 
   const target = typeof fetchTarget === 'function' ? await fetchTarget(guild, modCase.userId) : null;
 
@@ -347,31 +350,22 @@ async function applyApprovedCourtAppealRemedy(interaction, modCase, fetchTarget)
     if (linked && linked.status === 'active') updateCaseStatus(guild.id, linkedCaseId, 'reversed', actorId);
   }
 
-  const current = getCaseById(guild.id, modCase.caseId) || modCase;
+  const current = getCaseById(guild.id, modCase.caseId) || currentStart;
   const metadata = { ...(current.metadata || {}) };
   const currentCourt = metadata.court && typeof metadata.court === 'object' ? metadata.court : court;
-  metadata.court = {
-    ...currentCourt,
-    sanctionExecution: execution ? {
-      ...execution,
-      status: reversalSucceeded ? 'reversed' : 'reversal_failed',
-      reversedBy: reversalSucceeded ? actorId : null,
-      reversedAt: reversalSucceeded ? new Date().toISOString() : null,
-      reversalAttemptedBy: actorId,
-      reversalAttemptedAt: new Date().toISOString(),
-      reversalReason: reason,
-      reversalRemedy: remedy,
-    } : execution,
-    appealOutcome: {
-      status: 'approved',
-      reviewedBy: actorId,
-      reviewedAt: new Date().toISOString(),
-      remedy,
-    },
-  };
+  const currentExecution = currentCourt?.sanctionExecution && typeof currentCourt.sanctionExecution === 'object' ? currentCourt.sanctionExecution : null;
+  const expectedOperationId = execution?.reversalOperationId || null;
+  if (currentExecution?.status === 'reversed') return { ...remedy, ok: true, detail: reversalSucceeded ? remedy.detail : 'The sanction is already reversed; a stale failure result was ignored.' };
+  if (expectedOperationId && currentExecution?.reversalOperationId && currentExecution.reversalOperationId !== expectedOperationId) {
+    const supersededRemedy = { ...remedy, ok: false, detail: `${String(remedy.detail || 'Appeal remedy completed.').slice(0, 220)} A newer reversal operation owns the case, so this stale result was not persisted.` };
+    recordCaseAudit({ guildId: guild.id, caseId: modCase.caseId, actorId, event: 'case.court.appeal_remedy_result_ignored', before: execution, after: currentExecution, metadata: { linkedCaseId, expectedOperationId, currentOperationId: currentExecution.reversalOperationId } });
+    return supersededRemedy;
+  }
+  metadata.court = { ...currentCourt, sanctionExecution: currentExecution ? { ...currentExecution, status: reversalSucceeded ? 'reversed' : 'reversal_failed', reversedBy: reversalSucceeded ? actorId : null, reversedAt: reversalSucceeded ? new Date().toISOString() : null, reversalAttemptedBy: actorId, reversalAttemptedAt: new Date().toISOString(), reversalReason: reason, reversalRemedy: remedy } : currentExecution, appealOutcome: { status: 'approved', reviewedBy: actorId, reviewedAt: new Date().toISOString(), remedy } };
   updateCaseMetadata(guild.id, modCase.caseId, metadata);
   if (reversalSucceeded) updateCaseStatus(guild.id, modCase.caseId, 'reversed', actorId);
-  recordCaseAudit({ guildId: guild.id, caseId: modCase.caseId, actorId, event: reversalSucceeded ? 'case.court.appeal_remedy_applied' : 'case.court.appeal_remedy_failed', before: execution, after: metadata.court.sanctionExecution, metadata: { linkedCaseId, remedy } });
+  recordCaseAudit({ guildId: guild.id, caseId: modCase.caseId, actorId, event: reversalSucceeded ? 'case.court.appeal_remedy_applied' : 'case.court.appeal_remedy_failed', before: currentExecution || execution, after: metadata.court.sanctionExecution, metadata: { linkedCaseId, remedy, operationId: expectedOperationId } });
+
   return remedy;
 }
 
@@ -438,7 +432,7 @@ async function createRejoinInvite(guild, caseId) {
 async function notifyAppealOutcome(interaction, modCase, appeal) {
   const client = interaction.client || interaction.guild?.client;
   let invite = null;
-  if (appeal.status === 'approved' && ['ban', 'kick'].includes(modCase.action) && appeal.remedy?.ok) invite = await createRejoinInvite(interaction.guild, modCase.caseId);
+  if (appeal.status === 'approved' && ['ban', 'kick'].includes(effectiveAppealAction(modCase)) && appeal.remedy?.ok === true) invite = await createRejoinInvite(interaction.guild, modCase.caseId);
   const decision = appeal.status === 'approved' ? 'approved ✅' : 'denied ❌';
   const lines = [
     `Your appeal for **${interaction.guild.name}** • Case **#${modCase.caseId}** has been **${decision}**.`,
@@ -503,12 +497,11 @@ async function retryApprovedCourtAppealRemedy(interaction, caseId, appealId, fet
     try {
       remedy = await applyApprovedCourtAppealRemedy(interaction, claimed, fetchTarget);
     } catch (error) {
-      remedy = { attempted: true, action: String(claimedExecution.action || court.decision?.action || 'court'), ok: false, detail: String(error?.message || error || 'Appeal remedy retry failed.').slice(0, 300) };
-      const failedCase = getCaseById(guildId, caseId) || claimed;
-      const failedCourt = failedCase.metadata?.court || court;
-      updateCaseMetadata(guildId, caseId, { ...(failedCase.metadata || {}), court: { ...failedCourt, sanctionExecution: { ...(failedCourt.sanctionExecution || claimedExecution), status: 'reversal_failed', reversalOperationId: operationId, reversalAttemptedBy: actorId, reversalAttemptedAt: new Date().toISOString(), reversalRemedy: remedy } } });
-      recordCaseAudit({ guildId, caseId, actorId, event: 'case.court.appeal_remedy_retry_failed', before: claimedExecution, after: remedy, metadata: { appealId, operationId } });
-    }
+    const failed = persistCourtAppealReversalFailure(interaction, claimed, error, operationId);
+    remedy = failed.remedy;
+    recordCaseAudit({ guildId, caseId, actorId, event: 'case.court.appeal_remedy_retry_failed', before: claimedExecution, after: remedy, metadata: { appealId, operationId, superseded: Boolean(failed.superseded) } });
+  }
+
 
     modCase = getCaseById(guildId, caseId) || claimed;
     appeals = getCaseAppeals(modCase);
@@ -696,12 +689,15 @@ function buildAppealHistoryEmbed(modCase, requestedPage = 0) {
     embed.addFields({ name: appeal.id, value: lines.join('\n').slice(0, 1024), inline: false });
   }
   const pending = getPendingAppeal(modCase);
-  const components = [new ActionRowBuilder().addComponents(
+  const components = [
+  new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId(`mod_case_appeal_history:${modCase.caseId}:${Math.max(0, page - 1)}`).setLabel('◀ Previous').setStyle(ButtonStyle.Secondary).setDisabled(page <= 0),
     new ButtonBuilder().setCustomId(`mod_case_appeal_history:${modCase.caseId}:${Math.min(totalPages - 1, page + 1)}`).setLabel('Next ▶').setStyle(ButtonStyle.Secondary).setDisabled(page >= totalPages - 1),
-    new ButtonBuilder().setCustomId(`mod_case_appeal_open:${modCase.caseId}:${pending?.id || 'none'}`).setLabel('Open Pending').setStyle(ButtonStyle.Primary).setDisabled(!pending),
-    new ButtonBuilder().setCustomId(`mod_search_open:${modCase.caseId}`).setLabel('← Case Detail').setStyle(ButtonStyle.Secondary)
-  )];
+    new ButtonBuilder().setCustomId(`mod_case_appeal_open:${modCase.caseId}:${pending?.id || 'none'}`).setLabel('Open Pending').setStyle(ButtonStyle.Primary).setDisabled(!pending)
+  ),
+  new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`mod_search_open:${modCase.caseId}`).setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary)),
+];
+
   return { embeds: [embed], components };
 }
 function buildAppealDetailPayload(modCase, appeal) {
@@ -717,13 +713,16 @@ function buildAppealDetailPayload(modCase, appeal) {
   if (appeal.notification) embed.addFields({ name: 'Outcome Notification', value: appeal.notification.sent ? `DM sent ✅${appeal.notification.invite?.url ? ' • rejoin invite created' : ''}` : `DM failed ❌${appeal.notification.error ? ` • ${appeal.notification.error}` : ''}`.slice(0, 1024), inline: false });
   const courtExecution = modCase.action === 'case' ? modCase.metadata?.court?.sanctionExecution : null;
   const canRetryRemedy = appeal.status === 'approved' && appeal.remedy?.ok === false && (courtExecution?.status === 'reversal_failed' || (courtExecution?.status === 'reversing' && appealRemedyIsStale(courtExecution)));
-  const components = [new ActionRowBuilder().addComponents(
+  const components = [
+  new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId(`mod_case_appeal_decide:${modCase.caseId}:${appeal.id}:approved`).setLabel('✅ Approve').setStyle(ButtonStyle.Success).setDisabled(appeal.status !== 'pending'),
     new ButtonBuilder().setCustomId(`mod_case_appeal_decide:${modCase.caseId}:${appeal.id}:denied`).setLabel('❌ Deny').setStyle(ButtonStyle.Danger).setDisabled(appeal.status !== 'pending'),
-    new ButtonBuilder().setCustomId(`mod_case_appeal_retry_remedy:${modCase.caseId}:${appeal.id}`).setLabel(courtExecution?.status === 'reversing' && !appealRemedyIsStale(courtExecution) ? '⏳ Remedy Running' : '🔁 Retry Remedy').setStyle(ButtonStyle.Primary).setDisabled(!canRetryRemedy),
-    new ButtonBuilder().setCustomId(`mod_case_appeal_history:${modCase.caseId}:0`).setLabel('← Appeal History').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId(`mod_search_open:${modCase.caseId}`).setLabel('Case Detail').setStyle(ButtonStyle.Secondary)
-  )];
+    new ButtonBuilder().setCustomId(`mod_case_appeal_retry_remedy:${modCase.caseId}:${appeal.id}`).setLabel(courtExecution?.status === 'reversing' && !appealRemedyIsStale(courtExecution) ? '⏳ Remedy Running' : '🔁 Retry Remedy').setStyle(ButtonStyle.Primary).setDisabled(!canRetryRemedy)
+  ),
+  new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`mod_search_open:${modCase.caseId}`).setLabel('Case Detail').setStyle(ButtonStyle.Secondary)),
+  new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`mod_case_appeal_history:${modCase.caseId}:0`).setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary)),
+];
+
   return { embeds: [embed], components };
 }
 function buildAppealQueuePayload(guildId, requestedPage = 0, filters = { status: 'pending' }, token = null) {
@@ -772,10 +771,13 @@ function buildAppealQueuePayload(guildId, requestedPage = 0, filters = { status:
   const rows = [statusRow, pageRow];
   if (slice.length) rows.push(new ActionRowBuilder().addComponents(...slice.map(({ case: modCase, appeal }) => new ButtonBuilder().setCustomId(`mod_case_appeal_open:${modCase.caseId}:${appeal.id}`).setLabel(`#${modCase.caseId}`).setStyle(ButtonStyle.Primary))));
   rows.push(new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('mod_dashboard:none:analytics').setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId(`mod_case_appeal_queue_refresh:${activeToken}:${page}`).setLabel('🔄 Refresh').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId(`mod_case_appeal_queue_filter:${activeToken}`).setLabel('🔎 Filter').setStyle(ButtonStyle.Secondary)
-  ));
+  new ButtonBuilder().setCustomId(`mod_case_appeal_queue_refresh:${activeToken}:${page}`).setLabel('🔄 Refresh').setStyle(ButtonStyle.Secondary),
+  new ButtonBuilder().setCustomId(`mod_case_appeal_queue_filter:${activeToken}`).setLabel('🔎 Filter').setStyle(ButtonStyle.Secondary)
+));
+rows.push(new ActionRowBuilder().addComponents(
+  new ButtonBuilder().setCustomId('mod_dashboard:none:analytics').setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary)
+));
+
   return { embeds: [embed], components: rows };
 }
 
