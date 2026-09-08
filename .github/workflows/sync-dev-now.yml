@@ -108,32 +108,26 @@ jobs:
             npx vite build src/dashboard --outDir ../../dist --emptyOutDir --logLevel warn
 
             NGINX_DUMP="$(nginx -T 2>&1)"
-            DASHBOARD_ROOT="$(printf '%s\n' "$NGINX_DUMP" | python3 -c '
-import re, sys
-text = sys.stdin.read()
-host = "dev.goliath.ksjdigital.co.uk"
-for match in re.finditer(r"\\bserver\\s*\\{", text):
-    start = match.start()
-    index = match.end()
-    depth = 1
-    while index < len(text) and depth:
-        if text[index] == "{": depth += 1
-        elif text[index] == "}": depth -= 1
-        index += 1
-    if depth:
-        continue
-    block = text[start:index]
-    names = re.findall(r"(?m)^\\s*server_name\\s+([^;]+);", block)
-    if not any(host in value.split() for value in names):
-        continue
-    roots = re.findall(r"(?m)^\\s*root\\s+([^;]+);", block)
-    if roots:
-        print(roots[0].strip())
-        break
-')"
+            DASHBOARD_ROOT="$(printf '%s\n' "$NGINX_DUMP" | awk -v host="$DEV_HOST" '
+              $1 == "server_name" {
+                for (i = 2; i <= NF; i++) {
+                  name = $i
+                  gsub(/;/, "", name)
+                  if (name == host) found = 1
+                }
+                next
+              }
+              found && $1 == "root" {
+                root = $2
+                gsub(/;/, "", root)
+                print root
+                exit
+              }
+            ')"
 
             [ -n "$DASHBOARD_ROOT" ] || {
               echo "Could not resolve active nginx root for $DEV_HOST" >&2
+              printf '%s\n' "$NGINX_DUMP" | grep -n -A20 -B5 "$DEV_HOST" || true
               exit 1
             }
             case "$DASHBOARD_ROOT" in
@@ -178,10 +172,10 @@ for match in re.finditer(r"\\bserver\\s*\\{", text):
             [ "$PROCESS_CWD" = "$APP_DIR" ]
 
             echo "✅ DEV synchronized"
-            echo "   GitHub dev:    $REMOTE_SHA"
-            echo "   DEV VPS:       $FINAL_SHA"
+            echo "   GitHub dev:     $REMOTE_SHA"
+            echo "   DEV VPS:        $FINAL_SHA"
             echo "   Dashboard root: $DASHBOARD_ROOT"
-            echo "   PM2:           $PM2_NAME"
+            echo "   PM2:            $PM2_NAME"
 
             restore_runtime
             rm -rf "$BACKUP_DIR"
