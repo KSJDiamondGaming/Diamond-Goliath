@@ -1,148 +1,35 @@
 name: Deploy Goliath
 
 on:
-  push:
-    branches:
-      - dev
-    paths-ignore:
-      - '.github/workflows/*-once.yml'
-      - 'scripts/*-once.js'
-      - 'scripts/*-temp.js'
-
   workflow_dispatch:
     inputs:
       environment:
-        description: Environment to deploy
+        description: Environment to deploy from DEV
         required: true
         default: beta
         type: choice
         options:
-          - dev
           - beta
           - production
-
-  workflow_call:
-    inputs:
-      environment:
-        description: Environment to reconcile
-        required: true
-        type: string
-      operation:
-        description: Internal operation mode
-        required: false
-        default: sync
-        type: string
 
 permissions:
   contents: write
   statuses: write
 
 concurrency:
-  group: deploy-${{ github.event_name == 'push' && 'dev' || inputs.environment }}
+  group: deploy-goliath-${{ inputs.environment }}
   cancel-in-progress: false
 
 jobs:
-  resolve:
-    runs-on: ubuntu-latest
-    outputs:
-      operation: ${{ steps.target.outputs.operation }}
-      environment: ${{ steps.target.outputs.environment }}
-      source_branch: ${{ steps.target.outputs.source_branch }}
-      source_ref: ${{ steps.target.outputs.source_ref }}
-      target_branch: ${{ steps.target.outputs.target_branch }}
-      deploy_script: ${{ steps.target.outputs.deploy_script }}
-      app_dir: ${{ steps.target.outputs.app_dir }}
-      runtime_dir: ${{ steps.target.outputs.runtime_dir }}
-      pm2_name: ${{ steps.target.outputs.pm2_name }}
-    steps:
-      - name: Resolve deployment path
-        id: target
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if [ "${{ github.event_name }}" = "push" ]; then
-            ENVIRONMENT="dev"
-            OPERATION="deploy"
-          elif [ "${{ github.event_name }}" = "workflow_call" ]; then
-            ENVIRONMENT="${{ inputs.environment }}"
-            OPERATION="${{ inputs.operation }}"
-          else
-            ENVIRONMENT="${{ inputs.environment }}"
-            OPERATION="deploy"
-          fi
-
-          case "$ENVIRONMENT" in
-            dev)
-              TARGET_BRANCH="dev"
-              DEPLOY_SCRIPT="/home/goliath/deploy-dev.sh"
-              APP_DIR="/home/goliath/dev"
-              RUNTIME_DIR="$APP_DIR/src/runtime/dev"
-              PM2_NAME="goliath-dev"
-              ;;
-            beta)
-              TARGET_BRANCH="beta"
-              DEPLOY_SCRIPT="/home/goliath/deploy-beta.sh"
-              APP_DIR="/home/goliath/beta"
-              RUNTIME_DIR="$APP_DIR/src/runtime/beta"
-              PM2_NAME="goliath-beta"
-              ;;
-            production)
-              TARGET_BRANCH="production"
-              DEPLOY_SCRIPT="/home/goliath/deploy-production.sh"
-              APP_DIR="/home/goliath/production"
-              RUNTIME_DIR="$APP_DIR/src/runtime/production"
-              PM2_NAME="goliath-production"
-              ;;
-            *)
-              echo "Unsupported environment: $ENVIRONMENT" >&2
-              exit 1
-              ;;
-          esac
-
-          case "$OPERATION" in
-            deploy)
-              case "$ENVIRONMENT" in
-                dev) SOURCE_BRANCH="dev" ;;
-                beta) SOURCE_BRANCH="dev" ;;
-                production) SOURCE_BRANCH="beta" ;;
-              esac
-              ;;
-            sync)
-              SOURCE_BRANCH="$TARGET_BRANCH"
-              ;;
-            *)
-              echo "Unsupported operation: $OPERATION" >&2
-              exit 1
-              ;;
-          esac
-
-          if [ "${{ github.event_name }}" = "push" ]; then
-            SOURCE_REF="${{ github.sha }}"
-          else
-            SOURCE_REF="$SOURCE_BRANCH"
-          fi
-
-          echo "operation=$OPERATION" >> "$GITHUB_OUTPUT"
-          echo "environment=$ENVIRONMENT" >> "$GITHUB_OUTPUT"
-          echo "source_branch=$SOURCE_BRANCH" >> "$GITHUB_OUTPUT"
-          echo "source_ref=$SOURCE_REF" >> "$GITHUB_OUTPUT"
-          echo "target_branch=$TARGET_BRANCH" >> "$GITHUB_OUTPUT"
-          echo "deploy_script=$DEPLOY_SCRIPT" >> "$GITHUB_OUTPUT"
-          echo "app_dir=$APP_DIR" >> "$GITHUB_OUTPUT"
-          echo "runtime_dir=$RUNTIME_DIR" >> "$GITHUB_OUTPUT"
-          echo "pm2_name=$PM2_NAME" >> "$GITHUB_OUTPUT"
-
   preflight:
-    needs: resolve
     runs-on: ubuntu-latest
     timeout-minutes: 40
     outputs:
-      source_sha: ${{ steps.sha.outputs.source_sha }}
+      source_sha: ${{ steps.source.outputs.sha }}
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ needs.resolve.outputs.source_ref }}
+          ref: dev
           fetch-depth: 0
 
       - uses: actions/setup-node@v5
@@ -153,110 +40,51 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Record source commit
-        id: sha
+      - name: Record DEV commit
+        id: source
         shell: bash
-        run: |
-          set -euo pipefail
-          SHA="$(git rev-parse HEAD)"
-          echo "source_sha=$SHA" >> "$GITHUB_OUTPUT"
-          if [ "${{ github.event_name }}" = "push" ] && [ "$SHA" != "${{ github.sha }}" ]; then
-            echo "Preflight checkout drifted from triggering commit: expected ${{ github.sha }}, got $SHA" >&2
-            exit 1
-          fi
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
-      - name: Mark preflight pending
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: |
-          SHA="$(git rev-parse HEAD)"
-          curl --fail-with-body -L -X POST \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/statuses/${SHA}" \
-            -d '{"state":"pending","context":"goliath/preflight","description":"Goliath preflight is running"}'
-
-      - name: Validate source
+      - name: Validate DEV
         run: |
           set -euo pipefail
           npm run doctor
           npx vite build src/dashboard --outDir ../../dist --emptyOutDir --logLevel warn
 
-      - name: Mark preflight successful
-        if: success()
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: |
-          SHA="$(git rev-parse HEAD)"
-          curl --fail-with-body -L -X POST \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/statuses/${SHA}" \
-            -d '{"state":"success","context":"goliath/preflight","description":"Doctor and dashboard build passed"}'
-
-      - name: Mark preflight failed
-        if: failure()
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: |
-          SHA="$(git rev-parse HEAD 2>/dev/null || echo '${{ github.sha }}')"
-          curl --fail-with-body -L -X POST \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/statuses/${SHA}" \
-            -d '{"state":"failure","context":"goliath/preflight","description":"Goliath preflight failed"}'
-
   promote:
-    needs: [resolve, preflight]
-    if: needs.preflight.result == 'success'
+    needs: preflight
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
       deploy_sha: ${{ steps.promote.outputs.deploy_sha }}
-      previous_target_sha: ${{ steps.promote.outputs.previous_target_sha }}
     steps:
       - uses: actions/checkout@v5
         with:
           ref: ${{ needs.preflight.outputs.source_sha }}
           fetch-depth: 0
 
-      - name: Resolve deploy commit
+      - name: Promote DEV to selected environment
         id: promote
         shell: bash
         env:
-          OPERATION: ${{ needs.resolve.outputs.operation }}
-          SOURCE_BRANCH: ${{ needs.resolve.outputs.source_branch }}
-          TARGET_BRANCH: ${{ needs.resolve.outputs.target_branch }}
+          TARGET_BRANCH: ${{ inputs.environment }}
           SOURCE_SHA: ${{ needs.preflight.outputs.source_sha }}
         run: |
           set -euo pipefail
 
-          if [ "$SOURCE_BRANCH" = "$TARGET_BRANCH" ]; then
-            echo "No branch promotion required for $TARGET_BRANCH."
-            echo "previous_target_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
-            echo "deploy_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
+          case "$TARGET_BRANCH" in
+            beta|production) ;;
+            *) echo "Unsupported target: $TARGET_BRANCH" >&2; exit 1 ;;
+          esac
 
-          if [ "$OPERATION" != "deploy" ]; then
-            echo "Refusing cross-environment promotion during $OPERATION." >&2
-            exit 1
-          fi
-
-          git fetch origin "$TARGET_BRANCH"
+          git fetch --no-tags origin dev "$TARGET_BRANCH"
           TARGET_SHA="$(git rev-parse "origin/$TARGET_BRANCH")"
           SOURCE_TREE="$(git show -s --format=%T "$SOURCE_SHA")"
 
           git config user.name "Goliath Deploy"
           git config user.email "goliath-deploy@users.noreply.github.com"
 
-          PROMOTED_SHA="$(printf 'Promote %s %s to %s\n' "$SOURCE_BRANCH" "$SOURCE_SHA" "$TARGET_BRANCH" | git commit-tree "$SOURCE_TREE" -p "$TARGET_SHA")"
+          PROMOTED_SHA="$(printf 'Promote DEV %s to %s\n' "$SOURCE_SHA" "$TARGET_BRANCH" | git commit-tree "$SOURCE_TREE" -p "$TARGET_SHA")"
           git push origin "$PROMOTED_SHA:refs/heads/$TARGET_BRANCH"
 
           REMOTE_SHA="$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | awk '{print $1}')"
@@ -265,27 +93,19 @@ jobs:
             exit 1
           }
 
-          echo "previous_target_sha=$TARGET_SHA" >> "$GITHUB_OUTPUT"
           echo "deploy_sha=$PROMOTED_SHA" >> "$GITHUB_OUTPUT"
+          echo "✅ DEV $SOURCE_SHA promoted to $TARGET_BRANCH at $PROMOTED_SHA"
 
   deploy:
-    needs: [resolve, preflight, promote]
-    if: needs.promote.result == 'success'
+    needs: [preflight, promote]
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
-      - name: Deploy and verify
+      - name: Deploy and verify selected environment
         uses: appleboy/ssh-action@v1
         env:
-          OPERATION: ${{ needs.resolve.outputs.operation }}
-          ENVIRONMENT: ${{ needs.resolve.outputs.environment }}
-          TARGET_BRANCH: ${{ needs.resolve.outputs.target_branch }}
-          DEPLOY_SCRIPT: ${{ needs.resolve.outputs.deploy_script }}
-          APP_DIR: ${{ needs.resolve.outputs.app_dir }}
-          RUNTIME_DIR: ${{ needs.resolve.outputs.runtime_dir }}
-          PM2_NAME: ${{ needs.resolve.outputs.pm2_name }}
+          ENVIRONMENT: ${{ inputs.environment }}
           EXPECTED_SHA: ${{ needs.promote.outputs.deploy_sha }}
-          PUSH_TRIGGERED: ${{ github.event_name == 'push' }}
           GITHUB_DEPLOY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -294,9 +114,27 @@ jobs:
           port: 22
           timeout: 60s
           command_timeout: 30m
-          envs: OPERATION,ENVIRONMENT,TARGET_BRANCH,DEPLOY_SCRIPT,APP_DIR,RUNTIME_DIR,PM2_NAME,EXPECTED_SHA,PUSH_TRIGGERED,GITHUB_DEPLOY_TOKEN
+          envs: ENVIRONMENT,EXPECTED_SHA,GITHUB_DEPLOY_TOKEN
           script: |
             set -euo pipefail
+
+            case "$ENVIRONMENT" in
+              beta)
+                TARGET_BRANCH="beta"
+                APP_DIR="/home/goliath/beta"
+                RUNTIME_DIR="$APP_DIR/src/runtime/beta"
+                PM2_NAME="goliath-beta"
+                DEPLOY_SCRIPT="/home/goliath/deploy-beta.sh"
+                ;;
+              production)
+                TARGET_BRANCH="production"
+                APP_DIR="/home/goliath/production"
+                RUNTIME_DIR="$APP_DIR/src/runtime/production"
+                PM2_NAME="goliath-production"
+                DEPLOY_SCRIPT="/home/goliath/deploy-production.sh"
+                ;;
+              *) echo "Unsupported environment: $ENVIRONMENT" >&2; exit 1 ;;
+            esac
 
             [ -d "$APP_DIR/.git" ] || {
               echo "Missing checkout: $APP_DIR" >&2
@@ -313,22 +151,14 @@ jobs:
             trap cleanup_remote EXIT
 
             git fetch --no-tags origin "$TARGET_BRANCH"
-
-            if [ "$PUSH_TRIGGERED" = "true" ]; then
-              LATEST_REMOTE_SHA="$(git rev-parse "origin/$TARGET_BRANCH")"
-              if [ "$EXPECTED_SHA" != "$LATEST_REMOTE_SHA" ]; then
-                echo "Superseding stale DEV deployment for $EXPECTED_SHA; latest DEV is $LATEST_REMOTE_SHA."
-                exit 0
-              fi
-            fi
-
-            if ! git cat-file -e "$EXPECTED_SHA^{commit}" 2>/dev/null; then
-              git fetch --no-tags origin "$EXPECTED_SHA"
-            fi
-            git cat-file -e "$EXPECTED_SHA^{commit}"
+            REMOTE_SHA="$(git rev-parse "origin/$TARGET_BRANCH")"
+            [ "$REMOTE_SHA" = "$EXPECTED_SHA" ] || {
+              echo "Target branch moved before deployment: $REMOTE_SHA != $EXPECTED_SHA" >&2
+              exit 1
+            }
 
             if [ -n "$(git status --porcelain -- . ':!src/runtime/')" ]; then
-              echo "Tracked/untracked deployment files outside src/runtime are dirty; refusing to overwrite VPS changes." >&2
+              echo "$ENVIRONMENT VPS has changes outside src/runtime; refusing to overwrite them." >&2
               git status --short -- . ':!src/runtime/' >&2
               exit 1
             fi
@@ -336,7 +166,6 @@ jobs:
             BACKUP_DIR="/home/goliath/.goliath-${ENVIRONMENT}-runtime-deploy-backup"
             rm -rf "$BACKUP_DIR"
             mkdir -p "$BACKUP_DIR"
-
             if [ -d "$RUNTIME_DIR" ]; then
               tar --warning=no-file-changed --ignore-failed-read --exclude='*.tmp' -C "$RUNTIME_DIR" -cf - . | tar -C "$BACKUP_DIR" -xf -
             fi
@@ -368,16 +197,9 @@ jobs:
             npx vite build src/dashboard --outDir ../../dist --emptyOutDir --logLevel warn
 
             DASHBOARD_ROOT="$(awk '$1 == "rm" && $2 == "-rf" && $3 ~ /^\/var\/www\// { print $3; exit }' "$DEPLOY_SCRIPT" 2>/dev/null || true)"
-            if [ -z "$DASHBOARD_ROOT" ] && [ "$ENVIRONMENT" = "dev" ]; then
-              DASHBOARD_ROOT="/var/www/goliath-dashboard"
-            fi
-
             case "$DASHBOARD_ROOT" in
               /var/www/*) ;;
-              *)
-                echo "Unsafe or unresolved dashboard root: ${DASHBOARD_ROOT:-unset}" >&2
-                exit 1
-                ;;
+              *) echo "Unsafe or unresolved dashboard root: ${DASHBOARD_ROOT:-unset}" >&2; exit 1 ;;
             esac
 
             rm -rf "$DASHBOARD_ROOT"
@@ -400,34 +222,19 @@ jobs:
             sleep 3
 
             FINAL_SHA="$(git rev-parse HEAD)"
-            REMOTE_SHA="$(git rev-parse "origin/$TARGET_BRANCH")"
-            [ "$FINAL_SHA" = "$EXPECTED_SHA" ] || {
-              echo "Checkout verification failed: $FINAL_SHA != $EXPECTED_SHA" >&2
-              exit 1
-            }
-            [ "$FINAL_SHA" = "$REMOTE_SHA" ] || {
-              echo "VPS/GitHub branch mismatch: $FINAL_SHA != $REMOTE_SHA" >&2
-              exit 1
-            }
+            REMOTE_SHA="$(git rev-parse origin/$TARGET_BRANCH)"
+            [ "$FINAL_SHA" = "$EXPECTED_SHA" ]
+            [ "$FINAL_SHA" = "$REMOTE_SHA" ]
 
             PID="$(pm2 pid "$PM2_NAME" 2>/dev/null | tail -n 1 | tr -d '[:space:]')"
-            [ -n "$PID" ] && [ "$PID" != "0" ] || {
-              echo "PM2 process $PM2_NAME is not running." >&2
-              exit 1
-            }
-
+            [ -n "$PID" ] && [ "$PID" != "0" ]
             PROCESS_CWD="$(readlink -f "/proc/$PID/cwd")"
-            [ "$PROCESS_CWD" = "$APP_DIR" ] || {
-              echo "PM2 cwd mismatch: $PROCESS_CWD != $APP_DIR" >&2
-              exit 1
-            }
+            [ "$PROCESS_CWD" = "$APP_DIR" ]
 
-            echo "✅ $OPERATION verified"
-            echo "   environment: $ENVIRONMENT"
-            echo "   branch:      $TARGET_BRANCH"
-            echo "   commit:      $FINAL_SHA"
-            echo "   pm2:         $PM2_NAME"
-            echo "   cwd:         $PROCESS_CWD"
+            echo "✅ $ENVIRONMENT deployment verified"
+            echo "   branch: $TARGET_BRANCH"
+            echo "   commit: $FINAL_SHA"
+            echo "   pm2:    $PM2_NAME"
 
             restore_runtime
             rm -rf "$BACKUP_DIR"
@@ -435,7 +242,7 @@ jobs:
             cleanup_remote
 
   summary:
-    needs: [resolve, preflight, promote, deploy]
+    needs: [preflight, promote, deploy]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -443,17 +250,14 @@ jobs:
         shell: bash
         run: |
           {
-            echo "## Goliath ${{ needs.resolve.outputs.operation }}"
+            echo "## Deploy Goliath"
             echo ""
-            echo "- Environment: **${{ needs.resolve.outputs.environment }}**"
-            echo "- Source branch: `${{ needs.resolve.outputs.source_branch }}`"
-            echo "- Target branch: `${{ needs.resolve.outputs.target_branch }}`"
-            echo "- Source validation: **${{ needs.preflight.result }}**"
-            echo "- Promotion/commit resolution: **${{ needs.promote.result }}**"
+            echo "- Source: **DEV**"
+            echo "- Target: **${{ inputs.environment }}**"
+            echo "- DEV validation: **${{ needs.preflight.result }}**"
+            echo "- Branch promotion: **${{ needs.promote.result }}**"
             echo "- VPS deployment: **${{ needs.deploy.result }}**"
-            if [ -n "${{ needs.promote.outputs.deploy_sha }}" ]; then
-              echo "- Deployed commit: `${{ needs.promote.outputs.deploy_sha }}`"
-            fi
+            echo "- Deployed commit: `${{ needs.promote.outputs.deploy_sha }}`"
           } >> "$GITHUB_STEP_SUMMARY"
 
           [ "${{ needs.deploy.result }}" = "success" ]
