@@ -39,7 +39,8 @@ jobs:
           set -euo pipefail
           git config user.name github-actions
           git config user.email actions@github.com
-          git add src/owner/dev/duplicator/core.js test/verification/duplicatorRoleMergePolicy.test.js
+          git add src/owner/dev/duplicator/core.js
+          git add -f test/verification/duplicatorRoleMergePolicy.test.js
           if git diff --cached --quiet; then
             echo 'No Duplicator changes to commit'
             exit 0
