@@ -98,7 +98,8 @@ error: 'Missing DISCORD_CLIENT_SECRET',
 });
 }
 
-if (req.session) req.session.oauthReturnPath = safeReturnPath(req.query?.next);
+const returnPath = safeReturnPath(req.query?.next);
+if (req.session) req.session.oauthReturnPath = returnPath;
 
 const params = new URLSearchParams({
 client_id: clientId,
@@ -113,7 +114,15 @@ if (isDebug()) {
 console.log('[AUTH] OAuth URL:', authUrl);
 }
 
-return res.redirect(authUrl);
+if (!req.session) return res.redirect(authUrl);
+
+return req.session.save((saveError) => {
+  if (saveError) {
+    console.error('❌ OAuth return-path session save failed', saveError);
+    return res.status(500).send('Session error.');
+  }
+  return res.redirect(authUrl);
+});
 });
 
 /* ---------------- CHECK AUTH ---------------- */
