@@ -1,118 +1,78 @@
-name: Sync Goliath
+name: Dependency Hardening
 
 on:
-  workflow_dispatch:
-    inputs:
-      target:
-        description: Target environment
-        required: true
-        default: beta
-        type: choice
-        options:
-          - beta
-          - production
-          - dev
+  push:
+    branches: [dev]
+    paths:
+      - '.github/workflows/sync-dev-now.yml'
 
 permissions:
   contents: write
-  statuses: write
-
-concurrency:
-  group: sync-goliath-${{ inputs.target }}
-  cancel-in-progress: false
 
 jobs:
-  promote:
+  harden:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    outputs:
-      promoted_sha: ${{ steps.promote.outputs.promoted_sha }}
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
         with:
           ref: dev
           fetch-depth: 0
 
-      - name: Promote DEV application tree to target branch
-        id: promote
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Audit and apply non-breaking lockfile remediation
         shell: bash
-        env:
-          TARGET: ${{ inputs.target }}
         run: |
           set -euo pipefail
+          npm ci
+          npm audit --json > /tmp/audit-before.json || true
+          node - <<'NODE'
+          const fs = require('fs');
+          const data = JSON.parse(fs.readFileSync('/tmp/audit-before.json', 'utf8'));
+          console.log('BEFORE', JSON.stringify(data.metadata?.vulnerabilities || {}));
+          for (const [name, item] of Object.entries(data.vulnerabilities || {})) {
+            console.log(`VULN ${name} severity=${item.severity} direct=${Boolean(item.isDirect)} fix=${JSON.stringify(item.fixAvailable)}`);
+          }
+          NODE
 
-          if [ "$TARGET" = "dev" ]; then
-            SHA="$(git rev-parse HEAD)"
-            echo "DEV selected: no branch promotion required."
-            echo "promoted_sha=$SHA" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
+          npm audit fix --package-lock-only --ignore-scripts || true
+          npm ci
+          npm run doctor
+          npm audit --json > /tmp/audit-after.json || true
 
-          git fetch --no-tags origin dev "$TARGET"
-          DEV_SHA="$(git rev-parse origin/dev)"
-          TARGET_SHA="$(git rev-parse origin/$TARGET)"
+          node - <<'NODE'
+          const fs = require('fs');
+          const before = JSON.parse(fs.readFileSync('/tmp/audit-before.json', 'utf8'));
+          const after = JSON.parse(fs.readFileSync('/tmp/audit-after.json', 'utf8'));
+          const b = before.metadata?.vulnerabilities || {};
+          const a = after.metadata?.vulnerabilities || {};
+          const total = (x) => Number(x.total || 0);
+          const highish = (x) => Number(x.high || 0) + Number(x.critical || 0);
+          console.log('AFTER', JSON.stringify(a));
+          for (const [name, item] of Object.entries(after.vulnerabilities || {})) {
+            console.log(`REMAINING ${name} severity=${item.severity} direct=${Boolean(item.isDirect)} fix=${JSON.stringify(item.fixAvailable)}`);
+          }
+          if (total(a) > total(b) || highish(a) > highish(b)) {
+            console.error('Safe remediation made the audit worse; refusing to commit.');
+            process.exit(1);
+          }
+          console.log(`AUDIT_DELTA total ${total(b)} -> ${total(a)}, high+critical ${highish(b)} -> ${highish(a)}`);
+          NODE
 
-          git config user.name "Goliath Sync"
-          git config user.email "goliath-sync@users.noreply.github.com"
-          git switch -C "promote-$TARGET" "$TARGET_SHA"
-
-          # Promote the complete application tree from DEV while keeping the
-          # target branch's GitHub workflow control files. GITHUB_TOKEN cannot
-          # rewrite workflow files without an additional workflows permission,
-          # and workflow YAML is not part of the running Goliath application.
-          git diff --binary "$TARGET_SHA" "$DEV_SHA" -- . ':(exclude).github/workflows/**' > /tmp/goliath-promotion.patch
-
-          if [ -s /tmp/goliath-promotion.patch ]; then
-            git apply --index /tmp/goliath-promotion.patch
-            git commit -m "Promote DEV $DEV_SHA to $TARGET"
-            git push origin "HEAD:refs/heads/$TARGET"
-          else
-            echo "$TARGET already matches DEV application files."
-          fi
-
-          git fetch --no-tags origin dev "$TARGET"
-          FINAL_SHA="$(git rev-parse origin/$TARGET)"
-
-          if ! git diff --quiet origin/dev "origin/$TARGET" -- . ':(exclude).github/workflows/**'; then
-            echo "Promotion verification failed: $TARGET application files do not match DEV." >&2
-            git diff --stat origin/dev "origin/$TARGET" -- . ':(exclude).github/workflows/**' >&2
-            exit 1
-          fi
-
-          echo "promoted_sha=$FINAL_SHA" >> "$GITHUB_OUTPUT"
-          echo "✅ DEV application tree promoted to $TARGET at $FINAL_SHA"
-
-  deploy:
-    needs: promote
-    uses: ./.github/workflows/deploy-dev.yml
-    with:
-      environment: ${{ inputs.target }}
-      operation: sync
-    secrets: inherit
-
-  summary:
-    needs: [promote, deploy]
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Write sync summary
+      - name: Commit validated safe dependency updates
         shell: bash
         run: |
-          {
-            echo "## Sync Goliath"
-            echo ""
-            echo "- Target: **${{ inputs.target }}**"
-            echo "- Promotion result: **${{ needs.promote.result }}**"
-            echo "- VPS deploy result: **${{ needs.deploy.result }}**"
-            echo "- Target commit: **${{ needs.promote.outputs.promoted_sha }}**"
-            echo ""
-            if [ "${{ inputs.target }}" = "dev" ]; then
-              echo "DEV branch → DEV VPS."
-            else
-              echo "DEV application files → ${{ inputs.target }} branch → ${{ inputs.target }} VPS."
-              echo "Target branch workflow-control YAML is intentionally preserved; all Goliath runtime/application files come from DEV."
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
-
-          [ "${{ needs.promote.result }}" = "success" ]
-          [ "${{ needs.deploy.result }}" = "success" ]
+          set -euo pipefail
+          git config user.name "Goliath Dependency Hardening"
+          git config user.email "goliath-dependency-hardening@users.noreply.github.com"
+          git add package-lock.json
+          if git diff --cached --quiet; then
+            echo "No safe lockfile remediation available."
+            exit 0
+          fi
+          git commit -m "chore(deps): apply safe audit remediation"
+          git push origin HEAD:dev
