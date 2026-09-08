@@ -4,6 +4,7 @@ on:
     branches: [dev]
     paths:
       - '.github/workflows/fix-appeal-dm-v2-once.yml'
+      - '.github/appeal_patch.py'
 permissions:
   contents: write
 jobs:
