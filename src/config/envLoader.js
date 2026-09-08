@@ -7,6 +7,20 @@ const dotenv = require('dotenv');
 
 const { normalizeBotMode, isValidBotMode } = require('./botModes');
 
+function normalizeClientUrlEnvironment() {
+  const keys = ['CLIENT_URL', 'DASHBOARD_CLIENT_URL', 'DASHBOARD_URL', 'VITE_CLIENT_URL', 'TWOTONETAJ_CLIENT_URL'];
+  for (const key of keys) {
+    const raw = String(process.env[key] || '').trim();
+    if (!raw) continue;
+    try {
+      process.env[key] = new URL(raw).origin;
+    } catch {
+      console.warn(`⚠️ Ignoring invalid ${key}; expected an absolute URL.`);
+      delete process.env[key];
+    }
+  }
+}
+
 function loadEnvironment(mode = process.env.BOT_MODE) {
   const requestedMode = normalizeBotMode(mode);
 
@@ -29,6 +43,7 @@ function loadEnvironment(mode = process.env.BOT_MODE) {
   }
 
   process.env.BOT_MODE = requestedMode;
+  normalizeClientUrlEnvironment();
 
   return {
     mode: requestedMode,
