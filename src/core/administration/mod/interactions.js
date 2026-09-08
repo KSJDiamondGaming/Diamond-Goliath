@@ -833,7 +833,15 @@ async function routeModModal(i) {
       return result;
     }
   }
-  return routeHandlers(i, [submitInvestigationNote, handleExportInteraction, handleCaseSearchModal, handleCaseModal, handleBulkModal, handleActionModal]);
+  return routeHandlers(i, [
+    value => memberIntelligence.handleInteraction(value, { ensureCapability: ensureScanCapability, canCapability: canScanCapability }),
+    submitInvestigationNote,
+    handleExportInteraction,
+    handleCaseSearchModal,
+    handleCaseModal,
+    handleBulkModal,
+    handleActionModal,
+  ]);
 }
 async function handleModInteraction(i) {
   if (!i?.customId || !isModCustomId(i.customId)) return false;
