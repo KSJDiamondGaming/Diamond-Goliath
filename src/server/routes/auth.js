@@ -61,7 +61,11 @@ return `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.${ext}?size
 }
 
 function safeRedirectUrl(url) {
-return String(url || 'https://goliath.ksjdigital.co.uk').replace(/\/+$/, '');
+try {
+  return new URL(String(url || 'https://goliath.ksjdigital.co.uk')).origin;
+} catch {
+  return 'https://goliath.ksjdigital.co.uk';
+}
 }
 
 function safeReturnPath(value) {
