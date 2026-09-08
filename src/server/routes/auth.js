@@ -64,8 +64,21 @@ return String(url || 'https://goliath.ksjdigital.co.uk').replace(/\/+$/, '');
 }
 
 function safeReturnPath(value) {
-const path = String(value || '').trim();
-return path === '/appeals' ? path : '/';
+const raw = String(value || '').trim();
+if (!raw) return '/';
+try {
+  const parsed = new URL(raw, 'https://goliath.local');
+  if (parsed.origin !== 'https://goliath.local' || parsed.pathname !== '/appeals') return '/';
+  const params = new URLSearchParams();
+  const guild = String(parsed.searchParams.get('guild') || '').trim();
+  const caseId = String(parsed.searchParams.get('case') || '').trim();
+  if (/^\d{16,20}$/.test(guild)) params.set('guild', guild);
+  if (/^\d{1,12}$/.test(caseId) && Number(caseId) > 0) params.set('case', String(Number(caseId)));
+  const query = params.toString();
+  return query ? `/appeals?${query}` : '/appeals';
+} catch {
+  return '/';
+}
 }
 
 /* ---------------- LOGIN ROUTE ---------------- */
