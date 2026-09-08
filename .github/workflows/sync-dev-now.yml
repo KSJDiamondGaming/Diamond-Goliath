@@ -1,118 +1,452 @@
-name: Sync Goliath
+name: Case Court Consistency Hardening
 
 on:
-  workflow_dispatch:
-    inputs:
-      target:
-        description: Target environment
-        required: true
-        default: beta
-        type: choice
-        options:
-          - beta
-          - production
-          - dev
+  push:
+    branches:
+      - dev
 
 permissions:
   contents: write
+  actions: write
   statuses: write
 
 concurrency:
-  group: sync-goliath-${{ inputs.target }}
+  group: case-court-consistency-hardening
   cancel-in-progress: false
 
 jobs:
-  promote:
+  harden:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    outputs:
-      promoted_sha: ${{ steps.promote.outputs.promoted_sha }}
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v5
         with:
           ref: dev
           fetch-depth: 0
 
-      - name: Promote DEV application tree to target branch
-        id: promote
+      - name: Patch existing Case Court implementation in place
         shell: bash
-        env:
-          TARGET: ${{ inputs.target }}
         run: |
           set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
 
-          if [ "$TARGET" = "dev" ]; then
-            SHA="$(git rev-parse HEAD)"
-            echo "DEV selected: no branch promotion required."
-            echo "promoted_sha=$SHA" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
+          def replace_once(text, old, new, label):
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected exactly 1 match, found {count}')
+              return text.replace(old, new, 1)
 
-          git fetch --no-tags origin dev "$TARGET"
-          DEV_SHA="$(git rev-parse origin/dev)"
-          TARGET_SHA="$(git rev-parse origin/$TARGET)"
+          cases_path = Path('src/core/administration/mod/cases.js')
+          text = cases_path.read_text()
 
-          git config user.name "Goliath Sync"
-          git config user.email "goliath-sync@users.noreply.github.com"
-          git switch -C "promote-$TARGET" "$TARGET_SHA"
+          old = r'''function appealRemedyIsStale(execution) {
+            if (!execution || execution.status !== 'reversing') return false;
+            const started = new Date(execution.reversalClaimedAt || execution.reversalAttemptedAt || 0).getTime();
+            return !Number.isFinite(started) || Date.now() - started > APPEAL_REMEDY_STALE_MS;
+          }
+          '''
+          new = r'''function appealRemedyIsStale(execution) {
+            if (!execution || execution.status !== 'reversing') return false;
+            const started = new Date(execution.reversalClaimedAt || execution.reversalAttemptedAt || 0).getTime();
+            return !Number.isFinite(started) || Date.now() - started > APPEAL_REMEDY_STALE_MS;
+          }
+          function effectiveAppealAction(modCase = {}) {
+            const directAction = String(modCase.action || '').trim().toLowerCase();
+            if (directAction !== 'case') return directAction;
+            const court = modCase?.metadata?.court && typeof modCase.metadata.court === 'object' ? modCase.metadata.court : null;
+            return String(court?.sanctionExecution?.action || court?.decision?.action || directAction).trim().toLowerCase();
+          }
+          '''
+          text = replace_once(text, old, new, 'effective appeal action helper')
 
-          # Promote the complete application tree from DEV while keeping the
-          # target branch's GitHub workflow control files. GITHUB_TOKEN cannot
-          # rewrite workflow files without an additional workflows permission,
-          # and workflow YAML is not part of the running Goliath application.
-          git diff --binary "$TARGET_SHA" "$DEV_SHA" -- . ':(exclude).github/workflows/**' > /tmp/goliath-promotion.patch
+          old = r'''function persistCourtAppealReversalFailure(interaction, modCase, error, operationId = null) {
+            const guildId = interaction.guild.id;
+            const actorId = interaction.user?.id || null;
+            const current = getCaseById(guildId, modCase.caseId) || modCase;
+            const metadata = { ...(current.metadata || {}) };
+            const court = metadata.court && typeof metadata.court === 'object' ? metadata.court : {};
+            const execution = court.sanctionExecution && typeof court.sanctionExecution === 'object' ? court.sanctionExecution : null;
+            const remedy = { attempted: true, action: String(execution?.action || court.decision?.action || 'court'), ok: false, detail: String(error?.message || error || 'Appeal remedy failed.').slice(0, 300) };
+            metadata.court = {
+              ...court,
+              sanctionExecution: execution ? {
+                ...execution,
+                status: 'reversal_failed',
+                reversalOperationId: operationId || execution.reversalOperationId || null,
+                reversalAttemptedBy: actorId,
+                reversalAttemptedAt: new Date().toISOString(),
+                reversalRemedy: remedy,
+              } : execution,
+            };
+            const updated = updateCaseMetadata(guildId, modCase.caseId, metadata) || current;
+            recordCaseAudit({ guildId, caseId: modCase.caseId, actorId, event: 'case.court.appeal_remedy_failed', before: execution, after: metadata.court.sanctionExecution, metadata: { operationId, remedy } });
+            return { case: updated, remedy };
+          }
+          '''
+          new = r'''function persistCourtAppealReversalFailure(interaction, modCase, error, operationId = null) {
+            const guildId = interaction.guild.id;
+            const actorId = interaction.user?.id || null;
+            const current = getCaseById(guildId, modCase.caseId) || modCase;
+            const metadata = { ...(current.metadata || {}) };
+            const court = metadata.court && typeof metadata.court === 'object' ? metadata.court : {};
+            const execution = court.sanctionExecution && typeof court.sanctionExecution === 'object' ? court.sanctionExecution : null;
+            const remedyAction = String(execution?.action || court.decision?.action || 'court');
+            if (execution?.status === 'reversed') {
+              const remedy = { attempted: false, action: remedyAction, ok: true, detail: 'The sanction is already reversed; a late failure result was ignored.' };
+              recordCaseAudit({ guildId, caseId: modCase.caseId, actorId, event: 'case.court.appeal_remedy_failure_ignored', before: execution, after: execution, metadata: { operationId, reason: 'already_reversed' } });
+              return { case: current, remedy, superseded: true };
+            }
+            if (operationId && execution?.reversalOperationId && execution.reversalOperationId !== operationId) {
+              const remedy = { attempted: true, action: remedyAction, ok: false, detail: 'A newer reversal operation owns this case; the stale failure result was ignored.' };
+              recordCaseAudit({ guildId, caseId: modCase.caseId, actorId, event: 'case.court.appeal_remedy_failure_ignored', before: execution, after: execution, metadata: { operationId, currentOperationId: execution.reversalOperationId, reason: 'superseded' } });
+              return { case: current, remedy, superseded: true };
+            }
+            const remedy = { attempted: true, action: remedyAction, ok: false, detail: String(error?.message || error || 'Appeal remedy failed.').slice(0, 300) };
+            metadata.court = {
+              ...court,
+              sanctionExecution: execution ? {
+                ...execution,
+                status: 'reversal_failed',
+                reversalOperationId: operationId || execution.reversalOperationId || null,
+                reversalAttemptedBy: actorId,
+                reversalAttemptedAt: new Date().toISOString(),
+                reversalRemedy: remedy,
+              } : execution,
+            };
+            const updated = updateCaseMetadata(guildId, modCase.caseId, metadata) || current;
+            recordCaseAudit({ guildId, caseId: modCase.caseId, actorId, event: 'case.court.appeal_remedy_failed', before: execution, after: metadata.court.sanctionExecution, metadata: { operationId, remedy } });
+            return { case: updated, remedy };
+          }
+          '''
+          text = replace_once(text, old, new, 'reversal failure ownership')
 
-          if [ -s /tmp/goliath-promotion.patch ]; then
-            git apply --index /tmp/goliath-promotion.patch
-            git commit -m "Promote DEV $DEV_SHA to $TARGET"
-            git push origin "HEAD:refs/heads/$TARGET"
-          else
-            echo "$TARGET already matches DEV application files."
-          fi
+          old = r'''async function applyApprovedCourtAppealRemedy(interaction, modCase, fetchTarget) {
+            const guild = interaction.guild;
+            const actorId = interaction.user?.id || null;
+            const court = modCase.metadata?.court && typeof modCase.metadata.court === 'object' ? modCase.metadata.court : null;
+            const execution = court?.sanctionExecution && typeof court.sanctionExecution === 'object' ? court.sanctionExecution : null;
+          '''
+          new = r'''async function applyApprovedCourtAppealRemedy(interaction, modCase, fetchTarget) {
+            const guild = interaction.guild;
+            const actorId = interaction.user?.id || null;
+            const currentStart = getCaseById(guild.id, modCase.caseId) || modCase;
+            const court = currentStart.metadata?.court && typeof currentStart.metadata.court === 'object' ? currentStart.metadata.court : null;
+            const execution = court?.sanctionExecution && typeof court.sanctionExecution === 'object' ? court.sanctionExecution : null;
+          '''
+          text = replace_once(text, old, new, 'refresh reversal state before remedy')
 
-          git fetch --no-tags origin dev "$TARGET"
-          FINAL_SHA="$(git rev-parse origin/$TARGET)"
+          old = r'''          if (!execution || execution.status === 'failed') {
+            remedy = { attempted: false, action, ok: true, detail: 'Appeal approved before any sanction was successfully executed; no physical undo was required.' };
+            const current = getCaseById(guild.id, modCase.caseId) || modCase;
+            const metadata = { ...(current.metadata || {}) };
+            const currentCourt = metadata.court && typeof metadata.court === 'object' ? metadata.court : court;
+            const reversedAt = new Date().toISOString();
+            metadata.court = {
+              ...currentCourt,
+              sanctionExecution: {
+                ...(execution || { action }),
+                status: 'reversed',
+                action,
+                reversedBy: actorId,
+                reversedAt,
+                reversalAttemptedBy: actorId,
+                reversalAttemptedAt: reversedAt,
+                reversalReason: reason,
+                reversalRemedy: remedy,
+              },
+              appealOutcome: { status: 'approved', reviewedBy: actorId, reviewedAt: reversedAt, remedy },
+            };
+            updateCaseMetadata(guild.id, modCase.caseId, metadata);
+            updateCaseStatus(guild.id, modCase.caseId, 'reversed', actorId);
+            recordCaseAudit({ guildId: guild.id, caseId: modCase.caseId, actorId, event: 'case.court.appeal_remedy_applied', before: execution, after: metadata.court.sanctionExecution, metadata: { linkedCaseId, remedy } });
+            return remedy;
+          }
+          '''
+          new = r'''          if (!execution || execution.status === 'failed') {
+            remedy = { attempted: false, action, ok: true, detail: 'Appeal approved before any sanction was successfully executed; no physical undo was required.' };
+            const current = getCaseById(guild.id, modCase.caseId) || currentStart;
+            const metadata = { ...(current.metadata || {}) };
+            const currentCourt = metadata.court && typeof metadata.court === 'object' ? metadata.court : court;
+            const currentExecution = currentCourt?.sanctionExecution && typeof currentCourt.sanctionExecution === 'object' ? currentCourt.sanctionExecution : null;
+            if (currentExecution?.status === 'executed') {
+              const claim = claimCourtAppealRemedyForApproval(interaction, current);
+              if (!claim.ok) return { attempted: false, action, ok: false, detail: claim.error || 'The sanction state changed while the appeal was being approved.' };
+              return applyApprovedCourtAppealRemedy(interaction, claim.case || current, fetchTarget);
+            }
+            if (currentExecution && !['failed', 'reversed'].includes(currentExecution.status)) {
+              return { attempted: false, action, ok: false, detail: `The sanction state changed to ${currentExecution.status}; no false reversal was recorded.` };
+            }
+            if (currentExecution?.status === 'reversed') return { attempted: false, action, ok: true, detail: 'The sanction was already reversed; no further physical undo was required.' };
+            const reversedAt = new Date().toISOString();
+            metadata.court = {
+              ...currentCourt,
+              sanctionExecution: {
+                ...(currentExecution || execution || { action }),
+                status: 'reversed',
+                action,
+                reversedBy: actorId,
+                reversedAt,
+                reversalAttemptedBy: actorId,
+                reversalAttemptedAt: reversedAt,
+                reversalReason: reason,
+                reversalRemedy: remedy,
+              },
+              appealOutcome: { status: 'approved', reviewedBy: actorId, reviewedAt: reversedAt, remedy },
+            };
+            updateCaseMetadata(guild.id, modCase.caseId, metadata);
+            updateCaseStatus(guild.id, modCase.caseId, 'reversed', actorId);
+            recordCaseAudit({ guildId: guild.id, caseId: modCase.caseId, actorId, event: 'case.court.appeal_remedy_applied', before: currentExecution || execution, after: metadata.court.sanctionExecution, metadata: { linkedCaseId, remedy } });
+            return remedy;
+          }
+          '''
+          text = replace_once(text, old, new, 'no-execution race protection')
 
-          if ! git diff --quiet origin/dev "origin/$TARGET" -- . ':(exclude).github/workflows/**'; then
-            echo "Promotion verification failed: $TARGET application files do not match DEV." >&2
-            git diff --stat origin/dev "origin/$TARGET" -- . ':(exclude).github/workflows/**' >&2
-            exit 1
-          fi
+          old = r'''          const current = getCaseById(guild.id, modCase.caseId) || modCase;
+          const metadata = { ...(current.metadata || {}) };
+          const currentCourt = metadata.court && typeof metadata.court === 'object' ? metadata.court : court;
+          metadata.court = {
+            ...currentCourt,
+            sanctionExecution: execution ? {
+              ...execution,
+              status: reversalSucceeded ? 'reversed' : 'reversal_failed',
+              reversedBy: reversalSucceeded ? actorId : null,
+              reversedAt: reversalSucceeded ? new Date().toISOString() : null,
+              reversalAttemptedBy: actorId,
+              reversalAttemptedAt: new Date().toISOString(),
+              reversalReason: reason,
+              reversalRemedy: remedy,
+            } : execution,
+            appealOutcome: {
+              status: 'approved',
+              reviewedBy: actorId,
+              reviewedAt: new Date().toISOString(),
+              remedy,
+            },
+          };
+          updateCaseMetadata(guild.id, modCase.caseId, metadata);
+          if (reversalSucceeded) updateCaseStatus(guild.id, modCase.caseId, 'reversed', actorId);
+          recordCaseAudit({ guildId: guild.id, caseId: modCase.caseId, actorId, event: reversalSucceeded ? 'case.court.appeal_remedy_applied' : 'case.court.appeal_remedy_failed', before: execution, after: metadata.court.sanctionExecution, metadata: { linkedCaseId, remedy } });
+          return remedy;
+          '''
+          new = r'''          const current = getCaseById(guild.id, modCase.caseId) || currentStart;
+          const metadata = { ...(current.metadata || {}) };
+          const currentCourt = metadata.court && typeof metadata.court === 'object' ? metadata.court : court;
+          const currentExecution = currentCourt?.sanctionExecution && typeof currentCourt.sanctionExecution === 'object' ? currentCourt.sanctionExecution : null;
+          const expectedOperationId = execution?.reversalOperationId || null;
+          if (currentExecution?.status === 'reversed') {
+            return { ...remedy, ok: true, detail: reversalSucceeded ? remedy.detail : 'The sanction is already reversed; a stale failure result was ignored.' };
+          }
+          if (expectedOperationId && currentExecution?.reversalOperationId && currentExecution.reversalOperationId !== expectedOperationId) {
+            const supersededRemedy = { ...remedy, ok: false, detail: `${String(remedy.detail || 'Appeal remedy completed.').slice(0, 220)} A newer reversal operation owns the case, so this stale result was not persisted.` };
+            recordCaseAudit({ guildId: guild.id, caseId: modCase.caseId, actorId, event: 'case.court.appeal_remedy_result_ignored', before: execution, after: currentExecution, metadata: { linkedCaseId, expectedOperationId, currentOperationId: currentExecution.reversalOperationId } });
+            return supersededRemedy;
+          }
+          metadata.court = {
+            ...currentCourt,
+            sanctionExecution: currentExecution ? {
+              ...currentExecution,
+              status: reversalSucceeded ? 'reversed' : 'reversal_failed',
+              reversedBy: reversalSucceeded ? actorId : null,
+              reversedAt: reversalSucceeded ? new Date().toISOString() : null,
+              reversalAttemptedBy: actorId,
+              reversalAttemptedAt: new Date().toISOString(),
+              reversalReason: reason,
+              reversalRemedy: remedy,
+            } : currentExecution,
+            appealOutcome: {
+              status: 'approved',
+              reviewedBy: actorId,
+              reviewedAt: new Date().toISOString(),
+              remedy,
+            },
+          };
+          updateCaseMetadata(guild.id, modCase.caseId, metadata);
+          if (reversalSucceeded) updateCaseStatus(guild.id, modCase.caseId, 'reversed', actorId);
+          recordCaseAudit({ guildId: guild.id, caseId: modCase.caseId, actorId, event: reversalSucceeded ? 'case.court.appeal_remedy_applied' : 'case.court.appeal_remedy_failed', before: currentExecution || execution, after: metadata.court.sanctionExecution, metadata: { linkedCaseId, remedy, operationId: expectedOperationId } });
+          return remedy;
+          '''
+          text = replace_once(text, old, new, 'fresh reversal finalization')
 
-          echo "promoted_sha=$FINAL_SHA" >> "$GITHUB_OUTPUT"
-          echo "✅ DEV application tree promoted to $TARGET at $FINAL_SHA"
+          old = "  if (appeal.status === 'approved' && ['ban', 'kick'].includes(modCase.action) && appeal.remedy?.ok) invite = await createRejoinInvite(interaction.guild, modCase.caseId);"
+          new = "  if (appeal.status === 'approved' && ['ban', 'kick'].includes(effectiveAppealAction(modCase)) && appeal.remedy?.ok === true) invite = await createRejoinInvite(interaction.guild, modCase.caseId);"
+          text = replace_once(text, old, new, 'Court rejoin invite action')
 
-  deploy:
-    needs: promote
-    uses: ./.github/workflows/deploy-dev.yml
-    with:
-      environment: ${{ inputs.target }}
-      operation: sync
-    secrets: inherit
+          old = r'''            } catch (error) {
+              remedy = { attempted: true, action: String(claimedExecution.action || court.decision?.action || 'court'), ok: false, detail: String(error?.message || error || 'Appeal remedy retry failed.').slice(0, 300) };
+              const failedCase = getCaseById(guildId, caseId) || claimed;
+              const failedCourt = failedCase.metadata?.court || court;
+              updateCaseMetadata(guildId, caseId, { ...(failedCase.metadata || {}), court: { ...failedCourt, sanctionExecution: { ...(failedCourt.sanctionExecution || claimedExecution), status: 'reversal_failed', reversalOperationId: operationId, reversalAttemptedBy: actorId, reversalAttemptedAt: new Date().toISOString(), reversalRemedy: remedy } } });
+              recordCaseAudit({ guildId, caseId, actorId, event: 'case.court.appeal_remedy_retry_failed', before: claimedExecution, after: remedy, metadata: { appealId, operationId } });
+            }
+          '''
+          new = r'''            } catch (error) {
+              const failed = persistCourtAppealReversalFailure(interaction, claimed, error, operationId);
+              remedy = failed.remedy;
+              recordCaseAudit({ guildId, caseId, actorId, event: 'case.court.appeal_remedy_retry_failed', before: claimedExecution, after: remedy, metadata: { appealId, operationId, superseded: Boolean(failed.superseded) } });
+            }
+          '''
+          text = replace_once(text, old, new, 'retry failure ownership')
 
-  summary:
-    needs: [promote, deploy]
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Write sync summary
+          old = r'''          const components = [new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId(`mod_case_appeal_history:${modCase.caseId}:${Math.max(0, page - 1)}`).setLabel('◀ Previous').setStyle(ButtonStyle.Secondary).setDisabled(page <= 0),
+            new ButtonBuilder().setCustomId(`mod_case_appeal_history:${modCase.caseId}:${Math.min(totalPages - 1, page + 1)}`).setLabel('Next ▶').setStyle(ButtonStyle.Secondary).setDisabled(page >= totalPages - 1),
+            new ButtonBuilder().setCustomId(`mod_case_appeal_open:${modCase.caseId}:${pending?.id || 'none'}`).setLabel('Open Pending').setStyle(ButtonStyle.Primary).setDisabled(!pending),
+            new ButtonBuilder().setCustomId(`mod_search_open:${modCase.caseId}`).setLabel('← Case Detail').setStyle(ButtonStyle.Secondary)
+          )];
+          '''
+          new = r'''          const components = [
+            new ActionRowBuilder().addComponents(
+              new ButtonBuilder().setCustomId(`mod_case_appeal_history:${modCase.caseId}:${Math.max(0, page - 1)}`).setLabel('◀ Previous').setStyle(ButtonStyle.Secondary).setDisabled(page <= 0),
+              new ButtonBuilder().setCustomId(`mod_case_appeal_history:${modCase.caseId}:${Math.min(totalPages - 1, page + 1)}`).setLabel('Next ▶').setStyle(ButtonStyle.Secondary).setDisabled(page >= totalPages - 1),
+              new ButtonBuilder().setCustomId(`mod_case_appeal_open:${modCase.caseId}:${pending?.id || 'none'}`).setLabel('Open Pending').setStyle(ButtonStyle.Primary).setDisabled(!pending)
+            ),
+            new ActionRowBuilder().addComponents(
+              new ButtonBuilder().setCustomId(`mod_search_open:${modCase.caseId}`).setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary)
+            ),
+          ];
+          '''
+          text = replace_once(text, old, new, 'appeal history Back row')
+
+          old = r'''          const components = [new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId(`mod_case_appeal_decide:${modCase.caseId}:${appeal.id}:approved`).setLabel('✅ Approve').setStyle(ButtonStyle.Success).setDisabled(appeal.status !== 'pending'),
+            new ButtonBuilder().setCustomId(`mod_case_appeal_decide:${modCase.caseId}:${appeal.id}:denied`).setLabel('❌ Deny').setStyle(ButtonStyle.Danger).setDisabled(appeal.status !== 'pending'),
+            new ButtonBuilder().setCustomId(`mod_case_appeal_retry_remedy:${modCase.caseId}:${appeal.id}`).setLabel(courtExecution?.status === 'reversing' && !appealRemedyIsStale(courtExecution) ? '⏳ Remedy Running' : '🔁 Retry Remedy').setStyle(ButtonStyle.Primary).setDisabled(!canRetryRemedy),
+            new ButtonBuilder().setCustomId(`mod_case_appeal_history:${modCase.caseId}:0`).setLabel('← Appeal History').setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId(`mod_search_open:${modCase.caseId}`).setLabel('Case Detail').setStyle(ButtonStyle.Secondary)
+          )];
+          '''
+          new = r'''          const components = [
+            new ActionRowBuilder().addComponents(
+              new ButtonBuilder().setCustomId(`mod_case_appeal_decide:${modCase.caseId}:${appeal.id}:approved`).setLabel('✅ Approve').setStyle(ButtonStyle.Success).setDisabled(appeal.status !== 'pending'),
+              new ButtonBuilder().setCustomId(`mod_case_appeal_decide:${modCase.caseId}:${appeal.id}:denied`).setLabel('❌ Deny').setStyle(ButtonStyle.Danger).setDisabled(appeal.status !== 'pending'),
+              new ButtonBuilder().setCustomId(`mod_case_appeal_retry_remedy:${modCase.caseId}:${appeal.id}`).setLabel(courtExecution?.status === 'reversing' && !appealRemedyIsStale(courtExecution) ? '⏳ Remedy Running' : '🔁 Retry Remedy').setStyle(ButtonStyle.Primary).setDisabled(!canRetryRemedy)
+            ),
+            new ActionRowBuilder().addComponents(
+              new ButtonBuilder().setCustomId(`mod_search_open:${modCase.caseId}`).setLabel('Case Detail').setStyle(ButtonStyle.Secondary)
+            ),
+            new ActionRowBuilder().addComponents(
+              new ButtonBuilder().setCustomId(`mod_case_appeal_history:${modCase.caseId}:0`).setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary)
+            ),
+          ];
+          '''
+          text = replace_once(text, old, new, 'appeal detail Back row')
+
+          old = r'''          rows.push(new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('mod_dashboard:none:analytics').setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId(`mod_case_appeal_queue_refresh:${activeToken}:${page}`).setLabel('🔄 Refresh').setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId(`mod_case_appeal_queue_filter:${activeToken}`).setLabel('🔎 Filter').setStyle(ButtonStyle.Secondary)
+          ));
+          '''
+          new = r'''          rows.push(new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId(`mod_case_appeal_queue_refresh:${activeToken}:${page}`).setLabel('🔄 Refresh').setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId(`mod_case_appeal_queue_filter:${activeToken}`).setLabel('🔎 Filter').setStyle(ButtonStyle.Secondary)
+          ));
+          rows.push(new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('mod_dashboard:none:analytics').setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary)
+          ));
+          '''
+          text = replace_once(text, old, new, 'appeal queue Back row')
+
+          cases_path.write_text(text)
+
+          court_path = Path('src/core/administration/mod/caseCourt.js')
+          text = court_path.read_text()
+
+          old = r'''function caseManagementNavigationRow(interaction, targetId) {
+            const items = [button(`mod_dashboard:${targetId}:actions`, 'Back', '⬅️')];
+            if (canUseModAction(interaction.member, interaction.guild, 'export_cases', interaction)) items.push(button(`mod_export_cases:${targetId}`, 'Export', '📤'));
+            return row(...items);
+          }
+          function caseFileBackRow(caseId) { return row(button(`mod_court_file:${caseId}`, 'Back', '⬅️')); }
+          function canDeleteCourt(interaction) { return canUseModAction(interaction.member, interaction.guild, 'court_delete', interaction); }
+          function caseFileNavigationRow(interaction, modCase) {
+            const items = [button(`mod_court_back:${modCase.userId}`, 'Back', '⬅️')];
+            if (canDeleteCourt(interaction)) items.push(button(`mod_court_delete:${modCase.caseId}`, 'Delete Case', '🗑️', ButtonStyle.Danger));
+            return row(...items);
+          }
+          '''
+          new = r'''function caseManagementNavigationRow(interaction, targetId) {
+            return row(button(`mod_dashboard:${targetId}:actions`, 'Back', '⬅️'));
+          }
+          function caseFileBackRow(caseId) { return row(button(`mod_court_file:${caseId}`, 'Back', '⬅️')); }
+          function canDeleteCourt(interaction) { return canUseModAction(interaction.member, interaction.guild, 'court_delete', interaction); }
+          function caseFileNavigationRow(interaction, modCase) {
+            return row(button(`mod_court_back:${modCase.userId}`, 'Back', '⬅️'));
+          }
+          '''
+          text = replace_once(text, old, new, 'Court Back-only navigation helpers')
+
+          old = r'''            components.push(row(
+              button(`mod_court_new:${target.id}`, 'New Case', '➕', ButtonStyle.Primary, !canManageCourt(interaction)),
+              button(`mod_court_review_queue:${target.id}`, 'Review Queue', '⚖️'),
+              button(`mod_court_published:${target.id}`, 'Published', '📜'),
+            ));
+            components.push(caseManagementNavigationRow(interaction, target.id));
+          '''
+          new = r'''            const dashboardActions = [
+              button(`mod_court_new:${target.id}`, 'New Case', '➕', ButtonStyle.Primary, !canManageCourt(interaction)),
+              button(`mod_court_review_queue:${target.id}`, 'Review Queue', '⚖️'),
+              button(`mod_court_published:${target.id}`, 'Published', '📜'),
+            ];
+            if (canUseModAction(interaction.member, interaction.guild, 'export_cases', interaction)) dashboardActions.push(button(`mod_export_cases:${target.id}`, 'Export', '📤'));
+            components.push(row(...dashboardActions));
+            components.push(caseManagementNavigationRow(interaction, target.id));
+          '''
+          text = replace_once(text, old, new, 'Court dashboard action separation')
+
+          old = r'''          controlButtons.push(button('mod_case_appeal_queue:0', 'Appeals', '📥'));
+          controlButtons.push(button(isClosed ? `mod_court_reopen:${modCase.caseId}` : `mod_court_close:${modCase.caseId}`, isClosed ? 'Reopen' : 'Close', isClosed ? '🔓' : '🔒', ButtonStyle.Secondary, !canCloseCourt(interaction)));
+          '''
+          new = r'''          controlButtons.push(button('mod_case_appeal_queue:0', 'Appeals', '📥'));
+          if (canDeleteCourt(interaction)) controlButtons.push(button(`mod_court_delete:${modCase.caseId}`, 'Delete Case', '🗑️', ButtonStyle.Danger));
+          controlButtons.push(button(isClosed ? `mod_court_reopen:${modCase.caseId}` : `mod_court_close:${modCase.caseId}`, isClosed ? 'Reopen' : 'Close', isClosed ? '🔓' : '🔒', ButtonStyle.Secondary, !canCloseCourt(interaction)));
+          '''
+          text = replace_once(text, old, new, 'Court file action separation')
+
+          court_path.write_text(text)
+          PY
+
+      - name: Validate changed source
         shell: bash
         run: |
-          {
-            echo "## Sync Goliath"
-            echo ""
-            echo "- Target: **${{ inputs.target }}**"
-            echo "- Promotion result: **${{ needs.promote.result }}**"
-            echo "- VPS deploy result: **${{ needs.deploy.result }}**"
-            echo "- Target commit: **${{ needs.promote.outputs.promoted_sha }}**"
-            echo ""
-            if [ "${{ inputs.target }}" = "dev" ]; then
-              echo "DEV branch → DEV VPS."
-            else
-              echo "DEV application files → ${{ inputs.target }} branch → ${{ inputs.target }} VPS."
-              echo "Target branch workflow-control YAML is intentionally preserved; all Goliath runtime/application files come from DEV."
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
+          set -euo pipefail
+          node --check src/core/administration/mod/cases.js
+          node --check src/core/administration/mod/caseCourt.js
+          npm ci
+          npm run doctor
 
-          [ "${{ needs.promote.result }}" = "success" ]
-          [ "${{ needs.deploy.result }}" = "success" ]
+      - name: Commit source fixes and restore permanent workflow
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name "Goliath Actions"
+          git config user.email "actions@users.noreply.github.com"
+          git show HEAD^:.github/workflows/sync-dev-now.yml > .github/workflows/sync-dev-now.yml
+          git add src/core/administration/mod/cases.js src/core/administration/mod/caseCourt.js .github/workflows/sync-dev-now.yml
+          git diff --cached --check
+          git commit -m "fix(mod): complete Case Court consistency hardening"
+          git push origin HEAD:dev
+          echo "SOURCE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Dispatch validated DEV deployment
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run deploy-dev.yml --ref dev -f environment=dev
+          for attempt in $(seq 1 30); do
+            RUN_ID="$(gh run list --workflow deploy-dev.yml --branch dev --event workflow_dispatch --limit 10 --json databaseId,headSha,status --jq '.[] | select(.headSha == env.SOURCE_SHA) | .databaseId' | head -n1)"
+            if [ -n "$RUN_ID" ]; then
+              echo "Deployment run: $RUN_ID"
+              gh run watch "$RUN_ID" --exit-status
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Could not locate the dispatched DEV deployment run for $SOURCE_SHA" >&2
+          exit 1
