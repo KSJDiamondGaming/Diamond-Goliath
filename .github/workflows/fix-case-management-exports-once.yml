@@ -38,6 +38,8 @@ jobs:
               s = s.replace(old, new, 1)
           p.write_text(s)
           PY
+      - name: Install dependencies
+        run: npm ci
       - name: Validate exact regression
         run: |
           node - <<'NODE'
@@ -48,7 +50,6 @@ jobs:
           if (!ux) throw new Error('caseManagementUx failed to import');
           console.log('Case management helper exports are valid.');
           NODE
-      - run: npm ci
       - name: Remove diagnostic and one-off workflows before Doctor
         run: |
           rm -f .github/workflows/mod-investigate-diagnostics-once.yml
