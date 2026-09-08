@@ -231,9 +231,27 @@ async function syncQuarantineIsolation(guild, options = {}) {
   let skipped = 0;
   let failed = 0;
   const failures = [];
+  const targetMemberId = options.targetMemberId ? String(options.targetMemberId) : null;
 
   for (const [, channel] of channels || []) {
     if (!channel?.permissionOverwrites?.edit || channel.isThread?.()) continue;
+
+    // A member-specific ViewChannel allow wins over a role-level deny in Discord's
+    // overwrite hierarchy. Refuse to claim guaranteed isolation if one exists.
+    // This check runs before the role-level skip so private channels cannot leak
+    // through a personal allow that would otherwise override the quarantine role.
+    if (targetMemberId) {
+      const memberOverwrite = channel.permissionOverwrites.cache?.get(targetMemberId);
+      if (memberOverwrite?.allow?.has(PermissionFlagsBits.ViewChannel)) {
+        failed += 1;
+        failures.push({
+          channelId: channel.id,
+          channelName: channel.name || null,
+          error: 'Target has an explicit member View Channel allow that overrides role quarantine isolation.',
+        });
+        continue;
+      }
+    }
 
     // If the quarantine role already cannot view this channel, there is nothing
     // to change and therefore nothing for Discord to reject. This is common for
@@ -533,7 +551,7 @@ async function quarantineMember(guild, member, options = {}) {
   let snapshotRoles = [];
   try {
     const role = await ensureQuarantineRole(guild, options);
-    const isolation = await syncQuarantineIsolation(guild, { ...options, role });
+    const isolation = await syncQuarantineIsolation(guild, { ...options, role, targetMemberId: member.id });
     if (!isolation.success) {
       return {
         success: false,
@@ -757,7 +775,7 @@ async function enforceQuarantineOnMember(member, options = {}) {
 
   try {
     const role = await ensureQuarantineRole(guild, options);
-    const isolation = await syncQuarantineIsolation(guild, { ...options, role });
+    const isolation = await syncQuarantineIsolation(guild, { ...options, role, targetMemberId: member.id });
     if (!isolation.success) return { success: false, mode, reason: 'Quarantine isolation sync failed.', isolation };
     let interviewRoom = null;
     if (mode === QUARANTINE_MODES.INVESTIGATION) {
