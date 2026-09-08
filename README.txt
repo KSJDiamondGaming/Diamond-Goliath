@@ -40,3 +40,6 @@ Manage Channels
 View Audit Log
 Manage Webhooks
 Ban/Kick/Timeout if used elsewhere
+
+Quarantine hierarchy recovery
+If a configured Goliath Quarantine role is managed or sits above the bot and cannot be edited, Goliath replaces it with an editable quarantine role below its own hierarchy before applying channel isolation.
