@@ -185,11 +185,20 @@ async function evaluateMember(member, local, suspects = [], { trigger = 'continu
 function buildChangeEmbed(member, result, trigger) {
   const config = DECISIONS[result.after.decision];
   const changeText = result.change.reasons.length ? result.change.reasons.map((item) => `• ${item}`).join('\n') : 'No material escalation.';
+  const riskFactors = Array.isArray(result.context?.risk?.reasons) && result.context.risk.reasons.length
+    ? result.context.risk.reasons.slice(0, 6).map((item) => `**+${Number(item.points || 0)}** • ${item.reason}`).join('\n')
+    : 'No verified moderation-risk factors currently contribute to this score.';
+  const decisionReasons = Array.isArray(result.assessment?.reasons) && result.assessment.reasons.length
+    ? result.assessment.reasons.slice(0, 5).map((item) => `• ${item}`).join('\n')
+    : 'No attention threshold reached.';
+
   return new EmbedBuilder()
     .setColor(config.color)
     .setTitle(`🧠 Intelligence Change • ${member.user.tag || member.user.username}`)
     .setDescription(`${config.emoji} **${config.label}** • Risk **${result.after.riskScore}/100**\n\n${changeText}`)
     .addFields(
+      { name: 'Why this score?', value: riskFactors.slice(0, 1024), inline: false },
+      { name: 'Why this decision?', value: decisionReasons.slice(0, 1024), inline: false },
       { name: 'Watch State', value: String(result.after.watchState || 'clear').toUpperCase(), inline: true },
       { name: 'Network Cases', value: String(result.after.networkCases || 0), inline: true },
       { name: 'Correlation', value: `${result.after.suspectScore || 0}%`, inline: true },
