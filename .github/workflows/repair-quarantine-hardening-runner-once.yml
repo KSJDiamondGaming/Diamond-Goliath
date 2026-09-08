@@ -1,0 +1,34 @@
+name: Repair Quarantine Hardening Runner Once
+on:
+  push:
+    branches: [dev]
+    paths:
+      - '.github/workflows/repair-quarantine-hardening-runner-once.yml'
+permissions:
+  contents: write
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: dev
+          fetch-depth: 0
+      - name: Repair matcher and remove this helper
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('.github/workflows/quarantine-full-hardening-once.yml')
+          s = p.read_text()
+          old = """          ]:\n              replace_once(court, old_reply, new_reply, label)\n\n          # 11) Approved appeal remedies may restore quarantine, unban and DM; acknowledge first."""
+          new = """          ]:\n              if label == 'court active reply':\n                  p = Path(court)\n                  source = p.read_text()\n                  first = source.find(old_reply)\n                  second = source.find(old_reply, first + len(old_reply)) if first >= 0 else -1\n                  if second < 0:\n                      raise RuntimeError('court active reply: second modal occurrence not found')\n                  p.write_text(source[:second] + new_reply + source[second + len(old_reply):])\n              else:\n                  replace_once(court, old_reply, new_reply, label)\n\n          # 11) Approved appeal remedies may restore quarantine, unban and DM; acknowledge first."""
+          if s.count(old) != 1:
+              raise SystemExit(f'Expected matcher block once, found {s.count(old)}')
+          p.write_text(s.replace(old, new, 1))
+          PY
+          git rm .github/workflows/repair-quarantine-hardening-runner-once.yml
+          git config user.name github-actions
+          git config user.email actions@github.com
+          git add .github/workflows/quarantine-full-hardening-once.yml .github/workflows/repair-quarantine-hardening-runner-once.yml
+          git commit -m "fix(actions): align court execution matcher"
+          git push origin dev
