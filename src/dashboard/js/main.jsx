@@ -6,12 +6,35 @@ import App from './App';
 import Appeals from './pages/moderation/Appeals';
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
-let pathname = window.location.pathname.replace(/\/+$/, '') || '/';
-const isAppealsRoute = pathname === '/appeals' || pathname.endsWith('/appeals');
 
-if (isAppealsRoute && pathname !== '/appeals') {
-  const canonical = `/appeals${window.location.search || ''}${window.location.hash || ''}`;
-  window.history.replaceState({}, '', canonical);
+function getAppealReference() {
+  const candidates = [window.location.search, window.location.hash];
+  for (const candidate of candidates) {
+    const raw = String(candidate || '').replace(/^[#?]/, '');
+    if (!raw) continue;
+    const params = new URLSearchParams(raw.includes('?') ? raw.slice(raw.indexOf('?') + 1) : raw);
+    const guild = String(params.get('guild') || '').trim();
+    const caseId = String(params.get('case') || '').trim();
+    if (/^\d{16,20}$/.test(guild) && /^\d{1,12}$/.test(caseId) && Number(caseId) > 0) {
+      return { guild, caseId: String(Number(caseId)) };
+    }
+  }
+  return null;
+}
+
+let pathname = window.location.pathname.replace(/\/+$/, '') || '/';
+const appealReference = getAppealReference();
+const isAppealsPath = pathname === '/appeals' || pathname.endsWith('/appeals');
+const isRecoveredAppealPath = Boolean(appealReference) && (pathname === '/overview' || pathname === '/');
+
+if ((isAppealsPath || isRecoveredAppealPath) && pathname !== '/appeals') {
+  const params = new URLSearchParams();
+  if (appealReference) {
+    params.set('guild', appealReference.guild);
+    params.set('case', appealReference.caseId);
+  }
+  const query = params.toString();
+  window.history.replaceState({}, '', query ? `/appeals?${query}` : '/appeals');
   pathname = '/appeals';
 }
 
