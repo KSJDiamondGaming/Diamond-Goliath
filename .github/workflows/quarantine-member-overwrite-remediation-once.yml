@@ -1,0 +1,40 @@
+name: Quarantine Member Overwrite Remediation
+on:
+  push:
+    branches: [dev]
+    paths:
+      - '.github/workflows/quarantine-member-overwrite-remediation-once.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Apply remediation
+        run: node .github/quarantine-member-overwrite-remediation-once.js
+      - name: Syntax check
+        run: node --check src/core/security/protection/quarantine.js
+      - name: Import check
+        run: node -e "require('./src/core/security/protection/quarantine')"
+      - name: Remove one-off files before Doctor
+        run: rm -f .github/quarantine-member-overwrite-remediation-once.js .github/workflows/quarantine-member-overwrite-remediation-once.yml
+      - name: Doctor
+        run: npm run doctor
+      - name: Commit repair
+        run: |
+          git config user.name github-actions
+          git config user.email actions@github.com
+          git add -A
+          git diff --cached --quiet && exit 0
+          git commit -m "fix(security): remediate explicit quarantine member access"
+          git push origin dev
