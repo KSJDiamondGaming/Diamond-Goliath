@@ -24,6 +24,10 @@ jobs:
       - name: Apply fix
         run: |
           node scripts/fix-investigation-submit-once.js
+      - name: Remove one-off patcher before validation
+        run: |
+          rm -f scripts/fix-investigation-submit-once.js
+          rm -f .github/workflows/fix-investigation-submit-once.yml
       - name: Validate fix
         run: |
           node --check src/core/administration/mod/quarantineInteractions.js
@@ -32,7 +36,6 @@ jobs:
         run: |
           git config user.name github-actions
           git config user.email actions@github.com
-          git rm .github/workflows/fix-investigation-submit-once.yml scripts/fix-investigation-submit-once.js
-          git add src/core/administration/mod/quarantineInteractions.js
+          git add -A
           git commit -m 'fix(mod): acknowledge investigation modal before isolation work'
           git push origin HEAD:dev
