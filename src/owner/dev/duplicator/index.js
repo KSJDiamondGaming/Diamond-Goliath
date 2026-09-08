@@ -5,6 +5,7 @@
 // control-plane state even when the source bot is not currently assigned that role.
 const implementation = require('./index.base');
 const core = require('./core');
+const hardening = require('./hardening');
 
 const CONTROL_PLANE_SNAPSHOT_KEY = Symbol.for('goliath.duplicator.snapshot-control-plane-v2');
 
@@ -39,5 +40,7 @@ if (!core[CONTROL_PLANE_SNAPSHOT_KEY]) {
     return snap;
   };
 }
+
+hardening.install();
 
 module.exports = implementation;

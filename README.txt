@@ -49,3 +49,6 @@ Goliath uses View Channel as the quarantine containment boundary instead of atte
 
 Quarantine overwrite bypass guard
 Before a member is isolated, Goliath checks for member-specific View Channel allows because Discord applies member overwrites after role overwrites. If a personal allow would bypass the quarantine role, Goliath refuses to claim guaranteed isolation and reports the affected channel instead of silently leaving access open.
+
+User appeal notices
+Moderation appeal notices are sent as user-facing embeds. Members appeal through the case button or by DMing Goliath and using /appeal; internal /mod routes are never presented as user instructions. A secure web appeal route can be added later without changing the Discord case workflow.
