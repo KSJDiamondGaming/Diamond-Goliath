@@ -4,66 +4,94 @@ on:
   workflow_dispatch:
     inputs:
       target:
-        description: Environment to verify and repair
+        description: Target environment
         required: true
-        default: all
+        default: beta
         type: choice
         options:
-          - all
-          - dev
           - beta
           - production
+          - dev
 
 permissions:
   contents: write
   statuses: write
 
 concurrency:
-  group: sync-goliath
+  group: sync-goliath-${{ inputs.target }}
   cancel-in-progress: false
 
 jobs:
-  prepare:
+  promote:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     outputs:
-      matrix: ${{ steps.matrix.outputs.matrix }}
+      promoted_sha: ${{ steps.promote.outputs.promoted_sha }}
     steps:
-      - name: Resolve sync targets
-        id: matrix
+      - uses: actions/checkout@v5
+        with:
+          ref: dev
+          fetch-depth: 0
+
+      - name: Promote DEV application tree to target branch
+        id: promote
         shell: bash
+        env:
+          TARGET: ${{ inputs.target }}
         run: |
           set -euo pipefail
 
-          case "${{ inputs.target }}" in
-            all)
-              MATRIX='{"environment":["dev","beta","production"]}'
-              ;;
-            dev|beta|production)
-              MATRIX='{"environment":["${{ inputs.target }}"]}'
-              ;;
-            *)
-              echo "Unsupported sync target: ${{ inputs.target }}" >&2
-              exit 1
-              ;;
-          esac
+          if [ "$TARGET" = "dev" ]; then
+            SHA="$(git rev-parse HEAD)"
+            echo "DEV selected: no branch promotion required."
+            echo "promoted_sha=$SHA" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
-          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
-          echo "Sync matrix: $MATRIX"
+          git fetch --no-tags origin dev "$TARGET"
+          DEV_SHA="$(git rev-parse origin/dev)"
+          TARGET_SHA="$(git rev-parse origin/$TARGET)"
 
-  repair:
-    needs: prepare
-    strategy:
-      fail-fast: false
-      max-parallel: 1
-      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+          git config user.name "Goliath Sync"
+          git config user.email "goliath-sync@users.noreply.github.com"
+          git switch -C "promote-$TARGET" "$TARGET_SHA"
+
+          # Promote the complete application tree from DEV while keeping the
+          # target branch's GitHub workflow control files. GITHUB_TOKEN cannot
+          # rewrite workflow files without an additional workflows permission,
+          # and workflow YAML is not part of the running Goliath application.
+          git diff --binary "$TARGET_SHA" "$DEV_SHA" -- . ':(exclude).github/workflows/**' > /tmp/goliath-promotion.patch
+
+          if [ -s /tmp/goliath-promotion.patch ]; then
+            git apply --index /tmp/goliath-promotion.patch
+            git commit -m "Promote DEV $DEV_SHA to $TARGET"
+            git push origin "HEAD:refs/heads/$TARGET"
+          else
+            echo "$TARGET already matches DEV application files."
+          fi
+
+          git fetch --no-tags origin dev "$TARGET"
+          FINAL_SHA="$(git rev-parse origin/$TARGET)"
+
+          if ! git diff --quiet origin/dev "origin/$TARGET" -- . ':(exclude).github/workflows/**'; then
+            echo "Promotion verification failed: $TARGET application files do not match DEV." >&2
+            git diff --stat origin/dev "origin/$TARGET" -- . ':(exclude).github/workflows/**' >&2
+            exit 1
+          fi
+
+          echo "promoted_sha=$FINAL_SHA" >> "$GITHUB_OUTPUT"
+          echo "✅ DEV application tree promoted to $TARGET at $FINAL_SHA"
+
+  deploy:
+    needs: promote
     uses: ./.github/workflows/deploy-dev.yml
     with:
-      environment: ${{ matrix.environment }}
+      environment: ${{ inputs.target }}
       operation: sync
     secrets: inherit
 
   summary:
-    needs: [prepare, repair]
+    needs: [promote, deploy]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -73,11 +101,18 @@ jobs:
           {
             echo "## Sync Goliath"
             echo ""
-            echo "- Requested target: **${{ inputs.target }}**"
-            echo "- Repair result: **${{ needs.repair.result }}**"
+            echo "- Target: **${{ inputs.target }}**"
+            echo "- Promotion result: **${{ needs.promote.result }}**"
+            echo "- VPS deploy result: **${{ needs.deploy.result }}**"
+            echo "- Target commit: **${{ needs.promote.outputs.promoted_sha }}**"
             echo ""
-            echo "Sync repairs each VPS environment from its matching GitHub branch."
-            echo "It never promotes DEV to BETA or BETA to PRODUCTION."
+            if [ "${{ inputs.target }}" = "dev" ]; then
+              echo "DEV branch → DEV VPS."
+            else
+              echo "DEV application files → ${{ inputs.target }} branch → ${{ inputs.target }} VPS."
+              echo "Target branch workflow-control YAML is intentionally preserved; all Goliath runtime/application files come from DEV."
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
-          [ "${{ needs.repair.result }}" = "success" ]
+          [ "${{ needs.promote.result }}" = "success" ]
+          [ "${{ needs.deploy.result }}" = "success" ]
