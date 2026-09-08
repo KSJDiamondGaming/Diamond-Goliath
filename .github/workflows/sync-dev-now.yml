@@ -1,4 +1,4 @@
-name: Sync DEV Now
+name: Sync Goliath
 
 on:
   workflow_dispatch:
