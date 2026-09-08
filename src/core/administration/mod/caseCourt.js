@@ -218,6 +218,7 @@ function buildCaseFile(interaction, modCase) {
 
   const nextStep = (() => {
     if (isClosed) return 'This case is closed. Reopen it before making further changes.';
+    if (modCase.status === 'reversed') return 'This published decision has been reversed. Its sanction cannot be executed again.';
     if (court.stage === 'investigation') return 'Build the case file, verify the available material, then submit it for review.';
     if (court.stage === 'review') return court.reviewingAdminId
       ? `Review is assigned to <@${court.reviewingAdminId}>. Verify evidence and record the decision.`
@@ -239,7 +240,7 @@ function buildCaseFile(interaction, modCase) {
         `**Action:** ${String(court.decision.action || 'none').replaceAll('_', ' ')}`,
         `**Recorded by:** <@${court.decision.decidedBy}> • ${discordTime(court.decision.decidedAt)}`,
         court.decision.action === 'ban' ? `**Second approval:** ${court.sanctionReview?.status === 'approved' ? `✅ Approved by <@${court.sanctionReview.approvedBy}>` : '⏳ Required'}` : null,
-        court.sanctionExecution ? `**Execution:** ${court.sanctionExecution.status === 'executed' ? '✅ Completed' : court.sanctionExecution.status === 'reversed' ? '↩️ Reversed' : court.sanctionExecution.status === 'reversal_failed' ? '⚠️ Appeal remedy failed' : court.sanctionExecution.status === 'executing' ? '⏳ In progress' : court.sanctionExecution.status === 'failed' ? '❌ Failed' : '⏳ Pending'}` : (court.decision.action !== 'no_action' ? '**Execution:** ⏳ Pending' : null),
+        court.sanctionExecution ? `**Execution:** ${court.sanctionExecution.status === 'executed' ? '✅ Completed' : court.sanctionExecution.status === 'reversed' ? '↩️ Reversed' : court.sanctionExecution.status === 'reversing' ? '⏳ Reversing after appeal' : court.sanctionExecution.status === 'reversal_failed' ? '⚠️ Appeal remedy failed' : court.sanctionExecution.status === 'executing' ? '⏳ In progress' : court.sanctionExecution.status === 'failed' ? '❌ Failed' : '⏳ Pending'}` : (court.decision.action !== 'no_action' ? '**Execution:** ⏳ Pending' : null),
       ].filter(Boolean).join('\n')
     : 'No decision has been recorded yet.';
 
@@ -292,7 +293,7 @@ function buildCaseFile(interaction, modCase) {
     button(`mod_court_verify:${modCase.caseId}`, 'Verify', '✅', ButtonStyle.Secondary, !reviewerAuthority || !court.evidence.length || isClosed),
     button(`mod_court_decide:${modCase.caseId}`, 'Decide', '🧾', canDecide ? ButtonStyle.Primary : ButtonStyle.Secondary, !canDecide),
     button(`mod_court_publish:${modCase.caseId}`, court.publication ? 'Update' : 'Publish', '📜', ButtonStyle.Success, !canPublishCourt(interaction) || !court.decision || isClosed || (court.decision?.action === 'ban' && court.sanctionReview?.status !== 'approved')),
-    button(`mod_court_execute:${modCase.caseId}`, court.sanctionExecution?.status === 'executed' ? 'Done' : court.sanctionExecution?.status === 'reversed' ? 'Reversed' : court.sanctionExecution?.status === 'executing' && !executionIsStale(court.sanctionExecution) ? 'Running' : court.sanctionExecution?.status === 'failed' || executionIsStale(court.sanctionExecution) ? 'Retry' : 'Execute', '⚡', ButtonStyle.Danger, !reviewerAuthority || !canExecuteAction || isClosed || court.stage !== 'published' || !court.decision || court.decision.action === 'no_action' || ['executed', 'reversed', 'reversal_failed'].includes(court.sanctionExecution?.status) || (court.sanctionExecution?.status === 'executing' && !executionIsStale(court.sanctionExecution)) || (court.decision?.action === 'ban' && court.sanctionReview?.status !== 'approved')),
+    button(`mod_court_execute:${modCase.caseId}`, court.sanctionExecution?.status === 'executed' ? 'Done' : court.sanctionExecution?.status === 'reversed' ? 'Reversed' : court.sanctionExecution?.status === 'reversing' ? 'Reversing' : court.sanctionExecution?.status === 'reversal_failed' ? 'Appeal Failed' : court.sanctionExecution?.status === 'executing' && !executionIsStale(court.sanctionExecution) ? 'Running' : court.sanctionExecution?.status === 'failed' || executionIsStale(court.sanctionExecution) ? 'Retry' : 'Execute', '⚡', ButtonStyle.Danger, !reviewerAuthority || !canExecuteAction || isClosed || modCase.status === 'reversed' || court.stage !== 'published' || !court.decision || court.decision.action === 'no_action' || ['executed', 'reversed', 'reversing', 'reversal_failed'].includes(court.sanctionExecution?.status) || (court.sanctionExecution?.status === 'executing' && !executionIsStale(court.sanctionExecution)) || (court.decision?.action === 'ban' && court.sanctionReview?.status !== 'approved')),
   ];
 
   const controlButtons = [];

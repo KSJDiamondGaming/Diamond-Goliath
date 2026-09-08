@@ -235,7 +235,7 @@ function claimCourtOperationAtomic(guildId, caseId, { mode = 'execution', claim,
     } else if (mode === 'reversal') {
       if (status === 'reversed') return { ok: false, reason: 'finalized', current };
       if (status === 'reversing' && !stale) return { ok: false, reason: 'busy', current };
-      if (!['reversal_failed', 'reversing'].includes(status)) return { ok: false, reason: 'invalid_state', current };
+      if (!['executed', 'reversal_failed', 'reversing'].includes(status)) return { ok: false, reason: 'invalid_state', current };
     } else {
       return { ok: false, reason: 'invalid_mode', current };
     }
