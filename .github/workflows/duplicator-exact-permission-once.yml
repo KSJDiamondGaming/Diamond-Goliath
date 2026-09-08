@@ -27,16 +27,24 @@ jobs:
         run: npm ci
       - name: Apply exact-first Duplicator repair
         run: node scripts/duplicator-exact-permission-once.js
-      - name: Validate Duplicator and repository
+      - name: Validate repaired Duplicator
         run: |
+          set -euo pipefail
           node --check src/owner/dev/duplicator/core.js
           node --check src/owner/dev/duplicator/selective.js
-          npm run doctor
+          npm run syntax
+          npm run imports
+          npm run contracts
+          node --test test/verification/duplicatorHistoryHardening.test.js
       - name: Commit repaired Duplicator
         run: |
           set -euo pipefail
           git config user.name "github-actions"
           git config user.email "actions@github.com"
           git add src/owner/dev/duplicator/core.js
+          if git diff --cached --quiet; then
+            echo "No Duplicator core changes to commit"
+            exit 0
+          fi
           git commit -m "fix(duplicator): attempt exact permissions before deferring"
           git push origin HEAD:dev
