@@ -95,9 +95,9 @@ function suspectedAccounts(member) {
 function buildActionRows(member) {
   if (member.user.bot) return [];
   return [new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`mod_scan_view:${member.id}`).setLabel('Open Intelligence').setEmoji('🧠').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId(`joinintel:view:${member.guild.id}:${member.id}`).setLabel('Open Intelligence').setEmoji('🧠').setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId(`mod_open_quarantine:${member.id}`).setLabel('Investigate').setEmoji('🔎').setStyle(ButtonStyle.Danger),
-    new ButtonBuilder().setCustomId(`mod_scan_watch:${member.id}`).setLabel('Watch Member').setEmoji('👁️').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId(`joinintel:watch:${member.guild.id}:${member.id}`).setLabel('Watch Member').setEmoji('👁️').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId(`joinintel:clear:${member.guild.id}:${member.id}`).setLabel('Mark Clear').setEmoji('✅').setStyle(ButtonStyle.Success),
   )];
 }
@@ -135,7 +135,7 @@ function buildEmbed(member, context, local, suspects, scanId, assessment) {
       { name: '🌐 Network Intelligence', value: [`Observed guilds: **${history.length}** • Cross-guild cases: **${context.network?.caseCount || 0}** • Cross-guild bans: **${context.network?.banCount || 0}**`, `External records: **${externalCount}** • Verified: **${reputation.verifiedExternal || 0}** • Submitted: **${reputation.submitted || 0}** • Unverified: **${reputation.unverified || 0}**`].join('\n'), inline: false },
       { name: '🔗 Account Correlation', value: `${suspectText.slice(0, 900)}\n\n*Heuristic correlation is an investigation aid, not proof of shared ownership.*`, inline: false },
     )
-    .setFooter({ text: 'Automatic Join Intelligence • actions are permission checked by /mod' })
+    .setFooter({ text: 'Automatic Join Intelligence • report remains in-channel; staff actions open privately where appropriate' })
     .setTimestamp();
   const avatar = member.user.displayAvatarURL?.({ size: 256 });
   if (avatar) embed.setThumbnail(avatar);
@@ -158,7 +158,7 @@ async function scanMemberOnJoin(member) {
   const context = await intelligence.buildContext(member.client, member, local);
   const suspects = member.user.bot ? [] : suspectedAccounts(member);
   const scanId = `join_${Date.now().toString(36)}_${member.id.slice(-6)}`;
-  const assessment = decisioning.classify(context, suspects);
+  const assessment = decisioning.classify({ ...context, guild: member.guild }, suspects);
   decisioning.saveDecision(member.guild.id, member.id, assessment, { trigger: 'guild_member_add', scanId });
   const channel = await resolveOutputChannel(member);
 

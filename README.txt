@@ -40,3 +40,12 @@ Manage Channels
 View Audit Log
 Manage Webhooks
 Ban/Kick/Timeout if used elsewhere
+
+Quarantine hierarchy recovery
+If a configured Goliath Quarantine role is managed or sits above the bot and cannot be edited, Goliath replaces it with an editable quarantine role below its own hierarchy before applying channel isolation.
+
+Permission-safe quarantine isolation
+Goliath uses View Channel as the quarantine containment boundary instead of attempting to deny unrelated permission bits that Discord may reject. Channels already inaccessible to the quarantine role are skipped. Channels that still require an isolation overwrite are checked for Goliath's effective Manage Roles and View Channel permissions before the overwrite is attempted. Investigation category and room overwrites use the same minimal permission model.
+
+Quarantine overwrite bypass guard
+Before a member is isolated, Goliath checks for member-specific View Channel allows because Discord applies member overwrites after role overwrites. If a personal allow would bypass the quarantine role, Goliath refuses to claim guaranteed isolation and reports the affected channel instead of silently leaving access open.

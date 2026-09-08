@@ -229,7 +229,7 @@ function ownerHomePayload(interaction, notice = null) {
       { name: 'Context', value: guildContext, inline: false },
       { name: 'DEV Override', value: isDev ? (devState.enabled ? '🟢 Enabled' : '🔴 Disabled') : '⚪ DEV only', inline: true },
       { name: 'DEV Billing Unlock', value: isDev ? (billing.active ? `🟢 ${billing.plan || 'enabled'}` : '🔴 Disabled') : '⚪ DEV only', inline: true },
-      { name: 'Owner Tools', value: showCommandCenter ? '🟢 Server Tools • Security • Command Center' : '🟢 Server Tools • Security', inline: true },
+      { name: 'Owner Tools', value: showCommandCenter ? '🟢 Server Tools • Security • DEV Sync • Command Center' : (isDev ? '🟢 Server Tools • Security • DEV Sync' : '🟢 Server Tools • Security'), inline: true },
     )
     .setFooter({ text: 'Goliath Owner • OWNER_IDS protected' })
     .setTimestamp();
@@ -265,13 +265,25 @@ function ownerHomePayload(interaction, notice = null) {
 
   const primary = new ActionRowBuilder().addComponents(...primaryComponents);
 
-  const navigation = new ActionRowBuilder().addComponents(
+  const navigationComponents = [
     new ButtonBuilder()
       .setCustomId(contextualOwnerId('refresh', interaction))
       .setLabel('Refresh')
       .setEmoji('🔄')
-      .setStyle(ButtonStyle.Secondary)
-  );
+      .setStyle(ButtonStyle.Secondary),
+  ];
+
+  if (isDev) {
+    navigationComponents.push(
+      new ButtonBuilder()
+        .setLabel('Sync DEV Now')
+        .setEmoji('🚀')
+        .setStyle(ButtonStyle.Link)
+        .setURL('https://github.com/KSJHub/Goliath/actions/workflows/sync-dev-now.yml')
+    );
+  }
+
+  const navigation = new ActionRowBuilder().addComponents(...navigationComponents);
 
   return { embeds: [embed], components: [primary, navigation] };
 }

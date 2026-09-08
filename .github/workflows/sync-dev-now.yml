@@ -1,0 +1,83 @@
+name: Sync Goliath
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Environment to verify and repair
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - dev
+          - beta
+          - production
+
+permissions:
+  contents: write
+  statuses: write
+
+concurrency:
+  group: sync-goliath
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - name: Resolve sync targets
+        id: matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          case "${{ inputs.target }}" in
+            all)
+              MATRIX='{"environment":["dev","beta","production"]}'
+              ;;
+            dev|beta|production)
+              MATRIX='{"environment":["${{ inputs.target }}"]}'
+              ;;
+            *)
+              echo "Unsupported sync target: ${{ inputs.target }}" >&2
+              exit 1
+              ;;
+          esac
+
+          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+          echo "Sync matrix: $MATRIX"
+
+  repair:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    uses: ./.github/workflows/deploy-dev.yml
+    with:
+      environment: ${{ matrix.environment }}
+      operation: sync
+    secrets: inherit
+
+  summary:
+    needs: [prepare, repair]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Write sync summary
+        shell: bash
+        run: |
+          {
+            echo "## Sync Goliath"
+            echo ""
+            echo "- Requested target: **${{ inputs.target }}**"
+            echo "- Repair result: **${{ needs.repair.result }}**"
+            echo ""
+            echo "Sync repairs each VPS environment from its matching GitHub branch."
+            echo "It never promotes DEV to BETA or BETA to PRODUCTION."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          [ "${{ needs.repair.result }}" = "success" ]
