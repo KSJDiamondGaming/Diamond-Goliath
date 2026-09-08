@@ -6,7 +6,7 @@ fn = s.index('async function sendCaseAppealNotice')
 start = s.index("    const action = String(modCase.action || 'moderation action').toUpperCase();", fn)
 end = s.index('    sent = true;', start)
 old_end = s.rfind('    });', start, end) + len('    });')
-replacement = """    const action = String(modCase.action || 'moderation action').toUpperCase();
+replacement = r"""    const action = String(modCase.action || 'moderation action').toUpperCase();
     const reason = String(modCase.reason || 'No reason provided').slice(0, 900);
     const embed = new EmbedBuilder()
       .setColor('#5865F2')
