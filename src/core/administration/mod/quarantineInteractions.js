@@ -50,13 +50,13 @@ async function ensureInitiatorInterviewAccess(guild, channelId, initiatorId) {
     || await guild.members.fetch(String(initiatorId)).catch(() => null);
   if (!member) return { success: false, reason: 'Initiating moderator is no longer in the guild.' };
   try {
+    // Keep this to the permissions required to use the room. Asking Discord to
+    // grant unrelated bits (for example ManageMessages) can return 50013 when
+    // the bot does not itself hold that bit in the private category.
     await channel.permissionOverwrites.edit(member.id, {
       ViewChannel: true,
       SendMessages: true,
       ReadMessageHistory: true,
-      AttachFiles: true,
-      EmbedLinks: true,
-      ManageMessages: true,
     }, { reason: 'Ensure investigating moderator can access the private interview room' });
     return { success: true, channelId: channel.id, memberId: member.id };
   } catch (error) {
@@ -174,7 +174,7 @@ async function submitQuarantine(interaction, targetId, requestedMode, legacy = f
   const reason = fieldValue(interaction, 'reason');
   if (!reason) return safeReply(interaction, { content: '❌ An investigation reason is required.', flags: 64 });
 
-  // Acknowledge the modal first: isolation performs several Discord API writes and may outlive its deadline.
+  // Acknowledge first: isolation performs several Discord API writes and may outlive the modal deadline.
   if (!interaction.deferred && !interaction.replied) {
     await interaction.deferReply({ flags: Discord.MessageFlags.Ephemeral });
   }
