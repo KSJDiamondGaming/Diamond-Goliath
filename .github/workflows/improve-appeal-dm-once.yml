@@ -72,7 +72,10 @@ jobs:
           node -e "require('./src/core/administration/mod/storage')"
           grep -q "open your DM with \*\*Goliath\*\* and use \`/appeal\`" src/core/administration/mod/storage.js
           ! grep -q '/mod appeal:' src/core/administration/mod/storage.js
-          npm run doctor
+      - name: Remove one-off workflow before Doctor
+        run: rm -f .github/workflows/improve-appeal-dm-once.yml
+      - name: Doctor
+        run: npm run doctor
       - name: Commit source change
         run: |
           git config user.name github-actions
