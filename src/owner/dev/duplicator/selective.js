@@ -302,6 +302,7 @@ function confirmPayload(session) {
       '',
       `This will transfer **${snap.stats.categories} categories**, **${snap.stats.channels} channels**, **${snap.stats.roleDependencies ?? snap.stats.roles} required role dependencies** (${snap.stats.managedRoles || 0} managed/remapped), and rebuild **${snap.stats.permissionOverwrites} permission overwrites**.`,
       '', 'Missing permission roles are created before channel/category overwrites are applied.',
+      'If the destination Goliath instance cannot grant a source permission bit, that bit is deferred and recorded instead of blocking the entire copy.',
     ].join('\n'), 0xf59e0b)],
     components: [new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(componentId(session, 'copy-now')).setLabel('Confirm Copy').setEmoji('⚠️').setStyle(ButtonStyle.Danger),
@@ -413,6 +414,7 @@ async function recordTransfer(interaction, session, response) {
       createdChannelIds: [...new Set((transferObjects.createdChannelIds || []).map(String))],
     },
     warnings: response.log?.errors || [], notes: response.log?.notes || [],
+    deferredPermissions: response.log?.deferredPermissions || [],
   }, interaction.guild);
   session.lastManifestId = manifest.id;
   return manifest;
@@ -425,6 +427,7 @@ function resultPayload(session, response, manifest) {
   const ok = outcome === 'success';
   const failed = outcome === 'failed';
   const verification = response.log?.verification || {};
+  const deferredNames = [...new Set((response.log?.deferredPermissions || []).flatMap((item) => item.missing || []))].sort();
   const title = ok ? '✅ Selective Copy Verified' : failed ? (status === 'blocked-preflight' ? '🛑 Selective Copy Blocked' : '❌ Selective Copy Failed') : '⚠️ Selective Copy Partial';
   const color = ok ? 0x22c55e : failed ? 0xed4245 : 0xf59e0b;
   return {
@@ -436,7 +439,8 @@ function resultPayload(session, response, manifest) {
       '',
       'Transfer plan: Categories ' + manifest.stats.categories + ' • Channels ' + manifest.stats.channels + ' • Required Roles ' + (manifest.stats.roleDependencies ?? manifest.stats.roles) + ' • Permission Overwrites ' + manifest.stats.permissionOverwrites,
       'Manifest mapping: Roles ' + (manifest.roles.length - unresolvedRoles) + '/' + manifest.roles.length + ' • Structure ' + (manifest.channels.length - unresolvedChannels) + '/' + manifest.channels.length,
-      verification.structureExpected != null ? 'Engine verification: Structure ' + (verification.structureMapped || 0) + '/' + verification.structureExpected + ' • Permissions ' + (verification.permissionOverwritesVerified || 0) + '/' + (verification.permissionOverwritesExpected || 0) + ' • Roles ' + (verification.roleMappingsVerified || 0) + '/' + (verification.roleMappingsExpected || 0) : null,
+      verification.structureExpected != null ? 'Engine verification: Structure ' + (verification.structureMapped || 0) + '/' + verification.structureExpected + ' • Permissions ' + (verification.permissionOverwritesVerified || 0) + '/' + (verification.permissionOverwritesExpected || 0) + ' • Roles ' + (verification.roleMappingsVerified || 0) + '/' + (verification.roleMappingsExpected || 0) + ' • Deferred ' + (verification.deferredPermissions || 0) : null,
+      deferredNames.length ? 'Deferred permission bits: **' + deferredNames.join(', ') + '**' : null,
       '',
       failed && status === 'blocked-preflight' ? '**No destination mutation was started because exact-copy preflight failed.**' : 'This transfer is permanently recorded in **Transfer History** with source → destination IDs and source permission data.',
       ...(manifest.warnings || []).slice(0, 8).map((warning) => '⚠️ ' + warning),
