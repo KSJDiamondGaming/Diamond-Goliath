@@ -1,5 +1,6 @@
 'use strict';
 
+const fs = require('node:fs');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { PermissionFlagsBits } = require('discord.js');
@@ -70,4 +71,12 @@ test('Manage Channels is sufficient for the hidden-channel delete fallback', () 
     },
   };
   assert.equal(hasManageChannels(channel), true);
+});
+
+test('selective copy attempts exact permissions before permission-safe fallback', () => {
+  const source = fs.readFileSync(require.resolve('../../src/owner/dev/duplicator/core'), 'utf8');
+  assert.match(source, /let requested = sourceRequested;/);
+  assert.match(source, /exact channel\/category permissions/);
+  assert.match(source, /permissionSafeFallback \? copyablePermissionBits\(guild, overwrite\.allow\) : BigInt\(overwrite\.allow \|\| 0\)/);
+  assert.doesNotMatch(source, /recordCapabilityDeferrals\(guild, snap, log\);/);
 });
