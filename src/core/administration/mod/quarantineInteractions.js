@@ -174,7 +174,7 @@ async function submitQuarantine(interaction, targetId, requestedMode, legacy = f
   const reason = fieldValue(interaction, 'reason');
   if (!reason) return safeReply(interaction, { content: '❌ An investigation reason is required.', flags: 64 });
 
-  // Isolation performs several Discord API writes and can exceed the 3-second modal deadline.
+  // Acknowledge first: isolation performs several Discord API writes and may outlive the modal deadline.
   if (!interaction.deferred && !interaction.replied) {
     await interaction.deferReply({ flags: Discord.MessageFlags.Ephemeral });
   }
