@@ -5,6 +5,7 @@ on:
     branches: [dev]
     paths:
       - '.github/workflows/improve-appeal-dm-once.yml'
+      - 'scripts/improve-appeal-dm-once.js'
 
 permissions:
   contents: write
