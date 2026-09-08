@@ -21,6 +21,11 @@ function normalizeClientUrlEnvironment() {
   }
 }
 
+function applyModePublicClientOrigin(requestedMode) {
+  if (requestedMode !== 'DEV') return;
+  process.env.CLIENT_URL = 'https://dev.goliath.ksjdigital.co.uk';
+}
+
 function loadEnvironment(mode = process.env.BOT_MODE) {
   const requestedMode = normalizeBotMode(mode);
 
@@ -44,6 +49,7 @@ function loadEnvironment(mode = process.env.BOT_MODE) {
 
   process.env.BOT_MODE = requestedMode;
   normalizeClientUrlEnvironment();
+  applyModePublicClientOrigin(requestedMode);
 
   return {
     mode: requestedMode,
