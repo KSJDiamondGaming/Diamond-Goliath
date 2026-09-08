@@ -109,7 +109,7 @@ jobs:
             if [ "${{ inputs.target }}" = "dev" ]; then
               echo "DEV branch → DEV VPS."
             else
-              echo "DEV application files → $TARGET branch → $TARGET VPS."
+              echo "DEV application files → ${{ inputs.target }} branch → ${{ inputs.target }} VPS."
               echo "Target branch workflow-control YAML is intentionally preserved; all Goliath runtime/application files come from DEV."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
