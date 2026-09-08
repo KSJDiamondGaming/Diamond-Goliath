@@ -29,8 +29,9 @@ replaceOnce(`      allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.
 
 fs.writeFileSync(path, source);
 
-if (/quarantineDenyOverwrite\(\)[\s\S]*SendMessages: false/.test(source)) {
-  throw new Error('Quarantine deny overwrite still contains non-ViewChannel deny permissions.');
+const minimalDeny = `function quarantineDenyOverwrite() {\n  // VIEW_CHANNEL is the containment boundary. Discord implicitly blocks the rest\n  // of a channel once VIEW_CHANNEL is denied, and the API refuses overwrite bits\n  // the bot itself does not possess. Keeping this minimal avoids false 50013\n  // Missing Permissions failures while preserving complete isolation.\n  return {\n    ViewChannel: false,\n  };\n}`;
+if (!source.includes(minimalDeny)) {
+  throw new Error('Minimal quarantine deny overwrite was not installed exactly.');
 }
 if (!source.includes("Goliath lacks Manage Roles in this channel.")) {
   throw new Error('Permission-aware channel guard was not installed.');
