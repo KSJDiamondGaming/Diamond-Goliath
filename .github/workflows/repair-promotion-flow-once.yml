@@ -1,0 +1,138 @@
+name: Repair Promotion Flow Once
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - '.github/workflows/repair-promotion-flow-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: dev
+          fetch-depth: 0
+
+      - name: Make Sync promote DEV to BETA/PRODUCTION
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          deploy = Path('.github/workflows/deploy-dev.yml')
+          text = deploy.read_text()
+          old = '                production) SOURCE_BRANCH="beta" ;;'
+          new = '                production) SOURCE_BRANCH="dev" ;;'
+          if old not in text:
+              raise SystemExit('Could not find production source-branch anchor in deploy workflow')
+          deploy.write_text(text.replace(old, new, 1))
+
+          sync = Path('.github/workflows/sync-dev-now.yml')
+          sync.write_text('''name: Sync Goliath
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Target environment
+        required: true
+        default: beta
+        type: choice
+        options:
+          - dev
+          - beta
+          - production
+
+permissions:
+  contents: write
+  statuses: write
+
+concurrency:
+  group: sync-goliath-${{ inputs.target }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      operation: ${{ steps.mode.outputs.operation }}
+    steps:
+      - name: Resolve requested action
+        id: mode
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "${{ inputs.target }}" in
+            dev)
+              echo "operation=sync" >> "$GITHUB_OUTPUT"
+              echo "DEV will be reconciled from the DEV branch."
+              ;;
+            beta|production)
+              echo "operation=deploy" >> "$GITHUB_OUTPUT"
+              echo "DEV will be promoted into ${{ inputs.target }} and deployed."
+              ;;
+            *)
+              echo "Unsupported target: ${{ inputs.target }}" >&2
+              exit 1
+              ;;
+          esac
+
+  apply:
+    needs: prepare
+    uses: ./.github/workflows/deploy-dev.yml
+    with:
+      environment: ${{ inputs.target }}
+      operation: ${{ needs.prepare.outputs.operation }}
+    secrets: inherit
+
+  summary:
+    needs: [prepare, apply]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Write summary
+        shell: bash
+        run: |
+          {
+            echo "## Sync Goliath"
+            echo ""
+            echo "- Target: **${{ inputs.target }}**"
+            echo "- Operation: **${{ needs.prepare.outputs.operation }}**"
+            echo "- Result: **${{ needs.apply.result }}**"
+            echo ""
+            if [ "${{ inputs.target }}" = "dev" ]; then
+              echo "DEV branch → DEV VPS reconciliation."
+            else
+              echo "DEV branch → ${{ inputs.target }} branch → ${{ inputs.target }} VPS."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          [ "${{ needs.apply.result }}" = "success" ]
+''')
+          PY
+
+      - name: Remove this one-off workflow
+        run: rm -f .github/workflows/repair-promotion-flow-once.yml
+
+      - name: Validate workflow edits
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'production) SOURCE_BRANCH="dev"' .github/workflows/deploy-dev.yml
+          grep -q 'DEV branch → .* branch →' .github/workflows/sync-dev-now.yml
+
+      - name: Commit permanent flow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add -A
+          git commit -m "fix(actions): promote DEV directly to beta and production"
+          git push origin HEAD:dev
