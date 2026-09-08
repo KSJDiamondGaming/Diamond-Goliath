@@ -1,0 +1,84 @@
+name: Fix Investigation Submit Once
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - '.github/workflows/fix-investigation-submit-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: dev
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Patch investigation submit acknowledgement
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('src/core/administration/mod/quarantineInteractions.js')
+          s = p.read_text()
+          old = "const { safeReply } = require('../../../core/ui/interactionResponse');"
+          new = "const { safeReply, safeEditReply } = require('../../../core/ui/interactionResponse');"
+          assert old in s
+          s = s.replace(old, new, 1)
+
+          old = """  const reason = fieldValue(interaction, 'reason');
+  if (!reason) return safeReply(interaction, { content: '❌ An investigation reason is required.', flags: 64 });
+
+  const result = await quarantineMember(interaction.guild, target, {"""
+          new = """  const reason = fieldValue(interaction, 'reason');
+  if (!reason) return safeReply(interaction, { content: '❌ An investigation reason is required.', flags: 64 });
+
+  // Quarantine can create roles/channels and perform several Discord API writes.
+  // Acknowledge the modal before that work so Discord's 3-second interaction
+  // deadline cannot expire while Investigation Isolation is being applied.
+  if (!interaction.deferred && !interaction.replied) {
+    await interaction.deferReply({ flags: Discord.MessageFlags.Ephemeral });
+  }
+
+  const result = await quarantineMember(interaction.guild, target, {"""
+          assert old in s
+          s = s.replace(old, new, 1)
+
+          old = """    return safeReply(interaction, {
+      content: `❌ Failed to investigate **${target.user.tag}**: ${result?.error || result?.reason || 'Unknown error'}`,
+      flags: 64,
+    });"""
+          new = """    return safeEditReply(interaction, {
+      content: `❌ Failed to investigate **${target.user.tag}**: ${result?.error || result?.reason || 'Unknown error'}`,
+      flags: 64,
+    });"""
+          assert old in s
+          s = s.replace(old, new, 1)
+
+          old = """  await safeReply(interaction, { content, flags: 64 });
+  await refreshDashboard(Discord, interaction, target, { view: 'actions' });"""
+          new = """  await safeEditReply(interaction, { content, flags: 64 });
+  await refreshDashboard(Discord, interaction, target, { view: 'actions' });"""
+          assert old in s
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+          PY
+      - name: Validate
+        run: |
+          node --check src/core/administration/mod/quarantineInteractions.js
+          npm run doctor
+      - name: Commit fix and remove one-off workflow
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/fix-investigation-submit-once.yml
+          git add src/core/administration/mod/quarantineInteractions.js
+          git commit -m 'fix(mod): acknowledge investigation modal before isolation work'
+          git push origin HEAD:dev
