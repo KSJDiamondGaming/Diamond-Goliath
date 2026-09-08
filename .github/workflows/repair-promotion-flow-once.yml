@@ -18,114 +18,36 @@ jobs:
           ref: dev
           fetch-depth: 0
 
-      - name: Make Sync promote DEV to BETA/PRODUCTION
+      - name: Apply permanent promotion flow
         shell: bash
         run: |
           set -euo pipefail
+
           python - <<'PY'
           from pathlib import Path
-
-          deploy = Path('.github/workflows/deploy-dev.yml')
-          text = deploy.read_text()
+          p = Path('.github/workflows/deploy-dev.yml')
+          s = p.read_text()
           old = '                production) SOURCE_BRANCH="beta" ;;'
           new = '                production) SOURCE_BRANCH="dev" ;;'
-          if old not in text:
-              raise SystemExit('Could not find production source-branch anchor in deploy workflow')
-          deploy.write_text(text.replace(old, new, 1))
-
-          sync = Path('.github/workflows/sync-dev-now.yml')
-          sync.write_text('''name: Sync Goliath
-
-on:
-  workflow_dispatch:
-    inputs:
-      target:
-        description: Target environment
-        required: true
-        default: beta
-        type: choice
-        options:
-          - dev
-          - beta
-          - production
-
-permissions:
-  contents: write
-  statuses: write
-
-concurrency:
-  group: sync-goliath-${{ inputs.target }}
-  cancel-in-progress: false
-
-jobs:
-  prepare:
-    runs-on: ubuntu-latest
-    outputs:
-      operation: ${{ steps.mode.outputs.operation }}
-    steps:
-      - name: Resolve requested action
-        id: mode
-        shell: bash
-        run: |
-          set -euo pipefail
-          case "${{ inputs.target }}" in
-            dev)
-              echo "operation=sync" >> "$GITHUB_OUTPUT"
-              echo "DEV will be reconciled from the DEV branch."
-              ;;
-            beta|production)
-              echo "operation=deploy" >> "$GITHUB_OUTPUT"
-              echo "DEV will be promoted into ${{ inputs.target }} and deployed."
-              ;;
-            *)
-              echo "Unsupported target: ${{ inputs.target }}" >&2
-              exit 1
-              ;;
-          esac
-
-  apply:
-    needs: prepare
-    uses: ./.github/workflows/deploy-dev.yml
-    with:
-      environment: ${{ inputs.target }}
-      operation: ${{ needs.prepare.outputs.operation }}
-    secrets: inherit
-
-  summary:
-    needs: [prepare, apply]
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Write summary
-        shell: bash
-        run: |
-          {
-            echo "## Sync Goliath"
-            echo ""
-            echo "- Target: **${{ inputs.target }}**"
-            echo "- Operation: **${{ needs.prepare.outputs.operation }}**"
-            echo "- Result: **${{ needs.apply.result }}**"
-            echo ""
-            if [ "${{ inputs.target }}" = "dev" ]; then
-              echo "DEV branch → DEV VPS reconciliation."
-            else
-              echo "DEV branch → ${{ inputs.target }} branch → ${{ inputs.target }} VPS."
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
-
-          [ "${{ needs.apply.result }}" = "success" ]
-''')
+          if old not in s:
+              if new not in s:
+                  raise SystemExit('production source branch anchor not found')
+          else:
+              p.write_text(s.replace(old, new, 1))
           PY
 
-      - name: Remove this one-off workflow
+          echo 'bmFtZTogU3luYyBHb2xpYXRoCgpvbjoKICB3b3JrZmxvd19kaXNwYXRjaDoKICAgIGlucHV0czoKICAgICAgdGFyZ2V0OgogICAgICAgIGRlc2NyaXB0aW9uOiBUYXJnZXQgZW52aXJvbm1lbnQKICAgICAgICByZXF1aXJlZDogdHJ1ZQogICAgICAgIGRlZmF1bHQ6IGJldGEKICAgICAgICB0eXBlOiBjaG9pY2UKICAgICAgICBvcHRpb25zOgogICAgICAgICAgLSBkZXYKICAgICAgICAgIC0gYmV0YQogICAgICAgICAgLSBwcm9kdWN0aW9uCgpwZXJtaXNzaW9uczoKICBjb250ZW50czogd3JpdGUKICBzdGF0dXNlczogd3JpdGUKCmNvbmN1cnJlbmN5OgogIGdyb3VwOiBzeW5jLWdvbGlhdGgtJHt7IGlucHV0cy50YXJnZXQgfX0KICBjYW5jZWwtaW4tcHJvZ3Jlc3M6IGZhbHNlCgpqb2JzOgogIHByZXBhcmU6CiAgICBydW5zLW9uOiB1YnVudHUtbGF0ZXN0CiAgICBvdXRwdXRzOgogICAgICBvcGVyYXRpb246ICR7eyBzdGVwcy5tb2RlLm91dHB1dHMub3BlcmF0aW9uIH19CiAgICBzdGVwczoKICAgICAgLSBuYW1lOiBSZXNvbHZlIHJlcXVlc3RlZCBhY3Rpb24KICAgICAgICBpZDogbW9kZQogICAgICAgIHNoZWxsOiBiYXNoCiAgICAgICAgcnVuOiB8CiAgICAgICAgICBzZXQgLWV1byBwaXBlZmFpbAogICAgICAgICAgY2FzZSAiJHt7IGlucHV0cy50YXJnZXQgfX0iIGluCiAgICAgICAgICAgIGRldikKICAgICAgICAgICAgICBlY2hvICJvcGVyYXRpb249c3luYyIgPj4gIiRHSVRIVUJfT1VUUFVUIgogICAgICAgICAgICAgIGVjaG8gIkRFViB3aWxsIGJlIHJlY29uY2lsZWQgZnJvbSB0aGUgREVWIGJyYW5jaC4iCiAgICAgICAgICAgICAgOzsKICAgICAgICAgICAgYmV0YXxwcm9kdWN0aW9uKQogICAgICAgICAgICAgIGVjaG8gIm9wZXJhdGlvbj1kZXBsb3kiID4+ICIkR0lUSFVCX09VVFBVVCIKICAgICAgICAgICAgICBlY2hvICJERVYgd2lsbCBiZSBwcm9tb3RlZCBpbnRvICR7eyBpbnB1dHMudGFyZ2V0IH19IGFuZCBkZXBsb3llZC4iCiAgICAgICAgICAgICAgOzsKICAgICAgICAgICAgKikKICAgICAgICAgICAgICBlY2hvICJVbnN1cHBvcnRlZCB0YXJnZXQ6ICR7eyBpbnB1dHMudGFyZ2V0IH19IiA+JjIKICAgICAgICAgICAgICBleGl0IDEKICAgICAgICAgICAgICA7OwogICAgICAgICAgZXNhYwoKICBhcHBseToKICAgIG5lZWRzOiBwcmVwYXJlCiAgICB1c2VzOiAuLy5naXRodWIvd29ya2Zsb3dzL2RlcGxveS1kZXYueW1sCiAgICB3aXRoOgogICAgICBlbnZpcm9ubWVudDogJHt7IGlucHV0cy50YXJnZXQgfX0KICAgICAgb3BlcmF0aW9uOiAke3sgbmVlZHMucHJlcGFyZS5vdXRwdXRzLm9wZXJhdGlvbiB9fQogICAgc2VjcmV0czogaW5oZXJpdAoKICBzdW1tYXJ5OgogICAgbmVlZHM6IFtwcmVwYXJlLCBhcHBseV0KICAgIGlmOiBhbHdheXMoKQogICAgcnVucy1vbjogdWJ1bnR1LWxhdGVzdAogICAgc3RlcHM6CiAgICAgIC0gbmFtZTogV3JpdGUgc3VtbWFyeQogICAgICAgIHNoZWxsOiBiYXNoCiAgICAgICAgcnVuOiB8CiAgICAgICAgICB7CiAgICAgICAgICAgIGVjaG8gIiMjIFN5bmMgR29saWF0aCIKICAgICAgICAgICAgZWNobyAiIgogICAgICAgICAgICBlY2hvICItIFRhcmdldDogKioke3sgaW5wdXRzLnRhcmdldCB9fSoqIgogICAgICAgICAgICBlY2hvICItIE9wZXJhdGlvbjogKioke3sgbmVlZHMucHJlcGFyZS5vdXRwdXRzLm9wZXJhdGlvbiB9fSoqIgogICAgICAgICAgICBlY2hvICItIFJlc3VsdDogKioke3sgbmVlZHMuYXBwbHkucmVzdWx0IH19KioiCiAgICAgICAgICAgIGVjaG8gIiIKICAgICAgICAgICAgaWYgWyAiJHt7IGlucHV0cy50YXJnZXQgfX0iID0gImRldiIgXTsgdGhlbgogICAgICAgICAgICAgIGVjaG8gIkRFViBicmFuY2gg4oaSIERFViBWUFMgcmVjb25jaWxpYXRpb24uIgogICAgICAgICAgICBlbHNlCiAgICAgICAgICAgICAgZWNobyAiREVWIGJyYW5jaCDihpIgJHt7IGlucHV0cy50YXJnZXQgfX0gYnJhbmNoIOKGkiAke3sgaW5wdXRzLnRhcmdldCB9fSBWUFMuIgogICAgICAgICAgICBmaQogICAgICAgICAgfSA+PiAiJEdJVEhVQl9TVEVQX1NVTU1BUlkiCgogICAgICAgICAgWyAiJHt7IG5lZWRzLmFwcGx5LnJlc3VsdCB9fSIgPSAic3VjY2VzcyIgXQo=' | base64 -d > .github/workflows/sync-dev-now.yml
+
+      - name: Remove one-off workflow
         run: rm -f .github/workflows/repair-promotion-flow-once.yml
 
-      - name: Validate workflow edits
+      - name: Validate permanent files
         shell: bash
         run: |
           set -euo pipefail
           grep -q 'production) SOURCE_BRANCH="dev"' .github/workflows/deploy-dev.yml
-          grep -q 'DEV branch → .* branch →' .github/workflows/sync-dev-now.yml
+          grep -q 'beta|production)' .github/workflows/sync-dev-now.yml
+          grep -q 'operation=deploy' .github/workflows/sync-dev-now.yml
 
       - name: Commit permanent flow
         shell: bash
