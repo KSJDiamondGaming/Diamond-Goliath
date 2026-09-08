@@ -43,7 +43,7 @@ jobs:
             APP_DIR="/home/goliath/dev"
             RUNTIME_DIR="$APP_DIR/src/runtime/dev"
             PM2_NAME="goliath-dev"
-            DEPLOY_SCRIPT="/home/goliath/deploy-dev.sh"
+            DEV_HOST="dev.goliath.ksjdigital.co.uk"
 
             [ -d "$APP_DIR/.git" ] || {
               echo "Missing DEV checkout: $APP_DIR" >&2
@@ -107,16 +107,50 @@ jobs:
             rm -rf dist
             npx vite build src/dashboard --outDir ../../dist --emptyOutDir --logLevel warn
 
-            DASHBOARD_ROOT="$(awk '$1 == "rm" && $2 == "-rf" && $3 ~ /^\/var\/www\// { print $3; exit }' "$DEPLOY_SCRIPT" 2>/dev/null || true)"
-            [ -n "$DASHBOARD_ROOT" ] || DASHBOARD_ROOT="/var/www/goliath-dashboard"
+            NGINX_DUMP="$(nginx -T 2>&1)"
+            DASHBOARD_ROOT="$(printf '%s\n' "$NGINX_DUMP" | python3 -c '
+import re, sys
+text = sys.stdin.read()
+host = "dev.goliath.ksjdigital.co.uk"
+for match in re.finditer(r"\\bserver\\s*\\{", text):
+    start = match.start()
+    index = match.end()
+    depth = 1
+    while index < len(text) and depth:
+        if text[index] == "{": depth += 1
+        elif text[index] == "}": depth -= 1
+        index += 1
+    if depth:
+        continue
+    block = text[start:index]
+    names = re.findall(r"(?m)^\\s*server_name\\s+([^;]+);", block)
+    if not any(host in value.split() for value in names):
+        continue
+    roots = re.findall(r"(?m)^\\s*root\\s+([^;]+);", block)
+    if roots:
+        print(roots[0].strip())
+        break
+')"
+
+            [ -n "$DASHBOARD_ROOT" ] || {
+              echo "Could not resolve active nginx root for $DEV_HOST" >&2
+              exit 1
+            }
             case "$DASHBOARD_ROOT" in
               /var/www/*) ;;
               *) echo "Unsafe DEV dashboard root: $DASHBOARD_ROOT" >&2; exit 1 ;;
             esac
 
+            echo "🌐 Active DEV nginx root: $DASHBOARD_ROOT"
             rm -rf "$DASHBOARD_ROOT"
             mkdir -p "$DASHBOARD_ROOT"
             cp -a dist/. "$DASHBOARD_ROOT/"
+
+            grep -q 'GOLIATH_APPEALS_ENTRY_V2' "$DASHBOARD_ROOT"/assets/*.js || {
+              echo "Appeals frontend marker missing from deployed DEV bundle." >&2
+              exit 1
+            }
+
             nginx -t
             systemctl reload nginx
 
@@ -144,9 +178,10 @@ jobs:
             [ "$PROCESS_CWD" = "$APP_DIR" ]
 
             echo "✅ DEV synchronized"
-            echo "   GitHub dev: $REMOTE_SHA"
-            echo "   DEV VPS:    $FINAL_SHA"
-            echo "   PM2:        $PM2_NAME"
+            echo "   GitHub dev:    $REMOTE_SHA"
+            echo "   DEV VPS:       $FINAL_SHA"
+            echo "   Dashboard root: $DASHBOARD_ROOT"
+            echo "   PM2:           $PM2_NAME"
 
             restore_runtime
             rm -rf "$BACKUP_DIR"
