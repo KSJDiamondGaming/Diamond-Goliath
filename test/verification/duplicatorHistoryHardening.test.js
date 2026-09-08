@@ -10,9 +10,9 @@ const {
   hasManageChannels,
 } = require('../../src/owner/dev/duplicator/hardening');
 
-test('bulk-delete guidance never asks for Administrator', () => {
+test('bulk-delete guidance never asks the operator to grant Administrator', () => {
   const text = normaliseRequiredAction('Grant Goliath Administrator temporarily, then retry.');
-  assert.doesNotMatch(text, /Administrator permission is required/i);
+  assert.doesNotMatch(text, /Grant Goliath Administrator/i);
   assert.match(text, /No Administrator permission is required or requested/i);
   assert.match(text, /Manage Channels/i);
 });
