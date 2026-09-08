@@ -102,5 +102,4 @@ function syncOnce() {
 
 console.log(`Goliath DEV auto-sync service started. Interval: ${intervalMs / 1000}s`);
 syncOnce();
-setInterval(syncOnce, intervalMs).unref();
-process.stdin.resume();
+setInterval(syncOnce, intervalMs);
