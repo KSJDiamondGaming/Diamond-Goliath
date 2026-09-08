@@ -1,118 +1,122 @@
-name: Sync Goliath
+name: Case Court Hardening
 
 on:
-  workflow_dispatch:
-    inputs:
-      target:
-        description: Target environment
-        required: true
-        default: beta
-        type: choice
-        options:
-          - beta
-          - production
-          - dev
+  push:
+    branches: [dev]
+    paths:
+      - '.github/workflows/sync-dev-now.yml'
 
 permissions:
   contents: write
-  statuses: write
-
-concurrency:
-  group: sync-goliath-${{ inputs.target }}
-  cancel-in-progress: false
 
 jobs:
-  promote:
+  harden:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    outputs:
-      promoted_sha: ${{ steps.promote.outputs.promoted_sha }}
     steps:
       - uses: actions/checkout@v5
         with:
           ref: dev
           fetch-depth: 0
 
-      - name: Promote DEV application tree to target branch
-        id: promote
+      - name: Patch remaining Case Court gaps
         shell: bash
-        env:
-          TARGET: ${{ inputs.target }}
         run: |
           set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
 
-          if [ "$TARGET" = "dev" ]; then
-            SHA="$(git rev-parse HEAD)"
-            echo "DEV selected: no branch promotion required."
-            echo "promoted_sha=$SHA" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f'Expected source not found in {path}: {old[:100]!r}')
+              if text.count(old) != 1:
+                  raise SystemExit(f'Expected exactly one source match in {path}, found {text.count(old)}')
+              p.write_text(text.replace(old, new, 1))
 
-          git fetch --no-tags origin dev "$TARGET"
-          DEV_SHA="$(git rev-parse origin/dev)"
-          TARGET_SHA="$(git rev-parse origin/$TARGET)"
+          replace_once(
+              'src/core/administration/automod/engine.js',
+              "function getContext(input = {}) {\n  const message = input.message || null;\n  const member = input.member || message?.member || null;\n  const user = input.user || member?.user || message?.author || null;\n  const guild = input.guild || member?.guild || message?.guild || null;\n  const channel = input.channel || message?.channel || null;\n  return { message, member, user, guild, channel };\n}",
+              "function getContext(input = {}) {\n  const message = input.message || null;\n  const member = input.member || message?.member || null;\n  const user = input.user || member?.user || message?.author || null;\n  const guild = input.guild || member?.guild || message?.guild || null;\n  const channel = input.channel || message?.channel || null;\n  const targetId = String(input.targetId || member?.id || user?.id || '').trim() || null;\n  return { message, member, user, guild, channel, targetId };\n}"
+          )
 
-          git config user.name "Goliath Sync"
-          git config user.email "goliath-sync@users.noreply.github.com"
-          git switch -C "promote-$TARGET" "$TARGET_SHA"
+          replace_once(
+              'src/core/administration/automod/engine.js',
+              "function shouldBlockDestructiveAction(context, punishment) {\n  return shouldBlockOwnerDestructiveAction({\n    guild: context.guild,\n    member: context.member,\n    user: context.user,\n    action: punishment,\n  });\n}",
+              "function shouldBlockDestructiveAction(context, punishment) {\n  if (context.guild?.ownerId && context.targetId && String(context.guild.ownerId) === String(context.targetId)) return true;\n  return shouldBlockOwnerDestructiveAction({\n    guild: context.guild,\n    member: context.member,\n    user: context.user,\n    action: punishment,\n  });\n}"
+          )
 
-          # Promote the complete application tree from DEV while keeping the
-          # target branch's GitHub workflow control files. GITHUB_TOKEN cannot
-          # rewrite workflow files without an additional workflows permission,
-          # and workflow YAML is not part of the running Goliath application.
-          git diff --binary "$TARGET_SHA" "$DEV_SHA" -- . ':(exclude).github/workflows/**' > /tmp/goliath-promotion.patch
+          replace_once(
+              'src/core/administration/automod/engine.js',
+              "async function safeBan(member, reason, deleteDays = 0) {\n  try {\n    if (!member?.bannable) return false;\n    const rawDeleteDays = Number(deleteDays);\n    const safeDeleteDays = Number.isFinite(rawDeleteDays)\n      ? Math.min(7, Math.max(0, Math.trunc(rawDeleteDays)))\n      : 0;\n    await member.ban({ deleteMessageSeconds: safeDeleteDays * 24 * 60 * 60, reason });\n    return true;\n  } catch (error) {\n    console.error('❌ Punishment engine ban failed:', error);\n    return false;\n  }\n}",
+              "async function safeBan(context, reason, deleteDays = 0) {\n  try {\n    const rawDeleteDays = Number(deleteDays);\n    const safeDeleteDays = Number.isFinite(rawDeleteDays)\n      ? Math.min(7, Math.max(0, Math.trunc(rawDeleteDays)))\n      : 0;\n    const options = { deleteMessageSeconds: safeDeleteDays * 24 * 60 * 60, reason };\n    if (context.member) {\n      if (!context.member.bannable) return false;\n      await context.member.ban(options);\n      return true;\n    }\n    if (!context.guild || !/^\\d{16,20}$/.test(String(context.targetId || ''))) return false;\n    await context.guild.members.ban(String(context.targetId), options);\n    return true;\n  } catch (error) {\n    console.error('❌ Punishment engine ban failed:', error);\n    return false;\n  }\n}"
+          )
 
-          if [ -s /tmp/goliath-promotion.patch ]; then
-            git apply --index /tmp/goliath-promotion.patch
-            git commit -m "Promote DEV $DEV_SHA to $TARGET"
-            git push origin "HEAD:refs/heads/$TARGET"
-          else
-            echo "$TARGET already matches DEV application files."
-          fi
+          replace_once(
+              'src/core/administration/automod/engine.js',
+              "  if (punishment === 'ban') return safeBan(context.member, options.actionReason, options.deleteDays);",
+              "  if (punishment === 'ban') return safeBan(context, options.actionReason, options.deleteDays);"
+          )
 
-          git fetch --no-tags origin dev "$TARGET"
-          FINAL_SHA="$(git rev-parse origin/$TARGET)"
+          replace_once(
+              'src/core/administration/mod/punishments.js',
+              "async function logAction(interaction, target, action, reason, caseId, metadata = {}) { return target ? sendModLog({ guild: interaction.guild, target, moderator: interaction.user, action, reason, caseId, metadata }) : null; }",
+              "async function logAction(interaction, target, action, reason, caseId, metadata = {}, user = null) {\n  if (!target && !user) return null;\n  return sendModLog({ guild: interaction.guild, target: target || user, user: user || target?.user || null, moderator: interaction.user, action, reason, caseId, metadata });\n}"
+          )
 
-          if ! git diff --quiet origin/dev "origin/$TARGET" -- . ':(exclude).github/workflows/**'; then
-            echo "Promotion verification failed: $TARGET application files do not match DEV." >&2
-            git diff --stat origin/dev "origin/$TARGET" -- . ':(exclude).github/workflows/**' >&2
-            exit 1
-          fi
+          replace_once(
+              'src/core/administration/mod/punishments.js',
+              "async function executeEnginePunishment(interaction, target, action, reason, metadata = {}, options = {}) {\n  const config = ENGINE_ACTIONS[action];\n  if (!config) throw new Error(`Unknown punishment action: ${action}`);\n  const engineOptions = { punishments: config.punishments, rule: config.rule, reason, moderator: interaction.user, source: 'moderation' };\n  if (action === 'timeout') engineOptions.durationMs = metadata.durationMs;\n  if (action === 'ban') engineOptions.deleteDays = metadata.deleteDays;\n  const report = await applyPunishmentEngine({ member: target, user: target.user, guild: interaction.guild }, engineOptions);\n  if (!Array.isArray(report?.applied) || !report.applied.includes(config.appliedKey)) throw new Error(`Failed to ${action} user. Failed: ${report?.failedText || 'unknown'}`);\n  const caseMetadata = {\n",
+              "async function executeEnginePunishment(interaction, target, action, reason, metadata = {}, options = {}) {\n  const config = ENGINE_ACTIONS[action];\n  if (!config) throw new Error(`Unknown punishment action: ${action}`);\n  const targetId = String(target?.id || options.targetId || metadata.targetId || '').trim();\n  if (!/^\\d{16,20}$/.test(targetId)) throw new Error(`A valid target user ID is required to ${action} a user.`);\n  const targetUser = target?.user || await interaction.client?.users?.fetch(targetId).catch(() => null) || null;\n  if (!target && action !== 'ban') throw new Error(`A current guild member is required to ${action} a user.`);\n  const engineOptions = { punishments: config.punishments, rule: config.rule, reason, moderator: interaction.user, source: 'moderation' };\n  if (action === 'timeout') engineOptions.durationMs = metadata.durationMs;\n  if (action === 'ban') engineOptions.deleteDays = metadata.deleteDays;\n  const report = await applyPunishmentEngine({ member: target, user: targetUser, targetId, guild: interaction.guild }, engineOptions);\n  if (!Array.isArray(report?.applied) || !report.applied.includes(config.appliedKey)) throw new Error(`Failed to ${action} user. Failed: ${report?.failedText || 'unknown'}`);\n  const caseMetadata = {\n"
+          )
 
-          echo "promoted_sha=$FINAL_SHA" >> "$GITHUB_OUTPUT"
-          echo "✅ DEV application tree promoted to $TARGET at $FINAL_SHA"
+          replace_once(
+              'src/core/administration/mod/punishments.js',
+              "  const modCase = createModerationCase(interaction, target.id, config.caseAction, reason, caseMetadata);\n  await logAction(interaction, target, options.logAction || config.logAction, reason, modCase.caseId, { ...caseMetadata, dmSent: report.dmSent });\n  return { target, modCase, report };",
+              "  const modCase = createModerationCase(interaction, targetId, config.caseAction, reason, caseMetadata);\n  await logAction(interaction, target, options.logAction || config.logAction, reason, modCase.caseId, { ...caseMetadata, dmSent: report.dmSent }, targetUser);\n  return { target, targetUser, targetId, modCase, report };"
+          )
 
-  deploy:
-    needs: promote
-    uses: ./.github/workflows/deploy-dev.yml
-    with:
-      environment: ${{ inputs.target }}
-      operation: sync
-    secrets: inherit
+          replace_once(
+              'src/core/administration/mod/caseCourt.js',
+              "        const result = await executeEnginePunishment(interaction, target, action, reason, metadata, { logAction: `Court ${action}` });",
+              "        const result = await executeEnginePunishment(interaction, target, action, reason, metadata, { logAction: `Court ${action}`, targetId: modCase.userId });"
+          )
 
-  summary:
-    needs: [promote, deploy]
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Write sync summary
+          # Preserve operation ownership when finalising successful execution too.
+          replace_once(
+              'src/core/administration/mod/caseCourt.js',
+              "      const sanctionExecution = { status: 'executed', action, executedBy: interaction.user.id, executedAt: now(), startedAt: executionStarted, linkedCaseId, note: note || null, result: resultSummary };",
+              "      const sanctionExecution = { ...claimedExecution, status: 'executed', action, executedBy: interaction.user.id, executedAt: now(), startedAt: executionStarted, linkedCaseId, note: note || null, result: resultSummary, error: null };"
+          )
+
+          replace_once(
+              'src/core/administration/mod/caseCourt.js',
+              "      const sanctionExecution = { status: 'failed', action, executedBy: interaction.user.id, executedAt: now(), startedAt: executionStarted, linkedCaseId: null, note: note || null, error: String(error?.message || error || 'Unknown sanction execution failure').slice(0, 500) };",
+              "      const sanctionExecution = { ...claimedExecution, status: 'failed', action, executedBy: interaction.user.id, executedAt: now(), startedAt: executionStarted, linkedCaseId: null, note: note || null, error: String(error?.message || error || 'Unknown sanction execution failure').slice(0, 500) };"
+          )
+          PY
+
+      - name: Validate source
         shell: bash
         run: |
-          {
-            echo "## Sync Goliath"
-            echo ""
-            echo "- Target: **${{ inputs.target }}**"
-            echo "- Promotion result: **${{ needs.promote.result }}**"
-            echo "- VPS deploy result: **${{ needs.deploy.result }}**"
-            echo "- Target commit: **${{ needs.promote.outputs.promoted_sha }}**"
-            echo ""
-            if [ "${{ inputs.target }}" = "dev" ]; then
-              echo "DEV branch → DEV VPS."
-            else
-              echo "DEV application files → ${{ inputs.target }} branch → ${{ inputs.target }} VPS."
-              echo "Target branch workflow-control YAML is intentionally preserved; all Goliath runtime/application files come from DEV."
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
+          set -euo pipefail
+          node --check src/core/administration/automod/engine.js
+          node --check src/core/administration/mod/punishments.js
+          node --check src/core/administration/mod/caseCourt.js
+          npm ci
+          npm run doctor
 
-          [ "${{ needs.promote.result }}" = "success" ]
-          [ "${{ needs.deploy.result }}" = "success" ]
+      - name: Commit validated source changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "Goliath Hardening"
+          git config user.email "goliath-hardening@users.noreply.github.com"
+          git add src/core/administration/automod/engine.js src/core/administration/mod/punishments.js src/core/administration/mod/caseCourt.js
+          if git diff --cached --quiet; then
+            echo "No source changes required."
+            exit 0
+          fi
+          git commit -m "fix(mod): finish remaining Case Court hardening"
+          git push origin HEAD:dev
