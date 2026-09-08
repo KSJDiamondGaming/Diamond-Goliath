@@ -63,6 +63,11 @@ function safeRedirectUrl(url) {
 return String(url || 'https://goliath.ksjdigital.co.uk').replace(/\/+$/, '');
 }
 
+function safeReturnPath(value) {
+const path = String(value || '').trim();
+return path === '/appeals' ? path : '/';
+}
+
 /* ---------------- LOGIN ROUTE ---------------- */
 
 router.get('/login', (req, res) => {
@@ -79,6 +84,8 @@ return res.status(500).json({
 error: 'Missing DISCORD_CLIENT_SECRET',
 });
 }
+
+if (req.session) req.session.oauthReturnPath = safeReturnPath(req.query?.next);
 
 const params = new URLSearchParams({
 client_id: clientId,
@@ -233,13 +240,16 @@ if (isDebug()) {
   console.log('[AUTH] User logged in:', req.session.user.username);
 }
 
+const returnPath = safeReturnPath(req.session.oauthReturnPath);
+delete req.session.oauthReturnPath;
+
 req.session.save((saveError) => {
   if (saveError) {
     console.error('❌ Session save failed', saveError);
     return res.status(500).send('Session error.');
   }
 
-  return res.redirect(`${safeRedirectUrl(clientUrl)}/`);
+  return res.redirect(`${safeRedirectUrl(clientUrl)}${returnPath}`);
 });
 
 } catch (error) {
