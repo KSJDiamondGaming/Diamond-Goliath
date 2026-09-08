@@ -718,6 +718,10 @@ function persistAppealNotice(guildId, caseId, notice) {
   if (updated) emitCaseUpdated(guildId, updated);
   return updated;
 }
+function getAppealsWebBaseUrl() {
+  const raw = String(process.env.CLIENT_URL || process.env.DASHBOARD_CLIENT_URL || process.env.VITE_CLIENT_URL || 'https://goliath.ksjdigital.co.uk').trim();
+  return raw.replace(/\/+$/, '');
+}
 async function sendCaseAppealNotice({ guild, target = null, user = null, caseId = null }) {
   const normalizedCaseId = normalizeCaseId(caseId);
   if (!guild?.id || !normalizedCaseId) return { attempted: false, sent: false, error: 'Missing guild or case ID.' };
@@ -740,14 +744,16 @@ async function sendCaseAppealNotice({ guild, target = null, user = null, caseId 
         { name: 'Action', value: action.slice(0, 1024), inline: true },
         { name: 'Case', value: `#${modCase.caseId}`, inline: true },
         { name: 'Reason', value: reason || 'No reason provided', inline: false },
-        { name: 'How to appeal', value: 'Use **Appeal This Case** below. You can appeal even if you are no longer in the server.\n\nIf the button is unavailable, open your DM with **Goliath** and use `/appeal`. A secure web appeal option will also be available in the future.', inline: false },
+        { name: 'How to appeal', value: 'Use **Appeal This Case** below, or choose **Appeal Online** to use the secure Goliath Appeals portal. You can appeal even if you are no longer in the server.\n\nIf the Discord button is unavailable, the web portal remains available.', inline: false },
       )
       .setFooter({ text: `Goliath • ${String(guild.name || 'Moderation').slice(0, 100)} • Case #${modCase.caseId}` })
       .setTimestamp();
+    const appealWebUrl = `${getAppealsWebBaseUrl()}/appeals?guild=${encodeURIComponent(guild.id)}&case=${encodeURIComponent(modCase.caseId)}`;
     await recipient.send({
       embeds: [embed],
       components: [new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId(`mod_appeal_external:${guild.id}:${modCase.caseId}`).setLabel('Appeal This Case').setEmoji('⚖️').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setLabel('Appeal Online').setEmoji('🌐').setStyle(ButtonStyle.Link).setURL(appealWebUrl),
         new ButtonBuilder().setCustomId('mod_appeal_lookup').setLabel('Appeal Another Case').setStyle(ButtonStyle.Secondary)
       )],
     });
