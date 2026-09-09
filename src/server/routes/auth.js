@@ -3,9 +3,9 @@ const express = require('express');
 const security = require('../../core/security/protection/core');
 
 const router = express.Router();
-// v6 preserves the validated Appeals destination in a short-lived browser cookie
-// so the SPA can recover even if an upstream redirect lands on /overview.
-const AUTH_FLOW_REVISION = 'appeals-state-v6';
+// v7 hands an authenticated Appeals login directly back to the validated route
+// using a no-cache HTML handoff instead of relying on SPA/hash redirect recovery.
+const AUTH_FLOW_REVISION = 'appeals-state-v7';
 
 /* ---------------- HELPERS ---------------- */
 
@@ -140,15 +140,33 @@ function readOAuthState(value, secret) {
 function buildPostOAuthTarget(origin, returnPath) {
   const safeOrigin = safeRedirectUrl(origin);
   const safePath = safeReturnPath(returnPath);
-  if (safePath.startsWith('/appeals')) {
-    return `${safeOrigin}/#${safePath}`;
-  }
   return `${safeOrigin}${safePath}`;
+}
+
+function renderAppealsHandoff(returnPath) {
+  const safePath = safeReturnPath(returnPath);
+  const target = safePath.startsWith('/appeals') ? safePath : '/appeals';
+  const escapedTarget = target.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="refresh" content="0;url=${escapedTarget}">
+  <title>Returning to Goliath Appeals</title>
+</head>
+<body>
+  <p>Authentication complete. Returning to Goliath Appeals…</p>
+  <p><a href="${escapedTarget}">Continue to Appeals</a></p>
+</body>
+</html>`;
 }
 
 function markAuthFlow(res) {
   res.set('X-Goliath-Auth-Flow', AUTH_FLOW_REVISION);
-  res.set('Cache-Control', 'no-store');
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
 }
 
 /* ---------------- LOGIN ROUTE ---------------- */
@@ -304,6 +322,11 @@ router.get('/callback', async (req, res) => {
       if (saveError) {
         console.error('❌ Session save failed', saveError);
         return res.status(500).send('Session error.');
+      }
+
+      if (stateReturnPath.startsWith('/appeals')) {
+        res.clearCookie('goliath_oauth_return', { path: '/', sameSite: isProduction() ? 'none' : 'lax', secure: isProduction() });
+        return res.status(200).type('html').send(renderAppealsHandoff(stateReturnPath));
       }
 
       const origin = requestOrigin(req, clientUrl);
