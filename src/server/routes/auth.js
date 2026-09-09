@@ -3,7 +3,7 @@ const express = require('express');
 const security = require('../../core/security/protection/core');
 
 const router = express.Router();
-const AUTH_FLOW_REVISION = 'appeals-state-v4';
+const AUTH_FLOW_REVISION = 'appeals-state-v5';
 
 /* ---------------- HELPERS ---------------- */
 
@@ -123,6 +123,15 @@ function readOAuthState(value, secret) {
   } catch {
     return null;
   }
+}
+
+function buildPostOAuthTarget(origin, returnPath) {
+  const safeOrigin = safeRedirectUrl(origin);
+  const safePath = safeReturnPath(returnPath);
+  if (safePath.startsWith('/appeals')) {
+    return `${safeOrigin}/#${safePath}`;
+  }
+  return `${safeOrigin}${safePath}`;
 }
 
 function markAuthFlow(res) {
@@ -282,8 +291,8 @@ router.get('/callback', async (req, res) => {
         return res.status(500).send('Session error.');
       }
 
-      const target = `${requestOrigin(req, clientUrl)}${stateReturnPath}`;
-      return res.redirect(target);
+      const origin = requestOrigin(req, clientUrl);
+      return res.redirect(buildPostOAuthTarget(origin, stateReturnPath));
     });
   } catch (error) {
     console.error('❌ Auth error', error);
