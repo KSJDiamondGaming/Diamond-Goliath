@@ -161,6 +161,34 @@ jobs:
             pm2 save
             sleep 3
 
+            AUTH_TEST_PATH='/api/auth/login?next=%2Fappeals%3Fguild%3D1515201360386068642%26case%3D1'
+            PUBLIC_HEADERS="$(mktemp)"
+            DIRECT_HEADERS="$(mktemp)"
+            trap 'rm -f "$PUBLIC_HEADERS" "$DIRECT_HEADERS"; sync_cleanup' EXIT
+
+            curl -ksS -D "$PUBLIC_HEADERS" -o /dev/null "https://$DEV_HOST$AUTH_TEST_PATH"
+            curl -sS -D "$DIRECT_HEADERS" -o /dev/null "http://127.0.0.1:3001$AUTH_TEST_PATH"
+
+            grep -qi '^x-goliath-auth-flow: appeals-state-v4' "$DIRECT_HEADERS" || {
+              echo "Direct DEV auth marker missing on port 3001." >&2
+              cat "$DIRECT_HEADERS" >&2
+              exit 1
+            }
+            grep -qi '^x-goliath-auth-flow: appeals-state-v4' "$PUBLIC_HEADERS" || {
+              echo "Public DEV /api/auth is not reaching the current goliath-dev backend." >&2
+              printf '%s\n' "$NGINX_DUMP" | grep -n -A35 -B8 "$DEV_HOST" >&2 || true
+              cat "$PUBLIC_HEADERS" >&2
+              exit 1
+            }
+            grep -qi '^location: https://discord.com/oauth2/authorize?.*state=' "$PUBLIC_HEADERS" || {
+              echo "Public DEV OAuth login did not emit signed state." >&2
+              cat "$PUBLIC_HEADERS" >&2
+              exit 1
+            }
+            rm -f "$PUBLIC_HEADERS" "$DIRECT_HEADERS"
+            trap sync_cleanup EXIT
+            echo "✅ Public DEV OAuth backend verified"
+
             FINAL_SHA="$(git rev-parse HEAD)"
             REMOTE_SHA="$(git rev-parse origin/dev)"
             [ "$FINAL_SHA" = "$EXPECTED_SHA" ]
