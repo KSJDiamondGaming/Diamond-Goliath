@@ -169,12 +169,12 @@ jobs:
             curl -ksS -D "$PUBLIC_HEADERS" -o /dev/null "https://$DEV_HOST$AUTH_TEST_PATH"
             curl -sS -D "$DIRECT_HEADERS" -o /dev/null "http://127.0.0.1:3001$AUTH_TEST_PATH"
 
-            grep -qi '^x-goliath-auth-flow: appeals-state-v4' "$DIRECT_HEADERS" || {
+            grep -qi '^x-goliath-auth-flow: appeals-state-v5' "$DIRECT_HEADERS" || {
               echo "Direct DEV auth marker missing on port 3001." >&2
               cat "$DIRECT_HEADERS" >&2
               exit 1
             }
-            grep -qi '^x-goliath-auth-flow: appeals-state-v4' "$PUBLIC_HEADERS" || {
+            grep -qi '^x-goliath-auth-flow: appeals-state-v5' "$PUBLIC_HEADERS" || {
               echo "Public DEV /api/auth is not reaching the current goliath-dev backend." >&2
               printf '%s\n' "$NGINX_DUMP" | grep -n -A35 -B8 "$DEV_HOST" >&2 || true
               cat "$PUBLIC_HEADERS" >&2
