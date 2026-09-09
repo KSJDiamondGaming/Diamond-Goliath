@@ -7,6 +7,7 @@ import Appeals from './pages/moderation/Appeals';
 
 window.__GOLIATH_APPEALS_ENTRY_V2__ = 'GOLIATH_APPEALS_ENTRY_V2';
 window.__GOLIATH_DEV_ROOT_VERIFIED__ = true;
+window.__GOLIATH_APPEALS_OAUTH_RECOVERY__ = 'v6';
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 
