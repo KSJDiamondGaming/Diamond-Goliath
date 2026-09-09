@@ -1,83 +1,183 @@
 name: Sync Goliath
 
 on:
-  workflow_dispatch:
-    inputs:
-      target:
-        description: Environment to verify and repair
-        required: true
-        default: all
-        type: choice
-        options:
-          - all
-          - dev
-          - beta
-          - production
+  push:
+    branches:
+      - dev
+    paths-ignore:
+      - '.github/workflows/deploy-dev.yml'
+      - '.github/workflows/sync-dev-now.yml'
+      - '.github/workflows/*-once.yml'
+      - 'scripts/*-once.js'
+      - 'scripts/*-temp.js'
 
 permissions:
-  contents: write
-  statuses: write
+  contents: read
 
 concurrency:
-  group: sync-goliath
-  cancel-in-progress: false
+  group: sync-goliath-dev
+  cancel-in-progress: true
 
 jobs:
-  prepare:
+  sync-dev:
+    name: Sync GitHub DEV to DEV VPS
     runs-on: ubuntu-latest
-    outputs:
-      matrix: ${{ steps.matrix.outputs.matrix }}
+    timeout-minutes: 35
     steps:
-      - name: Resolve sync targets
-        id: matrix
-        shell: bash
-        run: |
-          set -euo pipefail
+      - name: Sync and verify DEV
+        uses: appleboy/ssh-action@v1
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+          GITHUB_DEPLOY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          port: 22
+          timeout: 60s
+          command_timeout: 30m
+          envs: EXPECTED_SHA,GITHUB_DEPLOY_TOKEN
+          script: |
+            set -euo pipefail
 
-          case "${{ inputs.target }}" in
-            all)
-              MATRIX='{"environment":["dev","beta","production"]}'
-              ;;
-            dev|beta|production)
-              MATRIX='{"environment":["${{ inputs.target }}"]}'
-              ;;
-            *)
-              echo "Unsupported sync target: ${{ inputs.target }}" >&2
+            APP_DIR="/home/goliath/dev"
+            RUNTIME_DIR="$APP_DIR/src/runtime/dev"
+            PM2_NAME="goliath-dev"
+            DEV_HOST="dev.goliath.ksjdigital.co.uk"
+
+            [ -d "$APP_DIR/.git" ] || {
+              echo "Missing DEV checkout: $APP_DIR" >&2
               exit 1
-              ;;
-          esac
+            }
 
-          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
-          echo "Sync matrix: $MATRIX"
+            cd "$APP_DIR"
+            AUTH_URL="https://x-access-token:${GITHUB_DEPLOY_TOKEN}@github.com/${{ github.repository }}.git"
+            git remote set-url origin "$AUTH_URL"
 
-  repair:
-    needs: prepare
-    strategy:
-      fail-fast: false
-      max-parallel: 1
-      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
-    uses: ./.github/workflows/deploy-dev.yml
-    with:
-      environment: ${{ matrix.environment }}
-      operation: sync
-    secrets: inherit
+            cleanup_remote() {
+              git remote set-url origin "https://github.com/${{ github.repository }}.git" || true
+            }
+            trap cleanup_remote EXIT
 
-  summary:
-    needs: [prepare, repair]
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Write sync summary
-        shell: bash
-        run: |
-          {
-            echo "## Sync Goliath"
-            echo ""
-            echo "- Requested target: **${{ inputs.target }}**"
-            echo "- Repair result: **${{ needs.repair.result }}**"
-            echo ""
-            echo "Sync repairs each VPS environment from its matching GitHub branch."
-            echo "It never promotes DEV to BETA or BETA to PRODUCTION."
-          } >> "$GITHUB_STEP_SUMMARY"
+            git fetch --no-tags origin dev
+            LATEST_SHA="$(git rev-parse origin/dev)"
 
-          [ "${{ needs.repair.result }}" = "success" ]
+            if [ "$EXPECTED_SHA" != "$LATEST_SHA" ]; then
+              echo "Superseding stale DEV sync for $EXPECTED_SHA; latest DEV is $LATEST_SHA."
+              exit 0
+            fi
+
+            if [ -n "$(git status --porcelain -- . ':!src/runtime/')" ]; then
+              echo "DEV VPS has changes outside src/runtime; refusing to overwrite them." >&2
+              git status --short -- . ':!src/runtime/' >&2
+              exit 1
+            fi
+
+            BACKUP_DIR="/home/goliath/.goliath-dev-runtime-sync-backup"
+            rm -rf "$BACKUP_DIR"
+            mkdir -p "$BACKUP_DIR"
+
+            if [ -d "$RUNTIME_DIR" ]; then
+              tar --warning=no-file-changed --ignore-failed-read --exclude='*.tmp' -C "$RUNTIME_DIR" -cf - . | tar -C "$BACKUP_DIR" -xf -
+            fi
+
+            restore_runtime() {
+              mkdir -p "$RUNTIME_DIR"
+              rm -rf "$RUNTIME_DIR"/* "$RUNTIME_DIR"/.[!.]* "$RUNTIME_DIR"/..?* 2>/dev/null || true
+              if [ -d "$BACKUP_DIR" ]; then
+                tar -C "$BACKUP_DIR" -cf - . | tar -C "$RUNTIME_DIR" -xf -
+              fi
+            }
+
+            sync_cleanup() {
+              status=$?
+              restore_runtime
+              rm -rf "$BACKUP_DIR"
+              cleanup_remote
+              exit "$status"
+            }
+            trap sync_cleanup EXIT
+
+            git reset --hard "$EXPECTED_SHA"
+            restore_runtime
+
+            npm ci
+            BOT_MODE=dev npm run doctor
+
+            rm -rf dist
+            npx vite build src/dashboard --outDir ../../dist --emptyOutDir --logLevel warn
+
+            NGINX_DUMP="$(nginx -T 2>&1)"
+            DASHBOARD_ROOT="$(printf '%s\n' "$NGINX_DUMP" | awk -v host="$DEV_HOST" '
+              $1 == "server_name" {
+                for (i = 2; i <= NF; i++) {
+                  name = $i
+                  gsub(/;/, "", name)
+                  if (name == host) found = 1
+                }
+                next
+              }
+              found && $1 == "root" {
+                root = $2
+                gsub(/;/, "", root)
+                print root
+                exit
+              }
+            ')"
+
+            [ -n "$DASHBOARD_ROOT" ] || {
+              echo "Could not resolve active nginx root for $DEV_HOST" >&2
+              printf '%s\n' "$NGINX_DUMP" | grep -n -A20 -B5 "$DEV_HOST" || true
+              exit 1
+            }
+            case "$DASHBOARD_ROOT" in
+              /var/www/*) ;;
+              *) echo "Unsafe DEV dashboard root: $DASHBOARD_ROOT" >&2; exit 1 ;;
+            esac
+
+            echo "🌐 Active DEV nginx root: $DASHBOARD_ROOT"
+            rm -rf "$DASHBOARD_ROOT"
+            mkdir -p "$DASHBOARD_ROOT"
+            cp -a dist/. "$DASHBOARD_ROOT/"
+
+            grep -q 'GOLIATH_APPEALS_ENTRY_V2' "$DASHBOARD_ROOT"/assets/*.js || {
+              echo "Appeals frontend marker missing from deployed DEV bundle." >&2
+              exit 1
+            }
+
+            nginx -t
+            systemctl reload nginx
+
+            BOT_MODE=dev \
+              COMMAND_SYNC_DELETE_STALE=true \
+              COMMAND_SYNC_UPDATE_EXISTING=true \
+              node -e "require('./src/core/commands/syncCommands').syncCommands().then(() => process.exit(0)).catch((error) => { console.error(error); process.exit(1); })"
+
+            if pm2 describe "$PM2_NAME" >/dev/null 2>&1; then
+              pm2 restart "$PM2_NAME" --update-env
+            else
+              BOT_MODE=dev NODE_ENV=dev pm2 start ecosystem.config.js --only "$PM2_NAME" --update-env
+            fi
+            pm2 save
+            sleep 3
+
+            FINAL_SHA="$(git rev-parse HEAD)"
+            REMOTE_SHA="$(git rev-parse origin/dev)"
+            [ "$FINAL_SHA" = "$EXPECTED_SHA" ]
+            [ "$FINAL_SHA" = "$REMOTE_SHA" ]
+
+            PID="$(pm2 pid "$PM2_NAME" 2>/dev/null | tail -n 1 | tr -d '[:space:]')"
+            [ -n "$PID" ] && [ "$PID" != "0" ]
+            PROCESS_CWD="$(readlink -f "/proc/$PID/cwd")"
+            [ "$PROCESS_CWD" = "$APP_DIR" ]
+
+            echo "✅ DEV synchronized"
+            echo "   GitHub dev:     $REMOTE_SHA"
+            echo "   DEV VPS:        $FINAL_SHA"
+            echo "   Dashboard root: $DASHBOARD_ROOT"
+            echo "   PM2:            $PM2_NAME"
+
+            restore_runtime
+            rm -rf "$BACKUP_DIR"
+            trap - EXIT
+            cleanup_remote

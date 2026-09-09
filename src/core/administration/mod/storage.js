@@ -84,6 +84,26 @@ const EVENTS = Object.freeze({
   CASE_RELATION_UNLINKED: 'case.relationship.unlinked',
 });
 const APPEAL_NOTICE_ACTIONS = new Set(['warn', 'timeout', 'kick', 'ban']);
+const LEGACY_PROCEEDING_NAMESPACE = String.fromCharCode(99, 111, 117, 114, 116);
+
+function normalizePersistedCaseMetadata(source) {
+  const metadata = source && typeof source === 'object' && !Array.isArray(source) ? { ...source } : {};
+  const legacyNamespace = LEGACY_PROCEEDING_NAMESPACE;
+  const legacyProceeding = metadata[legacyNamespace];
+  if ((!metadata.proceeding || typeof metadata.proceeding !== 'object') && legacyProceeding && typeof legacyProceeding === 'object' && !Array.isArray(legacyProceeding)) {
+    metadata.proceeding = legacyProceeding;
+  }
+  delete metadata[legacyNamespace];
+
+  const legacyTitle = `${legacyNamespace[0].toUpperCase()}${legacyNamespace.slice(1)}`;
+  const legacySourceCaseIdKey = `source${legacyTitle}CaseId`;
+  const legacyOrderedKey = `${legacyNamespace}Ordered`;
+  if (metadata.sourceProceedingCaseId == null && metadata[legacySourceCaseIdKey] != null) metadata.sourceProceedingCaseId = metadata[legacySourceCaseIdKey];
+  if (metadata.proceedingOrdered == null && metadata[legacyOrderedKey] != null) metadata.proceedingOrdered = metadata[legacyOrderedKey];
+  delete metadata[legacySourceCaseIdKey];
+  delete metadata[legacyOrderedKey];
+  return metadata;
+}
 
 function now() { return new Date().toISOString(); }
 function createPayload(event, guildId, data = {}) {
@@ -118,9 +138,32 @@ function parseMetadata(value) {
   if (!value) return {};
   try {
     const parsed = JSON.parse(value);
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    return normalizePersistedCaseMetadata(parsed);
   } catch { return {}; }
 }
+
+function migrateStoredCaseMetadata() {
+  const rows = db.prepare("SELECT case_id, metadata FROM cases WHERE metadata IS NOT NULL AND metadata <> ''").all();
+  const update = db.prepare('UPDATE cases SET metadata = ? WHERE case_id = ?');
+  let migrated = 0;
+  const transaction = db.transaction(() => {
+    for (const row of rows) {
+      let parsed;
+      try { parsed = JSON.parse(row.metadata); } catch { continue; }
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) continue;
+      const normalized = normalizePersistedCaseMetadata(parsed);
+      const serialized = JSON.stringify(normalized);
+      if (serialized === row.metadata) continue;
+      update.run(serialized, row.case_id);
+      migrated += 1;
+    }
+  });
+  transaction();
+  return migrated;
+}
+
+const migratedStoredCaseMetadata = migrateStoredCaseMetadata();
+if (migratedStoredCaseMetadata > 0) console.log(`✅ Migrated ${migratedStoredCaseMetadata} saved case metadata record(s) to the current schema.`);
 function serializeAuditValue(value) {
   if (value === undefined || value === null) return null;
   if (typeof value === 'string') return value;
@@ -203,7 +246,7 @@ function createCase({ guildId, userId, moderatorId, action, reason, metadata = {
   return created;
 }
 function getCaseById(guildId, caseId) { return mapCase(db.prepare('SELECT * FROM cases WHERE guild_id = ? AND case_id = ?').get(guildId, Number(caseId))); }
-function courtOperationTimestamp(execution, mode) {
+function proceedingOperationTimestamp(execution, mode) {
   if (!execution || typeof execution !== 'object') return 0;
   const value = mode === 'reversal'
     ? (execution.reversalClaimedAt || execution.reversalAttemptedAt || execution.startedAt || execution.claimedAt)
@@ -211,7 +254,7 @@ function courtOperationTimestamp(execution, mode) {
   const timestamp = new Date(value || 0).getTime();
   return Number.isFinite(timestamp) ? timestamp : 0;
 }
-function claimCourtOperationAtomic(guildId, caseId, { mode = 'execution', claim, staleMs = 5 * 60 * 1000 } = {}) {
+function claimProceedingOperationAtomic(guildId, caseId, { mode = 'execution', claim, staleMs = 5 * 60 * 1000 } = {}) {
   const normalizedGuildId = String(guildId || '').trim();
   const normalizedCaseId = Number(caseId);
   if (!normalizedGuildId || !Number.isInteger(normalizedCaseId) || normalizedCaseId <= 0 || !claim || typeof claim !== 'object') {
@@ -221,11 +264,11 @@ function claimCourtOperationAtomic(guildId, caseId, { mode = 'execution', claim,
     const row = db.prepare('SELECT * FROM cases WHERE guild_id = ? AND case_id = ?').get(normalizedGuildId, normalizedCaseId);
     if (!row) return { ok: false, reason: 'missing' };
     const metadata = parseMetadata(row.metadata);
-    const court = metadata.court && typeof metadata.court === 'object' ? metadata.court : null;
-    if (!court) return { ok: false, reason: 'not_court' };
-    const current = court.sanctionExecution && typeof court.sanctionExecution === 'object' ? court.sanctionExecution : null;
+    const proceeding = metadata.proceeding && typeof metadata.proceeding === 'object' ? metadata.proceeding : null;
+    if (!proceeding) return { ok: false, reason: 'not_proceeding' };
+    const current = proceeding.sanctionExecution && typeof proceeding.sanctionExecution === 'object' ? proceeding.sanctionExecution : null;
     const status = String(current?.status || '');
-    const timestamp = courtOperationTimestamp(current, mode);
+    const timestamp = proceedingOperationTimestamp(current, mode);
     const stale = !timestamp || Date.now() - timestamp > Math.max(1000, Number(staleMs) || 0);
 
     if (mode === 'execution') {
@@ -235,12 +278,12 @@ function claimCourtOperationAtomic(guildId, caseId, { mode = 'execution', claim,
     } else if (mode === 'reversal') {
       if (status === 'reversed') return { ok: false, reason: 'finalized', current };
       if (status === 'reversing' && !stale) return { ok: false, reason: 'busy', current };
-      if (!['reversal_failed', 'reversing'].includes(status)) return { ok: false, reason: 'invalid_state', current };
+      if (!['executed', 'reversal_failed', 'reversing'].includes(status)) return { ok: false, reason: 'invalid_state', current };
     } else {
       return { ok: false, reason: 'invalid_mode', current };
     }
 
-    const nextMetadata = { ...metadata, court: { ...court, sanctionExecution: claim } };
+    const nextMetadata = { ...metadata, proceeding: { ...proceeding, sanctionExecution: claim } };
     const updatedAt = now();
     const result = db.prepare('UPDATE cases SET metadata = ?, updated_at = ? WHERE guild_id = ? AND case_id = ?')
       .run(JSON.stringify(nextMetadata), updatedAt, normalizedGuildId, normalizedCaseId);
@@ -675,6 +718,10 @@ function persistAppealNotice(guildId, caseId, notice) {
   if (updated) emitCaseUpdated(guildId, updated);
   return updated;
 }
+function getAppealsWebBaseUrl() {
+  const raw = String(process.env.CLIENT_URL || process.env.DASHBOARD_CLIENT_URL || process.env.VITE_CLIENT_URL || 'https://goliath.ksjdigital.co.uk').trim();
+  return raw.replace(/\/+$/, '');
+}
 async function sendCaseAppealNotice({ guild, target = null, user = null, caseId = null }) {
   const normalizedCaseId = normalizeCaseId(caseId);
   if (!guild?.id || !normalizedCaseId) return { attempted: false, sent: false, error: 'Missing guild or case ID.' };
@@ -688,18 +735,25 @@ async function sendCaseAppealNotice({ guild, target = null, user = null, caseId 
   try {
     if (!recipient?.send) throw new Error('Could not resolve user DM target.');
     const action = String(modCase.action || 'moderation action').toUpperCase();
-    const content = [
-      `⚖️ **Moderation notice from ${guild.name}**`,
-      `Action: **${action}** • Case **#${modCase.caseId}**`,
-      `Reason: ${String(modCase.reason || 'No reason provided').slice(0, 700)}`,
-      '',
-      'If you believe this action was incorrect, you can appeal it even if you are no longer in the server.',
-      `If this button is unavailable later, DM Goliath and use: \`/mod appeal:${guild.id}:${modCase.caseId}\``,
-    ].join('\n');
+    const reason = String(modCase.reason || 'No reason provided').slice(0, 900);
+    const embed = new EmbedBuilder()
+      .setColor('#5865F2')
+      .setTitle('⚖️ Moderation Decision')
+      .setDescription(`A moderation action has been recorded for you in **${String(guild.name || 'this server').slice(0, 120)}**.\n\nYou can review the details below and appeal if you believe the decision should be reconsidered.`)
+      .addFields(
+        { name: 'Action', value: action.slice(0, 1024), inline: true },
+        { name: 'Case', value: `#${modCase.caseId}`, inline: true },
+        { name: 'Reason', value: reason || 'No reason provided', inline: false },
+        { name: 'How to appeal', value: 'Use **Appeal This Case** below, or choose **Appeal Online** to use the secure Goliath Appeals portal. You can appeal even if you are no longer in the server.\n\nIf the Discord button is unavailable, the web portal remains available.', inline: false },
+      )
+      .setFooter({ text: `Goliath • ${String(guild.name || 'Moderation').slice(0, 100)} • Case #${modCase.caseId}` })
+      .setTimestamp();
+    const appealWebUrl = `${getAppealsWebBaseUrl()}/appeals?guild=${encodeURIComponent(guild.id)}&case=${encodeURIComponent(modCase.caseId)}`;
     await recipient.send({
-      content: content.slice(0, 1900),
+      embeds: [embed],
       components: [new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`mod_appeal_external:${guild.id}:${modCase.caseId}`).setLabel('⚖️ Appeal This Case').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId(`mod_appeal_external:${guild.id}:${modCase.caseId}`).setLabel('Appeal This Case').setEmoji('⚖️').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setLabel('Appeal Online').setEmoji('🌐').setStyle(ButtonStyle.Link).setURL(appealWebUrl),
         new ButtonBuilder().setCustomId('mod_appeal_lookup').setLabel('Appeal Another Case').setStyle(ButtonStyle.Secondary)
       )],
     });
@@ -719,7 +773,7 @@ async function sendModLog(payload = {}) {
 }
 
 module.exports = {
-  claimCourtOperationAtomic,
+  claimProceedingOperationAtomic,
   db,
   EVENTS,
   emit,

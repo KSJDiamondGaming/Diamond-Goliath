@@ -17,7 +17,7 @@ const { getWarningCountForUser, syncExpiredWarningsToCases, showWarningModal, sh
 const { openCaseTool, handleCaseAction, submitCaseModal, handleExternalAppealInteraction } = require('./cases');
 const { openCaseSearch, handleCaseSearchAction, handleCaseSearchSelect, handleCaseSearchModal } = require('./caseSearch');
 const memberIntelligence = require('./intelligence');
-const caseCourt = require('./caseCourt');
+const caseProceeding = require('./caseProceeding');
 const quarantineInteractions = require('./quarantineInteractions');
 const { quarantineMember, restoreQuarantinedMember, getQuarantineState } = require('../../security/protection/quarantine');
 const {
@@ -814,16 +814,16 @@ async function routeButtonsAndSelects(i) {
     if (scan) return scan;
     return handleUserSelectMenu(i);
   }
-  if (i.isStringSelectMenu?.()) return routeHandlers(i, [caseCourt.handleCourtInteraction, handleMemberScanStringSelect, handleCaseSearchSelect]);
+  if (i.isStringSelectMenu?.()) return routeHandlers(i, [caseProceeding.handleProceedingInteraction, handleMemberScanStringSelect, handleCaseSearchSelect]);
   if (!i.isButton?.()) return false;
-  return routeHandlers(i, [handleExportInteraction, handleConfirmButton, caseCourt.handleCourtInteraction, value => handleCaseAction(value, { fetchTarget, createConfirmation }), handleMemberScanButton, handleDashboardNavigation, handleCancelButton, handleBulkButton, handleOpenActionButton, handleCaseToolButton]);
+  return routeHandlers(i, [handleExportInteraction, handleConfirmButton, caseProceeding.handleProceedingInteraction, value => handleCaseAction(value, { fetchTarget, createConfirmation }), handleMemberScanButton, handleDashboardNavigation, handleCancelButton, handleBulkButton, handleOpenActionButton, handleCaseToolButton]);
 }
 async function routeModModal(i) {
   if (!i?.customId?.startsWith('mod_')) return false;
   const denied = ensurePanelAccess(i); if (denied) return denied;
   await syncExpiredWarningsToCases(i.guild.id);
-  const courtResult = await caseCourt.handleCourtModal(i);
-  if (courtResult) return courtResult;
+  const proceedingResult = await caseProceeding.handleProceedingModal(i);
+  if (proceedingResult) return proceedingResult;
   if (String(i.customId).startsWith('mod_export_submit:')) {
     const result = await handleExportInteraction(i);
     if (result) {
@@ -833,7 +833,15 @@ async function routeModModal(i) {
       return result;
     }
   }
-  return routeHandlers(i, [submitInvestigationNote, handleExportInteraction, handleCaseSearchModal, handleCaseModal, handleBulkModal, handleActionModal]);
+  return routeHandlers(i, [
+    value => memberIntelligence.handleInteraction(value, { ensureCapability: ensureScanCapability, canCapability: canScanCapability }),
+    submitInvestigationNote,
+    handleExportInteraction,
+    handleCaseSearchModal,
+    handleCaseModal,
+    handleBulkModal,
+    handleActionModal,
+  ]);
 }
 async function handleModInteraction(i) {
   if (!i?.customId || !isModCustomId(i.customId)) return false;
@@ -848,6 +856,8 @@ async function handleModInteraction(i) {
       || quarantineId.startsWith('mod_submit_quarantine_investigation:')
       || quarantineId.startsWith('mod_submit_quarantine_security:')
       || quarantineId.startsWith('mod_submit_quarantine:')
+      || quarantineId.startsWith('mod_invroom_note:')
+      || quarantineId.startsWith('mod_invroom_note_submit:')
     ) {
       const handledQuarantine = await quarantineInteractions.handleQuarantineInteraction(i);
       if (handledQuarantine) return true;

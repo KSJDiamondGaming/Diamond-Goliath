@@ -400,6 +400,7 @@ async function handleSecurityIsolationInteraction(interaction) {
     const reason = fieldValue(interaction, 'reason');
     const before = getQuarantineState(interaction.guild.id).users?.[target.id] || null;
     const beforeMode = before ? getQuarantineMode(before) : null;
+    if (!interaction.deferred && !interaction.replied) await interaction.deferReply({ flags: 64 });
     const result = await quarantineMember(interaction.guild, target, {
       reason,
       quarantinedBy: interaction.user.id,
@@ -407,7 +408,7 @@ async function handleSecurityIsolationInteraction(interaction) {
       mode: QUARANTINE_MODES.SECURITY,
     });
     if (!result?.success) {
-      await interaction.reply({ content: `❌ Full Security Isolation failed: ${result?.error || result?.reason || 'Unknown error'}`, flags: 64 });
+      await interaction.editReply({ content: `❌ Full Security Isolation failed: ${result?.error || result?.reason || 'Unknown error'}` });
       return true;
     }
 
@@ -445,11 +446,10 @@ async function handleSecurityIsolationInteraction(interaction) {
       console.error('❌ Failed to record admin security isolation case:', error);
     }
 
-    await interaction.reply({
+    await interaction.editReply({
       content: result.dryRun
         ? `🧪 Security isolation dry-run completed for **${target.user.tag}**.`
         : `${result.escalated ? '🚨 **Investigation escalated to Full Security Isolation**' : '🚨 **Full Security Isolation applied**'} for **${target.user.tag}**${caseId ? ` • Case **#${caseId}**` : ''}.`,
-      flags: 64,
     });
     return true;
   }
@@ -471,13 +471,14 @@ async function handleSecurityIsolationInteraction(interaction) {
       await interaction.reply({ content: '⚠️ That member is not currently in Full Security Isolation.', flags: 64 });
       return true;
     }
+    if (!interaction.deferred && !interaction.replied) await interaction.deferReply({ flags: 64 });
     const result = await restoreQuarantinedMember(interaction.guild, target, {
       reason: `Full Security Isolation cleared by ${interaction.user.tag}: ${reason}`,
       restoredBy: interaction.user.id,
       source: 'admin',
     });
     if (!result?.success) {
-      await interaction.reply({ content: `❌ Failed to clear Full Security Isolation: ${result?.error || result?.reason || 'Unknown error'}`, flags: 64 });
+      await interaction.editReply({ content: `❌ Failed to clear Full Security Isolation: ${result?.error || result?.reason || 'Unknown error'}` });
       return true;
     }
     if (snapshot.caseId) {
@@ -496,9 +497,8 @@ async function handleSecurityIsolationInteraction(interaction) {
         console.error(`❌ Failed to update security isolation case #${snapshot.caseId}:`, error);
       }
     }
-    await interaction.reply({
+    await interaction.editReply({
       content: `🔓 **Full Security Isolation cleared** for **${target.user.tag}** • restored **${result.restoredRoles || 0}** role(s).`,
-      flags: 64,
     });
     return true;
   }
@@ -515,7 +515,9 @@ function wireClient(client) {
       await handleSettingsInteraction(interaction);
     } catch (error) {
       console.error('❌ Admin command interaction failed:', error?.stack || error?.message || error);
-      if (!interaction?.replied && !interaction?.deferred) {
+      if (interaction?.deferred || interaction?.replied) {
+        await interaction?.editReply?.({ content: '❌ Failed to process the admin control.' }).catch(() => null);
+      } else {
         await interaction?.reply?.({ content: '❌ Failed to process the admin control.', flags: 64 }).catch(() => null);
       }
     }
