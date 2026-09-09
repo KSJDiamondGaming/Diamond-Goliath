@@ -127,6 +127,7 @@ function readOAuthState(value, secret) {
 
 function markAuthFlow(res) {
   res.set('X-Goliath-Auth-Flow', AUTH_FLOW_REVISION);
+  res.set('Cache-Control', 'no-store');
 }
 
 /* ---------------- LOGIN ROUTE ---------------- */
