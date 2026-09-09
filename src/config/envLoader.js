@@ -7,6 +7,28 @@ const dotenv = require('dotenv');
 
 const { normalizeBotMode, isValidBotMode } = require('./botModes');
 
+function normalizeClientUrlEnvironment() {
+  const keys = ['CLIENT_URL', 'DASHBOARD_CLIENT_URL', 'DASHBOARD_URL', 'VITE_CLIENT_URL', 'TWOTONETAJ_CLIENT_URL'];
+  for (const key of keys) {
+    const raw = String(process.env[key] || '').trim();
+    if (!raw) continue;
+    try {
+      process.env[key] = new URL(raw).origin;
+    } catch {
+      console.warn(`⚠️ Ignoring invalid ${key}; expected an absolute URL.`);
+      delete process.env[key];
+    }
+  }
+}
+
+function applyModePublicClientOrigin(requestedMode) {
+  if (requestedMode !== 'DEV') return;
+  // DEV nginx currently canonicalises unknown SPA paths to /overview.
+  // Enter member-only deep links through the root hash so the static server
+  // always serves index.html; main.jsx then recovers the appeal reference.
+  process.env.CLIENT_URL = 'https://dev.goliath.ksjdigital.co.uk/#';
+}
+
 function loadEnvironment(mode = process.env.BOT_MODE) {
   const requestedMode = normalizeBotMode(mode);
 
@@ -29,6 +51,8 @@ function loadEnvironment(mode = process.env.BOT_MODE) {
   }
 
   process.env.BOT_MODE = requestedMode;
+  normalizeClientUrlEnvironment();
+  applyModePublicClientOrigin(requestedMode);
 
   return {
     mode: requestedMode,

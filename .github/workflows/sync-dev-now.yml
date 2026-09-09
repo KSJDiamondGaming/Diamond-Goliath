@@ -1,118 +1,183 @@
 name: Sync Goliath
 
 on:
-  workflow_dispatch:
-    inputs:
-      target:
-        description: Target environment
-        required: true
-        default: beta
-        type: choice
-        options:
-          - beta
-          - production
-          - dev
+  push:
+    branches:
+      - dev
+    paths-ignore:
+      - '.github/workflows/deploy-dev.yml'
+      - '.github/workflows/sync-dev-now.yml'
+      - '.github/workflows/*-once.yml'
+      - 'scripts/*-once.js'
+      - 'scripts/*-temp.js'
 
 permissions:
-  contents: write
-  statuses: write
+  contents: read
 
 concurrency:
-  group: sync-goliath-${{ inputs.target }}
-  cancel-in-progress: false
+  group: sync-goliath-dev
+  cancel-in-progress: true
 
 jobs:
-  promote:
+  sync-dev:
+    name: Sync GitHub DEV to DEV VPS
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    outputs:
-      promoted_sha: ${{ steps.promote.outputs.promoted_sha }}
+    timeout-minutes: 35
     steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: dev
-          fetch-depth: 0
-
-      - name: Promote DEV application tree to target branch
-        id: promote
-        shell: bash
+      - name: Sync and verify DEV
+        uses: appleboy/ssh-action@v1
         env:
-          TARGET: ${{ inputs.target }}
-        run: |
-          set -euo pipefail
+          EXPECTED_SHA: ${{ github.sha }}
+          GITHUB_DEPLOY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          port: 22
+          timeout: 60s
+          command_timeout: 30m
+          envs: EXPECTED_SHA,GITHUB_DEPLOY_TOKEN
+          script: |
+            set -euo pipefail
 
-          if [ "$TARGET" = "dev" ]; then
-            SHA="$(git rev-parse HEAD)"
-            echo "DEV selected: no branch promotion required."
-            echo "promoted_sha=$SHA" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
+            APP_DIR="/home/goliath/dev"
+            RUNTIME_DIR="$APP_DIR/src/runtime/dev"
+            PM2_NAME="goliath-dev"
+            DEV_HOST="dev.goliath.ksjdigital.co.uk"
 
-          git fetch --no-tags origin dev "$TARGET"
-          DEV_SHA="$(git rev-parse origin/dev)"
-          TARGET_SHA="$(git rev-parse origin/$TARGET)"
+            [ -d "$APP_DIR/.git" ] || {
+              echo "Missing DEV checkout: $APP_DIR" >&2
+              exit 1
+            }
 
-          git config user.name "Goliath Sync"
-          git config user.email "goliath-sync@users.noreply.github.com"
-          git switch -C "promote-$TARGET" "$TARGET_SHA"
+            cd "$APP_DIR"
+            AUTH_URL="https://x-access-token:${GITHUB_DEPLOY_TOKEN}@github.com/${{ github.repository }}.git"
+            git remote set-url origin "$AUTH_URL"
 
-          # Promote the complete application tree from DEV while keeping the
-          # target branch's GitHub workflow control files. GITHUB_TOKEN cannot
-          # rewrite workflow files without an additional workflows permission,
-          # and workflow YAML is not part of the running Goliath application.
-          git diff --binary "$TARGET_SHA" "$DEV_SHA" -- . ':(exclude).github/workflows/**' > /tmp/goliath-promotion.patch
+            cleanup_remote() {
+              git remote set-url origin "https://github.com/${{ github.repository }}.git" || true
+            }
+            trap cleanup_remote EXIT
 
-          if [ -s /tmp/goliath-promotion.patch ]; then
-            git apply --index /tmp/goliath-promotion.patch
-            git commit -m "Promote DEV $DEV_SHA to $TARGET"
-            git push origin "HEAD:refs/heads/$TARGET"
-          else
-            echo "$TARGET already matches DEV application files."
-          fi
+            git fetch --no-tags origin dev
+            LATEST_SHA="$(git rev-parse origin/dev)"
 
-          git fetch --no-tags origin dev "$TARGET"
-          FINAL_SHA="$(git rev-parse origin/$TARGET)"
-
-          if ! git diff --quiet origin/dev "origin/$TARGET" -- . ':(exclude).github/workflows/**'; then
-            echo "Promotion verification failed: $TARGET application files do not match DEV." >&2
-            git diff --stat origin/dev "origin/$TARGET" -- . ':(exclude).github/workflows/**' >&2
-            exit 1
-          fi
-
-          echo "promoted_sha=$FINAL_SHA" >> "$GITHUB_OUTPUT"
-          echo "✅ DEV application tree promoted to $TARGET at $FINAL_SHA"
-
-  deploy:
-    needs: promote
-    uses: ./.github/workflows/deploy-dev.yml
-    with:
-      environment: ${{ inputs.target }}
-      operation: sync
-    secrets: inherit
-
-  summary:
-    needs: [promote, deploy]
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Write sync summary
-        shell: bash
-        run: |
-          {
-            echo "## Sync Goliath"
-            echo ""
-            echo "- Target: **${{ inputs.target }}**"
-            echo "- Promotion result: **${{ needs.promote.result }}**"
-            echo "- VPS deploy result: **${{ needs.deploy.result }}**"
-            echo "- Target commit: **${{ needs.promote.outputs.promoted_sha }}**"
-            echo ""
-            if [ "${{ inputs.target }}" = "dev" ]; then
-              echo "DEV branch → DEV VPS."
-            else
-              echo "DEV application files → ${{ inputs.target }} branch → ${{ inputs.target }} VPS."
-              echo "Target branch workflow-control YAML is intentionally preserved; all Goliath runtime/application files come from DEV."
+            if [ "$EXPECTED_SHA" != "$LATEST_SHA" ]; then
+              echo "Superseding stale DEV sync for $EXPECTED_SHA; latest DEV is $LATEST_SHA."
+              exit 0
             fi
-          } >> "$GITHUB_STEP_SUMMARY"
 
-          [ "${{ needs.promote.result }}" = "success" ]
-          [ "${{ needs.deploy.result }}" = "success" ]
+            if [ -n "$(git status --porcelain -- . ':!src/runtime/')" ]; then
+              echo "DEV VPS has changes outside src/runtime; refusing to overwrite them." >&2
+              git status --short -- . ':!src/runtime/' >&2
+              exit 1
+            fi
+
+            BACKUP_DIR="/home/goliath/.goliath-dev-runtime-sync-backup"
+            rm -rf "$BACKUP_DIR"
+            mkdir -p "$BACKUP_DIR"
+
+            if [ -d "$RUNTIME_DIR" ]; then
+              tar --warning=no-file-changed --ignore-failed-read --exclude='*.tmp' -C "$RUNTIME_DIR" -cf - . | tar -C "$BACKUP_DIR" -xf -
+            fi
+
+            restore_runtime() {
+              mkdir -p "$RUNTIME_DIR"
+              rm -rf "$RUNTIME_DIR"/* "$RUNTIME_DIR"/.[!.]* "$RUNTIME_DIR"/..?* 2>/dev/null || true
+              if [ -d "$BACKUP_DIR" ]; then
+                tar -C "$BACKUP_DIR" -cf - . | tar -C "$RUNTIME_DIR" -xf -
+              fi
+            }
+
+            sync_cleanup() {
+              status=$?
+              restore_runtime
+              rm -rf "$BACKUP_DIR"
+              cleanup_remote
+              exit "$status"
+            }
+            trap sync_cleanup EXIT
+
+            git reset --hard "$EXPECTED_SHA"
+            restore_runtime
+
+            npm ci
+            BOT_MODE=dev npm run doctor
+
+            rm -rf dist
+            npx vite build src/dashboard --outDir ../../dist --emptyOutDir --logLevel warn
+
+            NGINX_DUMP="$(nginx -T 2>&1)"
+            DASHBOARD_ROOT="$(printf '%s\n' "$NGINX_DUMP" | awk -v host="$DEV_HOST" '
+              $1 == "server_name" {
+                for (i = 2; i <= NF; i++) {
+                  name = $i
+                  gsub(/;/, "", name)
+                  if (name == host) found = 1
+                }
+                next
+              }
+              found && $1 == "root" {
+                root = $2
+                gsub(/;/, "", root)
+                print root
+                exit
+              }
+            ')"
+
+            [ -n "$DASHBOARD_ROOT" ] || {
+              echo "Could not resolve active nginx root for $DEV_HOST" >&2
+              printf '%s\n' "$NGINX_DUMP" | grep -n -A20 -B5 "$DEV_HOST" || true
+              exit 1
+            }
+            case "$DASHBOARD_ROOT" in
+              /var/www/*) ;;
+              *) echo "Unsafe DEV dashboard root: $DASHBOARD_ROOT" >&2; exit 1 ;;
+            esac
+
+            echo "🌐 Active DEV nginx root: $DASHBOARD_ROOT"
+            rm -rf "$DASHBOARD_ROOT"
+            mkdir -p "$DASHBOARD_ROOT"
+            cp -a dist/. "$DASHBOARD_ROOT/"
+
+            grep -q 'GOLIATH_APPEALS_ENTRY_V2' "$DASHBOARD_ROOT"/assets/*.js || {
+              echo "Appeals frontend marker missing from deployed DEV bundle." >&2
+              exit 1
+            }
+
+            nginx -t
+            systemctl reload nginx
+
+            BOT_MODE=dev \
+              COMMAND_SYNC_DELETE_STALE=true \
+              COMMAND_SYNC_UPDATE_EXISTING=true \
+              node -e "require('./src/core/commands/syncCommands').syncCommands().then(() => process.exit(0)).catch((error) => { console.error(error); process.exit(1); })"
+
+            if pm2 describe "$PM2_NAME" >/dev/null 2>&1; then
+              pm2 restart "$PM2_NAME" --update-env
+            else
+              BOT_MODE=dev NODE_ENV=dev pm2 start ecosystem.config.js --only "$PM2_NAME" --update-env
+            fi
+            pm2 save
+            sleep 3
+
+            FINAL_SHA="$(git rev-parse HEAD)"
+            REMOTE_SHA="$(git rev-parse origin/dev)"
+            [ "$FINAL_SHA" = "$EXPECTED_SHA" ]
+            [ "$FINAL_SHA" = "$REMOTE_SHA" ]
+
+            PID="$(pm2 pid "$PM2_NAME" 2>/dev/null | tail -n 1 | tr -d '[:space:]')"
+            [ -n "$PID" ] && [ "$PID" != "0" ]
+            PROCESS_CWD="$(readlink -f "/proc/$PID/cwd")"
+            [ "$PROCESS_CWD" = "$APP_DIR" ]
+
+            echo "✅ DEV synchronized"
+            echo "   GitHub dev:     $REMOTE_SHA"
+            echo "   DEV VPS:        $FINAL_SHA"
+            echo "   Dashboard root: $DASHBOARD_ROOT"
+            echo "   PM2:            $PM2_NAME"
+
+            restore_runtime
+            rm -rf "$BACKUP_DIR"
+            trap - EXIT
+            cleanup_remote

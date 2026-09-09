@@ -1,3 +1,4 @@
+const crypto = require('node:crypto');
 const express = require('express');
 const security = require('../../core/security/protection/core');
 
@@ -60,7 +61,11 @@ return `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.${ext}?size
 }
 
 function safeRedirectUrl(url) {
-return String(url || 'https://goliath.ksjdigital.co.uk').replace(/\/+$/, '');
+try {
+  return new URL(String(url || 'https://goliath.ksjdigital.co.uk')).origin;
+} catch {
+  return 'https://goliath.ksjdigital.co.uk';
+}
 }
 
 function safeReturnPath(value) {
@@ -81,6 +86,30 @@ try {
 }
 }
 
+function createOAuthState(returnPath, secret) {
+const payload = Buffer.from(JSON.stringify({ returnPath: safeReturnPath(returnPath), issuedAt: Date.now() })).toString('base64url');
+const signature = crypto.createHmac('sha256', secret).update(payload).digest('base64url');
+return `${payload}.${signature}`;
+}
+
+function readOAuthState(value, secret) {
+const raw = String(value || '').trim();
+const [payload, signature, extra] = raw.split('.');
+if (!payload || !signature || extra) return null;
+const expected = crypto.createHmac('sha256', secret).update(payload).digest();
+let supplied;
+try { supplied = Buffer.from(signature, 'base64url'); } catch { return null; }
+if (supplied.length !== expected.length || !crypto.timingSafeEqual(supplied, expected)) return null;
+try {
+  const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+  const issuedAt = Number(parsed?.issuedAt);
+  if (!Number.isFinite(issuedAt) || Math.abs(Date.now() - issuedAt) > 15 * 60 * 1000) return null;
+  return safeReturnPath(parsed?.returnPath);
+} catch {
+  return null;
+}
+}
+
 /* ---------------- LOGIN ROUTE ---------------- */
 
 router.get('/login', (req, res) => {
@@ -98,13 +127,15 @@ error: 'Missing DISCORD_CLIENT_SECRET',
 });
 }
 
-if (req.session) req.session.oauthReturnPath = safeReturnPath(req.query?.next);
+const returnPath = safeReturnPath(req.query?.next);
+if (req.session) req.session.oauthReturnPath = returnPath;
 
 const params = new URLSearchParams({
 client_id: clientId,
 response_type: 'code',
 redirect_uri: redirectUri,
 scope: 'identify guilds',
+state: createOAuthState(returnPath, clientSecret),
 });
 
 const authUrl = `https://discord.com/oauth2/authorize?${params.toString()}`;
@@ -113,7 +144,15 @@ if (isDebug()) {
 console.log('[AUTH] OAuth URL:', authUrl);
 }
 
-return res.redirect(authUrl);
+if (!req.session) return res.redirect(authUrl);
+
+return req.session.save((saveError) => {
+  if (saveError) {
+    console.error('❌ OAuth return-path session save failed', saveError);
+    return res.status(500).send('Session error.');
+  }
+  return res.redirect(authUrl);
+});
 });
 
 /* ---------------- CHECK AUTH ---------------- */
@@ -182,6 +221,8 @@ if (!clientId || !clientSecret || !redirectUri) {
 
   return res.status(500).send('OAuth configuration error.');
 }
+
+const stateReturnPath = readOAuthState(req.query.state, clientSecret);
 
 const tokenResponse = await fetch('https://discord.com/api/v10/oauth2/token', {
   method: 'POST',
@@ -253,7 +294,7 @@ if (isDebug()) {
   console.log('[AUTH] User logged in:', req.session.user.username);
 }
 
-const returnPath = safeReturnPath(req.session.oauthReturnPath);
+const returnPath = stateReturnPath || safeReturnPath(req.session.oauthReturnPath);
 delete req.session.oauthReturnPath;
 
 req.session.save((saveError) => {
