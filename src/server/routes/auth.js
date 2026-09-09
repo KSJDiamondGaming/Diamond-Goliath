@@ -3,8 +3,9 @@ const express = require('express');
 const security = require('../../core/security/protection/core');
 
 const router = express.Router();
-// v5 returns Appeals OAuth through the SPA-safe hash entry after authentication.
-const AUTH_FLOW_REVISION = 'appeals-state-v5';
+// v6 preserves the validated Appeals destination in a short-lived browser cookie
+// so the SPA can recover even if an upstream redirect lands on /overview.
+const AUTH_FLOW_REVISION = 'appeals-state-v6';
 
 /* ---------------- HELPERS ---------------- */
 
@@ -46,6 +47,16 @@ function getCookieOptions() {
     secure: isProduction(),
     sameSite: isProduction() ? 'none' : 'lax',
     path: '/',
+  };
+}
+
+function getOAuthReturnCookieOptions() {
+  return {
+    httpOnly: false,
+    secure: isProduction(),
+    sameSite: isProduction() ? 'none' : 'lax',
+    path: '/',
+    maxAge: 15 * 60 * 1000,
   };
 }
 
@@ -155,6 +166,9 @@ router.get('/login', (req, res) => {
 
   const returnPath = safeReturnPath(req.query?.next);
   if (req.session) req.session.oauthReturnPath = returnPath;
+  if (returnPath.startsWith('/appeals')) {
+    res.cookie('goliath_oauth_return', returnPath, getOAuthReturnCookieOptions());
+  }
 
   const params = new URLSearchParams({
     client_id: clientId,
