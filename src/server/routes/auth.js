@@ -3,6 +3,7 @@ const express = require('express');
 const security = require('../../core/security/protection/core');
 
 const router = express.Router();
+// v5 returns Appeals OAuth through the SPA-safe hash entry after authentication.
 const AUTH_FLOW_REVISION = 'appeals-state-v5';
 
 /* ---------------- HELPERS ---------------- */
